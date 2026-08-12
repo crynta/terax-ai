@@ -7,6 +7,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { arch, platform } from "@tauri-apps/plugin-os";
 import { useEffect, useState } from "react";
 import { SectionHeader } from "../components/SectionHeader";
+import { useTranslation } from "@/i18n";
 
 const REPO_URL = "https://github.com/crynta/terax-ai";
 const WEBSITE = "https://terax.app";
@@ -21,6 +22,7 @@ const PLATFORM_LABEL: Record<string, string> = {
 };
 
 export function AboutSection() {
+  const t = useTranslation();
   const [version, setVersion] = useState("");
   const [name, setName] = useState("Terax");
   const [build, setBuild] = useState("");
@@ -32,20 +34,20 @@ export function AboutSection() {
   const ready = status.kind === "ready";
   const checkLabel =
     status.kind === "uptodate"
-      ? "You're up to date"
+      ? t("about.upToDate")
       : status.kind === "error"
-        ? "Check failed — retry"
+        ? t("about.checkFailed")
         : checking
-          ? "Checking…"
+          ? t("about.checking")
           : downloading
-            ? "Downloading…"
+            ? t("about.downloading")
             : ready
-              ? "Restart to install"
+              ? t("about.restartToInstall")
               : available
-                ? `Install v${status.update.version}`
+                ? `${t("about.installVersion")}${status.update.version}`
                 : manualAvailable
-                  ? `Update to v${status.info.version}`
-                  : "Check for updates";
+                  ? `${t("about.updateToVersion")}${status.info.version}`
+                  : t("about.checkForUpdates");
   const onUpdateClick = () => {
     if (available) void install();
     else void check({ manual: true });
@@ -66,7 +68,7 @@ export function AboutSection() {
 
   return (
     <div className="flex flex-col gap-6">
-      <SectionHeader title="About" description="" />
+      <SectionHeader title={t("about.title")} description={t("about.description")} />
 
       <div className="flex items-center gap-4 rounded-xl border border-border/60 bg-card/60 p-5">
         <img src="/logo.png" alt="" className="size-12" draggable={false} />
@@ -84,18 +86,18 @@ export function AboutSection() {
       </div>
 
       <dl className="grid grid-cols-[110px_1fr] gap-y-2.5 text-[12px]">
-        <dt className="text-muted-foreground">Build</dt>
+        <dt className="text-muted-foreground">{t("about.build")}</dt>
         <dd className="font-mono text-[11.5px]">
           {build ? `${build} · v${version}` : `v${version}`}
         </dd>
 
-        <dt className="text-muted-foreground">Bundle ID</dt>
+        <dt className="text-muted-foreground">{t("about.bundleId")}</dt>
         <dd className="font-mono text-[11.5px]">app.crynta.terax</dd>
 
-        <dt className="text-muted-foreground">License</dt>
+        <dt className="text-muted-foreground">{t("about.license")}</dt>
         <dd>Apache 2.0</dd>
 
-        <dt className="text-muted-foreground">Source code</dt>
+        <dt className="text-muted-foreground">{t("about.sourceCode")}</dt>
         <dd>
           <button
             type="button"
@@ -106,7 +108,7 @@ export function AboutSection() {
             crynta/terax-ai
           </button>
         </dd>
-        <dt className="text-muted-foreground">Website</dt>
+        <dt className="text-muted-foreground">{t("about.website")}</dt>
         <dd>
           <button
             type="button"
@@ -135,14 +137,14 @@ export function AboutSection() {
             className="gap-1.5"
           >
             <HugeiconsIcon icon={GithubIcon} size={12} strokeWidth={1.75} />
-            View on GitHub
+            {t("about.viewOnGithub")}
           </Button>
           <Button
             variant="ghost"
             size="sm"
             onClick={() => void openUrl(`${REPO_URL}/issues/new`)}
           >
-            Report an issue
+            {t("about.reportIssue")}
           </Button>
         </div>
         {status.kind === "error" && (
