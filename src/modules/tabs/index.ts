@@ -10,6 +10,8 @@ export {
   DEFAULT_SPACE_ID,
   useTabs,
   nextActiveInSpace,
+  planCloseTabsToRight,
+  planCloseOtherTabs,
   type Tab,
   type TerminalTab,
   type EditorTab,

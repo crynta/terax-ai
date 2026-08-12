@@ -1,18 +1,42 @@
 import { useCallback, useState } from "react";
 import { leafHasForegroundProcess, leafIds } from "@/modules/terminal";
-import { nextActiveInSpace, type Tab } from "@/modules/tabs";
+import {
+  nextActiveInSpace,
+  planCloseOtherTabs,
+  planCloseTabsToRight,
+  type Tab,
+} from "@/modules/tabs";
+
+type CloseManyKind = "right" | "other";
 
 type Params = {
   tabs: Tab[];
+  activeId: number;
   disposeTab: (id: number) => void;
+  disposeTabsToRight: (anchorId: number) => void;
+  disposeOtherTabs: (anchorId: number) => void;
+};
+
+type CloseManyPending = {
+  kind: CloseManyKind;
+  anchorId: number;
+  closeIds: number[];
+  dirtyCount: number;
+  busy: boolean;
 };
 
 /**
  * Guards tab closing: dirty editors and terminals with a live foreground
  * process route through a confirmation dialog instead of closing immediately.
- * Owns the three pending-close states the dialogs render from.
+ * Owns the pending-close states the dialogs render from.
  */
-export function useTabCloseGuards({ tabs, disposeTab }: Params) {
+export function useTabCloseGuards({
+  tabs,
+  activeId,
+  disposeTab,
+  disposeTabsToRight,
+  disposeOtherTabs,
+}: Params) {
   const [pendingCloseTab, setPendingCloseTab] = useState<number | null>(null);
   const [pendingTerminalCloseTab, setPendingTerminalCloseTab] = useState<
     number | null
@@ -20,6 +44,8 @@ export function useTabCloseGuards({ tabs, disposeTab }: Params) {
   const [pendingDeleteTabs, setPendingDeleteTabs] = useState<number[] | null>(
     null,
   );
+  const [pendingCloseMany, setPendingCloseMany] =
+    useState<CloseManyPending | null>(null);
 
   const handleClose = useCallback(
     async (id: number) => {
@@ -43,6 +69,63 @@ export function useTabCloseGuards({ tabs, disposeTab }: Params) {
     },
     [tabs, disposeTab],
   );
+
+  const handleCloseMany = useCallback(
+    async (kind: CloseManyKind, closeIds: number[], anchorId: number) => {
+      if (closeIds.length === 0) return;
+      const affected = tabs.filter((t) => closeIds.includes(t.id));
+      const dirty = affected.some((t) => t.kind === "editor" && t.dirty);
+      const leaves = affected
+        .filter((t) => t.kind === "terminal")
+        .flatMap((t) => leafIds(t.paneTree));
+      const busy =
+        leaves.length > 0 &&
+        (await Promise.all(leaves.map(leafHasForegroundProcess))).some(Boolean);
+      if (dirty || busy) {
+        setPendingCloseMany({
+          kind,
+          anchorId,
+          closeIds,
+          dirtyCount: affected.filter((t) => t.kind === "editor" && t.dirty)
+            .length,
+          busy,
+        });
+        return;
+      }
+      if (kind === "right") disposeTabsToRight(anchorId);
+      else disposeOtherTabs(anchorId);
+    },
+    [tabs, disposeTabsToRight, disposeOtherTabs],
+  );
+
+  const handleCloseTabsToRight = useCallback(
+    async (anchorId: number) => {
+      const { closeIds } = planCloseTabsToRight(tabs, anchorId, activeId);
+      handleCloseMany("right", closeIds, anchorId);
+    },
+    [tabs, activeId, handleCloseMany],
+  );
+
+  const handleCloseOtherTabs = useCallback(
+    async (anchorId: number) => {
+      const { closeIds } = planCloseOtherTabs(tabs, anchorId, activeId);
+      handleCloseMany("other", closeIds, anchorId);
+    },
+    [tabs, activeId, handleCloseMany],
+  );
+
+  const confirmCloseMany = useCallback(() => {
+    if (pendingCloseMany !== null) {
+      const { kind, anchorId } = pendingCloseMany;
+      if (kind === "right") disposeTabsToRight(anchorId);
+      else disposeOtherTabs(anchorId);
+      setPendingCloseMany(null);
+    }
+  }, [pendingCloseMany, disposeTabsToRight, disposeOtherTabs]);
+
+  const cancelCloseMany = useCallback(() => {
+    setPendingCloseMany(null);
+  }, []);
 
   const confirmClose = useCallback(() => {
     if (pendingCloseTab !== null) {
@@ -96,13 +179,18 @@ export function useTabCloseGuards({ tabs, disposeTab }: Params) {
     pendingCloseTab,
     pendingTerminalCloseTab,
     pendingDeleteTabs,
+    pendingCloseMany,
     handleClose,
+    handleCloseTabsToRight,
+    handleCloseOtherTabs,
     confirmClose,
     cancelClose,
     confirmTerminalClose,
     cancelTerminalClose,
     confirmDeleteClose,
     cancelDeleteClose,
+    confirmCloseMany,
+    cancelCloseMany,
     handlePathDeleted,
   };
 }

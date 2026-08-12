@@ -11,6 +11,13 @@ import {
 import type { AppCloseBlocker } from "@/app/hooks/useAppCloseGuard";
 import type { Tab } from "@/modules/tabs";
 
+type CloseManyPending = {
+  kind: "right" | "other";
+  closeIds: number[];
+  dirtyCount: number;
+  busy: boolean;
+};
+
 type Props = {
   tabs: Tab[];
   pendingCloseTab: number | null;
@@ -22,6 +29,9 @@ type Props = {
   pendingDeleteTabs: number[] | null;
   onCancelDeleteClose: () => void;
   onConfirmDeleteClose: () => void;
+  pendingCloseMany: CloseManyPending | null;
+  onCancelCloseMany: () => void;
+  onConfirmCloseMany: () => void;
   pendingAppClose: AppCloseBlocker | null;
   onCancelAppClose: () => void;
   onConfirmAppClose: () => void;
@@ -41,6 +51,27 @@ function appCloseMessage(blocker: AppCloseBlocker): string {
   return "A process is still running in a terminal. Quitting will terminate it.";
 }
 
+function closeManyMessage(pending: CloseManyPending, tabs: Tab[]): string {
+  const { kind, dirtyCount, busy, closeIds } = pending;
+  if (dirtyCount === 1 && !busy) {
+    const dirty = tabs.find(
+      (t) => t.kind === "editor" && t.dirty && closeIds.includes(t.id),
+    );
+    return dirty?.title
+      ? `"${dirty.title}" has unsaved changes. Close it anyway?`
+      : "1 tab has unsaved changes. Close it anyway?";
+  }
+  if (dirtyCount > 0 && busy) {
+    return `${dirtyCount} tab${dirtyCount === 1 ? "" : "s"} have unsaved changes and a process is running. Closing will discard the changes and terminate the process. Close anyway?`;
+  }
+  if (dirtyCount > 0) {
+    return `${dirtyCount} tabs have unsaved changes. Closing will discard them. Close anyway?`;
+  }
+  return kind === "right"
+    ? "A process is running in a tab to the right. Closing it will terminate the process. Close anyway?"
+    : "A process is running in another tab. Closing it will terminate the process. Close anyway?";
+}
+
 /** Confirmation dialogs for closing dirty editors and terminals with live processes. */
 export function CloseDialogs({
   tabs,
@@ -53,6 +84,9 @@ export function CloseDialogs({
   pendingDeleteTabs,
   onCancelDeleteClose,
   onConfirmDeleteClose,
+  pendingCloseMany,
+  onCancelCloseMany,
+  onConfirmCloseMany,
   pendingAppClose,
   onCancelAppClose,
   onConfirmAppClose,
@@ -132,6 +166,32 @@ export function CloseDialogs({
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction onClick={onConfirmDeleteClose}>
+              Close Anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={pendingCloseMany !== null}
+        onOpenChange={(open) => !open && onCancelCloseMany()}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingCloseMany?.kind === "right"
+                ? "Close Tabs to the Right"
+                : "Close Other Tabs"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingCloseMany ? closeManyMessage(pendingCloseMany, tabs) : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={onCancelCloseMany}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={onConfirmCloseMany}>
               Close Anyway
             </AlertDialogAction>
           </AlertDialogFooter>

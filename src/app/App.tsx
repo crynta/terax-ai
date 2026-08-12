@@ -74,6 +74,8 @@ import {
 import { StatusBar } from "@/modules/statusbar";
 import {
   TabSwitcherHud,
+  planCloseOtherTabs,
+  planCloseTabsToRight,
   useTabSwitcher,
   useTabs,
   useWindowTitle,
@@ -156,6 +158,8 @@ export default function App() {
     openCommitHistoryTab,
     openCommitFileDiffTab,
     closeTab,
+    closeTabsToRight,
+    closeOtherTabs,
     updateTab,
     selectByIndex,
     setLeafCwd,
@@ -380,19 +384,62 @@ export default function App() {
     [closeTab],
   );
 
+  const disposeTabsToRight = useCallback(
+    (anchorId: number) => {
+      const { closeIds } = planCloseTabsToRight(
+        tabsRef.current,
+        anchorId,
+        activeIdRef.current,
+      );
+      for (const id of closeIds) {
+        editorRefs.current.delete(id);
+        previewRefs.current.delete(id);
+      }
+      closeTabsToRight(anchorId);
+    },
+    [closeTabsToRight],
+  );
+
+  const disposeOtherTabs = useCallback(
+    (anchorId: number) => {
+      const { closeIds } = planCloseOtherTabs(
+        tabsRef.current,
+        anchorId,
+        activeIdRef.current,
+      );
+      for (const id of closeIds) {
+        editorRefs.current.delete(id);
+        previewRefs.current.delete(id);
+      }
+      closeOtherTabs(anchorId);
+    },
+    [closeOtherTabs],
+  );
+
   const {
     pendingCloseTab,
     pendingTerminalCloseTab,
     pendingDeleteTabs,
+    pendingCloseMany,
     handleClose,
+    handleCloseTabsToRight,
+    handleCloseOtherTabs,
     confirmClose,
     cancelClose,
     confirmTerminalClose,
     cancelTerminalClose,
     confirmDeleteClose,
     cancelDeleteClose,
+    confirmCloseMany,
+    cancelCloseMany,
     handlePathDeleted,
-  } = useTabCloseGuards({ tabs, disposeTab });
+  } = useTabCloseGuards({
+    tabs,
+    activeId,
+    disposeTab,
+    disposeTabsToRight,
+    disposeOtherTabs,
+  });
 
   const { pendingAppClose, confirmAppClose, cancelAppClose } =
     useAppCloseGuard(tabsRef);
@@ -712,8 +759,7 @@ export default function App() {
       : null;
   const isRepositoryContextCurrent = useCallback(
     (spaceId: string, workspaceKey: string) => {
-      const currentSpaceId =
-        useSpaces.getState().activeId ?? DEFAULT_SPACE_ID;
+      const currentSpaceId = useSpaces.getState().activeId ?? DEFAULT_SPACE_ID;
       const currentWorkspaceKey = workspaceScopeKey(
         useWorkspaceEnvStore.getState().env,
       );
@@ -1338,6 +1384,8 @@ export default function App() {
               onNewGitGraph={openGitGraphFromContext}
               onLaunchAgents={launchAgentGroup}
               onClose={handleClose}
+              onCloseTabsToRight={handleCloseTabsToRight}
+              onCloseOtherTabs={handleCloseOtherTabs}
               onPin={pinTab}
               onRename={handleRenameTab}
               onReorder={reorderTabByGap}
@@ -1546,6 +1594,9 @@ export default function App() {
             pendingDeleteTabs={pendingDeleteTabs}
             onCancelDeleteClose={cancelDeleteClose}
             onConfirmDeleteClose={confirmDeleteClose}
+            pendingCloseMany={pendingCloseMany}
+            onCancelCloseMany={cancelCloseMany}
+            onConfirmCloseMany={confirmCloseMany}
             pendingAppClose={pendingAppClose}
             onCancelAppClose={cancelAppClose}
             onConfirmAppClose={confirmAppClose}
