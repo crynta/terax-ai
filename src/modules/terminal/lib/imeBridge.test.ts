@@ -4,8 +4,9 @@ import {
   type ImeInputEvent,
   imeBridgeInput,
   noteNativeComposition,
-  releaseImeBridge,
+  noteXtermKeyData,
   resetImeBridge,
+  transitionImeBridgeOwner,
   type XtermKeyFlags,
 } from "@/modules/terminal/lib/imeBridge";
 import { describe, expect, it } from "vitest";
@@ -13,13 +14,17 @@ import { describe, expect, it } from "vitest";
 const DEL = "\x7f";
 const IDLE: XtermKeyFlags = { keyDownSeen: false, keyPressHandled: false };
 const KEY_HELD: XtermKeyFlags = { keyDownSeen: true, keyPressHandled: false };
-const AFTER_SPACE: XtermKeyFlags = { keyDownSeen: true, keyPressHandled: true };
+const AFTER_KEYPRESS: XtermKeyFlags = {
+  keyDownSeen: true,
+  keyPressHandled: true,
+};
 
-// A shell line is what the user actually judges the bridge by, so the traces
-// below assert the rendered line rather than the DEL/text bytes that produce
-// it — a byte-level expectation happily passes while the line reads 가가난.
 class TerminalLine {
-  private cells: string[] = [];
+  private cells: string[];
+
+  constructor(initial = "") {
+    this.cells = [...initial];
+  }
 
   write(data: string): void {
     for (const cp of data) {
@@ -33,11 +38,13 @@ class TerminalLine {
   }
 }
 
-type Step = [inputType: string, data: string | null, flags?: XtermKeyFlags];
+type Step = [
+  inputType: string,
+  data: string | null,
+  flags?: XtermKeyFlags,
+  xtermKeyData?: string,
+];
 
-// Replays a captured macOS WKWebView event trace through the bridge onto a
-// simulated line. `xtermEcho` mirrors the events xterm itself delivers when
-// the bridge declines them, so the line reflects every write the PTY sees.
 function replay(
   steps: Step[],
   opts: {
@@ -50,10 +57,6 @@ function replay(
   const state = opts.state ?? createImeBridgeState();
   const line = opts.line ?? new TerminalLine();
   const leafId = opts.leafId ?? 1;
-  // What xterm itself puts on the wire for an event the bridge declined:
-  // ASCII always rides the keydown/keypress path, non-ASCII only survives
-  // xterm's _inputEvent while both key flags are clear. Replacements it
-  // never understands at all.
   const echo =
     opts.xtermEcho ??
     ((e: ImeInputEvent, flags: XtermKeyFlags) => {
@@ -63,16 +66,20 @@ function replay(
       return !flags.keyDownSeen && !flags.keyPressHandled ? e.data : "";
     });
 
-  for (const [inputType, data, flags = IDLE] of steps) {
+  for (const [inputType, data, flags = IDLE, xtermKeyData] of steps) {
+    if (xtermKeyData !== undefined) {
+      noteXtermKeyData(state, leafId, xtermKeyData);
+      line.write(xtermKeyData);
+    }
     const event: ImeInputEvent = { inputType, data, composed: true };
     const out = imeBridgeInput(state, leafId, event, flags);
-    line.write(out ?? echo(event, flags));
+    line.write(out ?? (xtermKeyData === undefined ? echo(event, flags) : ""));
   }
   return line.text;
 }
 
 describe("imeBridgeInput", () => {
-  it("rewrites the in-progress syllable in place (ㅇ → 아 → 안)", () => {
+  it("rewrites an in-progress syllable in place", () => {
     expect(
       replay([
         ["insertText", "ㅇ"],
@@ -82,10 +89,7 @@ describe("imeBridgeInput", () => {
     ).toBe("안");
   });
 
-  it("keeps the committed syllable exactly once across jamo carry-over (간 + ㅏ → 가나 → 가난)", () => {
-    // The regression the byte-only assertion missed: the second carry-over
-    // step used to erase one glyph and rewrite the whole region, landing on
-    // 가가난.
+  it("preserves the committed prefix across jamo carry-over", () => {
     expect(
       replay([
         ["insertText", "ㄱ"],
@@ -97,7 +101,7 @@ describe("imeBridgeInput", () => {
     ).toBe("가난");
   });
 
-  it("survives a full multi-syllable word trace (안녕하세요)", () => {
+  it("replays a full multi-syllable word trace", () => {
     expect(
       replay([
         ["insertText", "ㅇ"],
@@ -116,7 +120,7 @@ describe("imeBridgeInput", () => {
     ).toBe("안녕하세요");
   });
 
-  it("emits the minimal edit instead of rewriting the whole region", () => {
+  it("emits only the changed suffix", () => {
     const state = createImeBridgeState();
     imeBridgeInput(
       state,
@@ -130,8 +134,6 @@ describe("imeBridgeInput", () => {
       { inputType: "insertReplacementText", data: "가나", composed: true },
       IDLE,
     );
-    // Only the changed tail moves: 나 → 난 is one DEL and one glyph, not a
-    // teardown of the committed 가.
     expect(
       imeBridgeInput(
         state,
@@ -142,7 +144,7 @@ describe("imeBridgeInput", () => {
     ).toBe(`${DEL}난`);
   });
 
-  it("writes nothing when a replacement repeats the current region", () => {
+  it("writes nothing for an identical replacement", () => {
     const state = createImeBridgeState();
     imeBridgeInput(
       state,
@@ -166,11 +168,10 @@ describe("imeBridgeInput", () => {
     ).toBeNull();
   });
 
-  it("forwards non-ASCII insertText that xterm drops while a key is held", () => {
-    const state = createImeBridgeState();
+  it("forwards non-ASCII insertText dropped by xterm", () => {
     expect(
       imeBridgeInput(
-        state,
+        createImeBridgeState(),
         1,
         { inputType: "insertText", data: "주", composed: true },
         KEY_HELD,
@@ -178,25 +179,55 @@ describe("imeBridgeInput", () => {
     ).toBe("주");
   });
 
-  it("delivers the first syllable typed fast after a space exactly once", () => {
-    // xterm drops it (stale _keyPressHandled), so only the bridge writes.
+  it("delivers the first syllable typed fast after a space once", () => {
     expect(
       replay([
-        ["insertText", " ", AFTER_SPACE],
-        ["insertText", "ㄱ", AFTER_SPACE],
+        ["insertText", " ", AFTER_KEYPRESS, " "],
+        ["insertText", "ㄱ", AFTER_KEYPRESS],
         ["insertReplacementText", "가"],
       ]),
     ).toBe(" 가");
   });
 
-  it("never duplicates ASCII input handled by the keydown/keypress path", () => {
+  it("does not duplicate non-ASCII keydown or keypress data", () => {
+    expect(
+      replay([
+        ["insertText", "Ж", KEY_HELD, "Ж"],
+        ["insertText", "å", AFTER_KEYPRESS, "å"],
+      ]),
+    ).toBe("Жå");
+  });
+
+  it("consumes xterm key correlation after one input", () => {
+    expect(
+      replay([
+        ["insertText", "å", AFTER_KEYPRESS, "å"],
+        ["insertText", "å", AFTER_KEYPRESS],
+      ]),
+    ).toBe("åå");
+  });
+
+  it("forwards non-ASCII data after a different xterm key", () => {
+    const state = createImeBridgeState();
+    noteXtermKeyData(state, 1, "x");
+    expect(
+      imeBridgeInput(
+        state,
+        1,
+        { inputType: "insertText", data: "주", composed: true },
+        AFTER_KEYPRESS,
+      ),
+    ).toBe("주");
+  });
+
+  it("does not duplicate ASCII key data", () => {
     const state = createImeBridgeState();
     expect(
       imeBridgeInput(
         state,
         1,
         { inputType: "insertText", data: " ", composed: true },
-        AFTER_SPACE,
+        AFTER_KEYPRESS,
       ),
     ).toBeNull();
     expect(
@@ -209,7 +240,7 @@ describe("imeBridgeInput", () => {
     ).toBeNull();
   });
 
-  it("erases nothing after compositionend/blur reset", () => {
+  it("does not erase stale state after compositionend or blur", () => {
     const state = createImeBridgeState();
     const line = new TerminalLine();
     replay(
@@ -225,7 +256,7 @@ describe("imeBridgeInput", () => {
     );
   });
 
-  it("stands down once a native compositionstart is seen", () => {
+  it("stands down permanently after native composition starts", () => {
     const state = createImeBridgeState();
     noteNativeComposition(state);
     expect(
@@ -236,7 +267,6 @@ describe("imeBridgeInput", () => {
         IDLE,
       ),
     ).toBeNull();
-    // Sticky: xterm owns this terminal's IME for good.
     expect(
       imeBridgeInput(
         state,
@@ -247,7 +277,22 @@ describe("imeBridgeInput", () => {
     ).toBeNull();
   });
 
-  it("drops a mid-composition region when a native compositionstart arrives", () => {
+  it("keeps native composition ownership across slot transitions", () => {
+    const state = createImeBridgeState();
+    noteNativeComposition(state);
+    transitionImeBridgeOwner(state, null);
+    transitionImeBridgeOwner(state, 2);
+    expect(
+      imeBridgeInput(
+        state,
+        2,
+        { inputType: "insertText", data: "주", composed: true },
+        KEY_HELD,
+      ),
+    ).toBeNull();
+  });
+
+  it("drops a pending region when native composition starts", () => {
     const state = createImeBridgeState();
     const line = new TerminalLine();
     replay(
@@ -258,7 +303,6 @@ describe("imeBridgeInput", () => {
       { state, line },
     );
     noteNativeComposition(state);
-    // xterm's own path now delivers everything; no stray DEL for 안.
     replay([["insertReplacementText", "녕"]], {
       state,
       line,
@@ -267,28 +311,27 @@ describe("imeBridgeInput", () => {
     expect(line.text).toBe("안녕");
   });
 
-  it("drops stale pending state when the slot rebinds to another leaf", () => {
+  it("drops stale state when a slot changes owners", () => {
     const state = createImeBridgeState();
-    const line = new TerminalLine();
     replay(
       [
         ["insertText", "ㅇ"],
         ["insertReplacementText", "안"],
       ],
-      { state, line, leafId: 1 },
+      { state, leafId: 1 },
     );
-    // Same slot, different pane: the old pane's glyph must not be erased.
-    const other = new TerminalLine();
+    transitionImeBridgeOwner(state, 2);
+    const other = new TerminalLine("x");
     expect(
       replay([["insertReplacementText", "가"]], {
         state,
         line: other,
         leafId: 2,
       }),
-    ).toBe("가");
+    ).toBe("x가");
   });
 
-  it("drops pending state when the same leaf releases and reacquires the slot", () => {
+  it("drops stale state when the same leaf releases and reacquires", () => {
     const state = createImeBridgeState();
     replay(
       [
@@ -297,15 +340,19 @@ describe("imeBridgeInput", () => {
       ],
       { state, leafId: 7 },
     );
-    // Release/reacquire by the identical leaf: the leafId guard alone cannot
-    // see this transition, so the pool resets the bridge explicitly.
-    releaseImeBridge(state);
+    transitionImeBridgeOwner(state, null);
+    transitionImeBridgeOwner(state, 7);
+    const resumed = new TerminalLine("x");
     expect(
-      replay([["insertReplacementText", "가"]], { state, leafId: 7 }),
-    ).toBe("가");
+      replay([["insertReplacementText", "가"]], {
+        state,
+        line: resumed,
+        leafId: 7,
+      }),
+    ).toBe("x가");
   });
 
-  it("ignores events it does not own (deletes, line breaks, empty data)", () => {
+  it("ignores unsupported and empty events", () => {
     const state = createImeBridgeState();
     expect(
       imeBridgeInput(

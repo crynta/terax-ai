@@ -1,5 +1,5 @@
-import { resolveFontFamily } from "@/lib/fonts";
 import { openExternalUrl } from "@/lib/external-link";
+import { resolveFontFamily } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { TerminalCursorStyle } from "@/modules/settings/store";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
@@ -15,16 +15,17 @@ import {
   type ImeBridgeState,
   imeBridgeInput,
   noteNativeComposition,
-  releaseImeBridge,
+  noteXtermKeyData,
   resetImeBridge,
+  transitionImeBridgeOwner,
 } from "./imeBridge";
+import { terminalReadlineSequence } from "./keymap";
 import {
   readTerminalClipboard,
   writeTerminalClipboard,
 } from "./terminalClipboard";
-import { pasteIntoTerminal } from "./terminalPaste";
-import { terminalReadlineSequence } from "./keymap";
 import { createTerminalLinkHandler } from "./terminalLinks";
+import { pasteIntoTerminal } from "./terminalPaste";
 
 export const POOL_MAX_SIZE = 5;
 const FIT_DEBOUNCE_MS = 8;
@@ -77,8 +78,6 @@ export type Slot = {
   lastW: number;
   lastH: number;
   lastUsedAt: number;
-  // Owned by the slot, not the leaf: the textarea listeners outlive every
-  // rebind, so the pool resets this on each ownership transition.
   imeState: ImeBridgeState;
 };
 
@@ -267,15 +266,16 @@ function createSlot(): Slot {
     imeState: createImeBridgeState(),
   };
 
-  // Bridge macOS WebKit IME input to the PTY (see imeBridge.ts for why).
-  // The bridge decides what to write; this block only wires DOM events and
-  // reads xterm's private key-tracking flags at the moment each event fires.
-  // Scoped to macOS: no other platform's webview needs the workaround, and a
-  // second delivery path is pure downside where xterm's own one works.
+  // Some WKWebView builds bypass xterm's composition events. The pure bridge
+  // repairs that path and stands down when native composition is observed.
   if (IS_MAC) {
     const ta = slot.term.textarea;
     if (ta) {
       const imeState = slot.imeState;
+      term.onKey(({ key }) => {
+        const leafId = slot.currentLeafId;
+        if (leafId !== null) noteXtermKeyData(imeState, leafId, key);
+      });
       ta.addEventListener("input", (ev) => {
         const e = ev as InputEvent;
         if (slot.currentLeafId === null) return;
@@ -295,9 +295,7 @@ function createSlot(): Slot {
         );
         if (out) adapter?.resolveLeaf(slot.currentLeafId)?.writeToPty(out);
       });
-      // This WKWebView build fires real composition events, so xterm already
-      // delivers the composed text end to end — stand the bridge down before
-      // it can double-write, and drop anything it had mid-flight.
+      // Native composition means xterm owns this slot's IME delivery.
       ta.addEventListener("compositionstart", () =>
         noteNativeComposition(imeState),
       );
@@ -492,10 +490,7 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
   slot.retainedLeafId = null;
   slot.currentLeafId = p.leafId;
   slot.lastUsedAt = performance.now();
-  // Every acquisition starts a clean IME session — including the fast path
-  // where the same leaf reclaims the slot it just released, which the
-  // bridge's own leafId guard cannot distinguish from an uninterrupted one.
-  releaseImeBridge(slot.imeState);
+  transitionImeBridgeOwner(slot.imeState, p.leafId);
 
   cancelPendingUnhide(slot);
   cancelWebglReap(slot);
@@ -731,9 +726,7 @@ function detachSlotFromLeaf(slot: Slot, retain: boolean): void {
 
   slot.currentLeafId = null;
   slot.lastUsedAt = performance.now();
-  // The slot is leaving this leaf (release, eviction, or steal): drop any
-  // half-composed glyph so it can never emit a DEL into the next owner.
-  releaseImeBridge(slot.imeState);
+  transitionImeBridgeOwner(slot.imeState, null);
   scheduleWebglReap(slot);
   scheduleSlotReap(slot);
 }
