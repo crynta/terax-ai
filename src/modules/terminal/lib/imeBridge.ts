@@ -57,6 +57,10 @@ export function noteXtermKeyData(
   state.xtermKeyData = data;
 }
 
+export function clearXtermKeyData(state: ImeBridgeState): void {
+  state.xtermKeyData = null;
+}
+
 const NON_ASCII_RE = /[^\x20-\x7e]/;
 
 function commonPrefixLength(a: string[], b: string[]): number {

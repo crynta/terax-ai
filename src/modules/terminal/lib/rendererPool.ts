@@ -11,6 +11,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { type FontWeight, Terminal } from "@xterm/xterm";
 import { shouldCursorBlink } from "./cursorBlink";
 import {
+  clearXtermKeyData,
   createImeBridgeState,
   type ImeBridgeState,
   imeBridgeInput,
@@ -276,6 +277,7 @@ function createSlot(): Slot {
         const leafId = slot.currentLeafId;
         if (leafId !== null) noteXtermKeyData(imeState, leafId, key);
       });
+      ta.addEventListener("keyup", () => clearXtermKeyData(imeState));
       ta.addEventListener("input", (ev) => {
         const e = ev as InputEvent;
         if (slot.currentLeafId === null) return;

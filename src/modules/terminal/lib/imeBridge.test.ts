@@ -1,4 +1,5 @@
 import {
+  clearXtermKeyData,
   createImeBridgeState,
   type ImeBridgeState,
   type ImeInputEvent,
@@ -218,6 +219,20 @@ describe("imeBridgeInput", () => {
         AFTER_KEYPRESS,
       ),
     ).toBe("주");
+  });
+
+  it("expires unmatched xterm key data on keyup", () => {
+    const state = createImeBridgeState();
+    noteXtermKeyData(state, 1, "å");
+    clearXtermKeyData(state);
+    expect(
+      imeBridgeInput(
+        state,
+        1,
+        { inputType: "insertText", data: "å", composed: true },
+        AFTER_KEYPRESS,
+      ),
+    ).toBe("å");
   });
 
   it("does not duplicate ASCII key data", () => {
