@@ -12,7 +12,10 @@ import { type FontWeight, Terminal } from "@xterm/xterm";
 import { shouldCursorBlink } from "./cursorBlink";
 import {
   createImeBridgeState,
+  type ImeBridgeState,
   imeBridgeInput,
+  noteNativeComposition,
+  releaseImeBridge,
   resetImeBridge,
 } from "./imeBridge";
 import {
@@ -74,6 +77,9 @@ export type Slot = {
   lastW: number;
   lastH: number;
   lastUsedAt: number;
+  // Owned by the slot, not the leaf: the textarea listeners outlive every
+  // rebind, so the pool resets this on each ownership transition.
+  imeState: ImeBridgeState;
 };
 
 const slots: Slot[] = [];
@@ -258,15 +264,18 @@ function createSlot(): Slot {
     lastW: 0,
     lastH: 0,
     lastUsedAt: 0,
+    imeState: createImeBridgeState(),
   };
 
   // Bridge macOS WebKit IME input to the PTY (see imeBridge.ts for why).
   // The bridge decides what to write; this block only wires DOM events and
   // reads xterm's private key-tracking flags at the moment each event fires.
-  {
+  // Scoped to macOS: no other platform's webview needs the workaround, and a
+  // second delivery path is pure downside where xterm's own one works.
+  if (IS_MAC) {
     const ta = slot.term.textarea;
     if (ta) {
-      const imeState = createImeBridgeState();
+      const imeState = slot.imeState;
       ta.addEventListener("input", (ev) => {
         const e = ev as InputEvent;
         if (slot.currentLeafId === null) return;
@@ -286,6 +295,12 @@ function createSlot(): Slot {
         );
         if (out) adapter?.resolveLeaf(slot.currentLeafId)?.writeToPty(out);
       });
+      // This WKWebView build fires real composition events, so xterm already
+      // delivers the composed text end to end — stand the bridge down before
+      // it can double-write, and drop anything it had mid-flight.
+      ta.addEventListener("compositionstart", () =>
+        noteNativeComposition(imeState),
+      );
       ta.addEventListener("compositionend", () => resetImeBridge(imeState));
       ta.addEventListener("blur", () => resetImeBridge(imeState));
     }
@@ -477,6 +492,10 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
   slot.retainedLeafId = null;
   slot.currentLeafId = p.leafId;
   slot.lastUsedAt = performance.now();
+  // Every acquisition starts a clean IME session — including the fast path
+  // where the same leaf reclaims the slot it just released, which the
+  // bridge's own leafId guard cannot distinguish from an uninterrupted one.
+  releaseImeBridge(slot.imeState);
 
   cancelPendingUnhide(slot);
   cancelWebglReap(slot);
@@ -712,6 +731,9 @@ function detachSlotFromLeaf(slot: Slot, retain: boolean): void {
 
   slot.currentLeafId = null;
   slot.lastUsedAt = performance.now();
+  // The slot is leaving this leaf (release, eviction, or steal): drop any
+  // half-composed glyph so it can never emit a DEL into the next owner.
+  releaseImeBridge(slot.imeState);
   scheduleWebglReap(slot);
   scheduleSlotReap(slot);
 }
