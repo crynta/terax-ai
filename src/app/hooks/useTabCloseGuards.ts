@@ -70,9 +70,8 @@ export function useTabCloseGuards({
     [tabs, disposeTab],
   );
 
-  const handleCloseMany = useCallback(
-    async (kind: CloseManyKind, closeIds: number[], anchorId: number) => {
-      if (closeIds.length === 0) return;
+  const evaluateCloseMany = useCallback(
+    async (closeIds: number[]) => {
       const affected = tabs.filter((t) => closeIds.includes(t.id));
       const dirty = affected.some((t) => t.kind === "editor" && t.dirty);
       const leaves = affected
@@ -81,21 +80,28 @@ export function useTabCloseGuards({
       const busy =
         leaves.length > 0 &&
         (await Promise.all(leaves.map(leafHasForegroundProcess))).some(Boolean);
+      return {
+        dirty,
+        busy,
+        dirtyCount: affected.filter((t) => t.kind === "editor" && t.dirty)
+          .length,
+      };
+    },
+    [tabs],
+  );
+
+  const handleCloseMany = useCallback(
+    async (kind: CloseManyKind, closeIds: number[], anchorId: number) => {
+      if (closeIds.length === 0) return;
+      const { dirty, busy, dirtyCount } = await evaluateCloseMany(closeIds);
       if (dirty || busy) {
-        setPendingCloseMany({
-          kind,
-          anchorId,
-          closeIds,
-          dirtyCount: affected.filter((t) => t.kind === "editor" && t.dirty)
-            .length,
-          busy,
-        });
+        setPendingCloseMany({ kind, anchorId, closeIds, dirtyCount, busy });
         return;
       }
       if (kind === "right") disposeTabsToRight(anchorId);
       else disposeOtherTabs(anchorId);
     },
-    [tabs, disposeTabsToRight, disposeOtherTabs],
+    [evaluateCloseMany, disposeTabsToRight, disposeOtherTabs],
   );
 
   const handleCloseTabsToRight = useCallback(
@@ -114,14 +120,37 @@ export function useTabCloseGuards({
     [tabs, activeId, handleCloseMany],
   );
 
-  const confirmCloseMany = useCallback(() => {
-    if (pendingCloseMany !== null) {
-      const { kind, anchorId } = pendingCloseMany;
-      if (kind === "right") disposeTabsToRight(anchorId);
-      else disposeOtherTabs(anchorId);
+  const confirmCloseMany = useCallback(async () => {
+    if (pendingCloseMany === null) return;
+    const { kind, anchorId } = pendingCloseMany;
+    const { closeIds } =
+      kind === "right"
+        ? planCloseTabsToRight(tabs, anchorId, activeId)
+        : planCloseOtherTabs(tabs, anchorId, activeId);
+    if (closeIds.length === 0) {
       setPendingCloseMany(null);
+      return;
     }
-  }, [pendingCloseMany, disposeTabsToRight, disposeOtherTabs]);
+    // Re-run the guard against the current tab set: a tab can enter the
+    // anchor's close range (new tab opened, tab moved) while the dialog is
+    // open, and it needs its own dirty/foreground-process check before it's
+    // swept into a close the user never saw.
+    const { dirty, busy, dirtyCount } = await evaluateCloseMany(closeIds);
+    if (dirty || busy) {
+      setPendingCloseMany({ kind, anchorId, closeIds, dirtyCount, busy });
+      return;
+    }
+    if (kind === "right") disposeTabsToRight(anchorId);
+    else disposeOtherTabs(anchorId);
+    setPendingCloseMany(null);
+  }, [
+    pendingCloseMany,
+    tabs,
+    activeId,
+    evaluateCloseMany,
+    disposeTabsToRight,
+    disposeOtherTabs,
+  ]);
 
   const cancelCloseMany = useCallback(() => {
     setPendingCloseMany(null);
