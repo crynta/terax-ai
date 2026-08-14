@@ -70,6 +70,11 @@ function sanitizeErrorMessage(message: string): string {
 }
 
 function errorPrefix(code: string | null, message: string): string | null {
+  if (
+    /only available through the batch api|batch api.*instead/i.test(message)
+  ) {
+    return "Batch-only model";
+  }
   switch (code?.toLowerCase()) {
     case "model_not_found":
     case "not_found_error":

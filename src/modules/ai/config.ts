@@ -109,7 +109,8 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     label: "MLX",
     keyringAccount: "",
     keyPrefix: null,
-    consoleUrl: "https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/SERVER.md",
+    consoleUrl:
+      "https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/SERVER.md",
   },
   {
     id: "ollama",
@@ -772,7 +773,11 @@ export function getModelContextLimit(
 ): number {
   if (!modelId) return 128_000;
   if (isCompatModelId(modelId)) return compatOverride ?? 128_000;
-  if (modelId === "openai-compatible-custom" && compatOverride)
+  if (
+    (modelId === "openai-compatible-custom" ||
+      modelId === "openrouter-custom") &&
+    compatOverride
+  )
     return compatOverride;
   return MODEL_CONTEXT_LIMITS[modelId] ?? 128_000;
 }

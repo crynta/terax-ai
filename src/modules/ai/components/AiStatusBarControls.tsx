@@ -58,8 +58,13 @@ import {
 } from "../config";
 import { ACCEPTED_FILES, useComposer } from "../lib/composer";
 import { toggleFavoriteModel } from "../lib/modelPrefs";
+import {
+  isOpenRouterModelInfo,
+  useOpenRouterCatalog,
+} from "../lib/openrouterModels";
 import { useChatStore } from "../store/chatStore";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import { setOpenrouterModelId } from "@/modules/settings/store";
 
 const PROVIDER_ICON = {
   openai: ChatGptIcon,
@@ -141,7 +146,7 @@ export function AiStatusBarControls() {
           disabled={c.isBusy || c.voice.transcribing || !c.voice.hasKey}
           className={cn(
             c.voice.recording &&
-            "bg-destructive/10 text-destructive hover:bg-destructive/15",
+              "bg-destructive/10 text-destructive hover:bg-destructive/15",
           )}
         >
           {c.voice.recording ? (
@@ -214,9 +219,16 @@ function ModelDropdown() {
   const favoriteIds = usePreferencesStore((s) => s.favoriteModelIds);
   const recentIds = usePreferencesStore((s) => s.recentModelIds);
   const customEndpoints = usePreferencesStore((s) => s.customEndpoints);
-  const current = isCompatModelId(selected)
-    ? getCompatModelInfo(selected, customEndpoints)
-    : getModel(selected as ModelId);
+  const openrouterModelId = usePreferencesStore((s) => s.openrouterModelId);
+  const openrouterCatalog = useOpenRouterCatalog(apiKeys.openrouter);
+  const current =
+    selected === "openrouter-custom"
+      ? (openrouterCatalog.models.find(
+          (model) => model.openrouterModelId === openrouterModelId,
+        ) ?? getModel(selected as ModelId))
+      : isCompatModelId(selected)
+        ? getCompatModelInfo(selected, customEndpoints)
+        : getModel(selected as ModelId);
   const [search, setSearch] = useState("");
   const [activeProvider, setActiveProvider] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("all");
@@ -241,15 +253,23 @@ function ModelDropdown() {
     const unconfigured: (typeof PROVIDERS)[number][] = [];
     for (const p of PROVIDERS) {
       if (p.id === "openai-compatible") continue;
-      (hasKeyFor(p.id) ? configured : unconfigured).push(p);
+      const configuredForDropdown = providerNeedsKey(p.id)
+        ? !!apiKeys[p.id]
+        : true;
+      (configuredForDropdown ? configured : unconfigured).push(p);
     }
     return { configured, unconfigured };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiKeys]);
 
   const allModels = useMemo(
-    () => [...MODELS, ...epModelInfos],
-    [epModelInfos],
+    () => [
+      ...(openrouterCatalog.models.length > 0
+        ? MODELS.filter((model) => model.provider !== "openrouter")
+        : MODELS),
+      ...openrouterCatalog.models,
+      ...epModelInfos,
+    ],
+    [epModelInfos, openrouterCatalog.models],
   );
 
   const COMPAT_PROVIDER_ID = "__compat__";
@@ -278,6 +298,8 @@ function ModelDropdown() {
           m.hint.toLowerCase().includes(q) ||
           m.description.toLowerCase().includes(q) ||
           m.provider.includes(q) ||
+          (isOpenRouterModelInfo(m) &&
+            m.openrouterModelId.toLowerCase().includes(q)) ||
           (m.tags?.some((t) => t.includes(q)) ?? false),
       );
     }
@@ -371,22 +393,21 @@ function ModelDropdown() {
               active={activeProvider === null}
               onClick={() => setActiveProvider(null)}
             />
-            {[...sortedProviders.configured, ...sortedProviders.unconfigured].map(
-              (p) => (
-                <ProviderPill
-                  key={p.id}
-                  icon={PROVIDER_ICON[p.id]}
-                  title={
-                    hasKeyFor(p.id)
-                      ? p.label
-                      : `${p.label} — not configured`
-                  }
-                  active={activeProvider === p.id}
-                  muted={!hasKeyFor(p.id)}
-                  onClick={() => setActiveProvider(p.id)}
-                />
-              ),
-            )}
+            {[
+              ...sortedProviders.configured,
+              ...sortedProviders.unconfigured,
+            ].map((p) => (
+              <ProviderPill
+                key={p.id}
+                icon={PROVIDER_ICON[p.id]}
+                title={
+                  hasKeyFor(p.id) ? p.label : `${p.label} — not configured`
+                }
+                active={activeProvider === p.id}
+                muted={!hasKeyFor(p.id)}
+                onClick={() => setActiveProvider(p.id)}
+              />
+            ))}
             {customEndpoints.length > 0 && (
               <ProviderPill
                 icon={PlugIcon}
@@ -427,11 +448,13 @@ function ModelDropdown() {
                 <ModelRow
                   key={m.id}
                   model={m}
-                  selected={m.id === selected}
-                  hasKey={
-                    isCompatModelId(m.id) ||
-                    hasKeyFor(m.provider)
+                  selected={
+                    isOpenRouterModelInfo(m)
+                      ? selected === "openrouter-custom" &&
+                        openrouterModelId === m.openrouterModelId
+                      : m.id === selected
                   }
+                  hasKey={isCompatModelId(m.id) || hasKeyFor(m.provider)}
                   favorite={favoriteIds.includes(m.id)}
                   showProviderIcon={activeProvider === null}
                   onPick={() => {
@@ -439,7 +462,12 @@ function ModelDropdown() {
                       void openSettingsWindow("models");
                       return;
                     }
-                    setSelected(m.id);
+                    if (isOpenRouterModelInfo(m)) {
+                      void setOpenrouterModelId(m.openrouterModelId);
+                      setSelected("openrouter-custom", m.openrouterModelId);
+                    } else {
+                      setSelected(m.id);
+                    }
                   }}
                   onToggleFavorite={() => void toggleFavoriteModel(m.id)}
                 />
@@ -524,11 +552,7 @@ function ProviderHeader({ providerId }: { providerId: ProviderId }) {
   if (!p) return null;
   return (
     <div className="flex items-center gap-1.5 px-3 pt-1 pb-1.5 text-[11px] font-medium tracking-tight text-muted-foreground/90">
-      <HugeiconsIcon
-        icon={PROVIDER_ICON[p.id]}
-        size={13}
-        strokeWidth={1.75}
-      />
+      <HugeiconsIcon icon={PROVIDER_ICON[p.id]} size={13} strokeWidth={1.75} />
       <span>{p.label}</span>
     </div>
   );
@@ -616,11 +640,18 @@ function ModelRow({
       ) : null}
 
       <div className="flex min-w-0 flex-1 items-baseline gap-1.5">
-        <span className="shrink-0 text-[12px] font-medium leading-none">
-          {model.label}
+        <span className="flex min-w-0 shrink-0 items-center gap-1.5 text-[12px] font-medium leading-none">
+          <span className="truncate">{model.label}</span>
+          {isOpenRouterModelInfo(model) && model.batchOnly ? (
+            <span className="shrink-0 text-[9px] text-amber-600 dark:text-amber-400">
+              Batch only
+            </span>
+          ) : null}
         </span>
         <span className="truncate text-[10.5px] leading-none text-muted-foreground">
-          {model.description}
+          {isOpenRouterModelInfo(model)
+            ? model.openrouterModelId
+            : model.description}
         </span>
       </div>
 
@@ -643,11 +674,7 @@ function CapabilityBars({ caps }: { caps: ModelCapabilities }) {
     <div className="ml-auto flex items-center gap-1.5">
       <CapBar icon={BrainIcon} value={caps.intelligence} label="Intelligence" />
       <CapBar icon={FlashIcon} value={caps.speed} label="Speed" />
-      <CapBar
-        icon={CoinsDollarIcon}
-        value={caps.cost}
-        label="Affordability"
-      />
+      <CapBar icon={CoinsDollarIcon} value={caps.cost} label="Affordability" />
     </div>
   );
 }
@@ -662,10 +689,7 @@ function CapBar({
   label: string;
 }) {
   return (
-    <span
-      className="flex items-center gap-0.5"
-      title={`${label}: ${value}/5`}
-    >
+    <span className="flex items-center gap-0.5" title={`${label}: ${value}/5`}>
       <HugeiconsIcon
         icon={icon}
         size={10}

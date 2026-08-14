@@ -4,6 +4,7 @@ import {
   DEFAULT_AUTOCOMPLETE_MODEL,
   DEFAULT_MODEL_ID,
   DEFAULT_STT_PROVIDER,
+  isCompatModelId,
   isKnownModelId,
   LMSTUDIO_DEFAULT_BASE_URL,
   MLX_DEFAULT_BASE_URL,
@@ -368,6 +369,10 @@ async function writePref<T>(key: string, value: T): Promise<void> {
   await emit(PREFS_CHANGED_EVENT, { key, value });
 }
 
+function isPersistedModelId(value: string): boolean {
+  return isKnownModelId(value) || isCompatModelId(value) || value.includes("/");
+}
+
 export async function loadPreferences(): Promise<Preferences> {
   // Single IPC roundtrip — fetching keys individually fans out to one
   // `plugin:store|get` per setting and is the dominant boot cost.
@@ -463,10 +468,10 @@ export async function loadPreferences(): Promise<Preferences> {
       DEFAULT_PREFERENCES.whispercppBaseURL,
     favoriteModelIds: (
       get<string[]>(KEY_FAVORITE_MODELS) ?? DEFAULT_PREFERENCES.favoriteModelIds
-    ).filter(isKnownModelId),
+    ).filter(isPersistedModelId),
     recentModelIds: (
       get<string[]>(KEY_RECENT_MODELS) ?? DEFAULT_PREFERENCES.recentModelIds
-    ).filter(isKnownModelId),
+    ).filter(isPersistedModelId),
     vimMode: get<boolean>(KEY_VIM_MODE) ?? DEFAULT_PREFERENCES.vimMode,
     editorWordWrap:
       get<boolean>(KEY_EDITOR_WORD_WRAP) ?? DEFAULT_PREFERENCES.editorWordWrap,

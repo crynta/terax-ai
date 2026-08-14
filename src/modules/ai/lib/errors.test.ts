@@ -41,6 +41,18 @@ describe("formatAiError", () => {
     );
   });
 
+  it("labels models that only support the Batch API", () => {
+    expect(
+      formatAiError(
+        new Error(
+          "This model is only available through the Batch API. Use the /api/beta/batches endpoint instead.",
+        ),
+      ),
+    ).toBe(
+      "Batch-only model: This model is only available through the Batch API. Use the /api/beta/batches endpoint instead.",
+    );
+  });
+
   it("redacts credential-like values", () => {
     expect(
       formatAiError(

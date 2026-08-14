@@ -17,10 +17,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import {
-  getBindingTokens,
-  SHORTCUTS,
-} from "@/modules/shortcuts/shortcuts";
+import { getBindingTokens, SHORTCUTS } from "@/modules/shortcuts/shortcuts";
 import {
   type CustomEndpoint,
   compatModelIdForEndpoint,
@@ -50,6 +47,11 @@ import {
   setKey,
 } from "@/modules/ai/lib/keyring";
 import { useChatStore } from "@/modules/ai/store/chatStore";
+import {
+  loadOpenRouterCatalog,
+  type OpenRouterModelInfo,
+  useOpenRouterCatalog,
+} from "@/modules/ai/lib/openrouterModels";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   type AutocompleteTrigger,
@@ -320,6 +322,7 @@ export function ModelsSection() {
     PROVIDERS.filter((p) => isConfigured(p.id)).map((p) => p.id),
   );
   const visibleIds = new Set<ProviderId>(configuredIds);
+  if (keys.openrouter) visibleIds.add("openrouter");
   for (const id of adding) visibleIds.add(id);
   const visibleProviders = PROVIDERS.filter(
     (p) => p.id !== "openai-compatible" && visibleIds.has(p.id),
@@ -545,6 +548,7 @@ function DefaultsBlock({
           <DefaultModelPicker
             defaultModel={defaultModel}
             configuredIds={configuredIds}
+            openrouterApiKey={keys.openrouter}
           />
         </FieldRow>
         <AutocompleteRow
@@ -560,12 +564,21 @@ function DefaultsBlock({
 function DefaultModelPicker({
   defaultModel,
   configuredIds,
+  openrouterApiKey,
 }: {
   defaultModel: ModelId;
   configuredIds: Set<ProviderId>;
+  openrouterApiKey: string | null;
 }) {
-  const m = getModel(defaultModel);
   const hasAny = configuredIds.size > 0;
+  const openrouterCatalog = useOpenRouterCatalog(openrouterApiKey);
+  const openrouterModelId = usePreferencesStore((s) => s.openrouterModelId);
+  const m =
+    defaultModel === "openrouter-custom"
+      ? (openrouterCatalog.models.find(
+          (model) => model.openrouterModelId === openrouterModelId,
+        ) ?? getModel(defaultModel))
+      : getModel(defaultModel);
 
   return (
     <DropdownMenu>
@@ -597,7 +610,10 @@ function DefaultModelPicker({
       >
         <div className="max-h-72 overflow-y-auto overscroll-contain pr-1">
           {PROVIDERS.filter((p) => configuredIds.has(p.id)).map((p) => {
-            const models = MODELS.filter((x) => x.provider === p.id);
+            const models =
+              p.id === "openrouter"
+                ? openrouterCatalog.models
+                : MODELS.filter((x) => x.provider === p.id);
             if (models.length === 0) return null;
             return (
               <div key={p.id} className="px-1 pt-1.5 first:pt-1">
@@ -608,14 +624,37 @@ function DefaultModelPicker({
                 {models.map((mod) => (
                   <DropdownMenuItem
                     key={mod.id}
-                    onSelect={() => void setDefaultModel(mod.id as ModelId)}
+                    onSelect={() => {
+                      if (p.id === "openrouter") {
+                        const openrouterModel = mod as OpenRouterModelInfo;
+                        void setOpenrouterModelId(
+                          openrouterModel.openrouterModelId,
+                        );
+                        void setDefaultModel("openrouter-custom");
+                      } else {
+                        void setDefaultModel(mod.id as ModelId);
+                      }
+                    }}
                     className={cn(
                       "flex items-start gap-2 text-[12px]",
-                      mod.id === defaultModel && "bg-accent/50",
+                      ((p.id === "openrouter" &&
+                        (mod as OpenRouterModelInfo).openrouterModelId ===
+                          openrouterModelId &&
+                        defaultModel === "openrouter-custom") ||
+                        (p.id !== "openrouter" && mod.id === defaultModel)) &&
+                        "bg-accent/50",
                     )}
                   >
                     <span className="flex flex-1 flex-col">
-                      <span>{mod.label}</span>
+                      <span className="flex items-center gap-1.5">
+                        <span>{mod.label}</span>
+                        {p.id === "openrouter" &&
+                        (mod as OpenRouterModelInfo).batchOnly ? (
+                          <span className="text-[9px] text-amber-600 dark:text-amber-400">
+                            Batch only
+                          </span>
+                        ) : null}
+                      </span>
                       <span className="text-[10px] text-muted-foreground">
                         {mod.description}
                       </span>
@@ -944,17 +983,27 @@ function LocalProviderCard({
         )}
 
         <FieldRow label="Model ID">
-          <Input
-            value={modelDraft}
-            onChange={(e) => setModelDraft(e.target.value)}
-            onBlur={() => {
-              const v = modelDraft.trim();
-              if (v !== modelId) void setModelId(v);
-            }}
-            placeholder={meta.modelPlaceholder}
-            spellCheck={false}
-            className="h-8 font-mono text-[11.5px]"
-          />
+          {provider.id === "openrouter" ? (
+            <OpenRouterModelField
+              apiKey={compatKey ?? null}
+              value={modelDraft}
+              placeholder={meta.modelPlaceholder}
+              onChange={setModelDraft}
+              onCommit={(value) => void setModelId(value)}
+            />
+          ) : (
+            <Input
+              value={modelDraft}
+              onChange={(e) => setModelDraft(e.target.value)}
+              onBlur={() => {
+                const v = modelDraft.trim();
+                if (v !== modelId) void setModelId(v);
+              }}
+              placeholder={meta.modelPlaceholder}
+              spellCheck={false}
+              className="h-8 font-mono text-[11.5px]"
+            />
+          )}
         </FieldRow>
 
         {setContextLimit ? (
@@ -1036,6 +1085,112 @@ function LocalProviderCard({
           </p>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function OpenRouterModelField({
+  apiKey,
+  value,
+  placeholder,
+  onChange,
+  onCommit,
+}: {
+  apiKey: string | null;
+  value: string;
+  placeholder: string;
+  onChange: (value: string) => void;
+  onCommit: (value: string) => void;
+}) {
+  const catalog = useOpenRouterCatalog(apiKey);
+  const selected = catalog.models.find(
+    (model) => model.openrouterModelId === value.trim(),
+  );
+
+  return (
+    <div className="flex flex-1 flex-col gap-1.5">
+      <div className="flex gap-1.5">
+        <Input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onBlur={() => onCommit(value.trim())}
+          placeholder={placeholder}
+          spellCheck={false}
+          className="h-8 flex-1 font-mono text-[11.5px]"
+        />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 shrink-0 px-2.5 text-[11px]"
+              disabled={
+                catalog.status === "loading" && catalog.models.length === 0
+              }
+            >
+              {catalog.status === "loading" && catalog.models.length === 0
+                ? "Loading"
+                : "Browse"}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            collisionPadding={12}
+            className="max-h-80 min-w-80 overflow-y-auto"
+          >
+            {catalog.models.map((model) => (
+              <DropdownMenuItem
+                key={model.openrouterModelId}
+                onSelect={() => {
+                  onChange(model.openrouterModelId);
+                  onCommit(model.openrouterModelId);
+                }}
+                className="flex items-start gap-2 text-[11.5px]"
+              >
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="flex items-center gap-1.5">
+                    <span className="truncate">{model.label}</span>
+                    {model.batchOnly ? (
+                      <span className="shrink-0 text-[9px] text-amber-600 dark:text-amber-400">
+                        Batch only
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="truncate font-mono text-[10px] text-muted-foreground">
+                    {model.openrouterModelId}
+                  </span>
+                </span>
+              </DropdownMenuItem>
+            ))}
+            {catalog.status === "error" ? (
+              <div className="flex items-center gap-2 px-2 py-2 text-[10.5px] text-destructive">
+                <span className="min-w-0 flex-1">{catalog.error}</span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 shrink-0 px-1.5 text-[10px]"
+                  onClick={() => {
+                    void loadOpenRouterCatalog(apiKey ?? "", true);
+                  }}
+                >
+                  Retry
+                </Button>
+              </div>
+            ) : null}
+            {catalog.status === "ready" && catalog.models.length === 0 ? (
+              <div className="px-2 py-2 text-[10.5px] text-muted-foreground">
+                No models returned.
+              </div>
+            ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      {selected?.batchOnly ? (
+        <p className="text-[10.5px] leading-relaxed text-amber-600 dark:text-amber-400">
+          This model is marked batch-only by OpenRouter and may reject normal
+          chat requests.
+        </p>
+      ) : null}
     </div>
   );
 }
