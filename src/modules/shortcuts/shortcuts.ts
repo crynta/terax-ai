@@ -201,7 +201,7 @@ export const SHORTCUTS: Shortcut[] = [
     id: "terminal.passwordManager",
     label: "Insert terminal password",
     group: "Terminal",
-    defaultBindings: [],
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "l" }],
   },
   {
     id: "terminal.toggleInput",
