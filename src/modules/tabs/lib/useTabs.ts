@@ -19,7 +19,13 @@ import {
   swapLeafInDirection,
 } from "@/modules/terminal/lib/panes";
 import { disposeSession } from "@/modules/terminal/lib/useTerminalSession";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 // Matches the renderer slot pool size — over this we'd evict an active leaf.
 export const MAX_PANES_PER_TAB = 4;
@@ -151,6 +157,18 @@ export type GitDiffOpenInput = {
 export type OpenFileTabOptions = {
   spaceId?: string;
   activate?: boolean;
+};
+
+export type CloseTabsPlan = {
+  closeIds: number[];
+  nextActiveId: number;
+};
+
+type CloseTabsPlanResult = {
+  tabs: Tab[];
+  closeIds: number[];
+  disposeLeafIds: number[];
+  nextActiveId: number;
 };
 
 export function planMarkdownTabOpen(
@@ -334,7 +352,7 @@ export function planCloseTabsToRight(
   tabs: Tab[],
   anchorId: number,
   activeId: number,
-): { closeIds: number[]; nextActiveId: number } {
+): CloseTabsPlan {
   const anchor = tabs.find((t) => t.id === anchorId);
   if (!anchor) return { closeIds: [], nextActiveId: activeId };
   const sameSpace = tabs.filter((t) => t.spaceId === anchor.spaceId);
@@ -356,7 +374,7 @@ export function planCloseOtherTabs(
   tabs: Tab[],
   anchorId: number,
   activeId: number,
-): { closeIds: number[]; nextActiveId: number } {
+): CloseTabsPlan {
   const anchor = tabs.find((t) => t.id === anchorId);
   if (!anchor) return { closeIds: [], nextActiveId: activeId };
   const sameSpace = tabs.filter((t) => t.spaceId === anchor.spaceId);
@@ -366,6 +384,36 @@ export function planCloseOtherTabs(
     closeIds,
     nextActiveId: closeIds.includes(activeId) ? anchorId : activeId,
   };
+}
+
+export function applyCloseTabsPlan(
+  tabs: Tab[],
+  anchorId: number,
+  plan: CloseTabsPlan,
+): CloseTabsPlanResult | null {
+  const anchor = tabs.find((tab) => tab.id === anchorId);
+  if (!anchor) return null;
+
+  const requested = new Set(plan.closeIds);
+  const closing = tabs.filter(
+    (tab) =>
+      tab.id !== anchorId &&
+      tab.spaceId === anchor.spaceId &&
+      requested.has(tab.id),
+  );
+  if (closing.length === 0) return null;
+
+  const closeIds = closing.map((tab) => tab.id);
+  const close = new Set(closeIds);
+  const next = tabs.filter((tab) => !close.has(tab.id));
+  const nextActiveId = next.some((tab) => tab.id === plan.nextActiveId)
+    ? plan.nextActiveId
+    : anchorId;
+  const disposeLeafIds = closing
+    .filter((tab) => tab.kind === "terminal")
+    .flatMap((tab) => leafIds(tab.paneTree));
+
+  return { tabs: next, closeIds, disposeLeafIds, nextActiveId };
 }
 
 export function planGitDiffOpen(
@@ -547,11 +595,11 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   const tabsRef = useRef(tabs);
   const activeIdRef = useRef(activeId);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     tabsRef.current = tabs;
   }, [tabs]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     activeIdRef.current = activeId;
   }, [activeId]);
 
@@ -1098,35 +1146,19 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     for (const lid of toDispose) disposeSession(lid);
   }, []);
 
-  const closeTabsToRight = useCallback((anchorId: number) => {
-    let toDispose: number[] = [];
-    setTabs((curr) => {
-      const plan = planCloseTabsToRight(curr, anchorId, activeIdRef.current);
-      if (plan.closeIds.length === 0) return curr;
-      const close = new Set(plan.closeIds);
-      toDispose = curr
-        .filter((t) => close.has(t.id) && t.kind === "terminal")
-        .flatMap((t) => leafIds((t as TerminalTab).paneTree));
-      setActiveId(plan.nextActiveId);
-      return curr.filter((t) => !close.has(t.id));
-    });
-    for (const lid of toDispose) disposeSession(lid);
-  }, []);
-
-  const closeOtherTabs = useCallback((anchorId: number) => {
-    let toDispose: number[] = [];
-    setTabs((curr) => {
-      const plan = planCloseOtherTabs(curr, anchorId, activeIdRef.current);
-      if (plan.closeIds.length === 0) return curr;
-      const close = new Set(plan.closeIds);
-      toDispose = curr
-        .filter((t) => close.has(t.id) && t.kind === "terminal")
-        .flatMap((t) => leafIds((t as TerminalTab).paneTree));
-      setActiveId(plan.nextActiveId);
-      return curr.filter((t) => !close.has(t.id));
-    });
-    for (const lid of toDispose) disposeSession(lid);
-  }, []);
+  const closeTabs = useCallback(
+    (anchorId: number, plan: CloseTabsPlan): number[] => {
+      const result = applyCloseTabsPlan(tabsRef.current, anchorId, plan);
+      if (!result) return [];
+      tabsRef.current = result.tabs;
+      activeIdRef.current = result.nextActiveId;
+      setTabs(result.tabs);
+      setActiveId(result.nextActiveId);
+      for (const leafId of result.disposeLeafIds) disposeSession(leafId);
+      return result.closeIds;
+    },
+    [],
+  );
 
   const updateTab = useCallback((id: number, patch: TabPatch) => {
     setTabs((t) =>
@@ -1403,8 +1435,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     setAiDiffStatus,
     closeAiDiffTab,
     closeTab,
-    closeTabsToRight,
-    closeOtherTabs,
+    closeTabs,
     updateTab,
     selectByIndex,
     setLeafCwd,

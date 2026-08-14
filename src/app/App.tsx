@@ -74,8 +74,7 @@ import {
 import { StatusBar } from "@/modules/statusbar";
 import {
   TabSwitcherHud,
-  planCloseOtherTabs,
-  planCloseTabsToRight,
+  type CloseTabsPlan,
   useTabSwitcher,
   useTabs,
   useWindowTitle,
@@ -158,8 +157,7 @@ export default function App() {
     openCommitHistoryTab,
     openCommitFileDiffTab,
     closeTab,
-    closeTabsToRight,
-    closeOtherTabs,
+    closeTabs,
     updateTab,
     selectByIndex,
     setLeafCwd,
@@ -384,36 +382,15 @@ export default function App() {
     [closeTab],
   );
 
-  const disposeTabsToRight = useCallback(
-    (anchorId: number) => {
-      const { closeIds } = planCloseTabsToRight(
-        tabsRef.current,
-        anchorId,
-        activeIdRef.current,
-      );
-      for (const id of closeIds) {
+  const disposeTabs = useCallback(
+    (anchorId: number, plan: CloseTabsPlan) => {
+      const closedIds = closeTabs(anchorId, plan);
+      for (const id of closedIds) {
         editorRefs.current.delete(id);
         previewRefs.current.delete(id);
       }
-      closeTabsToRight(anchorId);
     },
-    [closeTabsToRight],
-  );
-
-  const disposeOtherTabs = useCallback(
-    (anchorId: number) => {
-      const { closeIds } = planCloseOtherTabs(
-        tabsRef.current,
-        anchorId,
-        activeIdRef.current,
-      );
-      for (const id of closeIds) {
-        editorRefs.current.delete(id);
-        previewRefs.current.delete(id);
-      }
-      closeOtherTabs(anchorId);
-    },
-    [closeOtherTabs],
+    [closeTabs],
   );
 
   const {
@@ -421,6 +398,7 @@ export default function App() {
     pendingTerminalCloseTab,
     pendingDeleteTabs,
     pendingCloseMany,
+    closeManyConfirming,
     handleClose,
     handleCloseTabsToRight,
     handleCloseOtherTabs,
@@ -437,8 +415,7 @@ export default function App() {
     tabs,
     activeId,
     disposeTab,
-    disposeTabsToRight,
-    disposeOtherTabs,
+    disposeTabs,
   });
 
   const { pendingAppClose, confirmAppClose, cancelAppClose } =
@@ -1595,6 +1572,7 @@ export default function App() {
             onCancelDeleteClose={cancelDeleteClose}
             onConfirmDeleteClose={confirmDeleteClose}
             pendingCloseMany={pendingCloseMany}
+            closeManyConfirming={closeManyConfirming}
             onCancelCloseMany={cancelCloseMany}
             onConfirmCloseMany={confirmCloseMany}
             pendingAppClose={pendingAppClose}

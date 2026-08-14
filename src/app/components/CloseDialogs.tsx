@@ -1,3 +1,5 @@
+import type { CloseManyPending } from "@/app/hooks/tabCloseGuards";
+import type { AppCloseBlocker } from "@/app/hooks/useAppCloseGuard";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -8,15 +10,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import type { AppCloseBlocker } from "@/app/hooks/useAppCloseGuard";
 import type { Tab } from "@/modules/tabs";
-
-type CloseManyPending = {
-  kind: "right" | "other";
-  closeIds: number[];
-  dirtyCount: number;
-  busy: boolean;
-};
 
 type Props = {
   tabs: Tab[];
@@ -30,6 +24,7 @@ type Props = {
   onCancelDeleteClose: () => void;
   onConfirmDeleteClose: () => void;
   pendingCloseMany: CloseManyPending | null;
+  closeManyConfirming: boolean;
   onCancelCloseMany: () => void;
   onConfirmCloseMany: () => void;
   pendingAppClose: AppCloseBlocker | null;
@@ -52,24 +47,33 @@ function appCloseMessage(blocker: AppCloseBlocker): string {
 }
 
 function closeManyMessage(pending: CloseManyPending, tabs: Tab[]): string {
-  const { kind, dirtyCount, busy, closeIds } = pending;
-  if (dirtyCount === 1 && !busy) {
+  const { kind, dirtyIds, busyLeafIds } = pending;
+  const dirtyCount = dirtyIds.length;
+  const busyCount = busyLeafIds.length;
+  if (dirtyCount === 1 && busyCount === 0) {
     const dirty = tabs.find(
-      (t) => t.kind === "editor" && t.dirty && closeIds.includes(t.id),
+      (tab) => tab.kind === "editor" && dirtyIds.includes(tab.id),
     );
     return dirty?.title
       ? `"${dirty.title}" has unsaved changes. Close it anyway?`
       : "1 tab has unsaved changes. Close it anyway?";
   }
-  if (dirtyCount > 0 && busy) {
-    return `${dirtyCount} tab${dirtyCount === 1 ? "" : "s"} have unsaved changes and a process is running. Closing will discard the changes and terminate the process. Close anyway?`;
+  if (dirtyCount > 0 && busyCount > 0) {
+    const dirty = `${dirtyCount} tab${dirtyCount === 1 ? " has" : "s have"} unsaved changes`;
+    const busy =
+      busyCount === 1
+        ? "a process is running"
+        : `${busyCount} processes are running`;
+    return `${dirty} and ${busy}. Closing will discard the changes and terminate the ${busyCount === 1 ? "process" : "processes"}. Close anyway?`;
   }
   if (dirtyCount > 0) {
     return `${dirtyCount} tabs have unsaved changes. Closing will discard them. Close anyway?`;
   }
+  const process =
+    busyCount === 1 ? "A process is" : `${busyCount} processes are`;
   return kind === "right"
-    ? "A process is running in a tab to the right. Closing it will terminate the process. Close anyway?"
-    : "A process is running in another tab. Closing it will terminate the process. Close anyway?";
+    ? `${process} running in ${busyCount === 1 ? "a tab" : "tabs"} to the right. Closing will terminate ${busyCount === 1 ? "it" : "them"}. Close anyway?`
+    : `${process} running in ${busyCount === 1 ? "another tab" : "other tabs"}. Closing will terminate ${busyCount === 1 ? "it" : "them"}. Close anyway?`;
 }
 
 /** Confirmation dialogs for closing dirty editors and terminals with live processes. */
@@ -85,6 +89,7 @@ export function CloseDialogs({
   onCancelDeleteClose,
   onConfirmDeleteClose,
   pendingCloseMany,
+  closeManyConfirming,
   onCancelCloseMany,
   onConfirmCloseMany,
   pendingAppClose,
@@ -191,8 +196,14 @@ export function CloseDialogs({
             <AlertDialogCancel onClick={onCancelCloseMany}>
               Cancel
             </AlertDialogCancel>
-            <AlertDialogAction onClick={onConfirmCloseMany}>
-              Close Anyway
+            <AlertDialogAction
+              disabled={closeManyConfirming}
+              onClick={(event) => {
+                event.preventDefault();
+                onConfirmCloseMany();
+              }}
+            >
+              {closeManyConfirming ? "Checking..." : "Close Anyway"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
