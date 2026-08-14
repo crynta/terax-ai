@@ -29,6 +29,7 @@ export type ShortcutId =
   | "pane.swapDown"
   | "pane.source"
   | "terminal.clear"
+  | "terminal.passwordManager"
   | "terminal.toggleInput"
   | "blocks.prev"
   | "blocks.next"
@@ -195,6 +196,12 @@ export const SHORTCUTS: Shortcut[] = [
     // macOS — on other platforms Ctrl+K is readline's kill-line, so we leave it
     // unbound and let users assign their own in settings.
     defaultBindings: IS_MAC ? [{ meta: true, key: "k" }] : [],
+  },
+  {
+    id: "terminal.passwordManager",
+    label: "Insert terminal password",
+    group: "Terminal",
+    defaultBindings: [],
   },
   {
     id: "terminal.toggleInput",

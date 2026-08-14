@@ -44,6 +44,7 @@ function baseContext(
     toggleAi: noop,
     askAiSelection: noop,
     openSettings: noop,
+    openPasswordManager: noop,
     openKeyboardShortcuts: noop,
     openSpacesOverview: noop,
     newSpace: noop,

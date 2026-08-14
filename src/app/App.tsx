@@ -116,6 +116,7 @@ import {
   useState,
 } from "react";
 import { CloseDialogs } from "./components/CloseDialogs";
+import { InsertPasswordDialog } from "./components/InsertPasswordDialog";
 import {
   TOGGLE_BLOCK_INPUT_EVENT,
   WorkspaceInputBar,
@@ -313,6 +314,7 @@ export default function App() {
   } = useSidebarPanel(explorerRef);
 
   const [newEditorOpen, setNewEditorOpen] = useState(false);
+    const [insertPasswordOpen, setInsertPasswordOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [paletteInitialMode, setPaletteInitialMode] = useState<
     "commands" | "content"
@@ -563,6 +565,22 @@ export default function App() {
   const openNewTab = useCallback(() => {
     newTab(inheritedCwdForNewTab());
   }, [newTab, inheritedCwdForNewTab]);
+
+  const canInsertTerminalPassword =
+    activeTab?.kind === "terminal" && activeLeafId !== null;
+
+  const openPasswordManager = useCallback(() => {
+    setInsertPasswordOpen(true);
+  }, []);
+
+  const insertPasswordToActiveTerminal = useCallback(
+    (secret: string) => {
+      if (activeLeafId === null) return;
+      writeToSession(activeLeafId, secret);
+      terminalRefs.current.get(activeLeafId)?.focus();
+    },
+    [activeLeafId],
+  );
 
   const openNewPrivateTab = useCallback(() => {
     newPrivateTab(inheritedCwdForNewTab());
@@ -877,6 +895,7 @@ export default function App() {
       "terminal.clear": () => {
         clearFocusedTerminal();
       },
+      "terminal.passwordManager": openPasswordManager,
       "terminal.toggleInput": () =>
         window.dispatchEvent(new CustomEvent(TOGGLE_BLOCK_INPUT_EVENT)),
       "blocks.prev": () => navigateFocusedBlocks(-1),
@@ -939,6 +958,7 @@ export default function App() {
       zoomOut,
       zoomReset,
       activateAgentTarget,
+      openPasswordManager,
     ],
   );
 
@@ -974,6 +994,9 @@ export default function App() {
           (e.target as HTMLElement | null) ?? document.activeElement;
         return !(target as HTMLElement | null)?.closest?.(".xterm");
       }
+      if (id === "terminal.passwordManager") {
+        return !(activeTab?.kind === "terminal" && activeLeafId !== null);
+      }
       if (
         id === "terminal.toggleInput" ||
         id === "blocks.prev" ||
@@ -996,7 +1019,7 @@ export default function App() {
       }
       return false;
     },
-    [activeTab],
+    [activeTab, activeLeafId],
   );
 
   useGlobalShortcuts(shortcutHandlers, { isDisabled: shortcutsDisabled });
@@ -1231,6 +1254,7 @@ export default function App() {
             toggleAi: togglePanelAndFocus,
             askAiSelection: askFromSelection,
             openSettings: () => void openSettingsWindow(),
+            openPasswordManager,
             openKeyboardShortcuts: () => void openSettingsWindow("shortcuts"),
             spaces: useSpaces.getState().spaces,
             activeSpaceId,
@@ -1257,6 +1281,7 @@ export default function App() {
       toggleSidebar,
       togglePanelAndFocus,
       askFromSelection,
+      openPasswordManager,
       activeSpaceId,
       handleNewSpace,
     ],
@@ -1549,6 +1574,13 @@ export default function App() {
             workspaceRoot={explorerRoot}
             onOpenContentHit={openContentHit}
             insertCommand={insertHistoryCommand}
+          />
+
+          <InsertPasswordDialog
+            open={insertPasswordOpen}
+            onOpenChange={setInsertPasswordOpen}
+            canInsert={canInsertTerminalPassword}
+            onInsert={insertPasswordToActiveTerminal}
           />
 
           <NewEditorDialog

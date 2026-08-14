@@ -54,6 +54,7 @@ export type CommandPaletteActionContext = {
   toggleAi: () => void;
   askAiSelection: () => void;
   openSettings: () => void;
+  openPasswordManager: () => void;
   openKeyboardShortcuts: () => void;
   spaces: { id: string; name: string }[];
   activeSpaceId: string | null;
@@ -91,6 +92,15 @@ export function createCommandItems(
       icon: Settings01Icon,
       shortcutId: "settings.open",
       run: ctx.openSettings,
+    },
+    {
+      id: "terminal.passwordManager",
+      title: "Insert terminal password",
+      group: "General",
+      keywords: ["password", "secret", "keychain", "terminal"],
+      icon: TerminalIcon,
+      shortcutId: "terminal.passwordManager",
+      run: ctx.openPasswordManager,
     },
     {
       id: "theme.pick",

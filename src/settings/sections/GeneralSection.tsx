@@ -54,6 +54,7 @@ import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { useEffect, useState } from "react";
 import { SectionHeader } from "../components/SectionHeader";
 import { SettingRow } from "../components/SettingRow";
+import { TerminalPasswordManager } from "../components/TerminalPasswordManager";
 
 const APPEARANCE: {
   id: ThemePref;
@@ -498,6 +499,8 @@ export function GeneralSection() {
           />
         </SettingRow>
       </div>
+
+      <TerminalPasswordManager />
 
       <div className="flex flex-col gap-2">
         <Label>Agents</Label>
