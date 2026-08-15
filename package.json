@@ -33,7 +33,7 @@
     "@ai-sdk/cerebras": "^2.0.57",
     "@ai-sdk/google": "^3.0.83",
     "@ai-sdk/groq": "^3.0.42",
-    "@ai-sdk/openai": "^3.0.81",
+    "@ai-sdk/openai": "^4.0.40",
     "@ai-sdk/openai-compatible": "^2.0.51",
     "@ai-sdk/react": "^3.0.209",
     "@ai-sdk/xai": "^3.0.103",
