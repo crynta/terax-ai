@@ -37,6 +37,8 @@ type StoreState = {
 };
 
 let initialized = false;
+let listenerAttached = false;
+let mutationQueue: Promise<void> = Promise.resolve();
 
 function secretAccount(id: string): string {
   return `entry:${id}`;
@@ -90,7 +92,7 @@ function normalizeDraft(draft: TerminalPasswordDraft): {
     label: toText(draft.label),
     username: toText(draft.username),
     notes: toText(draft.notes),
-    secret: draft.secret === undefined ? null : draft.secret.trim(),
+    secret: draft.secret === undefined ? null : draft.secret,
   };
 }
 
@@ -112,62 +114,166 @@ async function emitChanged(): Promise<void> {
   await emit(CHANGED_EVENT);
 }
 
-export const useTerminalPasswordStore = create<StoreState>((set, get) => ({
+function mergeEntry(
+  list: TerminalPasswordEntry[],
+  nextEntry: TerminalPasswordEntry,
+): TerminalPasswordEntry[] {
+  const idx = list.findIndex((entry) => entry.id === nextEntry.id);
+  const next =
+    idx === -1
+      ? [...list, nextEntry]
+      : list.map((entry) => (entry.id === nextEntry.id ? nextEntry : entry));
+  return [...next].sort((a, b) => a.label.localeCompare(b.label));
+}
+
+async function withMutationLock<T>(run: () => Promise<T>): Promise<T> {
+  if (
+    typeof navigator !== "undefined" &&
+    "locks" in navigator &&
+    navigator.locks
+  ) {
+    return navigator.locks.request(
+      "terax-terminal-passwords-mutation",
+      { mode: "exclusive" },
+      run,
+    );
+  }
+  const task = mutationQueue.then(run, run);
+  mutationQueue = task.then(
+    () => undefined,
+    () => undefined,
+  );
+  return task;
+}
+
+export const useTerminalPasswordStore = create<StoreState>((set) => ({
   hydrated: false,
   entries: [],
   hydrate: async () => {
     if (initialized) return;
     initialized = true;
-    set({ entries: await loadEntries(), hydrated: true });
-    void listen(CHANGED_EVENT, async () => {
-      set({ entries: await loadEntries() });
-    });
+    try {
+      const entries = await loadEntries();
+      set({ entries, hydrated: true });
+      if (!listenerAttached) {
+        listenerAttached = true;
+        void listen(CHANGED_EVENT, async () => {
+          set({ entries: await loadEntries() });
+        });
+      }
+    } catch (error) {
+      initialized = false;
+      throw error;
+    }
   },
   upsert: async (draft) => {
     const normalized = normalizeDraft(draft);
     requireLabel(normalized.label);
-    const list = get().entries;
-    const existing = list.find((entry) => entry.id === normalized.id);
-    if (!existing && !normalized.secret) {
+    if (normalized.secret !== null && normalized.secret.length === 0) {
       throw new Error("Password is required for new entries.");
     }
-    if (normalized.secret) {
-      await invoke("secrets_set", {
-        service: KEYRING_SERVICE,
-        account: secretAccount(normalized.id),
-        password: normalized.secret,
-      });
-    }
-    const now = Date.now();
-    const nextEntry: TerminalPasswordEntry = {
-      id: normalized.id,
-      label: normalized.label,
-      username: normalized.username,
-      notes: normalized.notes,
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now,
-    };
-    const idx = list.findIndex((entry) => entry.id === normalized.id);
-    const next =
-      idx === -1
-        ? [...list, nextEntry]
-        : list.map((entry) => (entry.id === normalized.id ? nextEntry : entry));
-    const sorted = [...next].sort((a, b) => a.label.localeCompare(b.label));
-    set({ entries: sorted });
-    await saveEntries(sorted);
-    await emitChanged();
+
+    await withMutationLock(async () => {
+      const list = await loadEntries();
+      const existing = list.find((entry) => entry.id === normalized.id);
+      if (!existing && normalized.secret === null) {
+        throw new Error("Password is required for new entries.");
+      }
+
+      const account = secretAccount(normalized.id);
+      let rollbackSecret: (() => Promise<void>) | null = null;
+      if (normalized.secret !== null) {
+        const previousSecret = existing
+          ? await invoke<string | null>("secrets_get", {
+              service: KEYRING_SERVICE,
+              account,
+            })
+          : null;
+        await invoke("secrets_set", {
+          service: KEYRING_SERVICE,
+          account,
+          password: normalized.secret,
+        });
+        rollbackSecret = async () => {
+          if (previousSecret === null) {
+            await invoke("secrets_delete", {
+              service: KEYRING_SERVICE,
+              account,
+            });
+            return;
+          }
+          await invoke("secrets_set", {
+            service: KEYRING_SERVICE,
+            account,
+            password: previousSecret,
+          });
+        };
+      }
+
+      const now = Date.now();
+      const nextEntry: TerminalPasswordEntry = {
+        id: normalized.id,
+        label: normalized.label,
+        username: normalized.username,
+        notes: normalized.notes,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      };
+      const sorted = mergeEntry(list, nextEntry);
+
+      try {
+        await saveEntries(sorted);
+      } catch (error) {
+        if (rollbackSecret) {
+          await rollbackSecret();
+        }
+        throw error;
+      }
+
+      set({ entries: sorted });
+      await emitChanged();
+    });
   },
   remove: async (id) => {
     const clean = toText(id);
     if (!clean) return;
-    await invoke("secrets_delete", {
-      service: KEYRING_SERVICE,
-      account: secretAccount(clean),
+
+    await withMutationLock(async () => {
+      const list = await loadEntries();
+      const existing = list.find((entry) => entry.id === clean);
+      if (!existing) {
+        set({ entries: list });
+        return;
+      }
+
+      const account = secretAccount(clean);
+      const previousSecret = await invoke<string | null>("secrets_get", {
+        service: KEYRING_SERVICE,
+        account,
+      });
+
+      await invoke("secrets_delete", {
+        service: KEYRING_SERVICE,
+        account,
+      });
+
+      const next = list.filter((entry) => entry.id !== clean);
+      try {
+        await saveEntries(next);
+      } catch (error) {
+        if (previousSecret !== null) {
+          await invoke("secrets_set", {
+            service: KEYRING_SERVICE,
+            account,
+            password: previousSecret,
+          });
+        }
+        throw error;
+      }
+
+      set({ entries: next });
+      await emitChanged();
     });
-    const next = get().entries.filter((entry) => entry.id !== clean);
-    set({ entries: next });
-    await saveEntries(next);
-    await emitChanged();
   },
   reveal: async (id) => {
     const clean = toText(id);

@@ -20,7 +20,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
-import { SettingRow } from "./SettingRow";
+import { SettingRow } from "@/settings/components/SettingRow";
 
 type Draft = {
   id: string;

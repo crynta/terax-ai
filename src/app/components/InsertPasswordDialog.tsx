@@ -14,7 +14,7 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   canInsert: boolean;
-  onInsert: (secret: string) => void;
+  onInsert: (secret: string) => boolean | Promise<boolean>;
 };
 
 export function InsertPasswordDialog({
@@ -27,13 +27,17 @@ export function InsertPasswordDialog({
   const entries = useTerminalPasswordStore((s) => s.entries);
   const reveal = useTerminalPasswordStore((s) => s.reveal);
   const [query, setQuery] = useState("");
+  const [insertError, setInsertError] = useState<string | null>(null);
 
   useEffect(() => {
     void hydrate();
   }, [hydrate]);
 
   useEffect(() => {
-    if (!open) setQuery("");
+    if (!open) {
+      setQuery("");
+      setInsertError(null);
+    }
   }, [open]);
 
   const filtered = useMemo(() => {
@@ -47,9 +51,17 @@ export function InsertPasswordDialog({
 
   const selectEntry = async (id: string) => {
     if (!canInsert) return;
+    setInsertError(null);
     const secret = await reveal(id);
-    if (!secret) return;
-    onInsert(secret);
+    if (!secret) {
+      setInsertError("Could not insert password.");
+      return;
+    }
+    const inserted = await onInsert(secret);
+    if (!inserted) {
+      setInsertError("Could not insert password into the active terminal.");
+      return;
+    }
     onOpenChange(false);
   };
 
@@ -69,6 +81,9 @@ export function InsertPasswordDialog({
           autoFocus
         />
         <CommandList className="max-h-[360px]">
+          {insertError ? (
+            <div className="px-2 py-1 text-[11px] text-destructive">{insertError}</div>
+          ) : null}
           {!canInsert ? (
             <CommandGroup heading="Terminal">
               <CommandItem disabled value="no-terminal">

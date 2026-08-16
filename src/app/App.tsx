@@ -116,7 +116,7 @@ import {
   useState,
 } from "react";
 import { CloseDialogs } from "./components/CloseDialogs";
-import { InsertPasswordDialog } from "./components/InsertPasswordDialog";
+import { InsertPasswordDialog } from "@/app/components/InsertPasswordDialog";
 import {
   TOGGLE_BLOCK_INPUT_EVENT,
   WorkspaceInputBar,
@@ -573,13 +573,20 @@ export default function App() {
     setInsertPasswordOpen(true);
   }, []);
 
+  const hasTerminalControlChars = useCallback((value: string) => {
+    return /[\x00-\x1F\x7F-\x9F]/.test(value);
+  }, []);
+
   const insertPasswordToActiveTerminal = useCallback(
-    (secret: string) => {
-      if (activeLeafId === null) return;
-      writeToSession(activeLeafId, secret);
+    (secret: string): boolean => {
+      if (activeLeafId === null) return false;
+      if (hasTerminalControlChars(secret)) return false;
+      const wrote = writeToSession(activeLeafId, secret);
+      if (!wrote) return false;
       terminalRefs.current.get(activeLeafId)?.focus();
+      return true;
     },
-    [activeLeafId],
+    [activeLeafId, hasTerminalControlChars],
   );
 
   const openNewPrivateTab = useCallback(() => {
