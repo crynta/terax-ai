@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LazyStore } from "@tauri-apps/plugin-store";
 import { create } from "zustand";
 
@@ -7,6 +8,7 @@ const STORE_PATH = "terax-terminal-passwords.json";
 const KEY_ENTRIES = "entries";
 const KEYRING_SERVICE = "terax-terminal-passwords";
 const CHANGED_EVENT = "terax://terminal-passwords-changed";
+const COMPENSATION_FAILED_EVENT = "terax://terminal-passwords-compensation-failed";
 
 const store = new LazyStore(STORE_PATH, { defaults: {}, autoSave: 200 });
 
@@ -38,7 +40,9 @@ type StoreState = {
 
 let initialized = false;
 let listenerAttached = false;
-let mutationQueue: Promise<void> = Promise.resolve();
+let hydration: Promise<void> | null = null;
+
+const WINDOW_LABEL = getCurrentWindow().label;
 
 function secretAccount(id: string): string {
   return `entry:${id}`;
@@ -111,7 +115,35 @@ async function saveEntries(entries: TerminalPasswordEntry[]): Promise<void> {
 }
 
 async function emitChanged(): Promise<void> {
-  await emit(CHANGED_EVENT);
+  await emit(CHANGED_EVENT, { sourceWindow: WINDOW_LABEL });
+}
+
+async function rethrowWithCompensation(
+  originalError: unknown,
+  compensate: () => Promise<void>,
+  context: string,
+): Promise<never> {
+  let compensationError: unknown = null;
+  try {
+    await compensate();
+  } catch (error) {
+    compensationError = error;
+    const details = {
+      context,
+      originalError: String(originalError),
+      compensationError: String(error),
+    };
+    try {
+      await emit(COMPENSATION_FAILED_EVENT, details);
+    } catch {
+      // Preserve original failure semantics even if reporting cannot be emitted.
+    }
+    console.error("[terax] password compensation failed", details);
+  }
+  if (compensationError) {
+    throw originalError;
+  }
+  throw originalError;
 }
 
 function mergeEntry(
@@ -128,40 +160,43 @@ function mergeEntry(
 
 async function withMutationLock<T>(run: () => Promise<T>): Promise<T> {
   if (
-    typeof navigator !== "undefined" &&
-    "locks" in navigator &&
-    navigator.locks
+    typeof navigator === "undefined" ||
+    !("locks" in navigator) ||
+    !navigator.locks
   ) {
-    return navigator.locks.request(
-      "terax-terminal-passwords-mutation",
-      { mode: "exclusive" },
-      run,
+    throw new Error(
+      "Web Locks API unavailable; cross-window password mutation safety requires navigator.locks.",
     );
   }
-  const task = mutationQueue.then(run, run);
-  mutationQueue = task.then(
-    () => undefined,
-    () => undefined,
+  return navigator.locks.request(
+    "terax-terminal-passwords-mutation",
+    { mode: "exclusive" },
+    run,
   );
-  return task;
 }
 
 export const useTerminalPasswordStore = create<StoreState>((set) => ({
   hydrated: false,
   entries: [],
   hydrate: async () => {
+    if (hydration) return hydration;
     if (initialized) return;
     initialized = true;
-    try {
+    hydration = (async () => {
       const entries = await loadEntries();
       set({ entries, hydrated: true });
       if (!listenerAttached) {
         listenerAttached = true;
-        void listen(CHANGED_EVENT, async () => {
+        void listen<{ sourceWindow?: string }>(CHANGED_EVENT, async (event) => {
+          if (event.payload?.sourceWindow === WINDOW_LABEL) return;
           set({ entries: await loadEntries() });
         });
       }
+    })();
+    try {
+      await hydration;
     } catch (error) {
+      hydration = null;
       initialized = false;
       throw error;
     }
@@ -225,7 +260,11 @@ export const useTerminalPasswordStore = create<StoreState>((set) => ({
         await saveEntries(sorted);
       } catch (error) {
         if (rollbackSecret) {
-          await rollbackSecret();
+          await rethrowWithCompensation(
+            error,
+            rollbackSecret,
+            "upsert-keychain-rollback",
+          );
         }
         throw error;
       }
@@ -262,11 +301,17 @@ export const useTerminalPasswordStore = create<StoreState>((set) => ({
         await saveEntries(next);
       } catch (error) {
         if (previousSecret !== null) {
-          await invoke("secrets_set", {
-            service: KEYRING_SERVICE,
-            account,
-            password: previousSecret,
-          });
+          await rethrowWithCompensation(
+            error,
+            async () => {
+              await invoke("secrets_set", {
+                service: KEYRING_SERVICE,
+                account,
+                password: previousSecret,
+              });
+            },
+            "remove-keychain-restore",
+          );
         }
         throw error;
       }

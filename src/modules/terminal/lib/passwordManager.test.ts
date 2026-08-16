@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 type StoreData = Record<string, unknown>;
 
 const storeData: StoreData = {};
+const pendingStoreData: StoreData = {};
 const keychain = new Map<string, string>();
 
 let failNextGet = false;
@@ -32,6 +33,25 @@ const invokeMock = vi.fn(
 const emitMock = vi.fn(async () => undefined);
 const listenMock = vi.fn(async () => () => undefined);
 
+const lockState = {
+  chain: Promise.resolve(),
+};
+
+type LockRequest = (
+  name: string,
+  options: { mode: "exclusive" },
+  callback: () => Promise<unknown>,
+) => Promise<unknown>;
+
+const requestLock: LockRequest = (_name, _options, callback) => {
+  const next = lockState.chain.then(callback, callback);
+  lockState.chain = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
+};
+
 class MockLazyStore {
   constructor(
     _path: string,
@@ -47,7 +67,7 @@ class MockLazyStore {
   }
 
   async set(key: string, value: unknown): Promise<void> {
-    storeData[key] = value;
+    pendingStoreData[key] = value;
   }
 
   async save(): Promise<void> {
@@ -55,21 +75,38 @@ class MockLazyStore {
       failNextSave = false;
       throw new Error("save failed");
     }
+    for (const [key, value] of Object.entries(pendingStoreData)) {
+      storeData[key] = value;
+      delete pendingStoreData[key];
+    }
   }
 }
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
 vi.mock("@tauri-apps/api/event", () => ({ emit: emitMock, listen: listenMock }));
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({ label: "test-window" }),
+}));
 vi.mock("@tauri-apps/plugin-store", () => ({ LazyStore: MockLazyStore }));
 
 function resetFixtures(): void {
   for (const key of Object.keys(storeData)) delete storeData[key];
+  for (const key of Object.keys(pendingStoreData)) delete pendingStoreData[key];
   keychain.clear();
   failNextGet = false;
   failNextSave = false;
+  lockState.chain = Promise.resolve();
   invokeMock.mockClear();
   emitMock.mockClear();
   listenMock.mockClear();
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: {
+      locks: {
+        request: requestLock,
+      },
+    },
+  });
 }
 
 async function loadPasswordManager() {
@@ -158,6 +195,7 @@ describe("useTerminalPasswordStore", () => {
         .upsert({ id: "service", label: "service", secret: "topsecret" }),
     ).rejects.toThrow("save failed");
     expect(keychain.has("entry:service")).toBe(false);
+    expect((storeData.entries as unknown[] | undefined) ?? []).toEqual([]);
   });
 
   it("restores keychain secret if remove save fails", async () => {
@@ -167,9 +205,31 @@ describe("useTerminalPasswordStore", () => {
       .upsert({ id: "entry-1", label: "service", secret: "s3cr3t" });
 
     failNextSave = true;
+    const persistedBeforeRemove = JSON.parse(
+      JSON.stringify((storeData.entries as unknown[] | undefined) ?? []),
+    );
     await expect(useTerminalPasswordStore.getState().remove("entry-1")).rejects.toThrow(
       "save failed",
     );
     expect(keychain.get("entry:entry-1")).toBe("s3cr3t");
+    expect((storeData.entries as unknown[] | undefined) ?? []).toEqual(
+      persistedBeforeRemove,
+    );
+  });
+
+  it("serializes concurrent upserts", async () => {
+    const { useTerminalPasswordStore } = await loadPasswordManager();
+
+    await Promise.all([
+      useTerminalPasswordStore
+        .getState()
+        .upsert({ id: "a", label: "alpha", secret: "a-secret" }),
+      useTerminalPasswordStore
+        .getState()
+        .upsert({ id: "b", label: "beta", secret: "b-secret" }),
+    ]);
+
+    const persisted = (storeData.entries as Array<{ id: string }> | undefined) ?? [];
+    expect(persisted.map((entry) => entry.id).sort()).toEqual(["a", "b"]);
   });
 });
