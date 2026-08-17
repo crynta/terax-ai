@@ -114,18 +114,23 @@ jobs:
   # instead of four racing uploads. A failed leg blocks it on purpose: a release
   # silently missing a platform is worse than a red run.
   publish:
-    name: publish nightly
+    name: publish release
     needs: bundle
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: package.json
+          sparse-checkout-cone-mode: false
+
       - uses: actions/download-artifact@v7
         with:
           path: dist
           merge-multiple: true
 
-      - name: Republish rolling nightly release
+      - name: Republish rolling release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -133,8 +138,9 @@ jobs:
           ls -la dist
 
           SHA_SHORT="${GITHUB_SHA:0:7}"
+          VERSION=$(jq -r .version package.json)
           NOTES=$(cat <<EOF
-          Unsigned build of \`main\` @ \`$SHA_SHORT\`, rebuilt on every push with assets replaced in place.
+          Build of \`main\` @ \`$SHA_SHORT\`, rebuilt on every push with assets replaced in place.
 
           | platform | assets |
           | --- | --- |
@@ -151,12 +157,12 @@ jobs:
           )
 
           # Recreated, not edited: a published release keeps its tag on the old
-          # commit, so dropping the tag is the only way to keep nightly pointing
-          # at what was built. Download urls stay stable across recreates.
-          gh release delete nightly --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
-          gh release create nightly dist/* \
+          # commit, so dropping the tag is the only way to keep it pointing at
+          # what was built. Download urls stay stable across recreates.
+          gh release delete latest --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
+          gh release create latest dist/* \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --prerelease \
-            --title "Terax nightly ($SHA_SHORT)" \
+            --latest \
+            --title "Terax v$VERSION ($SHA_SHORT)" \
             --notes "$NOTES"
