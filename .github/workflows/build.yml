@@ -1,0 +1,162 @@
+name: Build
+
+# This fork has no signing keys, so tauri.ci.conf.json turns off updater
+# artifacts (the bundler hard-fails on a configured pubkey with no private key)
+# and every installer ships unsigned, outside the in-app updater.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    name: bundle (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-aarch64
+            platform: macos-latest
+            args: --target aarch64-apple-darwin
+            rust-target: aarch64-apple-darwin
+            bundle-dir: src-tauri/target/aarch64-apple-darwin/release/bundle
+          - name: macos-x86_64
+            platform: macos-latest
+            args: --target x86_64-apple-darwin
+            rust-target: x86_64-apple-darwin
+            bundle-dir: src-tauri/target/x86_64-apple-darwin/release/bundle
+          - name: linux-x86_64
+            platform: ubuntu-22.04
+            args: ""
+            rust-target: ""
+            bundle-dir: src-tauri/target/release/bundle
+          - name: windows-x86_64
+            platform: windows-latest
+            args: ""
+            rust-target: ""
+            bundle-dir: src-tauri/target/release/bundle
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            patchelf
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+          key: build-${{ matrix.name }}
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build bundles
+        run: pnpm tauri build ${{ matrix.args }} --config src-tauri/tauri.ci.conf.json
+
+      - name: Collect installers
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          # Depth and name filters keep the AppDir staging tree and any cached
+          # AppImage tooling out of the upload.
+          find "${{ matrix.bundle-dir }}" -maxdepth 2 -type f \
+            \( -name '*.dmg' -o -name '*.deb' -o -name '*.rpm' \
+               -o -name '*.AppImage' -o -name '*.exe' -o -name '*.msi' \) \
+            ! -name 'linuxdeploy*' ! -name 'appimagetool*' \
+            -exec cp {} artifacts/ \;
+          # A zero-artifact upload would make a broken bundler look green.
+          test -n "$(ls -A artifacts)" \
+            || { echo "no installers produced under ${{ matrix.bundle-dir }}"; exit 1; }
+          {
+            echo "### ${{ matrix.name }}"
+            echo ""
+            (cd artifacts && ls -la -- *)
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v7
+        with:
+          name: terax-${{ matrix.name }}
+          path: artifacts/
+          if-no-files-found: error
+          # Only a transport into the publish job; the release is the durable copy.
+          retention-days: 7
+
+  # Single publisher after every leg, so the release is assembled in one write
+  # instead of four racing uploads. A failed leg blocks it on purpose: a release
+  # silently missing a platform is worse than a red run.
+  publish:
+    name: publish nightly
+    needs: bundle
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Republish rolling nightly release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ls -la dist
+
+          SHA_SHORT="${GITHUB_SHA:0:7}"
+          NOTES=$(cat <<EOF
+          Unsigned build of \`main\` @ \`$SHA_SHORT\`, rebuilt on every push with assets replaced in place.
+
+          | platform | assets |
+          | --- | --- |
+          | macOS (Apple Silicon) | \`*_aarch64.dmg\` |
+          | macOS (Intel) | \`*_x64.dmg\` |
+          | Linux | \`*.AppImage\`, \`*.deb\`, \`*.rpm\` |
+          | Windows | \`*-setup.exe\`, \`*.msi\` |
+
+          Nothing here is code-signed, so the OS objects on first launch: macOS
+          needs \`xattr -dr com.apple.quarantine /Applications/Terax.app\`,
+          Windows needs "More info" then "Run anyway" in SmartScreen. The in-app
+          updater does not track this release.
+          EOF
+          )
+
+          # Recreated, not edited: a published release keeps its tag on the old
+          # commit, so dropping the tag is the only way to keep nightly pointing
+          # at what was built. Download urls stay stable across recreates.
+          gh release delete nightly --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
+          gh release create nightly dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "Terax nightly ($SHA_SHORT)" \
+            --notes "$NOTES"
