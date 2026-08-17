@@ -31,7 +31,24 @@ const invokeMock = vi.fn(
 );
 
 const emitMock = vi.fn(async () => undefined);
-const listenMock = vi.fn(async () => () => undefined);
+type PasswordChangedEvent = { payload?: { sourceWindow?: string } };
+let changedListener: ((event: PasswordChangedEvent) => Promise<void>) | null =
+  null;
+const listenMock = vi.fn(
+  async (
+    eventName: string,
+    callback: (event: PasswordChangedEvent) => Promise<void>,
+  ) => {
+    if (eventName === "terax://terminal-passwords-changed") {
+      changedListener = callback;
+    }
+    return () => {
+      if (changedListener === callback) changedListener = null;
+    };
+  },
+);
+
+let deferredEntriesRead: Promise<unknown> | null = null;
 
 const lockState = {
   chain: Promise.resolve(),
@@ -62,6 +79,11 @@ class MockLazyStore {
     if (failNextGet) {
       failNextGet = false;
       throw new Error("load failed");
+    }
+    if (key === "entries" && deferredEntriesRead) {
+      const pending = deferredEntriesRead;
+      deferredEntriesRead = null;
+      return pending;
     }
     return storeData[key];
   }
@@ -95,6 +117,8 @@ function resetFixtures(): void {
   keychain.clear();
   failNextGet = false;
   failNextSave = false;
+  changedListener = null;
+  deferredEntriesRead = null;
   lockState.chain = Promise.resolve();
   invokeMock.mockClear();
   emitMock.mockClear();
@@ -107,6 +131,14 @@ function resetFixtures(): void {
       },
     },
   });
+}
+
+function deferNextEntriesRead(value: unknown): () => void {
+  let resolveRead: (() => void) | null = null;
+  deferredEntriesRead = new Promise((resolve) => {
+    resolveRead = () => resolve(value);
+  });
+  return () => resolveRead?.();
 }
 
 async function loadPasswordManager() {
@@ -231,5 +263,34 @@ describe("useTerminalPasswordStore", () => {
 
     const persisted = (storeData.entries as Array<{ id: string }> | undefined) ?? [];
     expect(persisted.map((entry) => entry.id).sort()).toEqual(["a", "b"]);
+  });
+
+  it("prevents delayed external refresh from overwriting local mutation", async () => {
+    const { useTerminalPasswordStore } = await loadPasswordManager();
+    await useTerminalPasswordStore
+      .getState()
+      .upsert({ id: "old", label: "old", secret: "old-secret" });
+    await useTerminalPasswordStore.getState().hydrate();
+
+    const staleEntries = JSON.parse(
+      JSON.stringify((storeData.entries as unknown[] | undefined) ?? []),
+    );
+    const releaseExternalRead = deferNextEntriesRead(staleEntries);
+    const externalRefresh = changedListener?.({
+      payload: { sourceWindow: "other-window" },
+    } as PasswordChangedEvent);
+
+    const localMutation = useTerminalPasswordStore
+      .getState()
+      .upsert({ id: "new", label: "new", secret: "new-secret" });
+
+    releaseExternalRead();
+    await Promise.all([externalRefresh, localMutation]);
+
+    const persisted =
+      (storeData.entries as Array<{ id: string; label: string }> | undefined) ?? [];
+    expect(persisted.map((entry) => entry.id).sort()).toEqual(["new", "old"]);
+    const stateEntries = useTerminalPasswordStore.getState().entries;
+    expect(stateEntries.map((entry) => entry.id).sort()).toEqual(["new", "old"]);
   });
 });

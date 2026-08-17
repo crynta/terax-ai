@@ -52,13 +52,18 @@ export function InsertPasswordDialog({
   const selectEntry = async (id: string) => {
     if (!canInsert) return;
     setInsertError(null);
-    const secret = await reveal(id);
-    if (!secret) {
-      setInsertError("Could not insert password.");
-      return;
-    }
-    const inserted = await onInsert(secret);
-    if (!inserted) {
+    try {
+      const secret = await reveal(id);
+      if (!secret) {
+        setInsertError("Could not insert password.");
+        return;
+      }
+      const inserted = await onInsert(secret);
+      if (!inserted) {
+        setInsertError("Could not insert password into the active terminal.");
+        return;
+      }
+    } catch {
       setInsertError("Could not insert password into the active terminal.");
       return;
     }

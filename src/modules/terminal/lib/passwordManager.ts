@@ -189,7 +189,9 @@ export const useTerminalPasswordStore = create<StoreState>((set) => ({
         listenerAttached = true;
         void listen<{ sourceWindow?: string }>(CHANGED_EVENT, async (event) => {
           if (event.payload?.sourceWindow === WINDOW_LABEL) return;
-          set({ entries: await loadEntries() });
+          await withMutationLock(async () => {
+            set({ entries: await loadEntries() });
+          });
         });
       }
     })();
