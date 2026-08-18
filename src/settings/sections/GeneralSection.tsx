@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -14,16 +15,22 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import {
+  type OsNotificationResult,
+  testAgentOsNotification,
+} from "@/modules/agents/lib/notify";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { ThemePref } from "@/modules/settings/store";
 import {
   setAgentNotifications,
   setAutostart,
+  setConfirmCloseRunningTerminal,
   setDefaultWorkspaceEnv,
   setExplorerGitDecorations,
   setRestoreWindowState,
   setShowHidden,
   setTerminalCursorBlink,
+  setTerminalCursorStyle,
   setTerminalFontFamily,
   setTerminalFontSize,
   setTerminalFontWeight,
@@ -64,6 +71,11 @@ const TERMINAL_FONT_WEIGHTS = [
   { value: "600", label: "Semi-Bold" },
   { value: "bold", label: "Bold" },
 ] as const;
+const TERMINAL_CURSOR_STYLES = [
+  { value: "bar", label: "Bar" },
+  { value: "block", label: "Block" },
+  { value: "underline", label: "Underline" },
+] as const;
 const LETTER_SPACINGS = [-4, -3, -2, -1, 0, 1, 2, 3, 4] as const;
 
 type ShellInfo = { name: string; path: string; integrated: boolean };
@@ -71,6 +83,13 @@ const SHELL_AUTO = "auto";
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 2.0;
 const ZOOM_STEP = 0.05;
+const NOTIFICATION_TEST_DELAY_MS = 2_000;
+
+type NotificationTestState =
+  | OsNotificationResult
+  | "idle"
+  | "waiting"
+  | "sending";
 
 export function GeneralSection() {
   const { mode, setMode } = useTheme();
@@ -85,6 +104,7 @@ export function GeneralSection() {
     (s) => s.terminalWebglEnabled,
   );
   const terminalCursorBlink = usePreferencesStore((s) => s.terminalCursorBlink);
+  const terminalCursorStyle = usePreferencesStore((s) => s.terminalCursorStyle);
   const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
   const terminalFontWeight = usePreferencesStore((s) => s.terminalFontWeight);
   const terminalShell = usePreferencesStore((s) => s.terminalShell);
@@ -96,8 +116,24 @@ export function GeneralSection() {
   );
   const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
   const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
+  const confirmCloseRunningTerminal = usePreferencesStore(
+    (s) => s.confirmCloseRunningTerminal,
+  );
   const zoomLevel = usePreferencesStore((s) => s.zoomLevel);
   const agentNotifications = usePreferencesStore((s) => s.agentNotifications);
+  const [notificationTest, setNotificationTest] =
+    useState<NotificationTestState>("idle");
+  const notificationTestPending =
+    notificationTest === "waiting" || notificationTest === "sending";
+
+  const testNotification = async () => {
+    setNotificationTest("waiting");
+    await new Promise((resolve) =>
+      setTimeout(resolve, NOTIFICATION_TEST_DELAY_MS),
+    );
+    setNotificationTest("sending");
+    setNotificationTest(await testAgentOsNotification());
+  };
 
   useEffect(() => {
     let alive = true;
@@ -251,6 +287,33 @@ export function GeneralSection() {
             checked={terminalCursorBlink}
             onCheckedChange={(v) => void setTerminalCursorBlink(v)}
           />
+        </SettingRow>
+        <SettingRow
+          title="Cursor style"
+          description="Shape of the terminal cursor."
+        >
+          <Select
+            value={terminalCursorStyle}
+            onValueChange={(v) => void setTerminalCursorStyle(v)}
+          >
+            <SelectTrigger
+              value={terminalCursorStyle}
+              className="h-8 w-28 text-[12px]"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TERMINAL_CURSOR_STYLES.map((style) => (
+                <SelectItem
+                  key={style.value}
+                  value={style.value}
+                  className="text-[12px]"
+                >
+                  {style.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </SettingRow>
         <FontFamilyInput
           value={terminalFontFamily}
@@ -425,18 +488,43 @@ export function GeneralSection() {
             </SelectContent>
           </Select>
         </SettingRow>
+        <SettingRow
+          title="Confirm before killing a running process"
+          description="Ask before closing a terminal tab or quitting while a command is still running. Unsaved editor changes are always confirmed."
+        >
+          <Switch
+            checked={confirmCloseRunningTerminal}
+            onCheckedChange={(v) => void setConfirmCloseRunningTerminal(v)}
+          />
+        </SettingRow>
       </div>
 
       <div className="flex flex-col gap-2">
         <Label>Agents</Label>
         <SettingRow
           title="Coding agent notifications"
-          description="Alert when Claude Code or Codex running in a terminal needs your input or finishes. Desktop notification when Terax is unfocused, in-app otherwise."
+          description="Alert when a coding agent needs your input or finishes. Native notification when Terax is unfocused, in-app otherwise."
         >
-          <Switch
-            checked={agentNotifications}
-            onCheckedChange={(v) => void setAgentNotifications(v)}
-          />
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              disabled={!agentNotifications || notificationTestPending}
+              title={notificationTestTitle(notificationTest)}
+              onClick={() => void testNotification()}
+            >
+              {notificationTestLabel(notificationTest)}
+            </Button>
+            <Switch
+              checked={agentNotifications}
+              disabled={notificationTestPending}
+              onCheckedChange={(v) => {
+                setNotificationTest("idle");
+                void setAgentNotifications(v);
+              }}
+            />
+          </div>
         </SettingRow>
       </div>
 
@@ -473,6 +561,38 @@ function Label({ children }: { children: React.ReactNode }) {
       {children}
     </span>
   );
+}
+
+function notificationTestLabel(status: NotificationTestState): string {
+  switch (status) {
+    case "waiting":
+      return "Switch apps...";
+    case "sending":
+      return "Sending...";
+    case "requested":
+      return "Requested";
+    case "denied":
+      return "Blocked";
+    case "failed":
+      return "Failed";
+    default:
+      return "Test in 2s";
+  }
+}
+
+function notificationTestTitle(status: NotificationTestState): string {
+  switch (status) {
+    case "waiting":
+      return "Switch to another app to verify native delivery";
+    case "requested":
+      return "The native notification was requested";
+    case "denied":
+      return "Notifications are disabled by the system";
+    case "failed":
+      return "Terax could not request a native notification";
+    default:
+      return "Send a native test notification after two seconds";
+  }
 }
 
 function FontFamilyInput({

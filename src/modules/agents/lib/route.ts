@@ -1,8 +1,13 @@
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { showAgentToast } from "../components/AgentToast";
 import { useAgentStore } from "../store/agentStore";
+import { resolveAgentNotificationDelivery } from "./delivery";
+import { createAgentNotificationGate } from "./notificationGate";
 import { osNotify } from "./notify";
+import { playAgentNotificationSound } from "./sound";
 import type { AgentSource, NotificationKind } from "./types";
+
+const shouldDeliver = createAgentNotificationGate();
 
 type RouteArgs = {
   source: AgentSource;
@@ -34,15 +39,24 @@ export function routeAgentNotification({
   onActivate,
 }: RouteArgs): void {
   if (!usePreferencesStore.getState().agentNotifications) return;
-  if (focused && visible) return;
+  const delivery = resolveAgentNotificationDelivery({
+    focused,
+    visible,
+    allowToast,
+  });
+  if (delivery === "none") return;
+  if (!shouldDeliver({ source, agent, kind, tabId, leafId })) return;
 
   useAgentStore.getState().pushNotification({ source, agent, kind, tabId, leafId });
 
-  if (!focused) {
-    void osNotify(title, body ?? agent);
+  if (delivery === "native") {
+    void osNotify(title, body ?? agent).then((result) => {
+      if (result === "requested") playAgentNotificationSound();
+    });
     return;
   }
-  if (allowToast) {
+  if (delivery === "toast") {
+    playAgentNotificationSound();
     showAgentToast({ agent, title, body, onActivate });
   }
 }

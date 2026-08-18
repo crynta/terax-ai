@@ -44,6 +44,7 @@ import type { GitStatusCode } from "./lib/gitStatusUtils";
 import { useGlobalShortcuts } from "@/modules/shortcuts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { GitStatusSnapshot } from "@/modules/ai/lib/native";
+import type { TerminalPathDropTarget } from "@/modules/terminal";
 
 export type FileExplorerHandle = {
   focus: () => void;
@@ -58,7 +59,10 @@ type Props = {
   onPathRenamed?: (from: string, to: string) => void;
   onPathDeleted?: (path: string) => void;
   onRevealInTerminal?: (path: string) => void;
+  onOpenInSourceControl?: (path: string) => void;
+  onOpenGitHistory?: (path: string) => void;
   onAttachToAgent?: (path: string) => void;
+  pathDropTarget?: TerminalPathDropTarget;
   gitStatus?: GitStatusSnapshot | null;
 };
 
@@ -189,7 +193,10 @@ export const FileExplorer = memo(
       onPathRenamed,
       onPathDeleted,
       onRevealInTerminal,
+      onOpenInSourceControl,
+      onOpenGitHistory,
       onAttachToAgent,
+      pathDropTarget,
       gitStatus,
     },
     ref,
@@ -264,6 +271,7 @@ export const FileExplorer = memo(
       rootPath: rootPath ?? "",
       isDir: isDirAt,
       onMove: tree.movePath,
+      pathDropTarget,
     });
 
     const fileDrop = useExplorerFileDrop({
@@ -553,6 +561,8 @@ export const FileExplorer = memo(
           onRequestClose={() => setIsSearchOpen(false)}
           onActiveChange={setIsSearchActive}
           onRevealInTerminal={onRevealInTerminal}
+          onOpenInSourceControl={onOpenInSourceControl}
+          onOpenGitHistory={onOpenGitHistory}
           onAttachToAgent={onAttachToAgent}
         />
 
@@ -682,6 +692,22 @@ export const FileExplorer = memo(
                       Open in Terminal
                     </ContextMenuItem>
                   )}
+                  {menuTarget.isDir && onOpenInSourceControl && (
+                    <ContextMenuItem
+                      className={COMPACT_ITEM}
+                      onSelect={() => onOpenInSourceControl(menuTarget.path)}
+                    >
+                      Open in Source Control
+                    </ContextMenuItem>
+                  )}
+                  {menuTarget.isDir && onOpenGitHistory && (
+                    <ContextMenuItem
+                      className={COMPACT_ITEM}
+                      onSelect={() => onOpenGitHistory(menuTarget.path)}
+                    >
+                      Open Git History
+                    </ContextMenuItem>
+                  )}
                   <ContextMenuItem
                     className={COMPACT_ITEM}
                     onSelect={() => void revealInFinder(menuTarget.path)}
@@ -763,6 +789,22 @@ export const FileExplorer = memo(
                       onSelect={() => onRevealInTerminal(rootPath)}
                     >
                       Open in Terminal
+                    </ContextMenuItem>
+                  )}
+                  {onOpenInSourceControl && (
+                    <ContextMenuItem
+                      className={COMPACT_ITEM}
+                      onSelect={() => onOpenInSourceControl(rootPath)}
+                    >
+                      Open in Source Control
+                    </ContextMenuItem>
+                  )}
+                  {onOpenGitHistory && (
+                    <ContextMenuItem
+                      className={COMPACT_ITEM}
+                      onSelect={() => onOpenGitHistory(rootPath)}
+                    >
+                      Open Git History
                     </ContextMenuItem>
                   )}
                   <ContextMenuItem

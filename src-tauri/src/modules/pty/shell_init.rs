@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use portable_pty::CommandBuilder;
 
+use crate::modules::control::ShellControlEnv;
 use crate::modules::workspace::{self, WorkspaceEnv};
 
 #[cfg(windows)]
@@ -54,16 +55,17 @@ pub fn build_command(
     workspace: WorkspaceEnv,
     blocks: bool,
     shell: Option<String>,
+    control: Option<ShellControlEnv>,
 ) -> Result<CommandBuilder, String> {
     let shell = sanitize_shell_override(shell);
     #[cfg(unix)]
     {
         let _ = workspace;
-        unix::build(cwd, blocks, shell)
+        unix::build(cwd, blocks, shell, control)
     }
     #[cfg(windows)]
     {
-        windows::build(cwd, workspace, blocks, shell)
+        windows::build(cwd, workspace, blocks, shell, control)
     }
 }
 
@@ -141,20 +143,49 @@ fn ensure_utf8_locale(cmd: &mut CommandBuilder) {
     cmd.env("LANG", fallback);
 }
 
-fn apply_common(cmd: &mut CommandBuilder, cwd: Option<String>, blocks: bool) {
+fn apply_common(
+    cmd: &mut CommandBuilder,
+    cwd: Option<String>,
+    blocks: bool,
+    control: Option<&ShellControlEnv>,
+) {
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
     cmd.env("TERAX_TERMINAL", "1");
     if blocks {
         cmd.env("TERAX_BLOCKS", "1");
     }
-    for (key, value) in workspace::appimage_env_overrides() {
+    let appimage_overrides = workspace::appimage_env_overrides();
+    let clean_path = match appimage_overrides.iter().find(|(key, _)| *key == "PATH") {
+        Some((_, value)) => value.clone(),
+        None => std::env::var_os("PATH"),
+    };
+    for (key, value) in appimage_overrides {
         match value {
             Some(v) => {
                 cmd.env(key, v);
             }
             None => {
                 cmd.env_remove(key);
+            }
+        }
+    }
+    if let Some(control) = control {
+        cmd.env("TERAX_CONTROL_ADDR", &control.address);
+        cmd.env("TERAX_CONTROL_TOKEN", &control.token);
+        cmd.env("TERAX_PANE_ID", control.pane_id.to_string());
+        if let Some(path) = &control.cli_path {
+            cmd.env("TERAX_CLI", path);
+        }
+        if let Some(bin_dir) = &control.cli_bin_dir {
+            let paths = std::iter::once(bin_dir.clone()).chain(
+                clean_path
+                    .as_deref()
+                    .into_iter()
+                    .flat_map(std::env::split_paths),
+            );
+            if let Ok(path) = std::env::join_paths(paths) {
+                cmd.env("PATH", path);
             }
         }
     }
@@ -281,10 +312,11 @@ mod unix {
         cwd: Option<String>,
         blocks: bool,
         shell_override: Option<String>,
+        control: Option<super::ShellControlEnv>,
     ) -> Result<CommandBuilder, String> {
         let (shell, shell_path) = Shell::resolve(shell_override);
         let mut cmd = CommandBuilder::new(&shell_path);
-        super::apply_common(&mut cmd, cwd, blocks);
+        super::apply_common(&mut cmd, cwd, blocks, control.as_ref());
         apply_shell_init(&mut cmd, &shell, &shell_path);
         Ok(cmd)
     }
@@ -509,9 +541,10 @@ mod windows {
         workspace: WorkspaceEnv,
         blocks: bool,
         shell: Option<String>,
+        control: Option<super::ShellControlEnv>,
     ) -> Result<CommandBuilder, String> {
         if let WorkspaceEnv::Wsl { distro } = workspace {
-            let _ = (blocks, shell);
+            let _ = (blocks, shell, control);
             return build_wsl(cwd, distro);
         }
         let shell_path = shell
@@ -529,7 +562,7 @@ mod windows {
         let is_bash = shell_name == "bash.exe";
 
         let mut cmd = CommandBuilder::new(&shell_path);
-        super::apply_common(&mut cmd, cwd, blocks);
+        super::apply_common(&mut cmd, cwd, blocks, control.as_ref());
 
         if is_powershell {
             match prepare_ps_profile() {
@@ -1066,7 +1099,11 @@ fn which_in_path(name: &str) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::sanitize_shell_override;
+    use std::ffi::OsStr;
+
+    use portable_pty::CommandBuilder;
+
+    use super::{apply_common, sanitize_shell_override, ShellControlEnv};
 
     #[test]
     fn rejects_non_enumerated_override() {
@@ -1081,5 +1118,38 @@ mod tests {
     fn empty_or_missing_override_is_none() {
         assert_eq!(sanitize_shell_override(Some("   ".into())), None);
         assert_eq!(sanitize_shell_override(None), None);
+    }
+
+    #[test]
+    fn common_env_includes_authenticated_caller_context() {
+        let mut command = CommandBuilder::new("shell");
+        let control = ShellControlEnv {
+            address: "127.0.0.1:1234".into(),
+            token: "secret".into(),
+            pane_id: 42,
+            cli_path: Some("/app/terax-cli".into()),
+            cli_bin_dir: Some(std::path::PathBuf::from("/app/bin")),
+        };
+        apply_common(&mut command, None, false, Some(&control));
+
+        assert_eq!(
+            command.get_env("TERAX_CONTROL_ADDR"),
+            Some(OsStr::new("127.0.0.1:1234"))
+        );
+        assert_eq!(
+            command.get_env("TERAX_CONTROL_TOKEN"),
+            Some(OsStr::new("secret"))
+        );
+        assert_eq!(command.get_env("TERAX_PANE_ID"), Some(OsStr::new("42")));
+        assert_eq!(
+            command.get_env("TERAX_CLI"),
+            Some(OsStr::new("/app/terax-cli"))
+        );
+        assert_eq!(
+            command
+                .get_env("PATH")
+                .and_then(|path| std::env::split_paths(path).next()),
+            Some(std::path::PathBuf::from("/app/bin"))
+        );
     }
 }

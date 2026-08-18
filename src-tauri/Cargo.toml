@@ -1,10 +1,21 @@
 [package]
 name = "terax"
-version = "0.8.5"
+version = "0.8.6"
 description = "Terax — an open-source AI-native terminal emulator"
 authors = ["crynta"]
 license = "Apache-2.0"
 edition = "2021"
+default-run = "terax"
+
+[workspace]
+members = ["crates/terax-cli", "crates/terax-control-protocol"]
+default-members = [".", "crates/terax-cli", "crates/terax-control-protocol"]
+resolver = "2"
+
+[workspace.package]
+version = "0.8.6"
+edition = "2021"
+license = "Apache-2.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -17,12 +28,15 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+serde_json = "1"
 
 [dependencies]
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+getrandom = "0.3"
+terax-control-protocol = { path = "crates/terax-control-protocol" }
 portable-pty = "0.9"
 dirs = "6"
 log = "0.4"
@@ -95,3 +109,8 @@ lto = "fat"
 opt-level = "s"
 panic = "abort"
 strip = true
+
+# rust-lang/rust#110536: stripping proc-macro dylibs breaks the dlopen rustc does
+# at compile time on macOS, reported as a bogus E0463. Never shipped, so nothing to strip.
+[profile.release.build-override]
+strip = false

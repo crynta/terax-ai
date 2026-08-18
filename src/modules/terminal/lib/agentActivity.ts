@@ -12,6 +12,7 @@ type AgentActivityStore = {
   agents: Record<number, string>;
   setPhase: (id: number, phase: AgentPhase) => void;
   setAgent: (id: number, agent: string) => void;
+  acknowledgeAttention: (ids: readonly number[]) => void;
   clear: (id: number) => void;
 };
 
@@ -27,6 +28,16 @@ export const useAgentActivityStore = create<AgentActivityStore>((set) => ({
     set((s) => {
       if (s.agents[id] === agent) return s;
       return { agents: { ...s.agents, [id]: agent } };
+    }),
+  acknowledgeAttention: (ids) =>
+    set((s) => {
+      let phases: Record<number, AgentPhase> | null = null;
+      for (const id of ids) {
+        if (s.phases[id] !== "attention") continue;
+        phases ??= { ...s.phases };
+        phases[id] = "idle";
+      }
+      return phases ? { phases } : s;
     }),
   clear: (id) =>
     set((s) => {

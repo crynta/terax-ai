@@ -24,6 +24,12 @@ if [ -z "$__TERAX_HOOKS_LOADED" ]; then
   # on reload, guard with a flag.
   [ -f "$HOME/.bashrc" ] && source "$HOME/.bashrc"
 
+  if [ -n "$TERAX_CLI" ] && [ -x "$TERAX_CLI" ]; then
+    terax() {
+      command "$TERAX_CLI" "$@"
+    }
+  fi
+
   _terax_urlencode() {
     local LC_ALL=C s="$1" i c
     for (( i=0; i<${#s}; i++ )); do

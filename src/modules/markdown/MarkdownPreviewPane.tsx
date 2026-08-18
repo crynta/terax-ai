@@ -4,6 +4,7 @@ import { currentWorkspaceEnv } from "@/modules/workspace";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { Streamdown } from "streamdown";
+import { MarkdownLink } from "./MarkdownLink";
 import { MarkdownViewToggle } from "./MarkdownViewToggle";
 
 type ReadResult =
@@ -24,7 +25,7 @@ type Props = {
   onSetView: (mode: "rendered" | "raw") => void;
 };
 
-const components = { code: MarkdownCode };
+const components = { a: MarkdownLink, code: MarkdownCode };
 
 export function MarkdownPreviewPane({ path, visible, onSetView }: Props) {
   const [status, setStatus] = useState<Status>({ kind: "loading" });

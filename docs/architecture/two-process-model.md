@@ -121,6 +121,13 @@ Three distinct surfaces:
 - `get_launch_dir` - CLI launch directory, drained on first read
 - `open_settings_window` - open the separate settings webview (optional `tab` deep-link)
 
+### CLI control plane
+
+- `control_frontend_ready` - marks the restored main UI ready for routed CLI actions
+- `control_respond` - completes a pending UI-bound CLI request
+
+See [CLI control plane](cli-control.md) for the local protocol and packaging model.
+
 ## Invariants
 
 - The webview must not spawn processes, read files, or make network calls except through the commands above.

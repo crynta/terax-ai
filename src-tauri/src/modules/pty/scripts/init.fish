@@ -14,6 +14,12 @@ if set -q __TERAX_HOOKS_LOADED
 end
 set -g __TERAX_HOOKS_LOADED 1
 
+if set -q TERAX_CLI; and test -x "$TERAX_CLI"
+    function terax
+        command "$TERAX_CLI" $argv
+    end
+end
+
 # Terax is a clean terminal; drop fish's default startup greeting. A user who
 # sets their own in config.fish (sourced after this) keeps it.
 function fish_greeting
@@ -54,6 +60,14 @@ end
 # where a framework prompt (starship etc.) would otherwise override fish_prompt
 # and drop our markers.
 function __terax_install_prompt
+    # ponytail: cover Conda's named wrapper; generalize if another prompt
+    # framework preserves Terax indirectly.
+    if not set -q TERAX_BLOCKS
+        and functions -q __fish_prompt_orig
+        and functions fish_prompt | string match -q '*__fish_prompt_orig*'
+        and functions __fish_prompt_orig | string match -q '*__terax_user_prompt*'
+        return
+    end
     __terax_capture_user_prompt
     if set -q TERAX_BLOCKS
         function fish_right_prompt
