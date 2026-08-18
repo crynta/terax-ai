@@ -174,19 +174,16 @@
 :root {
   --frame: color-mix(in oklab, var(--card) 97%, var(--foreground) 3%);
   --pane-radius: calc(var(--radius) * 1.4);
-  --pane-shadow:
-    0 1px 2px oklch(0 0 0 / 0.05),
-    0 4px 12px -8px oklch(0 0 0 / 0.18);
+  --pane-shadow: none;
 }
 .dark {
-  --pane-shadow:
-    0 1px 2px oklch(0 0 0 / 0.35),
-    0 4px 12px -8px oklch(0 0 0 / 0.6),
-    inset 0 1px 0 oklch(1 0 0 / 0.03);
+  --pane-shadow: inset 0 1px 0 oklch(1 0 0 / 0.035);
 }
 
-/* Shadow extents stay within 8px so the surrounding gutter never clips them:
- * react-resizable-panels clips panel content at the panel box. */
+/* No drop shadow: panes meet the header and the status bar flush, so the only
+ * gutter is horizontal and anything cast downward would be clipped anyway
+ * (react-resizable-panels clips panel content at the panel box). Separation
+ * comes from the border plus the frame/pane tone step. */
 .terax-pane {
   border-radius: var(--pane-radius);
   border: 1px solid var(--border);

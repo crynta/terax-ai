@@ -23,7 +23,7 @@ export function SidebarRail({ activeView, onSelectView, changedCount }: Props) {
     { id: "explorer", label: "Files", icon: FolderTreeIcon },
     {
       id: "source-control",
-      label: "Source Control",
+      label: "Git",
       icon: FolderGitTwoIcon,
       badge: changedCount,
     },
