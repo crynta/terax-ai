@@ -77,7 +77,7 @@ export async function bootSpaces(
   const { spaces, activeId, states } = await deps.loadAll();
 
   if (spaces.length === 0) {
-    const root = launchCwd ?? home ?? null;
+    const root = explicitLaunchDir ?? launchCwd ?? home ?? null;
     // Hydrate prefs before reading the saved workspace env.
     await usePreferencesStore
       .getState()

@@ -117,6 +117,30 @@ describe("bootSpaces explicit launch", () => {
     );
   });
 
+  it("uses the explicit launch directory for the first default space", async () => {
+    const { deps, params } = setup({
+      loadAll: vi.fn().mockResolvedValue({
+        spaces: [],
+        activeId: null,
+        states: new Map(),
+      }),
+    });
+
+    await bootSpaces(params, deps);
+
+    expect(deps.saveSpacesList).toHaveBeenCalledWith([
+      expect.objectContaining({
+        id: "default",
+        root: "C:/work/repo",
+        env: { kind: "local" },
+      }),
+    ]);
+    expect(deps.hydrate).toHaveBeenCalledWith(
+      [expect.objectContaining({ root: "C:/work/repo" })],
+      "default",
+    );
+  });
+
   it("hydrates and replaces tabs when external operations fail", async () => {
     const { deps, events, params, spaces } = setup({
       saveSpacesList: vi.fn().mockRejectedValue(new Error("save spaces")),
