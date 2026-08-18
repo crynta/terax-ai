@@ -42,6 +42,7 @@
     --color-card: var(--card);
     --color-foreground: var(--foreground);
     --color-background: var(--background);
+    --color-frame: var(--frame);
     --radius-sm: calc(var(--radius) * 0.6);
     --radius-md: calc(var(--radius) * 0.8);
     --radius-lg: var(--radius);
@@ -166,6 +167,34 @@
   --editor-font-size: 13px;
 }
 
+/* Floating-pane chrome. `--frame` is the canvas the panes sit on (header,
+ * status bar, gutters); a pane keeps `--background` so the xterm canvas and the
+ * pane surface stay the same color. Both are derived from tokens every theme
+ * already declares, so built-in and user themes get the separation for free. */
+:root {
+  --frame: color-mix(in oklab, var(--card) 97%, var(--foreground) 3%);
+  --pane-radius: calc(var(--radius) * 1.4);
+  --pane-shadow:
+    0 1px 2px oklch(0 0 0 / 0.05),
+    0 4px 12px -8px oklch(0 0 0 / 0.18);
+}
+.dark {
+  --pane-shadow:
+    0 1px 2px oklch(0 0 0 / 0.35),
+    0 4px 12px -8px oklch(0 0 0 / 0.6),
+    inset 0 1px 0 oklch(1 0 0 / 0.03);
+}
+
+/* Shadow extents stay within 8px so the surrounding gutter never clips them:
+ * react-resizable-panels clips panel content at the panel box. */
+.terax-pane {
+  border-radius: var(--pane-radius);
+  border: 1px solid var(--border);
+  background: var(--background);
+  box-shadow: var(--pane-shadow);
+  overflow: hidden;
+}
+
 html[data-chrome="borderless"] .terax-bg-surface {
   border-radius: 12px;
 }
@@ -190,6 +219,9 @@ html[data-chrome="borderless"] #settings-root {
   overflow: hidden;
   border: 1px solid var(--border);
   background: var(--background);
+}
+html[data-chrome="borderless"] #root {
+  background: var(--frame);
 }
 
 /*
