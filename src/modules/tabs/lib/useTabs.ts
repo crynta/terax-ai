@@ -7,6 +7,7 @@ import {
   findLeafCwd,
   hasLeaf,
   leafIds,
+  MAX_PANES_PER_TAB,
   nextLeafId,
   type PaneBounds,
   type PaneDirection,
@@ -27,8 +28,7 @@ import {
   useState,
 } from "react";
 
-// Matches the renderer slot pool size — over this we'd evict an active leaf.
-export const MAX_PANES_PER_TAB = 4;
+export { MAX_PANES_PER_TAB };
 
 type TabBase = {
   spaceId: string;

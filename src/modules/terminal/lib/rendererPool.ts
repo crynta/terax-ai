@@ -27,8 +27,9 @@ import {
 } from "./terminalClipboard";
 import { createTerminalLinkHandler } from "./terminalLinks";
 import { pasteIntoTerminal } from "./terminalPaste";
+import { MAX_PANES_PER_TAB } from "./panes";
 
-export const POOL_MAX_SIZE = 5;
+export const POOL_MAX_SIZE = MAX_PANES_PER_TAB + 1;
 const FIT_DEBOUNCE_MS = 8;
 const PTY_RESIZE_DEBOUNCE_MS = 256;
 const SNAPSHOT_SCROLLBACK_CAP = 5_000;

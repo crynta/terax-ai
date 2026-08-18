@@ -1,5 +1,7 @@
 export type PaneId = number;
 
+export const MAX_PANES_PER_TAB = 8;
+
 export type SplitDir = "row" | "col";
 export type PaneDirection = "left" | "right" | "up" | "down";
 export type PaneBounds = {
