@@ -35,11 +35,13 @@ import {
   setTerminalFontSize,
   setTerminalFontWeight,
   setTerminalLetterSpacing,
+  setTerminalPaneLimit,
   setTerminalScrollback,
   setTerminalShell,
   setTerminalWebglEnabled,
   setZoomLevel,
   TERMINAL_FONT_SIZES,
+  TERMINAL_PANE_LIMIT_PRESETS,
   TERMINAL_SCROLLBACK_PRESETS,
 } from "@/modules/settings/store";
 import { useTheme } from "@/modules/theme";
@@ -116,6 +118,7 @@ export function GeneralSection() {
   );
   const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
   const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
+  const terminalPaneLimit = usePreferencesStore((s) => s.terminalPaneLimit);
   const confirmCloseRunningTerminal = usePreferencesStore(
     (s) => s.confirmCloseRunningTerminal,
   );
@@ -483,6 +486,30 @@ export function GeneralSection() {
                   className="text-[12px]"
                 >
                   {lines.toLocaleString()} lines
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingRow>
+        <SettingRow
+          title="Maximum panes per tab"
+          description="Maximum terminal panes in one tab. Existing panes remain open when this is lowered."
+        >
+          <Select
+            value={String(terminalPaneLimit)}
+            onValueChange={(v) => void setTerminalPaneLimit(Number(v))}
+          >
+            <SelectTrigger size="sm" className="h-8 w-28 text-[12px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TERMINAL_PANE_LIMIT_PRESETS.map((count) => (
+                <SelectItem
+                  key={count}
+                  value={String(count)}
+                  className="text-[12px]"
+                >
+                  {count}
                 </SelectItem>
               ))}
             </SelectContent>

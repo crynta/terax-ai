@@ -1,7 +1,10 @@
 import { openExternalUrl } from "@/lib/external-link";
 import { resolveFontFamily } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
-import type { TerminalCursorStyle } from "@/modules/settings/store";
+import {
+  TERMINAL_PANE_LIMIT_MAX,
+  type TerminalCursorStyle,
+} from "@/modules/settings/store";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
@@ -27,9 +30,8 @@ import {
 } from "./terminalClipboard";
 import { createTerminalLinkHandler } from "./terminalLinks";
 import { pasteIntoTerminal } from "./terminalPaste";
-import { MAX_PANES_PER_TAB } from "./panes";
 
-export const POOL_MAX_SIZE = MAX_PANES_PER_TAB + 1;
+export const POOL_MAX_SIZE = TERMINAL_PANE_LIMIT_MAX + 1;
 const FIT_DEBOUNCE_MS = 8;
 const PTY_RESIZE_DEBOUNCE_MS = 256;
 const SNAPSHOT_SCROLLBACK_CAP = 5_000;

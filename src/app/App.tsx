@@ -776,6 +776,7 @@ export default function App() {
   const explorerGitDecorations = usePreferencesStore(
     (s) => s.explorerGitDecorations,
   );
+  const terminalPaneLimit = usePreferencesStore((s) => s.terminalPaneLimit);
 
   const openPreviewTab = useCallback(
     (url: string) => {
@@ -1215,6 +1216,7 @@ export default function App() {
             searchTarget,
             explorerRoot,
             home,
+            terminalPaneLimit,
             openNewTab,
             openNewBlock: openNewBlockTab,
             openNewPrivate: openNewPrivateTab,
@@ -1246,6 +1248,7 @@ export default function App() {
       searchTarget,
       explorerRoot,
       home,
+      terminalPaneLimit,
       openNewTab,
       openNewBlockTab,
       openNewPrivateTab,
