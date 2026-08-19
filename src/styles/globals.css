@@ -194,6 +194,19 @@
   overflow: hidden;
 }
 
+/* Window vibrancy (macOS NSVisualEffectView / Windows Mica). Only the frame
+ * goes translucent: panes keep `--background` so terminal and editor text
+ * stays on a solid, readable surface and the xterm canvas still matches its
+ * container. Redefining `--frame` rather than layering an overlay means
+ * `bg-frame` and the borderless-chrome `#root` both follow automatically. */
+html[data-vibrancy="on"],
+html[data-vibrancy="on"] body {
+  background: transparent;
+}
+html[data-vibrancy="on"] {
+  --frame: color-mix(in oklab, var(--card) 55%, transparent);
+}
+
 html[data-chrome="borderless"] .terax-bg-surface {
   border-radius: 12px;
 }
