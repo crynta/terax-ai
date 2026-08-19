@@ -14,17 +14,20 @@ pub enum Backdrop {
     None,
 }
 
-pub fn backdrop_for(os: &str) -> Backdrop {
+/// First Windows 11 build. `apply_mica` fails below it.
+const WIN11_BUILD: u32 = 22000;
+
+pub fn backdrop_for(os: &str, build: u32) -> Backdrop {
     match os {
         "macos" => Backdrop::Vibrancy,
-        "windows" => Backdrop::Mica,
+        "windows" if build >= WIN11_BUILD => Backdrop::Mica,
         _ => Backdrop::None,
     }
 }
 
 #[tauri::command]
 pub fn window_backdrop_kind() -> Backdrop {
-    backdrop_for(std::env::consts::OS)
+    backdrop_for(std::env::consts::OS, os_build())
 }
 
 /// `dark` only matters for Mica, which tints its own backdrop and cannot read
@@ -36,6 +39,26 @@ pub fn window_set_backdrop(
     dark: bool,
 ) -> Result<(), String> {
     set_backdrop(&window, enabled, dark)
+}
+
+#[cfg(target_os = "windows")]
+fn os_build() -> u32 {
+    use windows_sys::Wdk::System::SystemServices::RtlGetVersion;
+    use windows_sys::Win32::System::SystemInformation::OSVERSIONINFOW;
+
+    // GetVersionExW reports 6.2 for unmanifested apps; RtlGetVersion does not.
+    let mut info: OSVERSIONINFOW = unsafe { std::mem::zeroed() };
+    info.dwOSVersionInfoSize = std::mem::size_of::<OSVERSIONINFOW>() as u32;
+    if unsafe { RtlGetVersion(&mut info) } == 0 {
+        info.dwBuildNumber
+    } else {
+        0
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn os_build() -> u32 {
+    0
 }
 
 #[cfg(target_os = "macos")]
@@ -70,19 +93,31 @@ fn set_backdrop(_window: &tauri::Window, _enabled: bool, _dark: bool) -> Result<
 
 #[cfg(test)]
 mod tests {
-    use super::{backdrop_for, Backdrop};
+    use super::{backdrop_for, Backdrop, WIN11_BUILD};
 
     #[test]
-    fn maps_each_platform_to_its_backdrop() {
-        assert_eq!(backdrop_for("macos"), Backdrop::Vibrancy);
-        assert_eq!(backdrop_for("windows"), Backdrop::Mica);
+    fn macos_reports_vibrancy_regardless_of_build() {
+        assert_eq!(backdrop_for("macos", 0), Backdrop::Vibrancy);
+    }
+
+    #[test]
+    fn windows_11_reports_mica() {
+        assert_eq!(backdrop_for("windows", WIN11_BUILD), Backdrop::Mica);
+        assert_eq!(backdrop_for("windows", 26100), Backdrop::Mica);
+    }
+
+    #[test]
+    fn windows_10_reports_none_because_mica_would_fail() {
+        assert_eq!(backdrop_for("windows", WIN11_BUILD - 1), Backdrop::None);
+        assert_eq!(backdrop_for("windows", 19045), Backdrop::None);
+        assert_eq!(backdrop_for("windows", 0), Backdrop::None);
     }
 
     #[test]
     fn unsupported_platforms_report_none() {
-        assert_eq!(backdrop_for("linux"), Backdrop::None);
-        assert_eq!(backdrop_for("freebsd"), Backdrop::None);
-        assert_eq!(backdrop_for(""), Backdrop::None);
+        assert_eq!(backdrop_for("linux", 99999), Backdrop::None);
+        assert_eq!(backdrop_for("freebsd", 0), Backdrop::None);
+        assert_eq!(backdrop_for("", 0), Backdrop::None);
     }
 
     #[test]

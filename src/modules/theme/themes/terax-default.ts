@@ -1,95 +1,18 @@
 import type { Theme } from "../types";
 
-/** Monochrome chrome, but a full-color terminal: shell output carries meaning. */
+/**
+ * Colours live in `styles/globals.css` (`:root` / `.dark`), not here:
+ * ThemeProvider calls `clearTheme()` for this id instead of `applyTheme`, so
+ * anything declared in `variants` would be dead and would drift. Empty
+ * variants also let the settings swatch fall back to the live CSS vars.
+ */
 export const teraxDefault: Theme = {
   id: "terax-default",
   name: "Terax Default",
   description: "Clean neutral greys with a full-color terminal.",
   editorTheme: { dark: "github-dark", light: "github-light" },
   variants: {
-    dark: {
-      colors: {
-        background: "#141414",
-        foreground: "#f7f7f7",
-        card: "#1d1d1d",
-        cardForeground: "#f7f7f7",
-        popover: "#1d1d1d",
-        popoverForeground: "#f7f7f7",
-        primary: "#f7f7f7",
-        primaryForeground: "#141414",
-        secondary: "#2a2a2a",
-        secondaryForeground: "#f7f7f7",
-        muted: "#1d1d1d",
-        mutedForeground: "#a3a3a3",
-        accent: "#2a2a2a",
-        accentForeground: "#f7f7f7",
-        destructive: "#e35d5d",
-        border: "rgba(255,255,255,0.09)",
-        input: "rgba(255,255,255,0.13)",
-        ring: "#8a8a8a",
-        sidebar: "#1d1d1d",
-        sidebarForeground: "#f7f7f7",
-        sidebarPrimary: "#f7f7f7",
-        sidebarPrimaryForeground: "#141414",
-        sidebarAccent: "#2a2a2a",
-        sidebarAccentForeground: "#f7f7f7",
-        sidebarBorder: "rgba(255,255,255,0.09)",
-        sidebarRing: "#8a8a8a",
-        radius: "0.625rem",
-      },
-      terminal: {
-        cursor: "#f7f7f7",
-        cursorAccent: "#141414",
-        selection: "rgba(255,255,255,0.16)",
-        ansi: [
-          "#3f3f3f", "#e35d5d", "#6ec48f", "#e0b34d",
-          "#6ea8e8", "#b98ce0", "#5fc6cc", "#d8d8d8",
-          "#6e6e6e", "#f27f7f", "#85d9a4", "#eec469",
-          "#8dbcf2", "#cba5ee", "#7bdbe0", "#f7f7f7",
-        ],
-      },
-    },
-    light: {
-      colors: {
-        background: "#ffffff",
-        foreground: "#111111",
-        card: "#f3f3f3",
-        cardForeground: "#111111",
-        popover: "#ffffff",
-        popoverForeground: "#111111",
-        primary: "#111111",
-        primaryForeground: "#ffffff",
-        secondary: "#ededed",
-        secondaryForeground: "#111111",
-        muted: "#ededed",
-        mutedForeground: "#656565",
-        accent: "#e5e5e5",
-        accentForeground: "#111111",
-        destructive: "#c0392f",
-        border: "rgba(0,0,0,0.09)",
-        input: "rgba(0,0,0,0.13)",
-        ring: "#8a8a8a",
-        sidebar: "#f3f3f3",
-        sidebarForeground: "#111111",
-        sidebarPrimary: "#111111",
-        sidebarPrimaryForeground: "#ffffff",
-        sidebarAccent: "#e5e5e5",
-        sidebarAccentForeground: "#111111",
-        sidebarBorder: "rgba(0,0,0,0.09)",
-        sidebarRing: "#8a8a8a",
-        radius: "0.625rem",
-      },
-      terminal: {
-        cursor: "#111111",
-        cursorAccent: "#ffffff",
-        selection: "rgba(0,0,0,0.12)",
-        ansi: [
-          "#111111", "#c0392f", "#2f7d4f", "#a37413",
-          "#2f6bb5", "#8a4fb5", "#227d85", "#cfcfcf",
-          "#656565", "#d94f42", "#3d9c64", "#bf8a1f",
-          "#3f82d4", "#a065cf", "#2b98a2", "#111111",
-        ],
-      },
-    },
+    light: {},
+    dark: {},
   },
 };

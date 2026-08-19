@@ -20,12 +20,7 @@ export function getBackdropKind(): Promise<Backdrop> {
 let applied: string | null = null;
 let queue: Promise<void> = Promise.resolve();
 
-/**
- * Toggles the native window backdrop and the CSS that lets it show through.
- *
- * Serialized, because the backdrop is window state and two in-flight toggles
- * could otherwise land out of order.
- */
+/** Serialized: two in-flight toggles could otherwise land out of order. */
 export function applyVibrancy(enabled: boolean, dark: boolean): Promise<void> {
   queue = queue.then(() => run(enabled, dark));
   return queue;

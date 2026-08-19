@@ -146,6 +146,29 @@
   --terminal-cursor: var(--foreground);
   --terminal-cursor-accent: var(--background);
   --terminal-selection: var(--accent);
+  --terminal-ansi-black: #111111;
+  --terminal-ansi-red: #c0392f;
+  --terminal-ansi-green: #2f7d4f;
+  --terminal-ansi-yellow: #a37413;
+  --terminal-ansi-blue: #2f6bb5;
+  --terminal-ansi-magenta: #8a4fb5;
+  --terminal-ansi-cyan: #227d85;
+  --terminal-ansi-white: #cfcfcf;
+  --terminal-ansi-bright-black: #656565;
+  --terminal-ansi-bright-red: #d94f42;
+  --terminal-ansi-bright-green: #3d9c64;
+  --terminal-ansi-bright-yellow: #bf8a1f;
+  --terminal-ansi-bright-blue: #3f82d4;
+  --terminal-ansi-bright-magenta: #a065cf;
+  --terminal-ansi-bright-cyan: #2b98a2;
+  --terminal-ansi-bright-white: #111111;
+}
+
+/* The default theme short-circuits `applyTheme` (ThemeProvider calls
+ * clearTheme instead), so these vars are the whole palette, not a pre-paint
+ * placeholder. An unscoped ANSI block would put dark colours on a white
+ * terminal for every light-mode user. */
+.dark {
   --terminal-ansi-black: #3f3f3f;
   --terminal-ansi-red: #e35d5d;
   --terminal-ansi-green: #6ec48f;
