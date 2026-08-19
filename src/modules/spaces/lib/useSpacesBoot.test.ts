@@ -118,7 +118,7 @@ describe("bootSpaces explicit launch", () => {
   });
 
   it("uses the explicit launch directory for the first default space", async () => {
-    const { deps, params } = setup({
+    const { deps, events, params } = setup({
       loadAll: vi.fn().mockResolvedValue({
         spaces: [],
         activeId: null,
@@ -128,6 +128,14 @@ describe("bootSpaces explicit launch", () => {
 
     await bootSpaces(params, deps);
 
+    expect(params.adoptWorkspaceEnv).toHaveBeenCalledWith({ kind: "local" });
+    expect(deps.workspaceAuthorize).toHaveBeenCalledWith("C:/work/repo");
+    expect(events.indexOf("adopt-local")).toBeLessThan(
+      events.indexOf("hydrate"),
+    );
+    expect(events.indexOf("authorize:C:/work/repo")).toBeLessThan(
+      events.indexOf("hydrate"),
+    );
     expect(deps.saveSpacesList).toHaveBeenCalledWith([
       expect.objectContaining({
         id: "default",

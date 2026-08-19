@@ -95,6 +95,10 @@ export async function bootSpaces(
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
+    if (explicitLaunchDir) {
+      await adoptWorkspaceEnv({ kind: "local" }).catch(() => null);
+      await deps.workspaceAuthorize(explicitLaunchDir).catch(() => null);
+    }
     await deps.saveSpacesList([meta]);
     await deps.saveActiveId(DEFAULT_SPACE_ID);
     setActiveSpaceForNewTabs(DEFAULT_SPACE_ID);
