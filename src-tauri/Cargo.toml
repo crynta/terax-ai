@@ -31,7 +31,8 @@ tauri-build = { version = "2", features = [] }
 serde_json = "1"
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset"] }
+# macos-private-api backs the transparent window NSVisualEffectView needs.
+tauri = { version = "2", features = ["macos-private-api", "protocol-asset"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -76,6 +77,7 @@ keyring = { version = "3.6", default-features = false, features = [
 ] }
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSString", "NSUserDefaults"] }
+window-vibrancy = "0.8"
 
 # WebKitGTK can't read external clipboard copies; mac/win webviews can.
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -85,11 +87,14 @@ tauri-plugin-clipboard-manager = "2"
 keyring = { version = "3.6", default-features = false, features = [
 	"windows-native",
 ] }
+window-vibrancy = "0.8"
 windows-sys = { version = "0.61", features = [
+	"Wdk_System_SystemServices",
 	"Win32_Foundation",
 	"Win32_Security",
 	"Win32_System_Console",
 	"Win32_System_JobObjects",
+	"Win32_System_SystemInformation",
 	"Win32_System_ProcessStatus",
 	"Win32_System_Threading",
 	"Win32_System_Diagnostics_ToolHelp",

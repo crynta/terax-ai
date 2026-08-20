@@ -63,7 +63,7 @@ export const PreviewPane = forwardRef<PreviewPaneHandle, Props>(
 
     return (
       <div
-        className="flex h-full w-full flex-col overflow-hidden rounded-md border border-border/60 bg-background"
+        className="flex h-full w-full flex-col overflow-hidden bg-background"
         style={{
           visibility: visible ? "visible" : "hidden",
           pointerEvents: visible ? "auto" : "none",

@@ -1,6 +1,8 @@
 pub mod modules;
 
-use modules::{agent, control, fs, git, history, lsp, net, pty, secrets, shell, workspace};
+use modules::{
+    agent, control, fs, git, history, lsp, net, pty, secrets, shell, vibrancy, workspace,
+};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
@@ -326,6 +328,8 @@ pub fn run() {
             history::history_commands,
             history::history_record,
             history::history_list,
+            vibrancy::window_backdrop_kind,
+            vibrancy::window_set_backdrop,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
