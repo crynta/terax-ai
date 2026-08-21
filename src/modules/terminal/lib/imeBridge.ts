@@ -9,11 +9,19 @@ export type ImeInputEvent = {
   inputType: string;
   data: string | null;
   composed: boolean;
+  /** InputEvent.isComposing — false on IME commits, true on in-progress text. */
+  isComposing?: boolean;
 };
 
 export type XtermKeyFlags = {
   keyDownSeen: boolean;
   keyPressHandled: boolean;
+  /**
+   * xterm CompositionHelper._isSendingComposition: true between
+   * compositionend and its 0ms finalize timer, whose textarea diff delivers
+   * anything that just landed — the bridge must stand down in that window.
+   */
+  sendingComposition?: boolean;
 };
 
 export function createImeBridgeState(): ImeBridgeState {
@@ -32,6 +40,12 @@ function clearTransientState(state: ImeBridgeState): void {
 
 export function resetImeBridge(state: ImeBridgeState): void {
   clearTransientState(state);
+  // Session-scoped latch: compositionstart sets it, compositionend/blur
+  // clears it here. A permanent latch disables the bridge after the first
+  // IME session, while xterm's input gate drops every Shift+punct commit
+  // whose insertText arrives with _keyDownSeen held high by the still-held
+  // Shift keydown — the "press twice" bug (#983, WKWebView trace-verified).
+  state.nativeComposition = false;
 }
 
 export function transitionImeBridgeOwner(
@@ -87,16 +101,32 @@ export function imeBridgeInput(
 
   if (e.inputType === "insertText") {
     state.pendingRegion = e.data ?? "";
-    // Fast IME input can inherit xterm's key flags from the previous key.
-    // Correlated key data means xterm already sent this exact character.
-    if (
-      e.data &&
-      e.composed &&
-      NON_ASCII_RE.test(e.data) &&
-      (flags.keyDownSeen || flags.keyPressHandled) &&
-      !sentByXtermKey
-    ) {
-      return e.data;
+    // Mirror xterm CoreBrowserTerminal._inputEvent's delivery gate:
+    //   xterm delivers ⟺ data && inputType==='insertText'
+    //     && (!composed || !keyDownSeen) && !keyPressHandled
+    //   (Terax never enables screenReaderMode, which would also gate it.)
+    // Plus one composition-lifecycle clause: while the finalize send is
+    // pending (sendingComposition), the 0ms textarea diff delivers anything
+    // that just landed — including this event's text — so xterm effectively
+    // owns it.
+    // xterm's own listener runs first on this same event and does not
+    // mutate the flags, so the mirror is exact and order-independent:
+    // whatever xterm drops, the bridge forwards — exactly once.
+    const xtermWillDeliver =
+      ((!e.composed || !flags.keyDownSeen) && !flags.keyPressHandled) ||
+      flags.sendingComposition === true;
+    if (e.data && !xtermWillDeliver && !sentByXtermKey) {
+      if (NON_ASCII_RE.test(e.data)) return e.data;
+      // ASCII: forward only a provable IME commit — never key-delivered
+      // text (double-write) or in-progress composition (raw pinyin leak):
+      //  - !isComposing guards composition-bypassing WKWebView builds
+      //    (#1112), where in-progress pinyin can surface as plain insertText.
+      //  - !keyPressHandled guards keypress-delivered ASCII (xterm's A-Z /
+      //    dead-key path): that input event was dropped because the keypress
+      //    already sent it.
+      // What remains is an IME commit with no keypress, e.g. Chinese-IME
+      // Shift+3 → "#" dropped by the held-Shift keydown's _keyDownSeen.
+      if (!e.isComposing && !flags.keyPressHandled) return e.data;
     }
     return null;
   }

@@ -1,10 +1,6 @@
 import { useEffect, useRef } from "react";
 import { usePreferencesStore } from "@/modules/settings/preferences";
-import {
-  SHORTCUTS,
-  matchBinding,
-  type ShortcutId,
-} from "../shortcuts";
+import { SHORTCUTS, matchBinding, type ShortcutId } from "../shortcuts";
 
 export type ShortcutHandler = (e: KeyboardEvent) => void;
 export type ShortcutHandlers = Partial<Record<ShortcutId, ShortcutHandler>>;
@@ -25,6 +21,9 @@ export function useGlobalShortcuts(
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Never fire global shortcuts from keys an IME is still processing
+      // (keyCode 229 = "Process"); they belong to the composition.
+      if (e.isComposing || e.keyCode === 229) return;
       const { handlers, options } = latest.current;
       for (const s of SHORTCUTS) {
         if (e.repeat && !s.allowRepeat) continue;
