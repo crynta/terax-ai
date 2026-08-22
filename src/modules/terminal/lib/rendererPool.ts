@@ -20,7 +20,7 @@ import {
   resetImeBridge,
   transitionImeBridgeOwner,
 } from "./imeBridge";
-import { terminalReadlineSequence } from "./keymap";
+import { isIme229PassthroughKey, terminalReadlineSequence } from "./keymap";
 import {
   readTerminalClipboard,
   writeTerminalClipboard,
@@ -281,23 +281,41 @@ function createSlot(): Slot {
       ta.addEventListener("input", (ev) => {
         const e = ev as InputEvent;
         if (slot.currentLeafId === null) return;
+        // SAFETY: xterm's public Terminal hides CoreBrowserTerminal behind
+        // `any`; _core._keyDownSeen/_keyPressHandled are the delivery-gate
+        // flags the bridge mirrors, and
+        // _core._compositionHelper._isSendingComposition marks the pending
+        // finalize send (verified against @xterm/xterm sources).
         const core = (
           slot.term as unknown as {
-            _core?: { _keyDownSeen?: boolean; _keyPressHandled?: boolean };
+            _core?: {
+              _keyDownSeen?: boolean;
+              _keyPressHandled?: boolean;
+              _compositionHelper?: { _isSendingComposition?: boolean };
+            };
           }
         )._core;
         const out = imeBridgeInput(
           imeState,
           slot.currentLeafId,
-          { inputType: e.inputType, data: e.data, composed: e.composed },
+          {
+            inputType: e.inputType,
+            data: e.data,
+            composed: e.composed,
+            isComposing: e.isComposing,
+          },
           {
             keyDownSeen: core?._keyDownSeen ?? false,
             keyPressHandled: core?._keyPressHandled ?? false,
+            sendingComposition:
+              core?._compositionHelper?._isSendingComposition ?? false,
           },
         );
         if (out) adapter?.resolveLeaf(slot.currentLeafId)?.writeToPty(out);
       });
-      // Native composition means xterm owns this slot's IME delivery.
+      // Native composition means xterm owns this slot's IME delivery for
+      // the duration of that composition session; resetImeBridge
+      // (compositionend/blur) re-arms the bridge afterwards.
       ta.addEventListener("compositionstart", () =>
         noteNativeComposition(imeState),
       );
@@ -310,11 +328,25 @@ function createSlot(): Slot {
     // During IME composition the browser is assembling a multi-keystroke
     // character (Chinese pinyin → hanzi, Korean jamo → syllable, etc.).
     // Raw keydown events — including the Enter that commits a candidate —
-    // must NOT be forwarded to the PTY; xterm will receive the final
-    // composed string through its own compositionend handler instead.
-    // keyCode 229 ("Process") is what Chromium reports for every key
-    // pressed inside an active IME session when isComposing is not yet set.
-    if (event.isComposing || event.keyCode === 229) return false;
+    // must NOT be forwarded to the PTY. Composed text reaches the PTY via
+    // the textarea input event (xterm's _inputEvent, with the imeBridge
+    // compensating exactly the events xterm's gate drops).
+    // keyCode 229 ("Process") is what WebKit reports for keys consumed by
+    // an active IME session — including candidate-window digit/arrow keys —
+    // and for non-composing IME mode-switch keystrokes (Chinese-IME
+    // Shift+punctuation). Swallowing them at the keydown layer is safe
+    // because delivery is reconstructed from the input event, never from
+    // keydown. Do NOT preventDefault: the browser default (IME text into
+    // the textarea → input event) must survive.
+    // The only exemption is Option-modified dead keys mistagged as 229
+    // (Option+←/→, Option+Backspace, #956), which fall through to the
+    // readline remaps below.
+    if (
+      event.isComposing ||
+      (event.keyCode === 229 && !isIme229PassthroughKey(event))
+    ) {
+      return false;
+    }
 
     const leafId = slot.currentLeafId;
     if (leafId === null) return false;
@@ -477,7 +509,9 @@ function discardRetention(slot: Slot): void {
   for (const d of slot.oscDisposers) {
     try {
       d();
-    } catch {}
+    } catch {
+      // Best-effort cleanup: a failing OSC disposer must not block the rest.
+    }
   }
   slot.oscDisposers = [];
 }
@@ -538,12 +572,16 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
     }
     try {
       slot.term.write("\x1b[?25h");
-    } catch {}
+    } catch {
+      // Best-effort cursor restore; the slot may already be detached.
+    }
 
     for (const d of slot.oscDisposers) {
       try {
         d();
-      } catch {}
+      } catch {
+        // Best-effort cleanup: a failing OSC disposer must not block reattach.
+      }
     }
     slot.oscDisposers = p.registerOsc(slot.term);
   } else {
@@ -564,7 +602,9 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
   if (!fast && p.searchQuery) {
     try {
       slot.searchAddon.findNext(p.searchQuery);
-    } catch {}
+    } catch {
+      // Stale queries can throw on a freshly recycled buffer; skip.
+    }
   }
 
   applyCursorBlinkOnSlot(slot, adapter?.isLeafFocused(p.leafId) ?? false);
@@ -578,7 +618,9 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
       if (!slot.webglAddon) attachWebgl(slot);
       try {
         slot.term.refresh(0, slot.term.rows - 1);
-      } catch {}
+      } catch {
+        // Refresh is cosmetic; a mid-dispose renderer may throw.
+      }
     }
     if (adapter?.isLeafFocused(p.leafId)) slot.term.focus();
   } else {
@@ -597,7 +639,9 @@ function scheduleUnhide(slot: Slot, stale: boolean): void {
         if (!slot.webglAddon) attachWebgl(slot);
         try {
           slot.term.refresh(0, slot.term.rows - 1);
-        } catch {}
+        } catch {
+          // Refresh is cosmetic; a mid-dispose renderer may throw.
+        }
       }
       const leafId = slot.currentLeafId;
       if (leafId !== null && adapter?.isLeafFocused(leafId)) {
@@ -804,7 +848,9 @@ function disposeSlot(slot: Slot): void {
   for (const d of slot.oscDisposers) {
     try {
       d();
-    } catch {}
+    } catch {
+      // Best-effort cleanup: a failing OSC disposer must not block parking.
+    }
   }
   slot.oscDisposers = [];
   disposeSlotWebgl(slot);
@@ -843,7 +889,9 @@ function attachWebgl(slot: Slot): void {
       }
       try {
         webgl.dispose();
-      } catch {}
+      } catch {
+        // The context may already be lost; disposal failure is harmless here.
+      }
       // Recovery: WebKit may transiently lose contexts on sleep/wake or GPU
       // reset; without re-attach the slot would silently fall back to DOM
       // forever. Defer past WebKit's reset window before retrying.
@@ -855,7 +903,9 @@ function attachWebgl(slot: Slot): void {
         if (slot.webglAddon) {
           try {
             slot.term.refresh(0, slot.term.rows - 1);
-          } catch {}
+          } catch {
+            // Refresh is cosmetic; a mid-dispose renderer may throw.
+          }
         }
       }, WEBGL_RECOVERY_DELAY_MS);
     });
@@ -881,6 +931,9 @@ function disposeSlotWebgl(slot: Slot): void {
     console.warn("[terax-webgl] dispose failed:", e);
   }
   try {
+    // SAFETY: the WebGL addon's renderer/render-service fields are private
+    // xterm internals; nulling them forces re-creation on next attach. The
+    // shape is probed defensively and any mismatch is caught below.
     const r = (
       addon as unknown as { _renderer?: Record<string, unknown> | null }
     )._renderer;
@@ -890,13 +943,17 @@ function disposeSlotWebgl(slot: Slot): void {
       r._charAtlas = null;
       r._atlas = null;
     }
-    (
-      addon as unknown as { _renderer?: unknown; _renderService?: unknown }
-    )._renderer = null;
-    (
-      addon as unknown as { _renderer?: unknown; _renderService?: unknown }
-    )._renderService = null;
-  } catch {}
+    // SAFETY: same private-internals probe as above; nulling forces
+    // re-creation on next attach and any shape mismatch is caught below.
+    const internals = addon as unknown as {
+      _renderer?: unknown;
+      _renderService?: unknown;
+    };
+    internals._renderer = null;
+    internals._renderService = null;
+  } catch {
+    // Internal shape changed across xterm versions; disposal already ran.
+  }
   slot.webglAddon = null;
 }
 
@@ -904,22 +961,30 @@ function releaseCanvasContext(canvas: HTMLCanvasElement): void {
   let gl: WebGL2RenderingContext | WebGLRenderingContext | null = null;
   try {
     gl = canvas.getContext("webgl2") as WebGL2RenderingContext | null;
-  } catch {}
+  } catch {
+    // WebGL2 unsupported or context creation failed; fall back to webgl.
+  }
   if (!gl) {
     try {
       gl = canvas.getContext("webgl") as WebGLRenderingContext | null;
-    } catch {}
+    } catch {
+      // No WebGL support at all; nothing to release.
+    }
   }
   if (gl) {
     try {
       const ext = gl.getExtension("WEBGL_lose_context");
       if (ext && !gl.isContextLost()) ext.loseContext();
-    } catch {}
+    } catch {
+      // Context may already be lost; nothing more to do.
+    }
   }
   try {
     canvas.width = 0;
     canvas.height = 0;
-  } catch {}
+  } catch {
+    // Releasing the backing store is best-effort during teardown.
+  }
 }
 
 export function applyWebglPreference(enabled: boolean): void {
@@ -930,7 +995,9 @@ export function applyWebglPreference(enabled: boolean): void {
         if (slot.webglAddon) {
           try {
             slot.term.refresh(0, slot.term.rows - 1);
-          } catch {}
+          } catch {
+            // Refresh is cosmetic; a mid-dispose renderer may throw.
+          }
         }
       }
     } else if (slot.webglAddon) {
@@ -1078,7 +1145,9 @@ export function refreshLeafSlot(leafId: number): void {
   }
   try {
     slot.term.refresh(0, slot.term.rows - 1);
-  } catch {}
+  } catch {
+    // Refresh is cosmetic; a mid-dispose renderer may throw.
+  }
 }
 
 export function disposeLeafSlot(leafId: number): void {
