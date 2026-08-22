@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   compatModelIdForEndpoint,
+  DEFAULT_AUTOCOMPLETE_MODEL,
   endpointIdFromCompatModel,
+  getProvider,
   getModelContextLimit,
   isCompatModelId,
   migrateLegacyCompatEndpoint,
@@ -68,6 +70,29 @@ describe("resolveModel", () => {
   });
 });
 
+describe("Atlas Cloud provider", () => {
+  it("registers Atlas Cloud as a keyed provider", () => {
+    const provider = getProvider("atlascloud");
+    expect(provider.label).toBe("Atlas Cloud");
+    expect(provider.keyringAccount).toBe("atlascloud-api-key");
+  });
+
+  it.each([
+    ["deepseek-ai/deepseek-v4-pro", true],
+    ["deepseek-ai/deepseek-v4-flash", true],
+    ["qwen/qwen3.5-27b", false],
+  ] as const)("resolves Atlas Cloud model %s", (modelId, reasoning) => {
+    const model = resolveModel(modelId);
+    expect(model.provider).toBe("atlascloud");
+    expect(getModelContextLimit(modelId)).toBe(128_000);
+    expect(modelUsesReasoningTokens("atlascloud", modelId)).toBe(reasoning);
+  });
+
+  it("sets a fast Atlas Cloud default for autocomplete", () => {
+    expect(DEFAULT_AUTOCOMPLETE_MODEL.atlascloud).toBe("qwen/qwen3.5-27b");
+  });
+});
+
 describe("getModelContextLimit", () => {
   it("uses the per-endpoint override for compat models", () => {
     const mid = compatModelIdForEndpoint(endpoint.id);
@@ -98,14 +123,19 @@ describe("current model pricing", () => {
     ["claude-fable-5", 10, 50, 1],
     ["claude-sonnet-5", 3, 15, 0.3],
     ["grok-4.5", 2, 6, 0.5],
-  ] as const)("uses the published token pricing for %s", (modelId, input, output, cacheRead) => {
-    expect(MODEL_PRICING[modelId]).toEqual({ input, output, cacheRead });
-  });
+  ] as const)(
+    "uses the published token pricing for %s",
+    (modelId, input, output, cacheRead) => {
+      expect(MODEL_PRICING[modelId]).toEqual({ input, output, cacheRead });
+    },
+  );
 });
 
 describe("modelKeepsReasoning", () => {
   it("keeps reasoning for compat endpoints (freeform provider)", () => {
-    const info = resolveModel(compatModelIdForEndpoint(endpoint.id), [endpoint]);
+    const info = resolveModel(compatModelIdForEndpoint(endpoint.id), [
+      endpoint,
+    ]);
     expect(modelKeepsReasoning(info)).toBe(true);
   });
 
@@ -145,9 +175,12 @@ describe("model sampling capabilities", () => {
     ["anthropic", "claude-sonnet-5"],
     ["xai", "grok-4.5"],
     ["groq", "openai/gpt-oss-20b"],
-  ] as const)("allocates a reasoning output budget for %s/%s", (provider, modelId) => {
-    expect(modelUsesReasoningTokens(provider, modelId)).toBe(true);
-  });
+  ] as const)(
+    "allocates a reasoning output budget for %s/%s",
+    (provider, modelId) => {
+      expect(modelUsesReasoningTokens(provider, modelId)).toBe(true);
+    },
+  );
 });
 
 describe("migrateLegacyCompatEndpoint", () => {

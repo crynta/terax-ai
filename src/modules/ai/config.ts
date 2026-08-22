@@ -10,6 +10,7 @@ export type ProviderId =
   | "deepseek"
   | "mistral"
   | "openrouter"
+  | "atlascloud"
   | "openai-compatible"
   | "lmstudio"
   | "mlx"
@@ -90,6 +91,13 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     consoleUrl: "https://openrouter.ai/keys",
   },
   {
+    id: "atlascloud",
+    label: "Atlas Cloud",
+    keyringAccount: "atlascloud-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://www.atlascloud.ai/console/api-keys",
+  },
+  {
     id: "openai-compatible",
     label: "OpenAI Compatible",
     keyringAccount: "openai-compatible-api-key",
@@ -109,7 +117,8 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     label: "MLX",
     keyringAccount: "",
     keyPrefix: null,
-    consoleUrl: "https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/SERVER.md",
+    consoleUrl:
+      "https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/SERVER.md",
   },
   {
     id: "ollama",
@@ -591,6 +600,34 @@ export const MODELS = [
     capabilities: { intelligence: 3, speed: 3, cost: 3 },
   },
 
+  {
+    id: "deepseek-ai/deepseek-v4-pro",
+    provider: "atlascloud",
+    label: "DeepSeek V4 Pro",
+    hint: "Atlas",
+    description: "DeepSeek V4 Pro through Atlas Cloud.",
+    capabilities: { intelligence: 5, speed: 3, cost: 4 },
+    tags: ["reasoning", "tools", "coding"],
+  },
+  {
+    id: "deepseek-ai/deepseek-v4-flash",
+    provider: "atlascloud",
+    label: "DeepSeek V4 Flash",
+    hint: "Atlas",
+    description: "Low-latency DeepSeek V4 tier through Atlas Cloud.",
+    capabilities: { intelligence: 4, speed: 5, cost: 5 },
+    tags: ["reasoning", "tools", "coding"],
+  },
+  {
+    id: "qwen/qwen3.5-27b",
+    provider: "atlascloud",
+    label: "Qwen 3.5 27B",
+    hint: "Atlas",
+    description: "Fast Qwen text model through Atlas Cloud.",
+    capabilities: { intelligence: 4, speed: 5, cost: 5 },
+    tags: ["tools", "coding"],
+  },
+
   // ── Generic OpenAI-compatible (user-defined endpoint) ─────────────────────
   {
     id: "openai-compatible-custom",
@@ -757,6 +794,9 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "llama-3.3-70b-versatile": 128_000,
   "deepseek-r1-distill-llama-70b": 128_000,
   "openrouter-custom": 256_000,
+  "deepseek-ai/deepseek-v4-pro": 128_000,
+  "deepseek-ai/deepseek-v4-flash": 128_000,
+  "qwen/qwen3.5-27b": 128_000,
   "openai-compatible-custom": 128_000,
   "lmstudio-local": 32_000,
   "mlx-local": 32_000,
@@ -873,6 +913,7 @@ export const DEFAULT_AUTOCOMPLETE_MODEL: Partial<Record<ProviderId, string>> = {
   xai: "grok-4.3",
   deepseek: "deepseek-v4-flash",
   openrouter: "openai/gpt-5.4-mini",
+  atlascloud: "qwen/qwen3.5-27b",
   "openai-compatible": "",
 };
 
@@ -896,6 +937,7 @@ export const WHISPERCPP_DEFAULT_BASE_URL = "http://127.0.0.1:8080";
 export const LMSTUDIO_DEFAULT_BASE_URL = "http://localhost:1234/v1";
 export const MLX_DEFAULT_BASE_URL = "http://127.0.0.1:8080/v1";
 export const OLLAMA_DEFAULT_BASE_URL = "http://localhost:11434/v1";
+export const ATLASCLOUD_DEFAULT_BASE_URL = "https://api.atlascloud.ai/v1";
 export const OPENAI_COMPATIBLE_DEFAULT_BASE_URL = "";
 export const MAX_AGENT_STEPS = 24;
 export const TERMINAL_BUFFER_LINES = 300;
