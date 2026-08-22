@@ -5,13 +5,26 @@ import {
   createCommandItems,
 } from "./commands";
 
-function terminalTab(id: number): Tab {
+function terminalTab(id: number, paneCount = 1): Tab {
+  const leaves = Array.from({ length: paneCount }, (_, index) => ({
+    kind: "leaf" as const,
+    id: id * 10 + index,
+  }));
+  const paneTree =
+    leaves.length === 1
+      ? leaves[0]
+      : {
+          kind: "split" as const,
+          id: id * 100,
+          dir: "row" as const,
+          children: leaves,
+        };
   return {
     id,
     kind: "terminal",
     spaceId: "s",
     title: "shell",
-    paneTree: { kind: "leaf", id: id * 10 },
+    paneTree,
     activeLeafId: id * 10,
   } as unknown as Tab;
 }
@@ -26,6 +39,7 @@ function baseContext(
     searchTarget: "content" as never,
     explorerRoot: "/workspace",
     home: "/home/me",
+    terminalPaneLimit: 8,
     spaces: [],
     activeSpaceId: null,
     openNewTab: noop,
@@ -61,8 +75,16 @@ function reasonById(over: Partial<CommandPaletteActionContext>, id: string) {
 
 describe("createCommandItems", () => {
   it("enables split on a terminal tab below the pane limit", () => {
-    expect(reasonById({}, "pane.splitRight")).toBeUndefined();
-    expect(reasonById({}, "pane.splitDown")).toBeUndefined();
+    const tabs = [terminalTab(1, 7)];
+    expect(reasonById({ tabs }, "pane.splitRight")).toBeUndefined();
+    expect(reasonById({ tabs }, "pane.splitDown")).toBeUndefined();
+  });
+
+  it("disables split at the configured pane limit", () => {
+    const tabs = [terminalTab(1, 4)];
+    const context = { tabs, terminalPaneLimit: 4 };
+    expect(reasonById(context, "pane.splitRight")).toBe("Pane limit");
+    expect(reasonById(context, "pane.splitDown")).toBe("Pane limit");
   });
 
   it("disables split when there is no terminal tab", () => {

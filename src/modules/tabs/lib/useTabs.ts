@@ -19,6 +19,7 @@ import {
   swapLeafInDirection,
 } from "@/modules/terminal/lib/panes";
 import { disposeSession } from "@/modules/terminal/lib/useTerminalSession";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   useCallback,
   useEffect,
@@ -26,9 +27,6 @@ import {
   useRef,
   useState,
 } from "react";
-
-// Matches the renderer slot pool size — over this we'd evict an active leaf.
-export const MAX_PANES_PER_TAB = 4;
 
 type TabBase = {
   spaceId: string;
@@ -571,6 +569,7 @@ export function planSpaceRemoval(
 }
 
 export function useTabs(initial?: Partial<TerminalTab>) {
+  const terminalPaneLimit = usePreferencesStore((s) => s.terminalPaneLimit);
   const [tabs, setTabs] = useState<Tab[]>(() => {
     const tabId = 1;
     const leafId = 2;
@@ -1292,7 +1291,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       setTabs((curr) =>
         curr.map((t) => {
           if (t.id !== tabId || t.kind !== "terminal" || t.blocks) return t;
-          if (leafIds(t.paneTree).length >= MAX_PANES_PER_TAB) return t;
+          if (leafIds(t.paneTree).length >= terminalPaneLimit) return t;
           const splitId = nextIdRef.current++;
           const leafId = nextIdRef.current++;
           newLeafId = leafId;
@@ -1309,7 +1308,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       );
       return newLeafId;
     },
-    [],
+    [terminalPaneLimit],
   );
 
   const closePaneByLeaf = useCallback((leafId: number): void => {
