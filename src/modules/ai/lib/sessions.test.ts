@@ -1,0 +1,61 @@
+import type { UIMessage } from "@ai-sdk/react";
+import { describe, expect, it } from "vitest";
+import { deriveTitle } from "./sessions";
+
+function message(text: string, role: UIMessage["role"] = "user"): UIMessage {
+  return {
+    id: "id",
+    role,
+    parts: [{ type: "text", text }],
+  } as UIMessage;
+}
+
+describe("deriveTitle", () => {
+  it("returns New chat for no messages", () => {
+    expect(deriveTitle([])).toBe("New chat");
+  });
+
+  it("skips non-user messages", () => {
+    expect(deriveTitle([message("assistant reply", "assistant")])).toBe(
+      "New chat",
+    );
+  });
+
+  it("takes the first user text part", () => {
+    expect(deriveTitle([message("what is terax")])).toBe("what is terax");
+  });
+
+  it("uses the first line only", () => {
+    expect(deriveTitle([message("line one\nline two")])).toBe("line one");
+  });
+
+  it("trims surrounding whitespace", () => {
+    expect(deriveTitle([message("  padded  ")])).toBe("padded");
+  });
+
+  it("strips terminal-context, selection and file blocks", () => {
+    const text =
+      '<terminal-context project="x">code</terminal-context>\nshort title';
+    expect(deriveTitle([message(text)])).toBe("short title");
+  });
+
+  it("strips multiple consecutive blocks", () => {
+    const text = "<selection>a</selection><file>b</file>\ntitle";
+    expect(deriveTitle([message(text)])).toBe("title");
+  });
+
+  it("falls back to New chat when only blocks are present", () => {
+    const text = "<file>path</file>\n";
+    expect(deriveTitle([message(text)])).toBe("New chat");
+  });
+
+  it("truncates titles longer than 40 chars with an ellipsis", () => {
+    const long = "a".repeat(45);
+    expect(deriveTitle([message(long)])).toBe(`${"a".repeat(40)}…`);
+  });
+
+  it("keeps a title of exactly 40 chars intact", () => {
+    const exactly40 = "a".repeat(40);
+    expect(deriveTitle([message(exactly40)])).toBe(exactly40);
+  });
+});
