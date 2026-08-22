@@ -5,11 +5,29 @@ const ST_FINAL: u8 = b'\\';
 
 const OSC_MAX: usize = 2048;
 
-const DEFAULT_AGENTS: &[&str] = &["claude", "codex", "gemini", "pi", "opencode", "grok"];
+const DEFAULT_AGENTS: &[&str] = &["claude", "codex", "gemini", "pi", "gjc", "opencode", "grok"];
 
 // OSC 777 marker our agent hooks emit. Legacy 3-field `notify;Terax;<event>`
-// (Claude) or 4-field `notify;Terax;<agent>;<event>` (Codex/Gemini/Pi).
+// (Claude) or 4-field `notify;Terax;<agent>;<event>` (Codex/Gemini/Pi/GJC).
 const TERAX_MARKER: &[u8] = b"notify;Terax;";
+
+// Agent ids carried by the 4-field marker become UI labels, so they are bounded
+// to a short lowercase slug. This is the only check on that field: any agent
+// that emits the marker is reported, whether or not Terax knows it.
+const AGENT_NAME_MAX: usize = 32;
+
+fn is_agent_name(name: &str) -> bool {
+    if name.is_empty() || name.len() > AGENT_NAME_MAX {
+        return false;
+    }
+    let mut chars = name.chars();
+    let first = chars.next().unwrap();
+    if !first.is_ascii_lowercase() && !first.is_ascii_digit() {
+        return false;
+    }
+    name.chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum State {
@@ -162,13 +180,16 @@ impl AgentDetector {
 
     fn handle_osc777<F: FnMut(Transition)>(&mut self, pt: &[u8], emit: &mut F) {
         if let Some(tail) = pt.strip_prefix(TERAX_MARKER) {
-            // PTY output is untrusted: only self-arm for known agents.
+            // PTY output is untrusted, so the name is bounded to a plausible
+            // agent id rather than checked against a list: any agent that opts
+            // into the marker works without a Terax release. `agents` still
+            // gates OSC 133 arming, where we match arbitrary command lines.
             let (agent, event) = match tail.iter().position(|&c| c == b';') {
                 Some(i) => {
                     let Ok(name) = std::str::from_utf8(&tail[..i]) else {
                         return;
                     };
-                    if !self.agents.iter().any(|a| a == name) {
+                    if !is_agent_name(name) {
                         return;
                     }
                     (name, &tail[i + 1..])
@@ -381,10 +402,38 @@ mod tests {
     }
 
     #[test]
-    fn four_field_marker_ignores_unknown_agent() {
+    fn gjc_marker_self_arms_and_drives_status() {
         let mut d = AgentDetector::new();
-        assert!(run(&mut d, &osc("777;notify;Terax;evil;attention")).is_empty());
-        // A known agent in the same chunk still works.
+        assert_eq!(
+            run(&mut d, &osc("777;notify;Terax;gjc;working")),
+            vec![started("gjc")]
+        );
+        assert_eq!(
+            run(&mut d, &osc("777;notify;Terax;gjc;finished")),
+            vec![Transition::Finished]
+        );
+    }
+
+    #[test]
+    fn four_field_marker_reports_agents_terax_does_not_know() {
+        let mut d = AgentDetector::new();
+        assert_eq!(
+            run(&mut d, &osc("777;notify;Terax;my-agent-9;attention")),
+            vec![started("my-agent-9"), Transition::Attention]
+        );
+    }
+
+    #[test]
+    fn four_field_marker_rejects_implausible_agent_names() {
+        for name in ["", "-lead", "Upper", "with space", &"x".repeat(33)] {
+            let mut d = AgentDetector::new();
+            assert!(
+                run(&mut d, &osc(&format!("777;notify;Terax;{name};attention"))).is_empty(),
+                "accepted {name:?}"
+            );
+        }
+        // A well-formed name in the same chunk still works.
+        let mut d = AgentDetector::new();
         assert_eq!(
             run(&mut d, &osc("777;notify;Terax;codex;attention")),
             vec![started("codex"), Transition::Attention]
