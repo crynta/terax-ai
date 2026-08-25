@@ -10,7 +10,7 @@ const snippets = vi.hoisted(() => {
   };
 });
 
-vi.mock("../lib/snippets", () => ({
+vi.mock("@/modules/ai/lib/snippets", () => ({
   get loadSnippets() {
     return snippets.loadSnippets;
   },
@@ -34,7 +34,7 @@ vi.mock("@tauri-apps/api/event", () => ({
   emit: events.emit,
 }));
 
-import type { Snippet } from "../lib/snippets";
+import type { Snippet } from "@/modules/ai/lib/snippets";
 
 function snippet(id: string, name = id): Snippet {
   return {
