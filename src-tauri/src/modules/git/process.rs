@@ -527,7 +527,7 @@ mod tests {
         for stderr in [
             "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
             "error: could not read Password for 'https://example.com': No such device",
-            "remote: authentication failed for the repository",
+            "remote: Authentication FAILED for the repository",
             "git@github.com: Permission denied (publickey).",
             "fatal: Invalid credentials for 'https://github.com'",
         ] {
