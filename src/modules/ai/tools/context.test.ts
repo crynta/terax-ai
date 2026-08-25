@@ -11,6 +11,11 @@ describe("resolvePath", () => {
     expect(resolvePath("C:\\Users\\a", "/home")).toBe("C:\\Users\\a");
   });
 
+  it("returns a windows UNC path unchanged instead of prefixing the cwd", () => {
+    const unc = "\\\\server\\share\\file.txt";
+    expect(resolvePath(unc, "/home/me")).toBe(unc);
+  });
+
   it("joins a relative path onto a unix cwd", () => {
     expect(resolvePath("file.txt", "/home/me")).toBe("/home/me/file.txt");
   });
