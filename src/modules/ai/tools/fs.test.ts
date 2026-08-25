@@ -23,14 +23,17 @@ const securityMock = vi.hoisted(() => ({
   ),
 }));
 
-const planMock = vi.hoisted(() => ({ active: false }));
+const planMock = vi.hoisted(() => ({
+  active: false,
+  enqueue: vi.fn(),
+}));
 
 vi.mock("../lib/native", () => ({ native: nativeMock }));
 vi.mock("../lib/security", () => securityMock);
 vi.mock("../store/planStore", () => ({
   newQueuedEditId: () => "queued-id",
   usePlanStore: {
-    getState: () => ({ active: planMock.active, enqueue: vi.fn() }),
+    getState: () => ({ active: planMock.active, enqueue: planMock.enqueue }),
   },
 }));
 
@@ -188,14 +191,14 @@ describe("list_directory", () => {
 });
 
 describe("write_file", () => {
-  it("writes content and reports the byte count", async () => {
+  it("writes content and reports the UTF-8 byte count", async () => {
     const r = await run("write_file", makeContext(), {
       path: FILE,
-      content: "hello",
+      content: "café",
     });
     expect(r.ok).toBe(true);
     expect(r.bytesWritten).toBe(5);
-    expect(nativeMock.writeFile).toHaveBeenCalledWith(FILE, "hello");
+    expect(nativeMock.writeFile).toHaveBeenCalledWith(FILE, "café");
   });
 
   it("queues instead of writing when plan mode is active", async () => {
@@ -211,6 +214,14 @@ describe("write_file", () => {
     });
     expect(r.queued_for_plan_review).toBe(true);
     expect(nativeMock.writeFile).not.toHaveBeenCalled();
+    expect(planMock.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "write_file",
+        path: FILE,
+        originalContent: "",
+        proposedContent: "hello",
+      }),
+    );
   });
 
   it("propagates a security refusal without writing", async () => {
@@ -242,6 +253,26 @@ describe("create_directory", () => {
       path: "/workspace/new",
     });
     expect(r.queued_for_plan_review).toBe(true);
+    expect(nativeMock.createDir).not.toHaveBeenCalled();
+    expect(planMock.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "create_directory",
+        path: "/workspace/new",
+        isNewFile: true,
+        description: "Create directory",
+      }),
+    );
+  });
+
+  it("propagates a security refusal without creating", async () => {
+    securityMock.checkWritableCanonical.mockResolvedValue({
+      ok: false,
+      reason: "protected directory",
+    });
+    const r = await run("create_directory", makeContext(), {
+      path: "/etc/new-dir",
+    });
+    expect(r.error).toContain("protected");
     expect(nativeMock.createDir).not.toHaveBeenCalled();
   });
 });
