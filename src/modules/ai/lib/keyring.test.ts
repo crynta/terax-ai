@@ -125,4 +125,17 @@ describe("provider keyring", () => {
 
     expect(keys).toEqual({ a: null, b: "two" });
   });
+
+  it("EMPTY_PROVIDER_KEYS covers every keyed provider in config", async () => {
+    const { PROVIDERS, providerSupportsKey } = await import("../config");
+    const emptyKeys = Object.keys(EMPTY_PROVIDER_KEYS);
+    for (const p of PROVIDERS.filter((p) => providerSupportsKey(p.id))) {
+      expect(emptyKeys, `${p.id} missing from EMPTY_PROVIDER_KEYS`).toContain(
+        p.id,
+      );
+    }
+    expect(Object.values(EMPTY_PROVIDER_KEYS).every((v) => v === null)).toBe(
+      true,
+    );
+  });
 });
