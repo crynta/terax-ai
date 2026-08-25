@@ -114,7 +114,7 @@ Najnowsze instalatory znajdują się na stronie [Releases](https://github.com/cr
 **Wymagania**
 
 - Rust (stable), https://rustup.rs
-- Node 20+ i [pnpm](https://pnpm.io)
+- Node 22+ i [pnpm](https://pnpm.io)
 - Wymagania Tauri dla platformy, https://tauri.app/start/prerequisites/
 
 **Uruchamianie**

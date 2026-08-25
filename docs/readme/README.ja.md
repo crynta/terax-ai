@@ -114,7 +114,7 @@ Terax は、Tauri 2 + Rust と React 19 で構築された、軽量かつオー�
 **前提条件**
 
 - Rust（stable）、https://rustup.rs
-- Node 20+ と [pnpm](https://pnpm.io)
+- Node 22+ と [pnpm](https://pnpm.io)
 - プラットフォームごとの Tauri 前提条件、https://tauri.app/start/prerequisites/
 
 **実行**
