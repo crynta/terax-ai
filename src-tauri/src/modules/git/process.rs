@@ -537,6 +537,16 @@ mod tests {
     }
 
     #[test]
+    fn host_key_verification_is_classified_separately() {
+        let err = classify_auth_error(
+            "@@@@@@@@@@@@@@@@@@@@@@@\nHost key verification failed.\nfatal: Could not read from remote repository.",
+        )
+        .expect("host key failure detected");
+        assert!(matches!(err, GitError::HostKeyUnverified));
+        assert!(!matches!(err, GitError::AuthRequired(_)));
+    }
+
+    #[test]
     fn auth_error_carries_first_stderr_line() {
         let err =
             classify_auth_error("remote: denied\nfatal: could not read username\nmore detail")
