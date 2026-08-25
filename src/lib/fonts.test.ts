@@ -1,35 +1,36 @@
 import { describe, expect, it } from "vitest";
-import { resolveFontFamily } from "./fonts";
-
-const FALLBACK = '"JetBrains Mono", SFMono-Regular, Menlo, monospace';
+import { detectMonoFontFamily, resolveFontFamily } from "./fonts";
 
 describe("resolveFontFamily", () => {
-  it("quotes a bare family and appends the mono fallback", () => {
-    expect(resolveFontFamily("JetBrainsMono Nerd Font")).toBe(
-      `"JetBrainsMono Nerd Font", ${FALLBACK}`,
+  it("falls back to the bundled chain for empty input", () => {
+    expect(resolveFontFamily("")).toBe(
+      '"JetBrains Mono", SFMono-Regular, Menlo, monospace',
+    );
+    expect(resolveFontFamily("   ")).toBe(
+      '"JetBrains Mono", SFMono-Regular, Menlo, monospace',
     );
   });
 
-  it("does not double-quote an already-quoted family", () => {
-    expect(resolveFontFamily('"Fira Code"')).toBe(`"Fira Code", ${FALLBACK}`);
-  });
-
-  it("passes a comma-separated stack through and still appends fallback", () => {
-    expect(resolveFontFamily("Foo, Bar")).toBe(`Foo, Bar, ${FALLBACK}`);
-  });
-
-  it("strips stray internal quotes to avoid a malformed token", () => {
-    expect(resolveFontFamily('Foo"Bar')).toBe(`"FooBar", ${FALLBACK}`);
-  });
-
-  it("trims surrounding whitespace before quoting", () => {
-    expect(resolveFontFamily("  Hack Nerd Font  ")).toBe(
-      `"Hack Nerd Font", ${FALLBACK}`,
+  it("quotes a single family name and strips embedded quotes", () => {
+    expect(resolveFontFamily("Fira Code")).toBe(
+      '"Fira Code", "JetBrains Mono", SFMono-Regular, Menlo, monospace',
+    );
+    expect(resolveFontFamily("O'Brien")).toBe(
+      '"OBrien", "JetBrains Mono", SFMono-Regular, Menlo, monospace',
     );
   });
 
-  it("falls back to the mono chain for empty input", () => {
-    expect(resolveFontFamily("")).toBe(FALLBACK);
-    expect(resolveFontFamily("   ")).toBe(FALLBACK);
+  it("keeps a full stack as provided and appends the fallback chain", () => {
+    expect(resolveFontFamily('"Cascadia Code", Consolas')).toBe(
+      '"Cascadia Code", Consolas, "JetBrains Mono", SFMono-Regular, Menlo, monospace',
+    );
+  });
+});
+
+describe("detectMonoFontFamily", () => {
+  it("returns the fallback chain when no DOM fonts are available", () => {
+    expect(detectMonoFontFamily()).toBe(
+      '"JetBrains Mono", SFMono-Regular, Menlo, monospace',
+    );
   });
 });
