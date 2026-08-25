@@ -78,6 +78,7 @@ describe("bash_run", () => {
     });
     const r = await run("bash_run", makeContext(), { command: "rm -rf /" });
     expect(r.error).toContain("blocked");
+    expect(securityMock.checkShellCommand).toHaveBeenCalledWith("rm -rf /");
     expect(nativeMock.shellSessionRun).not.toHaveBeenCalled();
   });
 

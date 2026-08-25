@@ -111,15 +111,17 @@ describe("get_terminal_output", () => {
     expect(r.lines_returned).toBe(2);
   });
 
-  it("caps a very long buffer and marks it truncated", async () => {
+  it("caps a very long buffer at exactly 24,000 characters plus the notice", async () => {
     const buffer = "x".repeat(30_000);
     const r = await run(
       "get_terminal_output",
       makeContext({ getTerminalContext: () => buffer }),
       { lines: 1 },
     );
-    expect(r.output.startsWith("…[truncated]…\n")).toBe(true);
-    expect(r.output.length).toBeLessThan(buffer.length);
+    const prefix = "…[truncated]…\n";
+    expect(r.output.startsWith(prefix)).toBe(true);
+    expect(r.output.length).toBe(prefix.length + 24_000);
+    expect(r.output.slice(prefix.length)).toBe("x".repeat(24_000));
   });
 });
 
