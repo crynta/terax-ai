@@ -75,6 +75,11 @@ describe("serverById", () => {
 
 describe("allServers", () => {
   it("appends custom servers to the presets", () => {
-    expect(allServers([customPy])).toHaveLength(LSP_PRESETS.length + 1);
+    const servers = allServers([customPy]);
+    expect(servers).toHaveLength(LSP_PRESETS.length + 1);
+    expect(servers.map((s) => s.id)).toEqual([
+      ...LSP_PRESETS.map((p) => p.id),
+      "my-py",
+    ]);
   });
 });
