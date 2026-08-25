@@ -94,12 +94,21 @@ describe("LSP binary detection", () => {
     expect(core.invoke).toHaveBeenCalledTimes(2);
   });
 
-  it("redetect re-probes immediately even while the previous probe is stuck", async () => {
-    core.invoke.mockResolvedValue(null);
-    await detectBinary("rust-analyzer");
-    core.invoke.mockResolvedValue("/late/path");
+  it("redetect re-probes while the previous probe is still pending", async () => {
+    let releaseFirst: ((v: string | null) => void) | undefined;
+    core.invoke.mockReturnValueOnce(
+      new Promise<string | null>((r) => {
+        releaseFirst = r;
+      }),
+    );
+
+    const stuck = detectBinary("rust-analyzer");
+    core.invoke.mockResolvedValueOnce("/late/path");
 
     await expect(redetectBinary("rust-analyzer")).resolves.toBe("/late/path");
     expect(core.invoke).toHaveBeenCalledTimes(2);
+
+    releaseFirst?.(null);
+    await expect(stuck).resolves.toBeNull();
   });
 });
