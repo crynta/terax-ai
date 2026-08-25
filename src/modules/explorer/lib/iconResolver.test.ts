@@ -39,4 +39,20 @@ describe("folderIconUrl", () => {
   it("returns an inline svg data url", () => {
     expect(folderIconUrl("src", false)).toContain("data:image/svg");
   });
+
+  it("uses distinct open and closed icons for a mapped folder", () => {
+    const closed = folderIconUrl("src", false);
+    const expanded = folderIconUrl("src", true);
+    expect(expanded).toContain("data:image/svg");
+    expect(expanded).not.toBe(closed);
+  });
+
+  it("differs from the confirmed unknown-folder fallback when mapped", () => {
+    const fallback = folderIconUrl("qzxwv-dir", false);
+    const fallbackExpanded = folderIconUrl("qzxwv-dir", true);
+    expect(fallback).toContain("data:image/svg");
+    expect(fallbackExpanded).toContain("data:image/svg");
+    expect(fallbackExpanded).not.toBe(fallback);
+    expect(folderIconUrl("src", false)).not.toBe(fallback);
+  });
 });
