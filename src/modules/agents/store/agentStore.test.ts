@@ -1,4 +1,4 @@
-﻿import { beforeEach, describe, expect, it } from "vitest";
+﻿import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nextAttentionTarget, useAgentStore } from "./agentStore";
 import type { AgentNotification } from "../lib/types";
 
@@ -9,6 +9,10 @@ describe("agent session store", () => {
       localAgent: null,
       notifications: [],
     });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("starts a session in the working state", () => {
@@ -87,21 +91,24 @@ describe("agent session store", () => {
     expect(useAgentStore.getState().notifications.every((n) => n.read)).toBe(true);
   });
 
-  it("nextAttentionTarget returns the longest-waiting agent's ids", () => {
+  it("nextAttentionTarget returns the most recently waiting agent", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
     useAgentStore.getState().start(1, 10, "claude");
+    useAgentStore.getState().setStatus(1, "waiting");
+    vi.setSystemTime(2_000);
     useAgentStore.getState().start(2, 20, "codex");
-
     useAgentStore.getState().setStatus(2, "waiting");
+
+    expect(nextAttentionTarget()).toEqual({ tabId: 20, leafId: 2 });
+
+    vi.setSystemTime(3_000);
+    useAgentStore.getState().setStatus(1, "working");
     useAgentStore.getState().setStatus(1, "waiting");
 
-    const target = nextAttentionTarget();
-    expect(target).toEqual({ tabId: 10, leafId: 1 });
+    expect(nextAttentionTarget()).toEqual({ tabId: 10, leafId: 1 });
   });
 
-  it("nextAttentionTarget is null when nobody waits", () => {
-    useAgentStore.getState().start(1, 10, "claude");
-    expect(nextAttentionTarget()).toBeNull();
-  });
 });
 
 function push(partial: { leafId: number; tabId: number }): void {
