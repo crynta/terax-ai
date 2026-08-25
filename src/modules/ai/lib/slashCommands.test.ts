@@ -6,7 +6,7 @@ const planMock = vi.hoisted(() => ({
   toggle: vi.fn(),
 }));
 
-vi.mock("../store/planStore", () => ({
+vi.mock("@/modules/ai/store/planStore", () => ({
   usePlanStore: {
     getState: () => ({
       active: planMock.active,
@@ -88,9 +88,12 @@ describe("tryRunSlashCommand", () => {
   });
 
   it("toggles plan mode with a bare /plan", () => {
-    planMock.active = true; // reflects the state after toggle()
+    planMock.toggle.mockImplementation(() => {
+      planMock.active = true;
+    });
     const out = tryRunSlashCommand("/plan");
     expect(out).toEqual({ kind: "handled", toast: "Plan mode on" });
     expect(planMock.toggle).toHaveBeenCalled();
+    expect(planMock.active).toBe(true);
   });
 });
