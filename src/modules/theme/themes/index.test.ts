@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_THEME_ID } from "../types";
-import { getBuiltinTheme, getDefaultTheme, listBuiltinThemes } from "./index";
+import { DEFAULT_THEME_ID } from "@/modules/theme/types";
+import {
+  getBuiltinTheme,
+  getDefaultTheme,
+  listBuiltinThemes,
+} from "@/modules/theme/themes/index";
 
 describe("builtin theme registry", () => {
   it("exposes a non-empty list of themes", () => {
@@ -22,9 +26,14 @@ describe("builtin theme registry", () => {
     expect(getBuiltinTheme("no-such-theme")).toBeUndefined();
   });
 
-  it("resolves the default theme to a registered theme, not the fallback", () => {
+  it("resolves the default theme through the registered-theme lookup", () => {
+    expect(getDefaultTheme()).toBe(getBuiltinTheme(DEFAULT_THEME_ID));
+  });
+
+  it("falls back to the first registered theme if the default is missing", () => {
     const ids = listBuiltinThemes().map((t) => t.id);
-    expect(ids).toContain(DEFAULT_THEME_ID);
-    expect(getDefaultTheme().id).toBe(DEFAULT_THEME_ID);
+    expect(ids).not.toContain("__fallback__");
+    expect(getBuiltinTheme("__fallback__")).toBeUndefined();
+    expect(getDefaultTheme()).toBe(listBuiltinThemes()[0]);
   });
 });
