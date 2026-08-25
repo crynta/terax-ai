@@ -160,6 +160,31 @@ describe("block-mode path completion", () => {
     expect(res?.options).toHaveLength(200);
   });
 
+  it("normalizes backslash tokens and drive-absolute paths on windows", async () => {
+    core.invoke.mockResolvedValue([
+      { name: "main.ts", kind: "file", size: 0, mtime: 0 },
+    ]);
+
+    const res = await pathCompletions("lib\\ma", "C:/repo");
+
+    expect(core.invoke).toHaveBeenCalledWith("fs_read_dir", {
+      path: "C:/repo/lib",
+      showHidden: false,
+      workspace: "local",
+    } satisfies InvokeArgs);
+    expect(res?.fromOffset).toBe(4);
+    expect(res?.options.map((o) => o.label)).toEqual(["main.ts"]);
+
+    const abs = await pathCompletions("C:\\repo\\lib\\ma", "C:/repo");
+    expect(core.invoke).toHaveBeenLastCalledWith("fs_read_dir", {
+      path: "C:/repo/lib/",
+      showHidden: false,
+      workspace: "local",
+    } satisfies InvokeArgs);
+    expect(abs?.fromOffset).toBe(12);
+    expect(abs?.options.map((o) => o.label)).toEqual(["main.ts"]);
+  });
+
   it("returns null when the backend rejects the read", async () => {
     core.invoke.mockRejectedValue(new Error("denied"));
 
