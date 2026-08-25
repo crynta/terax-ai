@@ -3,9 +3,18 @@
 const nativeMock = vi.hoisted(() => ({
   writeFile: vi.fn(),
   createDir: vi.fn(),
+  canonicalize: vi.fn(async (path: string) => path),
 }));
 
 vi.mock("../lib/native", () => ({ native: nativeMock }));
+
+const securityMock = vi.hoisted(() => ({
+  checkWritableCanonical: vi.fn<
+    (path: string) => Promise<{ ok: true; canonical: string } | { ok: false; reason: string }>
+  >(),
+}));
+
+vi.mock("../lib/security", () => securityMock);
 
 import { usePlanStore, type QueuedEdit } from "./planStore";
 
@@ -26,6 +35,12 @@ describe("plan mode store", () => {
     usePlanStore.setState({ active: false, queue: [] });
     nativeMock.writeFile.mockReset();
     nativeMock.createDir.mockReset();
+    nativeMock.canonicalize.mockClear();
+    nativeMock.canonicalize.mockImplementation(async (path: string) => path);
+    securityMock.checkWritableCanonical.mockClear();
+    securityMock.checkWritableCanonical.mockImplementation(
+      async (path: string) => ({ ok: true, canonical: path }),
+    );
   });
 
   it("keeps the queue when enabling and clears it when disabling", () => {
@@ -100,7 +115,9 @@ describe("plan mode store", () => {
 
   it("captures a failed edit in its result and still drains the rest", async () => {
     usePlanStore.getState().enqueue(edit({ id: "q-1", path: "/repo/blocked" }));
-    usePlanStore.getState().enqueue(edit({ id: "q-2", path: "/repo/fine" }));
+    usePlanStore
+      .getState()
+      .enqueue(edit({ id: "q-2", path: "/repo/fine" }));
     nativeMock.writeFile.mockImplementation((path: string) =>
       path === "/repo/blocked"
         ? Promise.reject(new Error("denied"))
@@ -112,6 +129,64 @@ describe("plan mode store", () => {
     expect(results[0]).toMatchObject({ id: "q-1", ok: false });
     expect(String(results[0].error)).toContain("denied");
     expect(results[1]).toEqual({ id: "q-2", ok: true });
+    expect(usePlanStore.getState().queue).toEqual([]);
+  });
+
+  it("refuses denied paths at the mutation boundary without touching disk", async () => {
+    usePlanStore
+      .getState()
+      .enqueue(edit({ id: "q-1", path: "/repo/.env" }));
+    usePlanStore
+      .getState()
+      .enqueue({
+        ...edit({ id: "q-2", path: "/repo/.ssh", kind: "create_directory" }),
+        originalContent: "",
+        proposedContent: "",
+        description: "Create directory",
+      });
+    securityMock.checkWritableCanonical.mockImplementation(async (path: string) => ({
+      ok: false as const,
+      reason: `Refused: ${path}`,
+    }));
+
+    const results = await usePlanStore.getState().applyAll();
+
+    expect(results.map((r) => r.ok)).toEqual([false, false]);
+    expect(nativeMock.writeFile).not.toHaveBeenCalled();
+    expect(nativeMock.createDir).not.toHaveBeenCalled();
+    expect(usePlanStore.getState().queue).toEqual([]);
+  });
+
+  it("keeps edits enqueued while applyAll is pending and applies them later", async () => {
+    let releaseWrite: (() => void) | undefined;
+    nativeMock.writeFile.mockImplementation(
+      (path: string) =>
+        new Promise<void>((resolve) => {
+          if (path === "/repo/first") {
+            releaseWrite = () => resolve();
+          } else {
+            resolve();
+          }
+        }),
+    );
+    usePlanStore.getState().enqueue(edit({ id: "q-1", path: "/repo/first" }));
+
+    const applying = usePlanStore.getState().applyAll();
+    await vi.waitFor(() => expect(releaseWrite).toBeDefined());
+    // Edit queued while the first write is still in flight.
+    usePlanStore
+      .getState()
+      .enqueue(edit({ id: "q-2", path: "/repo/second" }));
+    releaseWrite?.();
+
+    const results = await applying;
+
+    expect(results).toEqual([{ id: "q-1", ok: true }]);
+    expect(usePlanStore.getState().queue.map((q) => q.id)).toEqual(["q-2"]);
+
+    nativeMock.writeFile.mockResolvedValue(undefined);
+    const second = await usePlanStore.getState().applyAll();
+    expect(second).toEqual([{ id: "q-2", ok: true }]);
     expect(usePlanStore.getState().queue).toEqual([]);
   });
 });
