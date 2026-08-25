@@ -172,16 +172,8 @@ mod tests {
     }
 
     #[test]
-    fn methods_catalog_matches_the_documented_constants() {
-        assert_eq!(
-            METHODS,
-            &[
-                METHOD_PING,
-                METHOD_CAPABILITIES,
-                METHOD_IDENTIFY,
-                METHOD_OPEN
-            ]
-        );
+    fn methods_catalog_matches_the_wire_literals() {
+        assert_eq!(METHODS, &["ping", "capabilities", "identify", "open"]);
     }
 
     #[test]
