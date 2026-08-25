@@ -58,4 +58,39 @@ describe("deriveTitle", () => {
     const exactly40 = "a".repeat(40);
     expect(deriveTitle([message(exactly40)])).toBe(exactly40);
   });
+
+  it("walks past an assistant reply to the later user question", () => {
+    expect(
+      deriveTitle([
+        message("assistant reply", "assistant"),
+        message("the real question"),
+      ]),
+    ).toBe("the real question");
+  });
+
+  it("skips non-text parts before the first text part", () => {
+    const m: UIMessage = {
+      id: "id",
+      role: "user",
+      parts: [
+        { type: "file" as const, url: "file:///a.png", mediaType: "image/png" },
+        { type: "text", text: "after the attachment" },
+      ],
+    } as unknown as UIMessage;
+    expect(deriveTitle([m])).toBe("after the attachment");
+  });
+
+  it("selects the first of several user messages with multiple parts", () => {
+    const second: UIMessage = {
+      id: "m2",
+      role: "user",
+      parts: [
+        { type: "file" as const, url: "file:///b.txt", mediaType: "text/plain" },
+        { type: "text", text: "second question" },
+      ],
+    } as unknown as UIMessage;
+    expect(
+      deriveTitle([message("first question"), second]),
+    ).toBe("first question");
+  });
 });
