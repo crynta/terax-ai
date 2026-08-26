@@ -14,7 +14,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { type JSX, useEffect, useState } from "react";
+import { type JSX, useCallback, useEffect, useState } from "react";
 import { AboutSection } from "./sections/AboutSection";
 import { AgentsSection } from "./sections/AgentsSection";
 import { EditorSection } from "./sections/EditorSection";
@@ -91,11 +91,20 @@ function readInitialTab(): SettingsTab {
 export function SettingsApp() {
   const [active, setActive] = useState<SettingsTab>(readInitialTab);
   const init = usePreferencesStore((s) => s.init);
+  const hydrated = usePreferencesStore((s) => s.hydrated);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const ActiveSection = TABS.find((t) => t.id === active)?.component;
 
-  useEffect(() => {
-    void init();
+  // `init` resets its promise on failure without flipping `hydrated`, so a
+  // rejected load must be caught here or the pane renders empty forever.
+  const loadPrefs = useCallback(() => {
+    setLoadError(null);
+    void init().catch((e) => setLoadError(e instanceof Error ? e.message : String(e)));
   }, [init]);
+
+  useEffect(() => {
+    loadPrefs();
+  }, [loadPrefs]);
 
   useEffect(() => {
     const apply = (detail: string) => {
@@ -149,7 +158,26 @@ export function SettingsApp() {
 
       <main className="min-h-0 flex-1 overflow-y-auto px-8 pt-6 pb-7 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <div className="mx-auto w-full max-w-160">
-          {ActiveSection && <ActiveSection />}
+          {/* Hold sections until prefs are hydrated so controls never render
+              with default values and flip once the store loads. */}
+          {hydrated && ActiveSection && <ActiveSection />}
+          {!hydrated && !loadError && (
+            <div className="py-8 text-[13px] text-muted-foreground">
+              Loading preferences...
+            </div>
+          )}
+          {!hydrated && loadError && (
+            <div className="py-8 text-[13px] text-muted-foreground">
+              <p>Failed to load preferences: {loadError}</p>
+              <button
+                type="button"
+                onClick={loadPrefs}
+                className="mt-2 rounded-sm border border-border/60 px-2 py-1 text-foreground/80 hover:bg-accent/70"
+              >
+                Retry
+              </button>
+            </div>
+          )}
         </div>
       </main>
     </div>
