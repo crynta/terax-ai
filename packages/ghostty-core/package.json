@@ -1,0 +1,32 @@
+{
+  "name": "@terax/ghostty-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./lib/core.ts",
+    "./protocol": "./lib/protocol.ts",
+    "./adapted": "./lib/adapted/index.ts",
+    "./adapted/ghostty-vt.wasm": "./adapted/ghostty-vt.wasm",
+    "./input": "./lib/input-handler.ts",
+    "./ghostty-vt.wasm": "./ghostty-vt.wasm",
+    "./official": "./lib/official/index.ts",
+    "./official/ghostty-vt.wasm": "./official/ghostty-vt.wasm"
+  },
+  "files": [
+    "lib",
+    "adapted/ghostty-vt.wasm",
+    "adapted/UPSTREAM.md",
+    "adapted/LICENSE.ghostty",
+    "adapted/LICENSE.restty",
+    "adapted/wasm/build.zig",
+    "adapted/wasm/build.zig.zon",
+    "adapted/wasm/src/terax.zig",
+    "adapted/wasm/src/terminfo_gen.zig",
+    "ghostty-vt.wasm",
+    "official/ghostty-vt.wasm",
+    "official/UPSTREAM.md",
+    "FORK.md",
+    "LICENSE"
+  ]
+}
