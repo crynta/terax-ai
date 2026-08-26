@@ -1,5 +1,10 @@
-import { Alert02Icon, Globe02Icon } from "@hugeicons/core-free-icons";
+import {
+  Alert02Icon,
+  Globe02Icon,
+  LinkSquare02Icon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   forwardRef,
   useEffect,
@@ -60,6 +65,7 @@ export const PreviewPane = forwardRef<PreviewPaneHandle, Props>(
     );
 
     const showXfoHint = url ? !isLocalUrl(url) : false;
+    const showCookieHint = url ? isLocalUrl(url) : false;
 
     return (
       <div
@@ -87,6 +93,28 @@ export const PreviewPane = forwardRef<PreviewPaneHandle, Props>(
               Many public sites refuse to embed (X-Frame-Options). If the page
               is blank, open it externally.
             </span>
+          </div>
+        ) : null}
+        {showCookieHint ? (
+          <div className="flex h-7 shrink-0 items-center gap-1.5 border-b border-border/60 bg-sky-500/8 px-3 text-[11px] text-sky-700 dark:text-sky-300">
+            <HugeiconsIcon
+              icon={Alert02Icon}
+              size={12}
+              strokeWidth={1.75}
+              className="shrink-0"
+            />
+            <span className="truncate">
+              Cookie login may not persist in sandboxed preview. If login fails,
+              open externally.
+            </span>
+            <button
+              type="button"
+              onClick={() => void openUrl(url).catch(console.error)}
+              className="ml-auto flex shrink-0 items-center gap-1 rounded bg-sky-500/15 px-1.5 py-0.5 text-[10.5px] hover:bg-sky-500/20"
+            >
+              <HugeiconsIcon icon={LinkSquare02Icon} size={10} strokeWidth={1.75} />
+              Open
+            </button>
           </div>
         ) : null}
         <div
