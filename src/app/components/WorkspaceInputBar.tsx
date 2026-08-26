@@ -4,7 +4,7 @@ import { Chip } from "@/modules/ai/components/Chip";
 import { ChipsRow } from "@/modules/ai/components/ChipsRow";
 import { useComposer } from "@/modules/ai/lib/composer";
 import { useBlockController } from "@/modules/terminal/lib/blockController";
-import { focusLeafInput } from "@/modules/terminal/lib/useTerminalSession";
+import { focusLeafInput } from "@/modules/terminal/lib/terminalSessionApi";
 import {
   AiContentGenerator02Icon,
   CommandLineIcon,

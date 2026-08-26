@@ -101,7 +101,7 @@ export function registerOsc52ClipboardHandler(
   return () => d.dispose();
 }
 
-function parseOsc7(data: string): string | null {
+export function parseOsc7(data: string): string | null {
   const m = data.match(/^file:\/\/[^/]*(\/.*)$/);
   if (!m) return null;
   let path = m[1];
@@ -119,7 +119,7 @@ function parseOsc7(data: string): string | null {
   return path;
 }
 
-function parseOsc52Clipboard(data: string): string | null {
+export function parseOsc52Clipboard(data: string): string | null {
   const parts = data.split(";");
   if (parts.length < 2) return null;
   const selection = parts[0] || "c";

@@ -1,5 +1,5 @@
-import { invoke, Channel } from "@tauri-apps/api/core";
 import { currentWorkspaceEnv } from "@/modules/workspace";
+import { Channel, invoke } from "@tauri-apps/api/core";
 
 const textEncoder = new TextEncoder();
 
@@ -10,7 +10,7 @@ export type PtyHandlers = {
 
 export type PtySession = {
   id: number;
-  write: (data: string) => Promise<void>;
+  write: (data: string | Uint8Array) => Promise<void>;
   resize: (cols: number, rows: number) => Promise<void>;
   close: () => Promise<void>;
 };
@@ -61,7 +61,12 @@ export async function openPty(
   return {
     id,
     // Raw bytes + id header: no JSON round-trip on the per-keystroke path.
-    write: (data) => invoke("pty_write", textEncoder.encode(data), { headers }),
+    write: (data) =>
+      invoke(
+        "pty_write",
+        typeof data === "string" ? textEncoder.encode(data) : data,
+        { headers },
+      ),
     resize: (c, r) => invoke("pty_resize", { id, cols: c, rows: r }),
     close: async () => {
       if (closed) return;
