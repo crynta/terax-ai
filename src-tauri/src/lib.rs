@@ -87,6 +87,7 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     };
 
     if let Some(window) = app.get_webview_window("settings") {
+        #[cfg(not(target_os = "macos"))]
         let _ = window.set_always_on_top(true);
         let _ = window.show();
         let _ = window.set_focus();
@@ -106,7 +107,12 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
         .visible(false)
         // Keep settings above the main app window so it doesn't get hidden
         // when the user clicks back into the editor or terminal (#33).
-        .always_on_top(true);
+        // On macOS always_on_top maps to NSWindow.level=.floating which is
+        // system-wide (above all apps). Avoid it there; show()+focus is enough
+        // to bring the window above the main window without floating over Safari etc. (#957).
+        .always_on_top(false);
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.always_on_top(true);
 
     // Tie lifecycle to the main window so settings minimizes/closes with it.
     // macOS: skip parent() — child + always_on_top leaves the settings webview
