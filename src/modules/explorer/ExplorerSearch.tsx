@@ -12,6 +12,7 @@ import {
   Folder01Icon,
   Search01Icon,
 } from "@hugeicons/core-free-icons";
+import { isComposingEvent } from "@/lib/ime";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
 import { currentWorkspaceEnv } from "@/modules/workspace";
@@ -185,6 +186,7 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
+              if (isComposingEvent(e)) return;
               if (e.key === "Escape") {
                 e.preventDefault();
                 e.stopPropagation();

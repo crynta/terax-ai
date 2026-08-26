@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { isComposingEvent } from "@/lib/ime";
 import { KEY_SEP } from "@/lib/platform";
 import type { EditorPaneHandle } from "@/modules/editor";
 import { usePreferencesStore } from "@/modules/settings/preferences";
@@ -159,6 +160,7 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
                 if (compact && !q) setOpenInCompact(false);
               }}
               onKeyDown={(e) => {
+                if (isComposingEvent(e)) return;
                 if (e.key === "Enter") {
                   e.preventDefault();
                   findDirection(!e.shiftKey);

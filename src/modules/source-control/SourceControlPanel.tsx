@@ -27,6 +27,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
+import { isComposingEvent } from "@/lib/ime";
 import { toast } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -481,6 +482,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
   }, [scm.actionError, scm.actionMessage, scm.remoteError]);
 
   const handleCommitShortcut = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (isComposingEvent(event)) return;
     if (
       event.key === "Enter" &&
       (event.metaKey || event.ctrlKey) &&

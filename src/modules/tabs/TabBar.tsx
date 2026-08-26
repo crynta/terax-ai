@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { isComposingEvent } from "@/lib/ime";
 import { cn } from "@/lib/utils";
 import { AgentIcon } from "@/modules/agents/lib/agentIcon";
 import type { AgentLaunchRequest } from "@/modules/agents/lib/launcher";
@@ -781,6 +782,7 @@ function TabRenameInput({
       )}
       onKeyDown={(e) => {
         e.stopPropagation();
+        if (isComposingEvent(e)) return;
         if (e.key === "Enter") commit(e.currentTarget.value, true);
         else if (e.key === "Escape") finish(onCancel);
       }}

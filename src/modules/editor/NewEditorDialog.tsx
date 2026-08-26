@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { isComposingEvent } from "@/lib/ime";
 import { currentWorkspaceEnv } from "@/modules/workspace";
 import { File02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -101,6 +102,7 @@ export function NewEditorDialog({
             setError(null);
           }}
           onKeyDown={(e) => {
+            if (isComposingEvent(e)) return;
             if (e.key === "Enter") {
               e.preventDefault();
               void submit();

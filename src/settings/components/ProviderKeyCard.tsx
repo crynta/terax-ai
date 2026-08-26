@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { isComposingEvent } from "@/lib/ime";
 import { cn } from "@/lib/utils";
 import type { ProviderInfo } from "@/modules/ai/config";
 import {
@@ -133,6 +134,7 @@ export function ProviderKeyCard({
                   if (error) setError(null);
                 }}
                 onKeyDown={(e) => {
+                  if (isComposingEvent(e)) return;
                   if (e.key === "Enter") {
                     e.preventDefault();
                     void submit();

@@ -1,3 +1,4 @@
+import { isComposingEvent } from "@/lib/ime";
 import { useLayoutEffect, useRef, useState } from "react";
 
 type Props = {
@@ -74,6 +75,7 @@ export function InlineInput({
       placeholder={placeholder}
       onChange={(e) => setValue(e.target.value)}
       onKeyDown={(e) => {
+        if (isComposingEvent(e)) return;
         if (e.key === "Enter") {
           e.preventDefault();
           commit();

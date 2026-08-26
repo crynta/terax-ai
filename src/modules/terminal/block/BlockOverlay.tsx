@@ -4,6 +4,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { isComposingEvent } from "@/lib/ime";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import {
@@ -348,6 +349,7 @@ function SearchBar({
         placeholder="Find in block"
         onChange={(e) => run(e.target.value)}
         onKeyDown={(e) => {
+          if (isComposingEvent(e)) return;
           if (e.key === "Enter") {
             e.preventDefault();
             nav(e.shiftKey ? -1 : 1);

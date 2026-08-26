@@ -1,3 +1,4 @@
+import { isComposingEvent } from "@/lib/ime";
 import { cn } from "@/lib/utils";
 import { useEffect, useRef } from "react";
 
@@ -42,6 +43,7 @@ export function InlineRename({
       )}
       onKeyDown={(e) => {
         e.stopPropagation();
+        if (isComposingEvent(e)) return;
         if (e.key === "Enter") finish(() => onCommit(e.currentTarget.value));
         else if (e.key === "Escape") finish(onCancel);
       }}

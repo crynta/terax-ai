@@ -14,6 +14,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { isComposingEvent } from "@/lib/ime";
 import { cn } from "@/lib/utils";
 import {
   type OsNotificationResult,
@@ -642,6 +643,7 @@ function FontFamilyInput({
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
+          if (isComposingEvent(e)) return;
           if (e.key === "Enter") e.currentTarget.blur();
         }}
         className="h-8 w-48 rounded-md border border-border bg-background px-2.5 text-[12px] outline-none focus:border-foreground/40"

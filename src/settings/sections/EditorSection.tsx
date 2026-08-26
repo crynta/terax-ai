@@ -11,6 +11,7 @@ import {
   FORMATTER_LABELS,
   FORMATTERS,
 } from "@/modules/editor/lib/externalFormat";
+import { isComposingEvent } from "@/lib/ime";
 import { EXPOSED_LANGUAGES } from "@/modules/editor/lib/languageDefinitions";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
@@ -218,6 +219,7 @@ function CustomFormatCommandInput() {
           if (draft !== stored) void setEditorCustomFormatCommand(draft);
         }}
         onKeyDown={(e) => {
+          if (isComposingEvent(e)) return;
           if (e.key === "Enter") e.currentTarget.blur();
         }}
         className="h-8 w-64 font-mono text-[12px] md:text-[12px]"
@@ -349,6 +351,7 @@ function AutoSaveDelayInput({
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
           onKeyDown={(e) => {
+            if (isComposingEvent(e)) return;
             if (e.key === "Enter") {
               e.currentTarget.blur();
             }
@@ -400,6 +403,7 @@ function WordWrapColumnInput({
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
           onKeyDown={(e) => {
+            if (isComposingEvent(e)) return;
             if (e.key === "Enter") e.currentTarget.blur();
           }}
           className="h-8 w-20 rounded-md border border-border bg-background px-2.5 text-right text-[12px] md:text-[12px] tabular-nums outline-none focus:border-foreground/40 focus-visible:ring-0 focus-visible:border-foreground/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
