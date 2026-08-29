@@ -24,7 +24,7 @@ import {
 } from "react";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { fileIconUrl } from "./lib/iconResolver";
-import { copyToClipboard, revealInFinder } from "./lib/contextActions";
+import { copyToClipboard, relativePath, revealInFinder } from "./lib/contextActions";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
 import { cn } from "@/lib/utils";
 
@@ -40,6 +40,10 @@ type SearchResult = {
   truncated: boolean;
 };
 
+function isMarkdownPath(path: string): boolean {
+  return /\.(md|markdown|mdx)$/i.test(path);
+}
+
 const MIN_QUERY_LEN = 2;
 const DEBOUNCE_MS = 300;
 
@@ -53,6 +57,7 @@ type Props = {
   onOpenInSourceControl?: (path: string) => void;
   onOpenGitHistory?: (path: string) => void;
   onAttachToAgent?: (path: string) => void;
+  onOpenMarkdownPreview?: (path: string) => void;
 };
 
 export type ExplorerSearchHandle = {
@@ -70,6 +75,7 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
   onOpenInSourceControl,
   onOpenGitHistory,
   onAttachToAgent,
+  onOpenMarkdownPreview,
 }: Props,
   ref,
 ) {
@@ -282,6 +288,14 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
                           Open
                         </ContextMenuItem>
                       )}
+                      {!hit.is_dir && isMarkdownPath(hit.path) && onOpenMarkdownPreview && (
+                        <ContextMenuItem
+                          className={COMPACT_ITEM}
+                          onSelect={() => onOpenMarkdownPreview(hit.path)}
+                        >
+                          Open Preview
+                        </ContextMenuItem>
+                      )}
                       {hit.is_dir && onRevealInTerminal && (
                         <ContextMenuItem
                           className={COMPACT_ITEM}
@@ -318,6 +332,12 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
                         onSelect={() => void copyToClipboard(hit.path)}
                       >
                         Copy Path
+                      </ContextMenuItem>
+                      <ContextMenuItem
+                        className={COMPACT_ITEM}
+                        onSelect={() => void copyToClipboard(relativePath(rootPath, hit.path))}
+                      >
+                        Copy Relative Path
                       </ContextMenuItem>
                       <ContextMenuSeparator />
                       <ContextMenuItem

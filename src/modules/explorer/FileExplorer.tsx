@@ -564,6 +564,7 @@ export const FileExplorer = memo(
           onOpenInSourceControl={onOpenInSourceControl}
           onOpenGitHistory={onOpenGitHistory}
           onAttachToAgent={onAttachToAgent}
+          onOpenMarkdownPreview={onOpenMarkdownPreview}
         />
 
         {!isSearchActive ? (
