@@ -203,6 +203,7 @@ function termOptions() {
     cursorInactiveStyle: "outline" as const,
     scrollback: prefs.terminalScrollback,
     allowProposedApi: true,
+    vtExtensions: { kittyKeyboard: true },
     minimumContrastRatio: bgActive(prefs) ? MCR_BG_ACTIVE : MCR_BG_INACTIVE,
   };
 }
@@ -330,6 +331,10 @@ function createSlot(): Slot {
       return false;
     }
     if (isShiftEnter(event)) {
+      // Kitty keyboard active: let xterm encode Shift+Enter natively
+      // (\x1b[13;2u, plus release events) instead of the legacy \x1b\r that
+      // apps like pi only honor when they negotiated kitty mode.
+      if (kittyKeyboardActive(slot.term)) return true;
       event.preventDefault();
       if (event.type === "keydown") bridge.writeToPty("\x1b\r");
       return false;
@@ -1136,4 +1141,20 @@ function isShiftEnter(e: KeyboardEvent): boolean {
   return (
     e.key === "Enter" && e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey
   );
+}
+
+// True when the terminal is both configured for and actively running the
+// kitty keyboard protocol (the app pushed flags > 0 via CSI = <flags> u).
+// Mirrors xterm's internal useKitty/shouldUseProtocol check.
+function kittyKeyboardActive(term: Terminal): boolean {
+  if (!term.options.vtExtensions?.kittyKeyboard) return false;
+  // SAFETY: accessing xterm's private _core to read kittyKeyboard flags,
+  // matching the internal useKitty/shouldUseProtocol check. The shape is
+  // verified against the beta source (CoreService.ts).
+  const core = (
+    term as unknown as {
+      _core?: { coreService?: { kittyKeyboard?: { flags?: number } } };
+    }
+  )._core;
+  return (core?.coreService?.kittyKeyboard?.flags ?? 0) > 0;
 }
