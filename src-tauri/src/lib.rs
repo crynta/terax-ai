@@ -5,9 +5,9 @@ use modules::{
 };
 use std::path::PathBuf;
 use std::sync::Mutex;
-#[cfg(target_os = "macos")]
-use tauri::PhysicalPosition;
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
+#[cfg(target_os = "macos")]
+use tauri::{PhysicalPosition, WindowEvent};
 use tauri_plugin_window_state::StateFlags;
 
 /// Drained on first read so HMR / re-mounts can't replay the launch dir.
@@ -209,6 +209,18 @@ pub fn run() {
         .setup(move |_app| {
             if let Err(error) = control::start(_app.handle().clone(), control_for_setup.clone()) {
                 log::warn!("could not start Terax control server: {error}");
+            }
+            #[cfg(target_os = "macos")]
+            if let Some(main) = _app.get_webview_window("main") {
+                let handle = _app.handle().clone();
+                main.on_window_event(move |event| {
+                    // CloseRequested can be cancelled by the frontend guard.
+                    if matches!(event, WindowEvent::Destroyed) {
+                        if let Some(settings) = handle.get_webview_window("settings") {
+                            let _ = settings.destroy();
+                        }
+                    }
+                });
             }
             Ok(())
         })
