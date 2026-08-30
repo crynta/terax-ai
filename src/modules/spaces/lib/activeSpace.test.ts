@@ -1,6 +1,12 @@
 import type { WorkspaceEnv } from "@/modules/workspace";
 import { describe, expect, it } from "vitest";
-import { activeSpaceEnv, findActiveSpace, freshTabCwd } from "./activeSpace";
+import {
+  activeSpaceEnv,
+  findActiveSpace,
+  freshTabCwd,
+  usableActiveSpaceRoot,
+} from "./activeSpace";
+import type { SpaceRootIssues } from "./spaceRoot";
 import type { SpaceMeta } from "./store";
 
 function space(over: Partial<SpaceMeta>): SpaceMeta {
@@ -29,6 +35,18 @@ describe("findActiveSpace", () => {
 
   it("returns null when there are no spaces", () => {
     expect(findActiveSpace([], "a")).toBeNull();
+  });
+});
+
+describe("usableActiveSpaceRoot", () => {
+  it("returns null whenever the active Space has a root issue", () => {
+    const active = space({ id: "broken", root: "/rejected" });
+    const issues: SpaceRootIssues = {
+      broken: { candidate: "/rejected", message: "not found" },
+    };
+
+    expect(usableActiveSpaceRoot(active, issues)).toBeNull();
+    expect(usableActiveSpaceRoot(active, {})).toBe("/rejected");
   });
 });
 

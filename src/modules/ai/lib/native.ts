@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { currentWorkspaceEnv } from "@/modules/workspace";
+import { currentWorkspaceEnv, type WorkspaceEnv } from "@/modules/workspace";
 
 export type ReadResult =
   | { kind: "text"; content: string; size: number }
@@ -12,6 +12,12 @@ export type DirEntry = {
   size: number;
   mtime: number;
   gitignored: boolean;
+};
+
+export type FileStat = {
+  size: number;
+  mtime: number;
+  kind: "file" | "dir" | "symlink";
 };
 
 export type CommandOutput = {
@@ -138,10 +144,13 @@ export type GitBranchListResult = {
 
 export const native = {
   workspaceCurrentDir: () => invoke<string>("workspace_current_dir"),
-  workspaceAuthorize: (path: string) =>
+  workspaceAuthorize: (
+    path: string,
+    workspace: WorkspaceEnv = currentWorkspaceEnv(),
+  ) =>
     invoke<string>("workspace_authorize", {
       path,
-      workspace: currentWorkspaceEnv(),
+      workspace,
     }),
   readFile: (path: string) =>
     invoke<ReadResult>("fs_read_file", {
@@ -154,11 +163,21 @@ export const native = {
       content,
       workspace: currentWorkspaceEnv(),
     }),
-  canonicalize: (path: string) =>
+  canonicalize: (
+    path: string,
+    workspace: WorkspaceEnv = currentWorkspaceEnv(),
+  ) =>
     invoke<string>("fs_canonicalize", {
       path,
-      workspace: currentWorkspaceEnv(),
+      workspace,
     }),
+  stat: (path: string, workspace: WorkspaceEnv = currentWorkspaceEnv()) =>
+    invoke<FileStat>("fs_stat", { path, workspace }),
+  listSubdirs: (
+    path: string,
+    showHidden: boolean,
+    workspace: WorkspaceEnv = currentWorkspaceEnv(),
+  ) => invoke<string[]>("list_subdirs", { path, showHidden, workspace }),
   createFile: (path: string) =>
     invoke<void>("fs_create_file", { path, workspace: currentWorkspaceEnv() }),
   createDir: (path: string) =>
@@ -193,11 +212,7 @@ export const native = {
       maxResults: params.maxResults ?? null,
       workspace: currentWorkspaceEnv(),
     }),
-  runCommand: (
-    command: string,
-    cwd?: string | null,
-    timeoutSecs?: number,
-  ) =>
+  runCommand: (command: string, cwd?: string | null, timeoutSecs?: number) =>
     invoke<CommandOutput>("shell_run_command", {
       command,
       cwd: cwd ?? null,
@@ -332,7 +347,10 @@ export const native = {
       repoRoot,
       workspace: currentWorkspaceEnv(),
     }),
-  gitLog: (repoRoot: string, options?: { limit?: number; beforeSha?: string }) =>
+  gitLog: (
+    repoRoot: string,
+    options?: { limit?: number; beforeSha?: string },
+  ) =>
     invoke<GitLogEntry[]>("git_log", {
       repoRoot,
       limit: options?.limit ?? null,

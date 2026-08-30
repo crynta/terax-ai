@@ -21,12 +21,14 @@ export type SpaceState = {
 const STORE_PATH = "terax-spaces.json";
 const KEY_SPACES = "spaces";
 const KEY_ACTIVE = "activeId";
+const KEY_SCHEMA = "schemaVersion";
 const STATE_PREFIX = "state:";
 const stateKey = (id: string) => `${STATE_PREFIX}${id}`;
 
 const store = new LazyStore(STORE_PATH, { defaults: {}, autoSave: 500 });
 
 export type LoadedSpaces = {
+  schemaVersion: number;
   spaces: SpaceMeta[];
   activeId: string | null;
   states: Map<string, SpaceState>;
@@ -34,17 +36,19 @@ export type LoadedSpaces = {
 
 export async function loadAll(): Promise<LoadedSpaces> {
   const entries = await store.entries();
+  let schemaVersion = 1;
   let spaces: SpaceMeta[] = [];
   let activeId: string | null = null;
   const states = new Map<string, SpaceState>();
   for (const [k, v] of entries) {
-    if (k === KEY_SPACES) spaces = (v as SpaceMeta[]) ?? [];
+    if (k === KEY_SCHEMA) schemaVersion = (v as number) ?? 1;
+    else if (k === KEY_SPACES) spaces = (v as SpaceMeta[]) ?? [];
     else if (k === KEY_ACTIVE) activeId = (v as string | null) ?? null;
     else if (k.startsWith(STATE_PREFIX)) {
       states.set(k.slice(STATE_PREFIX.length), v as SpaceState);
     }
   }
-  return { spaces, activeId, states };
+  return { schemaVersion, spaces, activeId, states };
 }
 
 export async function saveSpacesList(spaces: SpaceMeta[]): Promise<void> {
@@ -53,6 +57,10 @@ export async function saveSpacesList(spaces: SpaceMeta[]): Promise<void> {
 
 export async function saveActiveId(id: string | null): Promise<void> {
   await store.set(KEY_ACTIVE, id);
+}
+
+export async function saveSchemaVersion(version: number): Promise<void> {
+  await store.set(KEY_SCHEMA, version);
 }
 
 export async function saveState(id: string, state: SpaceState): Promise<void> {
