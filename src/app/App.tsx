@@ -64,8 +64,8 @@ import {
   useSidebarPanel,
 } from "@/modules/sidebar";
 import {
+  createGitHistoryRequestGate,
   SourceControlPanel,
-  useRepositoryTargeting,
   useSourceControlContext,
 } from "@/modules/source-control";
 import {
@@ -215,6 +215,7 @@ export default function App() {
   useApplyEditorFontSize();
   const terminalPathDropTarget = useTerminalFileDrop();
   const explorerRef = useRef<FileExplorerHandle>(null);
+  const gitHistoryRequestGate = useRef(createGitHistoryRequestGate()).current;
 
   // Drives session disposal off the pane tree, not React lifecycles —
   // split/unsplit re-mount components but the leaf is still live.
@@ -246,8 +247,6 @@ export default function App() {
     activeIdRef.current = activeId;
     activeSpaceIdRef.current = activeSpaceId;
   }, [tabs, activeId, activeSpaceId]);
-  const sourceControlSpaceId = activeSpaceId ?? DEFAULT_SPACE_ID;
-
   useSpacesBoot({
     ready: launchCwdResolved,
     home,
@@ -735,45 +734,59 @@ export default function App() {
     activeTab?.kind === "editor" || activeTab?.kind === "markdown"
       ? activeTab.path
       : null;
-  const isRepositoryContextCurrent = useCallback(
-    (spaceId: string, workspaceKey: string) => {
-      const currentSpaceId = useSpaces.getState().activeId ?? DEFAULT_SPACE_ID;
-      const currentWorkspaceKey = workspaceScopeKey(
-        useWorkspaceEnvStore.getState().env,
-      );
-      return spaceId === currentSpaceId && workspaceKey === currentWorkspaceKey;
-    },
-    [],
-  );
-  const openSourceControl = useCallback(() => {
-    openSidebarView("source-control");
-  }, [openSidebarView]);
   const toggleHiddenFiles = useCallback(() => {
     openSidebarView("explorer");
     void setShowHidden(!usePreferencesStore.getState().showHidden);
   }, [openSidebarView]);
-  const {
-    repositoryTarget: sourceControlRepositoryTarget,
-    openGitHistory: handleOpenGitHistoryForPath,
-    followActiveContext: handleFollowRepositoryContext,
-  } = useRepositoryTargeting({
-    spaceId: sourceControlSpaceId,
-    workspaceKey: workspaceScopeKey(workspaceEnv),
-    isContextCurrent: isRepositoryContextCurrent,
-    openSourceControl,
-    openCommitHistoryTab,
-  });
+  const handleOpenGitHistoryForPath = useCallback(
+    async (path: string) => {
+      if (!activeSpaceRoot || activeRootIssue) return;
+      const request = gitHistoryRequestGate.begin(
+        useSpaces.getState().activeId ?? DEFAULT_SPACE_ID,
+        workspaceScopeKey(useWorkspaceEnvStore.getState().env),
+        activeSpaceRoot,
+      );
+      try {
+        const repo = await native.gitResolveRepo(path);
+        if (!repo) return;
+        const state = useSpaces.getState();
+        const activeSpaceId = state.activeId ?? DEFAULT_SPACE_ID;
+        const activeSpace =
+          state.spaces.find((space) => space.id === state.activeId) ?? null;
+        const activeSpaceRoot = usableActiveSpaceRoot(
+          activeSpace,
+          state.rootIssues,
+        );
+        const workspaceScope = workspaceScopeKey(
+          useWorkspaceEnvStore.getState().env,
+        );
+        if (
+          !gitHistoryRequestGate.isCurrent(
+            request,
+            activeSpaceId,
+            workspaceScope,
+            activeSpaceRoot,
+          )
+        )
+          return;
+        openCommitHistoryTab({ repoRoot: repo.repoRoot, branch: repo.branch });
+      } catch {
+        /* noop */
+      }
+    },
+    [
+      activeRootIssue,
+      activeSpaceRoot,
+      gitHistoryRequestGate,
+      openCommitHistoryTab,
+    ],
+  );
   const { sourceControl, toggleSourceControl, openGitGraphFromContext } =
     useSourceControlContext({
-      activeTab,
-      tabs,
-      activeTerminalLeafCwd,
-      explorerRoot,
-      launchCwd,
-      launchCwdResolved,
-      home,
-      sidebarView,
-      repositoryTarget: sourceControlRepositoryTarget,
+      spaceId: activeSpaceId ?? DEFAULT_SPACE_ID,
+      workspaceScope: workspaceScopeKey(workspaceEnv),
+      spaceRoot: activeSpaceRoot,
+      rootIssue: activeRootIssue,
       cycleSidebarView,
       openCommitHistoryTab,
     });
@@ -1475,16 +1488,13 @@ export default function App() {
                         />
                       ) : (
                         <SourceControlPanel
+                          key={sourceControl.contextPath ?? "no-source-control"}
                           open
                           sourceControl={sourceControl}
                           onOpenDiff={openGitDiffTab}
                           onOpenGitGraph={openGitGraphFromContext}
                           onOpenFile={handleOpenFile}
                           onNavigateToPath={cdInNewTab}
-                          repositoryTarget={sourceControlRepositoryTarget}
-                          onFollowRepositoryContext={
-                            handleFollowRepositoryContext
-                          }
                         />
                       )}
                     </div>

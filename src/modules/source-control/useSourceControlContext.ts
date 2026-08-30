@@ -1,25 +1,19 @@
-import { useCallback, useMemo } from "react";
 import { native } from "@/modules/ai/lib/native";
 import type { SidebarViewId } from "@/modules/sidebar";
-import type { Tab } from "@/modules/tabs";
+import type { SpaceRootIssue } from "@/modules/spaces/lib/spaceRoot";
+import { useCallback, useRef } from "react";
+import { createGitHistoryRequestGate } from "./gitHistoryRequest";
+import { sourceControlPathForSpace } from "./spaceRepository";
 import {
-  activeRepositoryContextPath,
-  gitGraphRepositoryPath,
-  sourceControlRepositoryPath,
-  type SourceControlRepositoryTarget,
-} from "./repositoryTarget";
-import { useSourceControl } from "./useSourceControl";
+  type SourceControlSummary,
+  useSourceControl,
+} from "./useSourceControl";
 
 type Params = {
-  activeTab: Tab | undefined;
-  tabs: Tab[];
-  activeTerminalLeafCwd: string | null;
-  explorerRoot: string | null;
-  launchCwd: string | null;
-  launchCwdResolved: boolean;
-  home: string | null;
-  sidebarView: SidebarViewId;
-  repositoryTarget: SourceControlRepositoryTarget;
+  spaceId: string;
+  workspaceScope: string;
+  spaceRoot: string | null;
+  rootIssue: SpaceRootIssue | undefined;
   cycleSidebarView: (view: SidebarViewId) => void;
   openCommitHistoryTab: (args: {
     repoRoot: string;
@@ -27,94 +21,115 @@ type Params = {
   }) => void;
 };
 
-/**
- * Resolves the source-control context path off the active tab and feeds the
- * source-control summary. When git is not active the badge tracks a stable
- * per-session path so tab switches / cd don't re-fire git IPC.
- */
+export function maskSourceControlSummaryForContext(
+  summary: SourceControlSummary,
+  requestedContextPath: string | null,
+): SourceControlSummary {
+  if (summary.contextPath === requestedContextPath) return summary;
+  return {
+    ...summary,
+    contextPath: requestedContextPath,
+    repo: null,
+    status: null,
+    changedCount: 0,
+    upstream: null,
+    ahead: 0,
+    behind: 0,
+    hasRepo: false,
+    isLoading: requestedContextPath !== null,
+    localError: null,
+    busyAction: null,
+    lastRemoteError: null,
+    applyStatus: () => {},
+    runRemoteAction: async () => ({
+      ok: false,
+      action: null,
+      blocked: "no-repo",
+    }),
+  };
+}
+
 export function useSourceControlContext({
-  activeTab,
-  tabs,
-  activeTerminalLeafCwd,
-  explorerRoot,
-  launchCwd,
-  launchCwdResolved,
-  home,
-  sidebarView,
-  repositoryTarget,
+  spaceId,
+  workspaceScope,
+  spaceRoot,
+  rootIssue,
   cycleSidebarView,
   openCommitHistoryTab,
 }: Params) {
-  const workspaceFallbackPath = launchCwdResolved
-    ? (launchCwd ?? home ?? null)
-    : null;
-  const sourceControlContextPath = activeRepositoryContextPath({
-    activeTab,
-    activeTerminalLeafCwd,
-    explorerRoot,
-    workspaceFallbackPath,
+  const sourceControlPath = sourceControlPathForSpace(spaceRoot, rootIssue);
+  const gitHistoryRequestGate = useRef(createGitHistoryRequestGate()).current;
+  const gitHistoryOwnerRef = useRef({
+    spaceId,
+    workspaceScope,
+    spaceRoot: sourceControlPath,
   });
-  const hasOpenGitTab = useMemo(
-    () =>
-      tabs.some(
-        (t) =>
-          t.kind === "git-diff" ||
-          t.kind === "git-history" ||
-          t.kind === "git-commit-file",
-      ),
-    [tabs],
+  const gitHistoryOwner = gitHistoryOwnerRef.current;
+  if (
+    gitHistoryOwner.spaceId !== spaceId ||
+    gitHistoryOwner.workspaceScope !== workspaceScope ||
+    gitHistoryOwner.spaceRoot !== sourceControlPath
+  ) {
+    gitHistoryRequestGate.invalidate();
+    gitHistoryOwnerRef.current = {
+      spaceId,
+      workspaceScope,
+      spaceRoot: sourceControlPath,
+    };
+  }
+  const loadedSourceControl = useSourceControl(sourceControlPath, true);
+  const sourceControl = maskSourceControlSummaryForContext(
+    loadedSourceControl,
+    sourceControlPath,
   );
-  // Ambient path tracks the explorer root so the rail badge and explorer git
-  // decorations reflect the repo you are actually looking at. cd-within-repo
-  // churn is absorbed by the status TTL + reusable-root path in useSourceControl.
-  const badgeContextPath = explorerRoot ?? workspaceFallbackPath;
-  const sourceControlPath = sourceControlRepositoryPath({
-    contextPath: sourceControlContextPath,
-    badgeContextPath,
-    sidebarView,
-    hasOpenGitTab,
-    target: repositoryTarget,
-  });
-  const graphContextPath = gitGraphRepositoryPath({
-    contextPath: sourceControlContextPath,
-    sidebarView,
-    target: repositoryTarget,
-  });
-  const sourceControl = useSourceControl(sourceControlPath, true);
 
   const toggleSourceControl = useCallback(() => {
     cycleSidebarView("source-control");
   }, [cycleSidebarView]);
 
   const openGitGraphFromContext = useCallback(async () => {
-    const known = sourceControl.hasRepo ? sourceControl.repo : null;
-    const fixedTargetIsLoaded =
-      sidebarView !== "source-control" ||
-      repositoryTarget.mode !== "fixed" ||
-      known?.repoRoot === repositoryTarget.repoRoot;
-    if (known && fixedTargetIsLoaded) {
+    const contextPath = sourceControlPath;
+    if (!contextPath) return;
+    const request = gitHistoryRequestGate.begin(
+      spaceId,
+      workspaceScope,
+      contextPath,
+    );
+    const requestIsCurrent = () => {
+      const owner = gitHistoryOwnerRef.current;
+      return gitHistoryRequestGate.isCurrent(
+        request,
+        owner.spaceId,
+        owner.workspaceScope,
+        owner.spaceRoot,
+      );
+    };
+    const known =
+      sourceControl.hasRepo && sourceControl.contextPath === contextPath
+        ? sourceControl.repo
+        : null;
+    if (known) {
+      if (!requestIsCurrent()) return;
       openCommitHistoryTab({
         repoRoot: known.repoRoot,
         branch: sourceControl.status?.branch ?? null,
       });
       return;
     }
-    if (!graphContextPath) return;
     try {
-      const repo = await native.gitResolveRepo(graphContextPath);
-      if (!repo) return;
+      const repo = await native.gitResolveRepo(contextPath);
+      if (!repo || !requestIsCurrent()) return;
       openCommitHistoryTab({ repoRoot: repo.repoRoot, branch: repo.branch });
     } catch {
       /* noop */
     }
   }, [
+    gitHistoryRequestGate,
     openCommitHistoryTab,
-    sourceControl.hasRepo,
-    sourceControl.repo,
-    sourceControl.status?.branch,
-    graphContextPath,
-    repositoryTarget,
-    sidebarView,
+    sourceControl,
+    sourceControlPath,
+    spaceId,
+    workspaceScope,
   ]);
 
   return { sourceControl, toggleSourceControl, openGitGraphFromContext };
