@@ -6,7 +6,7 @@ import {
 } from "@/components/ui/resizable";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { consumeLaunchFiles, getLaunchDir } from "@/lib/launchDir";
+import { consumeLaunchFiles } from "@/lib/launchDir";
 import { quoteShellArg } from "@/lib/shellQuote";
 import { usePresence } from "@/lib/usePresence";
 import { useZoom } from "@/lib/useZoom";
@@ -83,6 +83,7 @@ import { StatusBar } from "@/modules/statusbar";
 import {
   TabSwitcherHud,
   type CloseTabsPlan,
+  spaceIdForLeaf,
   useTabSwitcher,
   useTabs,
   useWindowTitle,
@@ -186,7 +187,7 @@ export default function App() {
     splitActivePane,
     closeActivePane,
     closePaneByLeaf,
-  } = useTabs(getLaunchDir() ? { cwd: getLaunchDir() } : undefined);
+  } = useTabs(undefined, rootIssues, spaceRoots);
 
   // Mirror `tabs` into a ref so callbacks scheduled with `setTimeout`
   // (e.g. cdInNewTab) read the latest pane state instead of a stale closure.
@@ -357,8 +358,11 @@ export default function App() {
   useEditorFileSync({ tabs, tabsRef, editorRefs });
   useThemeFileEditing({ tabsRef, openFileTab });
 
-  const { explorerRoot: cwdExplorerRoot, inheritedCwdForNewTab } =
-    useWorkspaceCwd(activeTab, tabs, launchCwd ?? home);
+  const { explorerRoot: cwdExplorerRoot } = useWorkspaceCwd(
+    activeTab,
+    tabs,
+    launchCwd ?? home,
+  );
   const explorerRoot = activeRootIssue
     ? null
     : (activeSpaceRoot ?? cwdExplorerRoot);
@@ -576,16 +580,19 @@ export default function App() {
   const askPresence = usePresence(Boolean(askPopup), 120);
 
   const openNewTab = useCallback(() => {
-    newTab(inheritedCwdForNewTab());
-  }, [newTab, inheritedCwdForNewTab]);
+    if (!activeSpaceRoot || activeRootIssue) return null;
+    return newTab(activeSpaceRoot);
+  }, [activeRootIssue, activeSpaceRoot, newTab]);
 
   const openNewPrivateTab = useCallback(() => {
-    newPrivateTab(inheritedCwdForNewTab());
-  }, [newPrivateTab, inheritedCwdForNewTab]);
+    if (!activeSpaceRoot || activeRootIssue) return null;
+    return newPrivateTab(activeSpaceRoot);
+  }, [activeRootIssue, activeSpaceRoot, newPrivateTab]);
 
   const openNewBlockTab = useCallback(() => {
-    newBlockTab(inheritedCwdForNewTab());
-  }, [newBlockTab, inheritedCwdForNewTab]);
+    if (!activeSpaceRoot || activeRootIssue) return null;
+    return newBlockTab(activeSpaceRoot);
+  }, [activeRootIssue, activeSpaceRoot, newBlockTab]);
 
   const launchAgentGroup = useCallback(
     (request: AgentLaunchRequest) => {
@@ -596,8 +603,9 @@ export default function App() {
         request.instances === 1
           ? launcher.label
           : `${launcher.label} × ${request.instances}`;
+      if (!activeSpaceRoot || activeRootIssue) return;
       const { leafIds: agentLeafIds } = newAgentGroupTab(
-        inheritedCwdForNewTab(),
+        activeSpaceRoot,
         title,
         request.instances,
       );
@@ -623,7 +631,7 @@ export default function App() {
         })();
       }
     },
-    [inheritedCwdForNewTab, newAgentGroupTab],
+    [activeRootIssue, activeSpaceRoot, newAgentGroupTab],
   );
 
   const sendCd = useCallback(
@@ -639,17 +647,18 @@ export default function App() {
 
   const cdInNewTab = useCallback(
     (path: string) => {
-      const tabId = newTab(path);
+      if (!activeSpaceRoot || activeRootIssue) return;
+      const tabId = newTab(activeSpaceRoot);
       setTimeout(() => {
         const tab = tabsRef.current.find((x) => x.id === tabId);
-        if (!tab || tab.kind !== "terminal") return;
+        if (tab?.kind !== "terminal") return;
         const t = terminalRefs.current.get(tab.activeLeafId);
         if (!t) return;
         t.write(`cd ${quoteShellArg(path)}\r`);
         t.focus();
       }, 80);
     },
-    [newTab],
+    [activeRootIssue, activeSpaceRoot, newTab],
   );
 
   const handleOpenFile = useCallback(
@@ -810,11 +819,14 @@ export default function App() {
 
   const splitActivePaneInActiveTab = useCallback(
     (dir: "row" | "col") => {
-      const t = tabsRef.current.find((x) => x.id === activeId);
-      if (!t || t.kind !== "terminal") return;
-      splitActivePane(activeId, dir);
+      const tab = tabsRef.current.find(
+        (candidate) => candidate.id === activeId,
+      );
+      if (tab?.kind !== "terminal" || !activeSpaceRoot || activeRootIssue)
+        return;
+      splitActivePane(activeId, dir, activeSpaceRoot);
     },
-    [activeId, splitActivePane],
+    [activeId, activeRootIssue, activeSpaceRoot, splitActivePane],
   );
 
   const livePaneBounds = useCallback((tabId: number): PaneBounds[] => {
@@ -1064,9 +1076,7 @@ export default function App() {
   const handleTerminalCwd = useCallback(
     (leafId: number, cwd: string) => {
       setLeafCwd(leafId, cwd);
-      const spaceId = tabsRef.current.find(
-        (tab) => tab.kind === "terminal" && hasLeaf(tab.paneTree, leafId),
-      )?.spaceId;
+      const spaceId = spaceIdForLeaf(tabsRef.current, leafId);
       const env = useSpaces
         .getState()
         .spaces.find((space) => space.id === spaceId)?.env;

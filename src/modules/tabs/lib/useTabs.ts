@@ -19,6 +19,8 @@ import {
   swapLeafInDirection,
 } from "@/modules/terminal/lib/panes";
 import { disposeSession } from "@/modules/terminal/lib/useTerminalSession";
+import type { SpaceRootIssues } from "@/modules/spaces/lib/spaceRoot";
+import { type SpaceRoots, warmColdTab } from "./tabWarmPolicy";
 import {
   useCallback,
   useEffect,
@@ -32,7 +34,7 @@ export const MAX_PANES_PER_TAB = 4;
 
 type TabBase = {
   spaceId: string;
-  /** Restored from disk, not yet activated: rendered as a placeholder, not mounted. */
+  /** Not yet activated: rendered as a placeholder, not mounted. */
   cold?: boolean;
 };
 
@@ -570,7 +572,38 @@ export function planSpaceRemoval(
   return { tabs: next, disposeLeafIds, activeId };
 }
 
-export function useTabs(initial?: Partial<TerminalTab>) {
+export function planTerminalPaneSplit(
+  tab: TerminalTab,
+  dir: SplitDir,
+  root: string,
+  allocId: () => number,
+): { tab: TerminalTab; leafId: number } | null {
+  if (tab.blocks || leafIds(tab.paneTree).length >= MAX_PANES_PER_TAB)
+    return null;
+  const splitId = allocId();
+  const leafId = allocId();
+  return {
+    tab: {
+      ...tab,
+      paneTree: splitLeaf(
+        tab.paneTree,
+        tab.activeLeafId,
+        splitId,
+        leafId,
+        dir,
+        root,
+      ),
+      activeLeafId: leafId,
+    },
+    leafId,
+  };
+}
+
+export function useTabs(
+  initial?: Partial<TerminalTab>,
+  rootIssues: SpaceRootIssues = {},
+  spaceRoots: SpaceRoots = {},
+) {
   const [tabs, setTabs] = useState<Tab[]>(() => {
     const tabId = 1;
     const leafId = 2;
@@ -608,10 +641,12 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     if (!booted) return;
     setTabs((curr) => {
       const t = curr.find((x) => x.id === activeId);
-      if (!t?.cold) return curr;
-      return curr.map((x) => (x.id === activeId ? { ...x, cold: false } : x));
+      if (!t) return curr;
+      const warmed = warmColdTab(t, rootIssues, spaceRoots);
+      if (warmed === t) return curr;
+      return curr.map((x) => (x.id === activeId ? warmed : x));
     });
-  }, [activeId, booted]);
+  }, [activeId, booted, rootIssues, spaceRoots]);
 
   const allocId = useCallback(() => nextIdRef.current++, []);
 
@@ -769,6 +804,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
 
   useEffect(() => {
     if (!import.meta.env?.DEV || typeof window === "undefined") return;
+    // SAFETY: the optional dev-only test hook is absent from production windows.
     (
       window as unknown as { __teraxNewBlockTab?: (cwd?: string) => number }
     ).__teraxNewBlockTab = newBlockTab;
@@ -1287,24 +1323,20 @@ export function useTabs(initial?: Partial<TerminalTab>) {
 
   /** Split the active leaf of `tabId` along `dir`. Returns the new leaf id. */
   const splitActivePane = useCallback(
-    (tabId: number, dir: SplitDir): number | null => {
+    (tabId: number, dir: SplitDir, root: string): number | null => {
       let newLeafId: number | null = null;
       setTabs((curr) =>
-        curr.map((t) => {
-          if (t.id !== tabId || t.kind !== "terminal" || t.blocks) return t;
-          if (leafIds(t.paneTree).length >= MAX_PANES_PER_TAB) return t;
-          const splitId = nextIdRef.current++;
-          const leafId = nextIdRef.current++;
-          newLeafId = leafId;
-          const paneTree = splitLeaf(
-            t.paneTree,
-            t.activeLeafId,
-            splitId,
-            leafId,
+        curr.map((tab) => {
+          if (tab.id !== tabId || tab.kind !== "terminal") return tab;
+          const plan = planTerminalPaneSplit(
+            tab,
             dir,
-            t.cwd,
+            root,
+            () => nextIdRef.current++,
           );
-          return { ...t, paneTree, activeLeafId: leafId };
+          if (!plan) return tab;
+          newLeafId = plan.leafId;
+          return plan.tab;
         }),
       );
       return newLeafId;
