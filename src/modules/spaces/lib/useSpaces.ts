@@ -20,7 +20,7 @@ export function canPersistSpaceState(
 type CreateInput = {
   id?: string;
   name: string;
-  root: string | null;
+  root: string;
   env?: WorkspaceEnv;
 };
 
@@ -42,8 +42,6 @@ type State = {
   ) => void;
   create: (input: CreateInput) => SpaceMeta;
   rename: (id: string, name: string) => void;
-  // Retained until App delegates workspace switching to the Space controller.
-  setEnv: (id: string, env: WorkspaceEnv) => void;
   setRoot: (id: string, root: string) => void;
   setRootIssue: (id: string, issue: SpaceRootIssues[string]) => void;
   clearRootIssue: (id: string) => void;
@@ -106,14 +104,6 @@ export const useSpaces = create<State>((set, get) => ({
     void saveSpacesList(spaces);
   },
 
-  setEnv: (id, env) => {
-    const spaces = get().spaces.map((s) =>
-      s.id === id ? { ...s, env, updatedAt: Date.now() } : s,
-    );
-    set({ spaces });
-    void saveSpacesList(spaces);
-  },
-
   setRoot: (id, root) => {
     const spaces = get().spaces.map((s) =>
       s.id === id ? { ...s, root, updatedAt: Date.now() } : s,
@@ -158,14 +148,11 @@ export const useSpaces = create<State>((set, get) => ({
   remove: (id) => {
     const prev = get();
     const spaces = prev.spaces.filter((space) => space.id !== id);
-    let activeId = prev.activeId;
-    if (activeId === id) activeId = spaces[0]?.id ?? null;
     const { [id]: _, ...rootIssues } = prev.rootIssues;
-    set({ spaces, activeId, rootIssues });
+    set({ spaces, rootIssues });
     void saveSpacesList(spaces);
     void deleteSpaceData(id);
-    if (activeId !== prev.activeId) void saveActiveId(activeId);
-    return activeId;
+    return prev.activeId === id ? (spaces[0]?.id ?? null) : prev.activeId;
   },
 
   setActive: (id) => {

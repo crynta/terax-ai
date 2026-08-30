@@ -1,12 +1,12 @@
-import { type RefObject, useCallback, useEffect, useState } from "react";
-import { homeDir } from "@tauri-apps/api/path";
 import { native } from "@/modules/ai/lib/native";
-import type { Tab } from "@/modules/tabs";
+import type { PreparedWorkspace } from "@/modules/spaces";
 import {
   getWslHome,
   LOCAL_WORKSPACE,
   type WorkspaceEnv,
 } from "@/modules/workspace";
+import { homeDir } from "@tauri-apps/api/path";
+import { useCallback, useEffect, useState } from "react";
 
 async function resolveEnvHome(env: WorkspaceEnv): Promise<string> {
   return env.kind === "wsl"
@@ -15,26 +15,10 @@ async function resolveEnvHome(env: WorkspaceEnv): Promise<string> {
 }
 
 type Params = {
-  tabsRef: RefObject<Tab[]>;
-  workspaceEnv: WorkspaceEnv;
   setWorkspaceEnv: (env: WorkspaceEnv) => void;
-  resetWorkspace: (home?: string) => void;
-  /** Dispose live sessions and clear App-owned pane/handle ref maps. */
-  clearWorkspaceState: () => void;
 };
 
-/**
- * Owns the resolved home / launch cwd. switchWorkspace runs an interactive
- * local⇄WSL switch (tears down sessions, re-authorizes home, resets tabs);
- * adoptWorkspaceEnv applies a space's env + home on restore, without teardown.
- */
-export function useWorkspaceSwitcher({
-  tabsRef,
-  workspaceEnv,
-  setWorkspaceEnv,
-  resetWorkspace,
-  clearWorkspaceState,
-}: Params) {
+export function useWorkspaceSwitcher({ setWorkspaceEnv }: Params) {
   const [home, setHome] = useState<string | null>(null);
   const [launchCwd, setLaunchCwd] = useState<string | null>(null);
   const [launchCwdResolved, setLaunchCwdResolved] = useState(false);
@@ -61,77 +45,43 @@ export function useWorkspaceSwitcher({
       .finally(() => setLaunchCwdResolved(true));
   }, []);
 
-  const authorizeHome = useCallback(async (nextHome: string) => {
-    setHome(nextHome);
-    setLaunchCwd(nextHome);
-    try {
-      await native.workspaceAuthorize(nextHome);
-    } catch {
-      // Non-fatal — git panel will surface "not authorized" if needed.
-    }
+  const prepareWorkspaceEnv = useCallback(async (env: WorkspaceEnv) => {
+    const nextHome = await resolveEnvHome(env);
+    await native.workspaceAuthorize(nextHome, env);
+    return {
+      env: env.kind === "local" ? LOCAL_WORKSPACE : env,
+      home: nextHome,
+    };
   }, []);
 
-  const switchWorkspace = useCallback(
-    async (env: WorkspaceEnv): Promise<boolean> => {
-      if (
-        env.kind === workspaceEnv.kind &&
-        (env.kind === "local" ||
-          (workspaceEnv.kind === "wsl" && env.distro === workspaceEnv.distro))
-      ) {
-        return false;
-      }
-      const dirty = tabsRef.current.some((t) => t.kind === "editor" && t.dirty);
-      if (dirty) {
-        window.alert(
-          "Save or close unsaved editor tabs before switching workspace.",
-        );
-        return false;
-      }
-
-      let nextHome: string;
-      try {
-        nextHome = await resolveEnvHome(env);
-      } catch (e) {
-        window.alert(String(e));
-        return false;
-      }
-
-      clearWorkspaceState();
-      setWorkspaceEnv(env.kind === "local" ? LOCAL_WORKSPACE : env);
-      await authorizeHome(nextHome);
-      resetWorkspace(nextHome);
-      return true;
+  const applyWorkspaceEnv = useCallback(
+    (prepared: PreparedWorkspace) => {
+      setWorkspaceEnv(prepared.env);
+      setHome(prepared.home);
+      setLaunchCwd(prepared.home);
     },
-    [
-      workspaceEnv,
-      setWorkspaceEnv,
-      resetWorkspace,
-      tabsRef,
-      clearWorkspaceState,
-      authorizeHome,
-    ],
+    [setWorkspaceEnv],
   );
 
   const adoptWorkspaceEnv = useCallback(
     async (env: WorkspaceEnv): Promise<string | null> => {
-      setWorkspaceEnv(env.kind === "local" ? LOCAL_WORKSPACE : env);
-      let nextHome: string;
       try {
-        nextHome = await resolveEnvHome(env);
+        const prepared = await prepareWorkspaceEnv(env);
+        applyWorkspaceEnv(prepared);
+        return prepared.home;
       } catch {
         return null;
       }
-      await authorizeHome(nextHome);
-      return nextHome;
     },
-    [setWorkspaceEnv, authorizeHome],
+    [prepareWorkspaceEnv, applyWorkspaceEnv],
   );
 
   return {
     home,
     launchCwd,
     launchCwdResolved,
-    switchWorkspace,
+    prepareWorkspaceEnv,
+    applyWorkspaceEnv,
     adoptWorkspaceEnv,
   };
 }

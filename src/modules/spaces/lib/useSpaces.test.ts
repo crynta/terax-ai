@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import type { SpaceMeta } from "@/modules/spaces/lib/store";
 
 vi.mock("@/modules/spaces/lib/store", () => ({
@@ -81,19 +81,6 @@ describe("useSpaces hydration", () => {
   });
 });
 
-describe("useSpaces compatibility", () => {
-  it("retains environment mutation while App still uses it", () => {
-    seedSpaces([makeSpace("a", "/a"), makeSpace("b", "/b")]);
-
-    useSpaces.getState().setEnv("a", { kind: "wsl", distro: "Ubuntu" });
-
-    expect(useSpaces.getState().spaces.map((space) => space.env)).toEqual([
-      { kind: "wsl", distro: "Ubuntu" },
-      { kind: "local" },
-    ]);
-  });
-});
-
 describe("useSpaces root mutations", () => {
   it("changes only the selected Space root and clears its issue", () => {
     seedSpaces([makeSpace("a", "/a"), makeSpace("b", "/b")], {
@@ -118,5 +105,25 @@ describe("useSpaces root mutations", () => {
     useSpaces.getState().clearRootIssue("a");
 
     expect(useSpaces.getState().rootIssues).toEqual({});
+  });
+
+  it("requires a non-empty root when creating a Space", () => {
+    type CreateInput = Parameters<
+      ReturnType<typeof useSpaces.getState>["create"]
+    >[0];
+    expectTypeOf<CreateInput>().toEqualTypeOf<{
+      id?: string;
+      name: string;
+      root: string;
+      env?: { kind: "local" } | { kind: "wsl"; distro: string };
+    }>();
+    expectTypeOf<{
+      name: string;
+      root: null;
+    }>().not.toMatchTypeOf<CreateInput>();
+  });
+
+  it("does not expose environment mutation", () => {
+    expect("setEnv" in useSpaces.getState()).toBe(false);
   });
 });
