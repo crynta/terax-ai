@@ -8,6 +8,11 @@ export async function copyToClipboard(text: string): Promise<void> {
   }
 }
 
+export function spaceNameFromRoot(path: string): string {
+  const segments = path.split(/[\\/]/).filter(Boolean);
+  return segments[segments.length - 1] ?? path;
+}
+
 export function relativePath(rootPath: string, path: string): string {
   if (path === rootPath) return ".";
   if (path.startsWith(`${rootPath}/`)) return path.slice(rootPath.length + 1);

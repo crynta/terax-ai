@@ -10,47 +10,58 @@ import {
   AiStatusBarControls,
 } from "@/modules/ai/components/AiStatusBarControls";
 import { LspStatusPill } from "@/modules/lsp";
+import type { SpaceRootIssue } from "@/modules/spaces/lib/spaceRoot";
 import type { WorkspaceEnv } from "@/modules/workspace";
 import { IncognitoIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { CwdBreadcrumb } from "./CwdBreadcrumb";
+import { SpaceRootBreadcrumb } from "./CwdBreadcrumb";
 import { DiagnosticsBadge } from "./DiagnosticsBadge";
 import { WorkspaceEnvSelector } from "./WorkspaceEnvSelector";
 
 type Props = {
-  cwd: string | null;
-  filePath?: string | null;
+  root: string | null;
   home: string | null;
-  onCd: (path: string) => void;
-  onWorkspaceChange: (env: WorkspaceEnv) => void;
+  issue?: SpaceRootIssue;
+  env: WorkspaceEnv | null;
+  filePath: string | null;
+  onChangeRoot: (path: string) => void;
+  onCreateInEnv: (env: WorkspaceEnv) => void;
   onOpenMini: () => void;
-  /** Opens the panel, or Settings > Models when no API key is loaded. */
   onOpenAi: () => void;
-  /** Only rendered when the AI panel is open and a key is loaded. */
   hasComposer: boolean;
   privateActive: boolean;
 };
 
 export function StatusBar({
-  cwd,
-  filePath,
+  root,
   home,
-  onCd,
-  onWorkspaceChange,
+  issue,
+  env,
+  filePath,
+  onChangeRoot,
+  onCreateInEnv,
   onOpenMini,
   onOpenAi,
   hasComposer,
   privateActive,
 }: Props) {
-  const panelOpen = useChatStore((s) => s.panelOpen);
+  const panelOpen = useChatStore((state) => state.panelOpen);
 
   return (
     <footer className="flex h-8 shrink-0 items-center justify-between gap-3 pl-3 pr-4 text-[11px]">
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        <WorkspaceEnvSelector onSelect={onWorkspaceChange} />
-        <CwdBreadcrumb cwd={cwd} filePath={filePath} home={home} onCd={onCd} />
-        <LspStatusPill filePath={filePath ?? null} />
-        <DiagnosticsBadge filePath={filePath ?? null} />
+        {env ? (
+          <WorkspaceEnvSelector env={env} onCreateInEnv={onCreateInEnv} />
+        ) : null}
+        <SpaceRootBreadcrumb
+          root={root}
+          home={home}
+          issue={issue}
+          env={env}
+          onChangeRoot={onChangeRoot}
+        />
+        <LspStatusPill filePath={filePath} />
+        <DiagnosticsBadge filePath={filePath} />
         {privateActive ? (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -63,8 +74,8 @@ export function StatusBar({
               side="top"
               className="max-w-64 text-[11px] leading-relaxed"
             >
-              AI can't see this terminal's output. Use it for secrets, SSH, or
-              anything you don't want sent to the model.
+              AI can&apos;t see this terminal&apos;s output. Use it for secrets,
+              SSH, or anything you don&apos;t want sent to the model.
             </TooltipContent>
           </Tooltip>
         ) : null}

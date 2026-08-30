@@ -6,6 +6,11 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { cn } from "@/lib/utils";
+import type { GitStatusSnapshot } from "@/modules/ai/lib/native";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import { useGlobalShortcuts } from "@/modules/shortcuts";
+import type { TerminalPathDropTarget } from "@/modules/terminal";
 import {
   FileAddIcon,
   Folder01Icon,
@@ -25,26 +30,21 @@ import {
   useRef,
   useState,
 } from "react";
-import { cn } from "@/lib/utils";
 import { ExplorerSearch, type ExplorerSearchHandle } from "./ExplorerSearch";
-import { EntryRow, PendingRow, StatusRow, type RowActions } from "./TreeRow";
 import { InlineInput } from "./InlineInput";
 import {
   copyToClipboard,
   relativePath,
   revealInFinder,
 } from "./lib/contextActions";
+import type { GitStatusCode } from "./lib/gitStatusUtils";
 import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
 import { useExplorerDnd } from "./lib/useExplorerDnd";
 import { useExplorerFileDrop } from "./lib/useExplorerFileDrop";
 import { useFileTree } from "./lib/useFileTree";
 import { useGitStatus } from "./lib/useGitStatus";
-import type { GitStatusCode } from "./lib/gitStatusUtils";
-import { useGlobalShortcuts } from "@/modules/shortcuts";
-import { usePreferencesStore } from "@/modules/settings/preferences";
-import type { GitStatusSnapshot } from "@/modules/ai/lib/native";
-import type { TerminalPathDropTarget } from "@/modules/terminal";
+import { EntryRow, PendingRow, type RowActions, StatusRow } from "./TreeRow";
 
 export type FileExplorerHandle = {
   focus: () => void;
@@ -58,8 +58,7 @@ type Props = {
   onOpenFile: (path: string, pin?: boolean) => void;
   onPathRenamed?: (from: string, to: string) => void;
   onPathDeleted?: (path: string) => void;
-  onRevealInTerminal?: (path: string) => void;
-  onOpenInSourceControl?: (path: string) => void;
+  onOpenInNewSpace?: (path: string) => void;
   onOpenGitHistory?: (path: string) => void;
   onAttachToAgent?: (path: string) => void;
   pathDropTarget?: TerminalPathDropTarget;
@@ -89,7 +88,13 @@ type Row =
       gitStatusCode: GitStatusCode | null;
     }
   | { kind: "pending"; key: string; depth: number; pendingKind: "file" | "dir" }
-  | { kind: "status"; key: string; depth: number; tone: "muted" | "error"; message: string };
+  | {
+      kind: "status";
+      key: string;
+      depth: number;
+      tone: "muted" | "error";
+      message: string;
+    };
 
 const ROW_HEIGHT = 24;
 const OVERSCAN = 8;
@@ -192,8 +197,7 @@ export const FileExplorer = memo(
       onOpenFile,
       onPathRenamed,
       onPathDeleted,
-      onRevealInTerminal,
-      onOpenInSourceControl,
+      onOpenInNewSpace,
       onOpenGitHistory,
       onAttachToAgent,
       pathDropTarget,
@@ -216,7 +220,11 @@ export const FileExplorer = memo(
     const scrollRef = useRef<HTMLDivElement>(null);
 
     const { rows, entryIndexByPath } = useMemo(() => {
-      if (!rootPath) return { rows: [] as Row[], entryIndexByPath: new Map<string, number>() };
+      if (!rootPath)
+        return {
+          rows: [] as Row[],
+          entryIndexByPath: new Map<string, number>(),
+        };
       return buildRows(rootPath, tree, lookupGitStatus);
       // `tree` is intentionally omitted: its identity changes every render, but
       // the listed fields are the only inputs buildRows actually reads.
@@ -281,7 +289,8 @@ export const FileExplorer = memo(
     });
 
     const dropTargetDir = dnd.dropTargetDir ?? fileDrop.externalTargetDir;
-    const rootIsDropTarget = dropTargetDir != null && dropTargetDir === rootPath;
+    const rootIsDropTarget =
+      dropTargetDir != null && dropTargetDir === rootPath;
     useEffect(() => {
       if (!dropTargetDir || dropTargetDir === rootPath) return;
       if (tree.expanded.has(dropTargetDir)) return;
@@ -314,7 +323,10 @@ export const FileExplorer = memo(
 
     const lastSyncedActivePathRef = useRef<string | null>(null);
     useEffect(() => {
-      if (!activeFilePath || activeFilePath === lastSyncedActivePathRef.current) {
+      if (
+        !activeFilePath ||
+        activeFilePath === lastSyncedActivePathRef.current
+      ) {
         return;
       }
       if (!entryIndexByPath.has(activeFilePath)) return;
@@ -486,7 +498,11 @@ export const FileExplorer = memo(
           );
         case "status":
           return (
-            <StatusRow depth={row.depth} message={row.message} tone={row.tone} />
+            <StatusRow
+              depth={row.depth}
+              message={row.message}
+              tone={row.tone}
+            />
           );
       }
     };
@@ -560,8 +576,7 @@ export const FileExplorer = memo(
           open={isSearchOpen}
           onRequestClose={() => setIsSearchOpen(false)}
           onActiveChange={setIsSearchActive}
-          onRevealInTerminal={onRevealInTerminal}
-          onOpenInSourceControl={onOpenInSourceControl}
+          onOpenInNewSpace={onOpenInNewSpace}
           onOpenGitHistory={onOpenGitHistory}
           onAttachToAgent={onAttachToAgent}
         />
@@ -684,22 +699,14 @@ export const FileExplorer = memo(
                       Open
                     </ContextMenuItem>
                   )}
-                  {menuTarget.isDir && onRevealInTerminal && (
+                  {menuTarget.isDir && onOpenInNewSpace ? (
                     <ContextMenuItem
                       className={COMPACT_ITEM}
-                      onSelect={() => onRevealInTerminal(menuTarget.path)}
+                      onSelect={() => onOpenInNewSpace(menuTarget.path)}
                     >
-                      Open in Terminal
+                      Open in New Space
                     </ContextMenuItem>
-                  )}
-                  {menuTarget.isDir && onOpenInSourceControl && (
-                    <ContextMenuItem
-                      className={COMPACT_ITEM}
-                      onSelect={() => onOpenInSourceControl(menuTarget.path)}
-                    >
-                      Open in Source Control
-                    </ContextMenuItem>
-                  )}
+                  ) : null}
                   {menuTarget.isDir && onOpenGitHistory && (
                     <ContextMenuItem
                       className={COMPACT_ITEM}
@@ -751,7 +758,9 @@ export const FileExplorer = memo(
                   <ContextMenuItem
                     className={COMPACT_ITEM}
                     onSelect={() =>
-                      void copyToClipboard(relativePath(rootPath, menuTarget.path))
+                      void copyToClipboard(
+                        relativePath(rootPath, menuTarget.path),
+                      )
                     }
                   >
                     Copy Relative Path
@@ -783,22 +792,14 @@ export const FileExplorer = memo(
                 </>
               ) : (
                 <>
-                  {onRevealInTerminal && (
+                  {onOpenInNewSpace ? (
                     <ContextMenuItem
                       className={COMPACT_ITEM}
-                      onSelect={() => onRevealInTerminal(rootPath)}
+                      onSelect={() => onOpenInNewSpace(rootPath)}
                     >
-                      Open in Terminal
+                      Open in New Space
                     </ContextMenuItem>
-                  )}
-                  {onOpenInSourceControl && (
-                    <ContextMenuItem
-                      className={COMPACT_ITEM}
-                      onSelect={() => onOpenInSourceControl(rootPath)}
-                    >
-                      Open in Source Control
-                    </ContextMenuItem>
-                  )}
+                  ) : null}
                   {onOpenGitHistory && (
                     <ContextMenuItem
                       className={COMPACT_ITEM}

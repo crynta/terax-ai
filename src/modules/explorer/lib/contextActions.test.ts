@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { relativePath } from "./contextActions";
+import { relativePath, spaceNameFromRoot } from "./contextActions";
+
+describe("spaceNameFromRoot", () => {
+  it("names a Space from Unix and Windows folder basenames", () => {
+    expect(spaceNameFromRoot("/work/terax")).toBe("terax");
+    expect(spaceNameFromRoot("C:\\work\\terax")).toBe("terax");
+  });
+});
 
 describe("relativePath", () => {
   it("returns '.' when the path is the root itself", () => {

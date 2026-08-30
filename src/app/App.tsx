@@ -39,6 +39,7 @@ import {
   useEditorFileSync,
 } from "@/modules/editor";
 import { FileExplorer, type FileExplorerHandle } from "@/modules/explorer";
+import { spaceNameFromRoot } from "@/modules/explorer/lib/contextActions";
 import type { GitHistorySearchHandle } from "@/modules/git-history";
 import {
   Header,
@@ -51,9 +52,9 @@ import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { setShowHidden } from "@/modules/settings/store";
 import {
-  shouldDisablePaneSwapShortcut,
   type ShortcutHandlers,
   type ShortcutId,
+  shouldDisablePaneSwapShortcut,
   useGlobalShortcuts,
 } from "@/modules/shortcuts";
 import {
@@ -81,13 +82,12 @@ import {
 import { deleteSpaceAfterActivation } from "@/modules/spaces/lib/spaceDeletion";
 import { StatusBar } from "@/modules/statusbar";
 import {
-  TabSwitcherHud,
   type CloseTabsPlan,
   spaceIdForLeaf,
+  TabSwitcherHud,
   useTabSwitcher,
   useTabs,
   useWindowTitle,
-  useWorkspaceCwd,
 } from "@/modules/tabs";
 import { DEFAULT_SPACE_ID } from "@/modules/tabs/lib/useTabs";
 import {
@@ -97,8 +97,8 @@ import {
   hasLeaf,
   leafIds,
   navigateFocusedBlocks,
-  ptyIdForLeaf,
   type PaneBounds,
+  ptyIdForLeaf,
   type TerminalPaneHandle,
   useAgentActivityStore,
   useTerminalFileDrop,
@@ -113,8 +113,8 @@ import {
 import { UpdaterDialog } from "@/modules/updater";
 import {
   useWorkspaceEnvStore,
-  workspaceScopeKey,
   type WorkspaceEnv,
+  workspaceScopeKey,
 } from "@/modules/workspace";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -237,12 +237,7 @@ export default function App() {
       state.spaces.find((space) => space.id === state.activeId) ?? null,
   );
   const activeRootIssue = activeSpace ? rootIssues[activeSpace.id] : undefined;
-  const activeSpaceRoot = usableActiveSpaceRoot(
-    activeSpace
-      ? { ...activeSpace, root: spaceRoots[activeSpace.id] ?? null }
-      : null,
-    rootIssues,
-  );
+  const activeSpaceRoot = usableActiveSpaceRoot(activeSpace, rootIssues);
   const spacesHydrated = useSpaces((s) => s.hydrated);
   const spacePersistenceBlocked = useSpaces((s) => s.persistenceBlocked);
   const activeSpaceIdRef = useRef(activeSpaceId);
@@ -358,16 +353,9 @@ export default function App() {
   useEditorFileSync({ tabs, tabsRef, editorRefs });
   useThemeFileEditing({ tabsRef, openFileTab });
 
-  const { explorerRoot: cwdExplorerRoot } = useWorkspaceCwd(
-    activeTab,
-    tabs,
-    launchCwd ?? home,
-  );
-  const explorerRoot = activeRootIssue
-    ? null
-    : (activeSpaceRoot ?? cwdExplorerRoot);
+  const explorerRoot = activeSpaceRoot;
 
-  useWindowTitle(activeTab, explorerRoot);
+  useWindowTitle(activeTab, activeSpaceRoot);
 
   useEffect(() => {
     setActiveSearchAddon(
@@ -634,17 +622,6 @@ export default function App() {
     [activeRootIssue, activeSpaceRoot, newAgentGroupTab],
   );
 
-  const sendCd = useCallback(
-    (path: string) => {
-      if (activeLeafId === null) return;
-      const term = terminalRefs.current.get(activeLeafId);
-      if (!term) return;
-      term.write(`cd ${quoteShellArg(path)}\r`);
-      term.focus();
-    },
-    [activeLeafId],
-  );
-
   const cdInNewTab = useCallback(
     (path: string) => {
       if (!activeSpaceRoot || activeRootIssue) return;
@@ -777,7 +754,6 @@ export default function App() {
   }, [openSidebarView]);
   const {
     repositoryTarget: sourceControlRepositoryTarget,
-    openInSourceControl: handleOpenRepositoryInSourceControl,
     openGitHistory: handleOpenGitHistoryForPath,
     followActiveContext: handleFollowRepositoryContext,
   } = useRepositoryTargeting({
@@ -1172,16 +1148,16 @@ export default function App() {
     [spaceController],
   );
 
-  const handleWorkspaceChange = useCallback(
-    (env: WorkspaceEnv) => {
-      if (
-        activeSpace &&
-        workspaceScopeKey(activeSpace.env) === workspaceScopeKey(env)
-      )
-        return;
-      createSpaceAtHome(env);
+  const handleOpenInNewSpace = useCallback(
+    (path: string) => {
+      if (!activeSpace) return;
+      void spaceController.create({
+        name: spaceNameFromRoot(path),
+        root: path,
+        env: activeSpace.env,
+      });
     },
-    [activeSpace, createSpaceAtHome],
+    [activeSpace, spaceController],
   );
 
   const handleNewSpace = useCallback(() => {
@@ -1492,10 +1468,7 @@ export default function App() {
                           onOpenFile={handleOpenFile}
                           onPathRenamed={handlePathRenamed}
                           onPathDeleted={handlePathDeleted}
-                          onRevealInTerminal={cdInNewTab}
-                          onOpenInSourceControl={
-                            handleOpenRepositoryInSourceControl
-                          }
+                          onOpenInNewSpace={handleOpenInNewSpace}
                           onOpenGitHistory={handleOpenGitHistoryForPath}
                           onAttachToAgent={handleAttachFileToAgent}
                           pathDropTarget={terminalPathDropTarget}
@@ -1569,11 +1542,16 @@ export default function App() {
 
           {!zenMode && (
             <StatusBar
-              cwd={activeCwd}
-              filePath={activeFilePath}
+              root={activeSpaceRoot}
               home={home}
-              onCd={sendCd}
-              onWorkspaceChange={handleWorkspaceChange}
+              issue={activeRootIssue}
+              env={activeSpace?.env ?? null}
+              filePath={activeFilePath}
+              onChangeRoot={(path) => {
+                if (activeSpace)
+                  void spaceController.changeRoot(activeSpace.id, path);
+              }}
+              onCreateInEnv={createSpaceAtHome}
               onOpenMini={openMini}
               onOpenAi={togglePanelAndFocus}
               hasComposer={hasComposer}
@@ -1632,7 +1610,7 @@ export default function App() {
           <NewEditorDialog
             open={newEditorOpen}
             onOpenChange={setNewEditorOpen}
-            rootPath={explorerRoot ?? home}
+            rootPath={activeSpaceRoot}
             onCreated={(path) => openFileTab(path)}
           />
 

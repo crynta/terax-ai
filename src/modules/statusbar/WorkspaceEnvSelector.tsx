@@ -10,29 +10,33 @@ import {
   LOCAL_WORKSPACE,
   useWorkspaceEnvStore,
   type WorkspaceEnv,
+  workspaceScopeKey,
 } from "@/modules/workspace";
 import { Refresh01Icon, ServerStack03Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
 type Props = {
-  onSelect: (env: WorkspaceEnv) => void;
+  env: WorkspaceEnv;
+  onCreateInEnv: (env: WorkspaceEnv) => void;
 };
 
-export function WorkspaceEnvSelector({ onSelect }: Props) {
+export function WorkspaceEnvSelector({ env, onCreateInEnv }: Props) {
+  const distros = useWorkspaceEnvStore((state) => state.distros);
+  const loading = useWorkspaceEnvStore((state) => state.loading);
+  const error = useWorkspaceEnvStore((state) => state.error);
+  const refreshDistros = useWorkspaceEnvStore((state) => state.refreshDistros);
+
   if (!IS_WINDOWS) return null;
 
-  const env = useWorkspaceEnvStore((s) => s.env);
-  const distros = useWorkspaceEnvStore((s) => s.distros);
-  const loading = useWorkspaceEnvStore((s) => s.loading);
-  const error = useWorkspaceEnvStore((s) => s.error);
-  const refreshDistros = useWorkspaceEnvStore((s) => s.refreshDistros);
-
   const handleOpenChange = (open: boolean) => {
-    if (open && distros.length === 0 && !loading) {
-      void refreshDistros();
-    }
+    if (open && distros.length === 0 && !loading) void refreshDistros();
   };
 
+  const selectEnv = (candidate: WorkspaceEnv) => {
+    if (workspaceScopeKey(candidate) !== workspaceScopeKey(env)) {
+      onCreateInEnv(candidate);
+    }
+  };
   const label = env.kind === "wsl" ? `WSL: ${env.distro}` : "Windows";
 
   return (
@@ -40,8 +44,8 @@ export function WorkspaceEnvSelector({ onSelect }: Props) {
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="flex h-6 shrink-0 items-center gap-1 rounded-sm px-1.5 text-[11px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus:outline-none focus-visible:outline-none focus-visible:ring-0 data-[state=open]:bg-accent data-[state=open]:text-foreground"
-          title="Workspace environment"
+          className="flex h-6 shrink-0 items-center gap-1 rounded-sm px-1.5 text-[11px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 data-[state=open]:bg-accent data-[state=open]:text-foreground"
+          title="Create Space in environment"
         >
           <HugeiconsIcon
             icon={ServerStack03Icon}
@@ -52,7 +56,7 @@ export function WorkspaceEnvSelector({ onSelect }: Props) {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-48">
-        <DropdownMenuItem onSelect={() => onSelect(LOCAL_WORKSPACE)}>
+        <DropdownMenuItem onSelect={() => selectEnv(LOCAL_WORKSPACE)}>
           Windows Local
         </DropdownMenuItem>
         <DropdownMenuSeparator />
@@ -68,7 +72,7 @@ export function WorkspaceEnvSelector({ onSelect }: Props) {
           distros.map((distro) => (
             <DropdownMenuItem
               key={distro.name}
-              onSelect={() => onSelect({ kind: "wsl", distro: distro.name })}
+              onSelect={() => selectEnv({ kind: "wsl", distro: distro.name })}
             >
               WSL: {distro.name}
             </DropdownMenuItem>
