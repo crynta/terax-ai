@@ -13,6 +13,30 @@ export type SpaceMeta = {
   updatedAt: number;
 };
 
+export type RawSpaceMeta = Omit<SpaceMeta, "env"> & { env?: unknown };
+
+function isWorkspaceEnv(env: unknown): env is WorkspaceEnv {
+  if (!env || typeof env !== "object") return false;
+  const candidate = env as { kind?: unknown; distro?: unknown };
+  return (
+    candidate.kind === "local" ||
+    (candidate.kind === "wsl" &&
+      typeof candidate.distro === "string" &&
+      candidate.distro.trim().length > 0)
+  );
+}
+
+export function normalizeSpaceEnvs(
+  spaces: readonly RawSpaceMeta[],
+  fallbackEnv: WorkspaceEnv,
+): SpaceMeta[] {
+  return spaces.map((space) =>
+    isWorkspaceEnv(space.env)
+      ? (space as SpaceMeta)
+      : { ...space, env: fallbackEnv },
+  );
+}
+
 export type SpaceState = {
   tabs: SerializedTab[];
   activeTabIndex: number;

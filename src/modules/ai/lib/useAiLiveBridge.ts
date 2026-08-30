@@ -42,6 +42,14 @@ type Params = {
   terminalRefs: RefObject<Map<number, TerminalPaneHandle>>;
 };
 
+export function workspaceRootForAi({
+  explorerRoot,
+}: Pick<Params, "explorerRoot"> & Partial<Pick<Params, "launchCwd" | "home">>):
+  | string
+  | null {
+  return explorerRoot;
+}
+
 /**
  * Publishes the live workspace context (cwd, terminal buffer, active file,
  * managed-agent spawning, ...) into the chat store so AI tools can read and
@@ -101,10 +109,7 @@ export function useAiLiveBridge(params: Params) {
         term.focus();
         return true;
       },
-      getWorkspaceRoot: () => {
-        const { explorerRoot, launchCwd, home } = ref.current;
-        return explorerRoot ?? launchCwd ?? home ?? null;
-      },
+      getWorkspaceRoot: () => workspaceRootForAi(ref.current),
       getActiveFile: () => {
         const { activeId, tabs } = ref.current;
         const t = tabs.find((x) => x.id === activeId);
@@ -128,9 +133,9 @@ export function useAiLiveBridge(params: Params) {
         useManagedAgentsStore
           .getState()
           .register({ leafId, tabId, sessionId, task: oneLine, cwd });
-        const hooksReady = invoke("agent_enable_hooks", { agent: "claude" }).catch(
-          () => {},
-        );
+        const hooksReady = invoke("agent_enable_hooks", {
+          agent: "claude",
+        }).catch(() => {});
         void (async () => {
           await Promise.all([whenSessionReady(leafId), hooksReady]);
           if (!writeToSession(leafId, "claude\r")) {

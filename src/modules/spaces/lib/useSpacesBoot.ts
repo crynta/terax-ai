@@ -20,12 +20,14 @@ import {
 } from "./spaceRoot";
 import {
   loadAll,
+  normalizeSpaceEnvs,
   type SpaceMeta,
   type SpaceState,
   saveActiveId,
   saveSchemaVersion,
   saveSpacesList,
 } from "./store";
+import { validateSpaceRoot } from "./rootValidation";
 import { useSpaces } from "./useSpaces";
 
 type Params = {
@@ -37,15 +39,6 @@ type Params = {
   setActiveSpaceForNewTabs: (id: string) => void;
   adoptWorkspaceEnv: (env: WorkspaceEnv) => Promise<string | null>;
 };
-
-async function validateSpaceRoot(
-  candidate: string,
-  env: WorkspaceEnv,
-): Promise<string> {
-  const root = await native.canonicalize(candidate, env);
-  await native.workspaceAuthorize(root, env);
-  return root;
-}
 
 export function restoreBootTabs(
   spaces: SpaceMeta[],
@@ -164,16 +157,19 @@ export function useSpacesBoot({
     void (async () => {
       try {
         const loaded = await loadAll();
-        let { spaces, activeId, states } = loaded;
+        await usePreferencesStore
+          .getState()
+          .init()
+          .catch(() => {});
+        const fallbackEnv = parseWorkspaceScopeKey(
+          usePreferencesStore.getState().defaultWorkspaceEnv,
+        );
+        let spaces = normalizeSpaceEnvs(loaded.spaces, fallbackEnv);
+        const normalizedLoaded = { ...loaded, spaces };
+        const { activeId, states } = loaded;
 
         if (spaces.length === 0) {
-          await usePreferencesStore
-            .getState()
-            .init()
-            .catch(() => {});
-          const env = parseWorkspaceScopeKey(
-            usePreferencesStore.getState().defaultWorkspaceEnv,
-          );
+          const env = fallbackEnv;
           const envHome = await adoptWorkspaceEnv(env);
           const candidate = envHome ?? (env.kind === "local" ? home : null);
           let root: string | null = null;
@@ -223,7 +219,7 @@ export function useSpacesBoot({
         let rootIssues: SpaceRootIssues = {};
         if (loaded.schemaVersion < SPACE_SCHEMA_VERSION) {
           const migration = await migrateSpaceRoots(
-            loaded,
+            normalizedLoaded,
             (env) => adoptWorkspaceEnv(env),
             validateSpaceRoot,
           );
@@ -238,6 +234,9 @@ export function useSpacesBoot({
             spaces,
             validateSpaceRoot,
           );
+          if (spaces.some((space, index) => space !== loaded.spaces[index])) {
+            await saveSpacesList(spaces);
+          }
         }
 
         if (Object.keys(rootIssues).length > 0) {

@@ -3,6 +3,7 @@ import type { LoadedSpaces, SpaceMeta } from "@/modules/spaces/lib/store";
 
 const mocks = vi.hoisted(() => ({
   canonicalize: vi.fn(),
+  stat: vi.fn(),
   workspaceAuthorize: vi.fn(),
   loadAll: vi.fn(),
   saveSpacesList: vi.fn(),
@@ -10,14 +11,21 @@ const mocks = vi.hoisted(() => ({
   defaultWorkspaceEnv: "local",
 }));
 
-vi.mock("react", () => ({
-  useEffect: (effect: () => void) => effect(),
-  useRef: <T>(value: T) => ({ current: value }),
-}));
+vi.mock("react", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react")>();
+  const react = actual as typeof actual & { default: typeof actual };
+  return {
+    ...react.default,
+    ...actual,
+    useEffect: (effect: () => void) => effect(),
+    useRef: <T>(value: T) => ({ current: value }),
+  };
+});
 
 vi.mock("@/modules/ai/lib/native", () => ({
   native: {
     canonicalize: mocks.canonicalize,
+    stat: mocks.stat,
     workspaceAuthorize: mocks.workspaceAuthorize,
   },
 }));
@@ -33,6 +41,20 @@ vi.mock("@/modules/settings/preferences", () => ({
 
 vi.mock("@/modules/spaces/lib/store", () => ({
   loadAll: mocks.loadAll,
+  normalizeSpaceEnvs: (
+    spaces: Array<SpaceMeta | Record<string, unknown>>,
+    fallbackEnv: SpaceMeta["env"],
+  ) =>
+    spaces.map((space) => {
+      const env = space.env;
+      const validEnv =
+        env !== null &&
+        typeof env === "object" &&
+        ((env as { kind?: unknown }).kind === "local" ||
+          ((env as { kind?: unknown }).kind === "wsl" &&
+            typeof (env as { distro?: unknown }).distro === "string"));
+      return validEnv ? space : { ...space, env: fallbackEnv };
+    }),
   saveActiveId: vi.fn(),
   saveSchemaVersion: vi.fn(),
   saveSpacesList: mocks.saveSpacesList,
@@ -172,6 +194,7 @@ describe("useSpacesBoot", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.defaultWorkspaceEnv = "local";
+    mocks.stat.mockResolvedValue({ size: 0, mtime: 0, kind: "dir" });
   });
 
   it("uses environment Home as the first Space root and terminal cwd", async () => {
@@ -330,6 +353,37 @@ describe("useSpacesBoot", () => {
     );
   });
 
+  it("preserves a valid schema-v2 environment instead of applying the fallback", async () => {
+    mocks.defaultWorkspaceEnv = "wsl:Ubuntu";
+    const persisted = space({ id: "persisted", root: "/repo" });
+    mocks.loadAll.mockResolvedValue({
+      schemaVersion: 2,
+      activeId: "persisted",
+      spaces: [persisted],
+      states: new Map(),
+    });
+    mocks.canonicalize.mockImplementation(async (path: string) => path);
+    mocks.workspaceAuthorize.mockResolvedValue(undefined);
+    const markBooted = vi.fn();
+
+    useSpacesBoot({
+      ready: true,
+      home: "/home",
+      allocId: () => 1,
+      replaceTabs: vi.fn(),
+      markBooted,
+      setActiveSpaceForNewTabs: vi.fn(),
+      adoptWorkspaceEnv: vi.fn().mockResolvedValue("/home"),
+    });
+
+    await vi.waitFor(() => expect(markBooted).toHaveBeenCalledOnce());
+
+    expect(mocks.canonicalize).toHaveBeenCalledWith("/repo", {
+      kind: "local",
+    });
+    expect(mocks.saveSpacesList).not.toHaveBeenCalled();
+  });
+
   it("keeps persisted tabs unmounted when active environment adoption fails", async () => {
     const wsl = space({
       id: "wsl",
@@ -399,6 +453,101 @@ describe("useSpacesBoot", () => {
       paneTree: { kind: "leaf" },
     });
     expect(tabs[0]).not.toHaveProperty("path");
+  });
+
+  it("normalizes a schema-v1 Space lacking env before resolving and validating Home", async () => {
+    const legacySpace = {
+      id: "legacy",
+      name: "Legacy",
+      root: null,
+      createdAt: 0,
+      updatedAt: 0,
+    };
+    mocks.loadAll.mockResolvedValue({
+      schemaVersion: 1,
+      activeId: "legacy",
+      spaces: [legacySpace],
+      states: new Map(),
+    });
+    mocks.canonicalize.mockImplementation(async (path: string) => path);
+    mocks.workspaceAuthorize.mockResolvedValue(undefined);
+    const adoptWorkspaceEnv = vi.fn().mockResolvedValue("/fallback-home");
+    const markBooted = vi.fn();
+
+    useSpacesBoot({
+      ready: true,
+      home: "/local-home",
+      allocId: () => 1,
+      replaceTabs: vi.fn(),
+      markBooted,
+      setActiveSpaceForNewTabs: vi.fn(),
+      adoptWorkspaceEnv,
+    });
+
+    await vi.waitFor(() => expect(markBooted).toHaveBeenCalledOnce());
+
+    const fallbackEnv = { kind: "local" };
+    expect(adoptWorkspaceEnv).toHaveBeenCalledWith(fallbackEnv);
+    expect(mocks.canonicalize).toHaveBeenCalledWith(
+      "/fallback-home",
+      fallbackEnv,
+    );
+    expect(mocks.stat).toHaveBeenCalledWith("/fallback-home", fallbackEnv);
+    expect(mocks.workspaceAuthorize).toHaveBeenCalledWith(
+      "/fallback-home",
+      fallbackEnv,
+    );
+    expect(mocks.saveSpacesList).toHaveBeenCalledWith([
+      expect.objectContaining({
+        id: "legacy",
+        root: "/fallback-home",
+        env: fallbackEnv,
+      }),
+    ]);
+  });
+
+  it("recovers a persisted file root to environment Home", async () => {
+    mocks.loadAll.mockResolvedValue(loadedWithNoState());
+    mocks.canonicalize.mockImplementation(async (path: string) => path);
+    mocks.stat.mockImplementation(async (path: string) => ({
+      size: 0,
+      mtime: 0,
+      kind: path === "/rejected" ? "file" : "dir",
+    }));
+    mocks.workspaceAuthorize.mockResolvedValue(undefined);
+    const markBooted = vi.fn();
+    const replaceTabs = vi.fn();
+
+    useSpacesBoot({
+      ready: true,
+      home: "/home",
+      allocId: () => 1,
+      replaceTabs,
+      markBooted,
+      setActiveSpaceForNewTabs: vi.fn(),
+      adoptWorkspaceEnv: vi.fn().mockResolvedValue("/home"),
+    });
+
+    await vi.waitFor(() => expect(markBooted).toHaveBeenCalledOnce());
+
+    expect(mocks.stat).toHaveBeenCalledWith("/rejected", { kind: "local" });
+    expect(mocks.workspaceAuthorize).not.toHaveBeenCalledWith("/rejected", {
+      kind: "local",
+    });
+    expect(mocks.saveSpacesList).toHaveBeenCalledWith([
+      expect.objectContaining({ id: "broken", root: "/home" }),
+    ]);
+    expect(mocks.hydrate).toHaveBeenCalledWith(
+      [expect.objectContaining({ id: "broken", root: "/home" })],
+      "broken",
+      {},
+      {},
+      false,
+    );
+    expect(replaceTabs).toHaveBeenCalledWith(
+      [expect.objectContaining({ cwd: "/home" })],
+      expect.any(Number),
+    );
   });
 
   it("recovers an unavailable persisted root to environment Home", async () => {
