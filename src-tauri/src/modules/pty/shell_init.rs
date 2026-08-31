@@ -155,12 +155,12 @@ fn apply_common(
     if blocks {
         cmd.env("TERAX_BLOCKS", "1");
     }
-    let appimage_overrides = workspace::appimage_env_overrides();
-    let clean_path = match appimage_overrides.iter().find(|(key, _)| *key == "PATH") {
+    let env_overrides = workspace::child_env_overrides();
+    let clean_path = match env_overrides.iter().find(|(key, _)| *key == "PATH") {
         Some((_, value)) => value.clone(),
         None => std::env::var_os("PATH"),
     };
-    for (key, value) in appimage_overrides {
+    for (key, value) in env_overrides {
         match value {
             Some(v) => {
                 cmd.env(key, v);
