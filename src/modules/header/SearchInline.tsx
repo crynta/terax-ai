@@ -4,9 +4,9 @@ import { KEY_SEP } from "@/lib/platform";
 import type { EditorPaneHandle } from "@/modules/editor";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { getBindingTokens, SHORTCUTS } from "@/modules/shortcuts/shortcuts";
+import type { TerminalSearchController } from "@/modules/terminal/search/TerminalSearchController";
 import { Cancel01Icon, Search01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { SearchAddon } from "@xterm/addon-search";
 import {
   forwardRef,
   useCallback,
@@ -25,7 +25,7 @@ const TERM_DECORATIONS = {
 };
 
 export type SearchTarget =
-  | { kind: "terminal"; addon: SearchAddon; focus: () => void }
+  | { kind: "terminal"; addon: TerminalSearchController; focus: () => void }
   | { kind: "editor"; handle: EditorPaneHandle; focus: () => void }
   | {
       kind: "git-history";

@@ -3,15 +3,19 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
-import type { SearchAddon } from "@xterm/addon-search";
-import { Fragment } from "react";
+import type { TerminalSearchController } from "@/modules/terminal/search/TerminalSearchController";
+import { Fragment, useCallback, useEffect, useRef } from "react";
 import { useTerminalDropStore } from "./lib/dropStore";
 import { firstLeafSlotId, type PaneNode } from "./lib/panes";
+import {
+  beginTerminalResizeInteraction,
+  endTerminalResizeInteraction,
+} from "./lib/terminalResizeInteraction";
 import { TerminalPane, type TerminalPaneHandle } from "./TerminalPane";
 
 type LeafBundle = {
   setRef: (h: TerminalPaneHandle | null) => void;
-  onSearchReady: (leafId: number, addon: SearchAddon) => void;
+  onSearchReady: (leafId: number, addon: TerminalSearchController) => void;
   onCwd: (leafId: number, cwd: string) => void;
   onExit: (leafId: number, code: number) => void;
 };
@@ -68,9 +72,7 @@ export function PaneTreeView(props: Props) {
         const slotId = firstLeafSlotId(child);
         return (
           <Fragment key={slotId}>
-            {i > 0 && (
-              <ResizableHandle className="bg-border/50 transition-colors duration-[var(--dur-fast)] after:w-3 hover:bg-border" />
-            )}
+            {i > 0 && <TerminalResizableHandle />}
             <ResizablePanel id={`pane-slot-${slotId}`} minSize="10%">
               <PaneTreeView {...props} node={child} />
             </ResizablePanel>
@@ -78,6 +80,58 @@ export function PaneTreeView(props: Props) {
         );
       })}
     </ResizablePanelGroup>
+  );
+}
+
+const RESIZE_KEYS = new Set([
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+  "ArrowUp",
+  "End",
+  "Home",
+]);
+
+function TerminalResizableHandle() {
+  const interactionToken = useRef<object>({});
+  const removePointerListeners = useRef<(() => void) | null>(null);
+
+  const finish = useCallback(() => {
+    removePointerListeners.current?.();
+    removePointerListeners.current = null;
+    endTerminalResizeInteraction(interactionToken.current);
+  }, []);
+
+  const startPointerInteraction = useCallback(() => {
+    finish();
+    beginTerminalResizeInteraction(interactionToken.current);
+    const handlePointerEnd = () => finish();
+    window.addEventListener("pointerup", handlePointerEnd, true);
+    window.addEventListener("pointercancel", handlePointerEnd, true);
+    removePointerListeners.current = () => {
+      window.removeEventListener("pointerup", handlePointerEnd, true);
+      window.removeEventListener("pointercancel", handlePointerEnd, true);
+    };
+  }, [finish]);
+
+  useEffect(() => finish, [finish]);
+
+  return (
+    <ResizableHandle
+      className="bg-border/50 transition-colors duration-[var(--dur-fast)] after:w-3 hover:bg-border"
+      onPointerDownCapture={(event) => {
+        if (event.button === 0) startPointerInteraction();
+      }}
+      onKeyDownCapture={(event) => {
+        if (RESIZE_KEYS.has(event.key)) {
+          beginTerminalResizeInteraction(interactionToken.current);
+        }
+      }}
+      onKeyUpCapture={(event) => {
+        if (RESIZE_KEYS.has(event.key)) finish();
+      }}
+      onBlur={finish}
+    />
   );
 }
 

@@ -2,6 +2,8 @@ import { openExternalUrl } from "@/lib/external-link";
 import { resolveFontFamily } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { TerminalCursorStyle } from "@/modules/settings/store";
+import { pasteIntoGhosttySession } from "@/modules/terminal/ghostty/useGhosttyTerminalSession";
+import type { TerminalSearchController } from "@/modules/terminal/search/TerminalSearchController";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
@@ -21,6 +23,7 @@ import {
   transitionImeBridgeOwner,
 } from "./imeBridge";
 import { terminalReadlineSequence } from "./keymap";
+import { PTY_RESIZE_DEBOUNCE_MS } from "./ptyResizeScheduler";
 import {
   readTerminalClipboard,
   writeTerminalClipboard,
@@ -30,7 +33,6 @@ import { pasteIntoTerminal } from "./terminalPaste";
 
 export const POOL_MAX_SIZE = 5;
 const FIT_DEBOUNCE_MS = 8;
-const PTY_RESIZE_DEBOUNCE_MS = 256;
 const SNAPSHOT_SCROLLBACK_CAP = 5_000;
 
 export type SlotAdapter = {
@@ -161,6 +163,7 @@ export function poolSlotStats(): PoolSlotStat[] {
 // Bracketed paste via xterm, so an app that enabled it (Claude Code) treats a
 // dropped path as a real paste while a plain shell gets the literal text.
 export function pasteIntoLeaf(leafId: number, text: string): boolean {
+  if (pasteIntoGhosttySession(leafId, text)) return true;
   const slot = slots.find((s) => s.currentLeafId === leafId);
   return pasteIntoTerminal(slot?.term ?? null, text);
 }
@@ -423,8 +426,9 @@ function pickSlotFor(leafId: number): PickResult {
       best = s;
     }
   }
-  const chosen = best!;
-  return { slot: chosen, previousLeafId: chosen.currentLeafId };
+  if (!best)
+    throw new Error("Renderer pool has no slot available for eviction");
+  return { slot: best, previousLeafId: best.currentLeafId };
 }
 
 export type AcquireParams = {
@@ -441,7 +445,7 @@ export type AcquireParams = {
   cols: number;
   rows: number;
   registerOsc: (term: Terminal) => (() => void)[];
-  onSearchReady: (addon: SearchAddon) => void;
+  onSearchReady: (addon: TerminalSearchController) => void;
 };
 
 export function acquireSlot(params: AcquireParams): Slot {

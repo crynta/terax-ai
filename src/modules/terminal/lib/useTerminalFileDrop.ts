@@ -2,7 +2,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useEffect } from "react";
 import { useTerminalDropStore } from "./dropStore";
 import { formatDroppedPaths } from "./quoteShellPath";
-import { pasteIntoLeaf } from "./rendererPool";
+import { pasteIntoSession } from "./terminalSessionApi";
 
 export type TerminalPathDropTarget = {
   updateTarget: (clientX: number, clientY: number) => boolean;
@@ -59,7 +59,7 @@ export function createTerminalPathDropTarget({
 
 const terminalPathDropTarget = createTerminalPathDropTarget({
   leafIdAtPoint: leafIdAt,
-  paste: pasteIntoLeaf,
+  paste: pasteIntoSession,
   setTarget: (leafId) => useTerminalDropStore.getState().setTarget(leafId),
 });
 
@@ -88,7 +88,7 @@ export function useTerminalFileDrop(): TerminalPathDropTarget {
           if (!p.paths.length) return;
           const leafId = leafIdAt(p.position.x, p.position.y);
           if (leafId !== null) {
-            pasteIntoLeaf(leafId, formatDroppedPaths(p.paths));
+            pasteIntoSession(leafId, formatDroppedPaths(p.paths));
           }
         }
       })

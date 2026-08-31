@@ -1,7 +1,27 @@
 import { ensureMonoFontsLoaded } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import { ghosttyCoreRuntimeDiagnostics } from "@/modules/terminal/ghostty/GhosttyCoreRuntime";
+import { webGpuTerminalRuntimeDiagnostics } from "@/modules/terminal/ghostty/gpu/WebGpuTerminalRuntime";
+import { encodeTerminalSubmission } from "@/modules/terminal/ghostty/input/terminalInputEncoding";
+import {
+  clearGhosttySession,
+  disposeGhosttySession,
+  ghosttyFocusedLeaf,
+  ghosttyLeafHasForegroundProcess,
+  ghosttyLeafIdForPty,
+  ghosttyPtyIdForLeaf,
+  ghosttySelectionForLeaf,
+  ghosttySessionDiagnostics,
+  hasGhosttySession,
+  interruptGhosttySession,
+  respawnGhosttySession,
+  submitToGhosttySession,
+  whenGhosttySessionReady,
+  writeToGhosttySession,
+} from "@/modules/terminal/ghostty/useGhosttyTerminalSession";
+import { webGlTerminalRuntimeDiagnostics } from "@/modules/terminal/ghostty/webgl/WebGlTerminalRuntime";
+import type { TerminalSearchController } from "@/modules/terminal/search/TerminalSearchController";
 import { invoke } from "@tauri-apps/api/core";
-import type { SearchAddon } from "@xterm/addon-search";
 import {
   useCallback,
   useEffect,
@@ -24,6 +44,7 @@ import {
   registerPromptTracker,
 } from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
+import { terminalResizeInteractionActive } from "./terminalResizeInteraction";
 import "../block/block.css";
 import { ensureAgentActivityListener, isAgentActivePty } from "./agentActivity";
 import {
@@ -32,9 +53,9 @@ import {
   applyCursorBlink,
   applyCursorStyle,
   applyLetterSpacing,
-  applyTerminalFont,
   applyTheme as applyPoolTheme,
   applyScrollback,
+  applyTerminalFont,
   applyWebglPreference,
   configureRendererPool,
   discardRetainedSlot,
@@ -44,6 +65,7 @@ import {
   getSlotForLeaf,
   isLeafAltScreen,
   parkLeafSlot,
+  pasteIntoLeaf,
   poolSize,
   poolSlotStats,
   refreshLeafSlot,
@@ -53,7 +75,7 @@ import {
 import { useTerminalFont } from "./useTerminalFont";
 
 type Callbacks = {
-  onSearchReady?: (addon: SearchAddon) => void;
+  onSearchReady?: (addon: TerminalSearchController) => void;
   onExit?: (code: number) => void;
   onCwd?: (cwd: string) => void;
 };
@@ -105,6 +127,10 @@ type Session = {
 
 const sessions = new Map<number, Session>();
 
+export function hasXtermSession(leafId: number): boolean {
+  return sessions.has(leafId);
+}
+
 // Block-overlay viewport listeners, keyed by leafId at module scope so the
 // overlay (a child) can subscribe before the parent effect creates the session.
 const blockViewportListeners = new Map<number, Set<() => void>>();
@@ -131,6 +157,12 @@ export function whenSessionReady(
   leafId: number,
   timeoutMs = 4000,
 ): Promise<void> {
+  if (hasGhosttySession(leafId)) {
+    return Promise.race([
+      whenGhosttySessionReady(leafId).then(() => undefined),
+      new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+    ]);
+  }
   if (readyLeaves.has(leafId)) return Promise.resolve();
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
@@ -155,6 +187,7 @@ function queuePendingInput(s: Session, data: string): void {
 }
 
 export function writeToSession(leafId: number, data: string): boolean {
+  if (hasGhosttySession(leafId)) return writeToGhosttySession(leafId, data);
   const s = sessions.get(leafId);
   if (!s || s.shellExited) return false;
   if (s.pty) {
@@ -166,19 +199,25 @@ export function writeToSession(leafId: number, data: string): boolean {
 }
 
 export function submitToLeaf(leafId: number, text: string): void {
+  if (submitToGhosttySession(leafId, text)) return;
   const s = sessions.get(leafId);
   if (!s || s.shellExited) return;
   s.everSubmitted = true;
-  // Bracketed paste keeps a multiline command atomic; trailing CR runs it.
-  const data = text.includes("\n")
-    ? `\x1b[200~${text}\x1b[201~\r`
-    : `${text}\r`;
+  const data = encodeTerminalSubmission(
+    text,
+    getSlotForLeaf(leafId)?.term.modes.bracketedPasteMode ?? false,
+  );
   if (s.pty) void s.pty.write(data);
   else queuePendingInput(s, data);
 }
 
 export function interruptLeaf(leafId: number): void {
+  if (interruptGhosttySession(leafId)) return;
   sessions.get(leafId)?.pty?.write("\x03");
+}
+
+export function pasteIntoSession(leafId: number, text: string): boolean {
+  return pasteIntoLeaf(leafId, text);
 }
 
 export function leafCwd(leafId: number): string | null {
@@ -199,6 +238,7 @@ export function clearLeafBlockSelection(leafId: number): boolean {
 }
 
 export function leafGridSelection(leafId: number): string | null {
+  if (hasGhosttySession(leafId)) return ghosttySelectionForLeaf(leafId);
   const sel = getSlotForLeaf(leafId)?.term.getSelection() ?? "";
   return sel.length > 0 ? sel : null;
 }
@@ -278,6 +318,8 @@ export function blockWatermarkState(leafId: number): WatermarkState {
  * focused terminal slot is bound (e.g. focus is in the editor or AI panel).
  */
 export function clearFocusedTerminal(): boolean {
+  const ghosttyLeaf = ghosttyFocusedLeaf();
+  if (ghosttyLeaf !== null) return clearGhosttySession(ghosttyLeaf);
   for (const [leafId, s] of sessions) {
     if (!s.visibleNow || !s.focusedNow) continue;
     const slot = getSlotForLeaf(leafId);
@@ -289,6 +331,8 @@ export function clearFocusedTerminal(): boolean {
 }
 
 export function leafIdForPty(ptyId: number): number | null {
+  const ghosttyLeaf = ghosttyLeafIdForPty(ptyId);
+  if (ghosttyLeaf !== null) return ghosttyLeaf;
   for (const [leafId, s] of sessions) {
     if (s.pty?.id === ptyId) return leafId;
   }
@@ -296,6 +340,8 @@ export function leafIdForPty(ptyId: number): number | null {
 }
 
 export function ptyIdForLeaf(leafId: number): number | null {
+  const ghosttyPty = ghosttyPtyIdForLeaf(leafId);
+  if (ghosttyPty !== null) return ghosttyPty;
   return sessions.get(leafId)?.pty?.id ?? null;
 }
 
@@ -730,6 +776,7 @@ export async function respawnSession(
   leafId: number,
   cwd?: string,
 ): Promise<void> {
+  if (await respawnGhosttySession(leafId, cwd)) return;
   const s = sessions.get(leafId);
   if (!s || s.disposed) return;
   s.pty?.close();
@@ -778,6 +825,9 @@ export async function respawnSession(
 export async function leafHasForegroundProcess(
   leafId: number,
 ): Promise<boolean> {
+  if (hasGhosttySession(leafId)) {
+    return ghosttyLeafHasForegroundProcess(leafId);
+  }
   const s = sessions.get(leafId);
   if (!s?.pty || s.shellExited) return false;
   try {
@@ -796,6 +846,7 @@ export async function leafHasForegroundProcess(
 }
 
 export function disposeSession(leafId: number): void {
+  if (disposeGhosttySession(leafId)) return;
   const s = sessions.get(leafId);
   if (!s) return;
   s.disposed = true;
@@ -826,7 +877,7 @@ type Options = {
   focused?: boolean;
   initialCwd?: string;
   blocks?: boolean;
-  onSearchReady?: (addon: SearchAddon) => void;
+  onSearchReady?: (addon: TerminalSearchController) => void;
   onExit?: (code: number) => void;
   onCwd?: (cwd: string) => void;
 };
@@ -1106,6 +1157,11 @@ export function terminalDebugStats() {
   const snapshotTotal = liveSessions.reduce((n, s) => n + s.snapshotLen, 0);
   const slots = poolSlotStats();
   return {
+    ghosttyCore: ghosttyCoreRuntimeDiagnostics(),
+    ghosttyWebGpu: webGpuTerminalRuntimeDiagnostics(),
+    ghosttyWebGl: webGlTerminalRuntimeDiagnostics(),
+    ghosttySessions: ghosttySessionDiagnostics(),
+    terminalResizeInteractionActive: terminalResizeInteractionActive(),
     poolSize: poolSize(),
     webglContexts: slots.filter((s) => s.webgl).length,
     idleSlots: slots.filter((s) => s.leafId === null).length,

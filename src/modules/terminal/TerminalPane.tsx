@@ -1,19 +1,17 @@
+import type { TerminalSearchController } from "@/modules/terminal/search/TerminalSearchController";
 import { useTheme } from "@/modules/theme";
-import type { SearchAddon } from "@xterm/addon-search";
 import {
   forwardRef,
+  lazy,
   memo,
+  Suspense,
   useEffect,
   useImperativeHandle,
   useRef,
 } from "react";
-import { BlockOverlay } from "./block/BlockOverlay";
-import { BlockWatermark } from "./block/BlockWatermark";
-import {
-  focusLeafInput,
-  submitToLeaf,
-  useTerminalSession,
-} from "./lib/useTerminalSession";
+import type { TerminalBackendKind } from "./backend/contracts";
+import { isGhosttyBackend, resolvedTerminalBackend } from "./backend/selection";
+import { useGhosttyTerminalSession } from "./ghostty/useGhosttyTerminalSession";
 
 export type TerminalPaneHandle = {
   write: (data: string) => void;
@@ -22,7 +20,7 @@ export type TerminalPaneHandle = {
   getSelection: () => string | null;
 };
 
-type Props = {
+export type TerminalPaneProps = {
   /** Stable identifier for this leaf (passed back through callbacks). */
   leafId: number;
   /** Tab containing this pane is on screen. */
@@ -32,43 +30,47 @@ type Props = {
   initialCwd?: string;
   /** Enable command-block decorations (OSC 133) for this terminal. */
   blocks?: boolean;
-  onSearchReady?: (leafId: number, addon: SearchAddon) => void;
+  onSearchReady?: (leafId: number, addon: TerminalSearchController) => void;
   onExit?: (leafId: number, code: number) => void;
   onCwd?: (leafId: number, cwd: string) => void;
 };
 
-export const TerminalPane = memo(
-  forwardRef<TerminalPaneHandle, Props>(function TerminalPane(
+const XtermTerminalPane = lazy(() => import("./XtermTerminalPane"));
+
+const GhosttyTerminalPane = memo(
+  forwardRef<
+    TerminalPaneHandle,
+    TerminalPaneProps & {
+      backend: Extract<TerminalBackendKind, `ghostty-${string}`>;
+    }
+  >(function GhosttyTerminalPane(
     {
       leafId,
       visible,
       focused = true,
       initialCwd,
-      blocks = false,
       onSearchReady,
       onExit,
       onCwd,
+      backend,
     },
     ref,
   ) {
     const containerRef = useRef<HTMLDivElement>(null);
-    const downYRef = useRef<number | null>(null);
     const { resolvedMode, activeTheme } = useTheme();
-
-    const session = useTerminalSession({
+    const session = useGhosttyTerminalSession({
       leafId,
+      backend,
       container: containerRef,
       visible,
       focused,
       initialCwd,
-      blocks,
-      onSearchReady: (a) => onSearchReady?.(leafId, a),
-      onExit: (c) => onExit?.(leafId, c),
-      onCwd: (c) => onCwd?.(leafId, c),
+      onSearchReady: (search) => onSearchReady?.(leafId, search),
+      onExit: (code) => onExit?.(leafId, code),
+      onCwd: (cwd) => onCwd?.(leafId, cwd),
     });
 
     useEffect(() => {
-      // Defer one frame so CSS-variable token resolution sees the new class.
       const id = requestAnimationFrame(() => session.applyTheme());
       return () => cancelAnimationFrame(id);
     }, [resolvedMode, activeTheme, session]);
@@ -76,72 +78,42 @@ export const TerminalPane = memo(
     useImperativeHandle(
       ref,
       () => ({
-        write: (data: string) => session.write(data),
-        focus: () => session.focus(),
-        getBuffer: (max?: number) => session.getBuffer(max),
-        getSelection: () => session.getSelection(),
+        write: session.write,
+        focus: session.focus,
+        getBuffer: session.getBuffer,
+        getSelection: session.getSelection,
       }),
       [session],
     );
 
-    const hideStyle = {
-      visibility: visible ? ("visible" as const) : ("hidden" as const),
-      pointerEvents: visible ? ("auto" as const) : ("none" as const),
-    };
-
-    const promptReady = session.blockMode === "prompt";
-
-    if (blocks) {
-      return (
-        <div
-          className="zoom-exempt flex h-full w-full flex-col"
-          style={hideStyle}
-        >
-          <div className="relative min-h-0 flex-1">
-            {/* biome-ignore lint/a11y/noStaticElementInteractions: terminal surface; pointer selects command blocks */}
-            <div
-              ref={containerRef}
-              className="absolute inset-0 z-0"
-              onMouseDown={(e) => {
-                downYRef.current = e.clientY;
-              }}
-              onMouseUp={(e) => {
-                const moved =
-                  downYRef.current != null &&
-                  Math.abs(e.clientY - downYRef.current) > 4;
-                downYRef.current = null;
-                if (!moved) session.selectBlockAt(e.clientY);
-                if (session.blockMode === "prompt") focusLeafInput(leafId);
-              }}
-            />
-            <BlockWatermark
-              leafId={leafId}
-              subscribe={session.subscribeBlocks}
-            />
-            <BlockOverlay
-              subscribe={session.subscribeBlocks}
-              getVisible={session.visibleBlocks}
-              readOutput={(id) => session.readBlockId(id)?.output ?? null}
-              searchBlock={session.searchBlock}
-              revealMatch={session.revealMatch}
-              clearSearch={session.clearSearch}
-              promptReady={promptReady}
-              onRunAgain={(cmd) => submitToLeaf(leafId, cmd)}
-              onRestoreFocus={() => {
-                if (session.blockMode === "prompt") focusLeafInput(leafId);
-              }}
-            />
-          </div>
-        </div>
-      );
-    }
-
     return (
       <div
         ref={containerRef}
-        className="zoom-exempt h-full w-full"
-        style={hideStyle}
+        className="zoom-exempt relative h-full w-full overflow-hidden"
+        style={{
+          visibility: visible ? "visible" : "hidden",
+          pointerEvents: visible ? "auto" : "none",
+        }}
+        data-terminal-backend={backend}
       />
     );
   }),
+);
+
+export const TerminalPane = memo(
+  forwardRef<TerminalPaneHandle, TerminalPaneProps>(
+    function TerminalPane(props, ref) {
+      const backend = resolvedTerminalBackend();
+      const useGhostty = !props.blocks && isGhosttyBackend(backend);
+      return useGhostty && isGhosttyBackend(backend) ? (
+        <GhosttyTerminalPane ref={ref} {...props} backend={backend} />
+      ) : (
+        <Suspense
+          fallback={<div className="zoom-exempt h-full w-full bg-background" />}
+        >
+          <XtermTerminalPane ref={ref} {...props} />
+        </Suspense>
+      );
+    },
+  ),
 );
