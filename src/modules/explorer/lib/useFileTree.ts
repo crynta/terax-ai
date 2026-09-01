@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { currentWorkspaceEnv } from "@/modules/workspace";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { listenFsChanged, watchAdd, watchRemove } from "./watch";
@@ -34,6 +35,37 @@ export function dirname(path: string): string {
   const i = path.lastIndexOf("/");
   if (i <= 0) return "/";
   return path.slice(0, i);
+}
+
+export type BatchMoveItem = {
+  from: string;
+  to: string;
+  name: string;
+  conflict: boolean;
+};
+
+// Pure planning step for a batch move: pairs each source with its destination
+// path and flags a conflict when the name collides with something already in
+// the target dir, or with an earlier item in the same batch (processed in
+// selection order, so the earlier item "wins" the name first). Sources
+// already directly in the target are no-ops and dropped from the plan.
+export function planBatchMove(
+  sources: string[],
+  toDir: string,
+  existingNames: string[],
+): BatchMoveItem[] {
+  const existing = new Set(existingNames);
+  const claimed = new Set<string>();
+  const items: BatchMoveItem[] = [];
+  for (const from of sources) {
+    const name = from.slice(from.lastIndexOf("/") + 1);
+    const to = joinPath(toDir, name);
+    if (to === from) continue;
+    const conflict = existing.has(name) || claimed.has(name);
+    claimed.add(name);
+    items.push({ from, to, name, conflict });
+  }
+  return items;
 }
 
 const EXPANSION_CACHE_LIMIT = 8;
@@ -398,6 +430,34 @@ export function useFileTree(rootPath: string | null, options?: Options) {
     [fetchChildren, options],
   );
 
+  const deletePaths = useCallback(
+    async (paths: string[]) => {
+      if (paths.length === 0) return;
+      const results = await Promise.allSettled(
+        paths.map((path) =>
+          invoke("fs_delete", { path, workspace: currentWorkspaceEnv() }),
+        ),
+      );
+      const parents = new Set<string>();
+      let anyFailed = false;
+      paths.forEach((path, i) => {
+        if (results[i].status === "fulfilled") {
+          options?.onPathDeleted?.(path);
+          parents.add(dirname(path));
+        } else {
+          anyFailed = true;
+          console.error(
+            "fs_delete failed:",
+            (results[i] as PromiseRejectedResult).reason,
+          );
+        }
+      });
+      await Promise.all([...parents].map((p) => fetchChildren(p)));
+      if (anyFailed) toast.error("Delete failed for one or more items");
+    },
+    [fetchChildren, options],
+  );
+
   const movePath = useCallback(
     async (from: string, toDir: string) => {
       const name = from.slice(from.lastIndexOf("/") + 1);
@@ -426,6 +486,75 @@ export function useFileTree(rootPath: string | null, options?: Options) {
     [fetchChildren, options],
   );
 
+  // Batch move: non-conflicting items move immediately in parallel; each name
+  // collision (against the target dir or another item in the same batch) gets
+  // an interactive Replace/Skip toast, mirroring VS Code. Silent on full
+  // success — the conflict toasts already say everything interactive.
+  const movePaths = useCallback(
+    async (sources: string[], toDir: string) => {
+      if (sources.length === 0) return;
+
+      const target = nodesRef.current[toDir];
+      const existingNames =
+        target?.status === "loaded" ? target.entries.map((e) => e.name) : [];
+      const items = planBatchMove(sources, toDir, existingNames);
+      if (items.length === 0) return;
+
+      const parents = new Set<string>([toDir]);
+      let anySucceeded = false;
+      let anyUnexpectedFailure = false;
+
+      const moveOne = async (from: string, to: string) => {
+        await invoke("fs_rename", { from, to, workspace: currentWorkspaceEnv() });
+        options?.onPathRenamed?.(from, to);
+        parents.add(dirname(from));
+        anySucceeded = true;
+      };
+
+      const nonConflicting = items.filter((i) => !i.conflict);
+      const conflicting = items.filter((i) => i.conflict);
+
+      const results = await Promise.allSettled(
+        nonConflicting.map((i) => moveOne(i.from, i.to)),
+      );
+      for (const r of results) {
+        if (r.status === "rejected") {
+          anyUnexpectedFailure = true;
+          console.error("fs_rename (move) failed:", r.reason);
+        }
+      }
+
+      for (const item of conflicting) {
+        const resolution = await new Promise<"replace" | "skip">((resolve) => {
+          toast.warning(`"${item.name}" already exists`, {
+            duration: Infinity,
+            action: { label: "Replace", onClick: () => resolve("replace") },
+            cancel: { label: "Skip", onClick: () => resolve("skip") },
+            onDismiss: () => resolve("skip"),
+          });
+        });
+        if (resolution === "skip") continue;
+        try {
+          await invoke("fs_delete", {
+            path: item.to,
+            workspace: currentWorkspaceEnv(),
+          });
+          await moveOne(item.from, item.to);
+        } catch (e) {
+          anyUnexpectedFailure = true;
+          console.error("fs_rename (replace) failed:", e);
+        }
+      }
+
+      await Promise.all([...parents].map((p) => fetchChildren(p)));
+
+      if (!anySucceeded && anyUnexpectedFailure) {
+        toast.error("Move failed");
+      }
+    },
+    [fetchChildren, options],
+  );
+
   return {
     nodes,
     expanded,
@@ -441,7 +570,9 @@ export function useFileTree(rootPath: string | null, options?: Options) {
     cancelRename,
     commitRename,
     deletePath,
+    deletePaths,
     movePath,
+    movePaths,
     joinPath,
   };
 }

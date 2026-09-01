@@ -27,7 +27,13 @@ import {
 } from "react";
 import { cn } from "@/lib/utils";
 import { ExplorerSearch, type ExplorerSearchHandle } from "./ExplorerSearch";
-import { EntryRow, PendingRow, StatusRow, type RowActions } from "./TreeRow";
+import {
+  EntryRow,
+  PendingRow,
+  StatusRow,
+  type RowActions,
+  type SelectModifiers,
+} from "./TreeRow";
 import { InlineInput } from "./InlineInput";
 import {
   copyToClipboard,
@@ -208,7 +214,14 @@ export const FileExplorer = memo(
       gitDecorations ? gitStatus : null,
       gitDecorations,
     );
-    const [selectedPath, setSelectedPath] = useState<string | null>(null);
+    const [selectedPaths, setSelectedPaths] = useState<Set<string>>(
+      () => new Set(),
+    );
+    const [anchorPath, setAnchorPath] = useState<string | null>(null);
+    const selectedPathsRef = useRef(selectedPaths);
+    selectedPathsRef.current = selectedPaths;
+    const anchorPathRef = useRef(anchorPath);
+    anchorPathRef.current = anchorPath;
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [isSearchActive, setIsSearchActive] = useState(false);
     const searchRef = useRef<ExplorerSearchHandle>(null);
@@ -248,6 +261,7 @@ export const FileExplorer = memo(
       isDir: boolean;
     } | null>(null);
     const [deleteConfirm, setDeleteConfirm] = useState(false);
+    const [menuIsBatch, setMenuIsBatch] = useState(false);
     // Bumped on every right-click so the menu content remounts and the popper
     // re-anchors to the new cursor (floating-ui won't reposition on an anchor
     // change alone, only on scroll/resize).
@@ -258,6 +272,52 @@ export const FileExplorer = memo(
       for (const row of rows) if (row.kind === "entry") out.push(row.path);
       return out;
     }, [rows]);
+    const entryPathsRef = useRef(entryPaths);
+    entryPathsRef.current = entryPaths;
+
+    const collapseSelectionTo = useCallback((path: string) => {
+      setSelectedPaths(new Set([path]));
+      setAnchorPath(path);
+    }, []);
+
+    const getSelectedPaths = useCallback(
+      () => selectedPathsRef.current,
+      [],
+    );
+
+    // Stable identity (reads fresh state off refs) so the memoized EntryRow
+    // doesn't re-render on every selection change.
+    const handleEntrySelect = useCallback(
+      (path: string, modifiers: SelectModifiers) => {
+        if (modifiers.shift) {
+          const paths = entryPathsRef.current;
+          const anchor = anchorPathRef.current ?? path;
+          const anchorIdx = paths.indexOf(anchor);
+          const idx = paths.indexOf(path);
+          if (anchorIdx === -1 || idx === -1) {
+            collapseSelectionTo(path);
+            return;
+          }
+          const [lo, hi] =
+            anchorIdx <= idx ? [anchorIdx, idx] : [idx, anchorIdx];
+          setSelectedPaths(new Set(paths.slice(lo, hi + 1)));
+          if (anchorPathRef.current === null) setAnchorPath(anchor);
+          return;
+        }
+        if (modifiers.mod) {
+          setSelectedPaths((curr) => {
+            const next = new Set(curr);
+            if (next.has(path)) next.delete(path);
+            else next.add(path);
+            return next;
+          });
+          setAnchorPath(path);
+          return;
+        }
+        collapseSelectionTo(path);
+      },
+      [collapseSelectionTo],
+    );
 
     const isDirAt = useCallback(
       (path: string): boolean | undefined => {
@@ -270,7 +330,9 @@ export const FileExplorer = memo(
     const dnd = useExplorerDnd({
       rootPath: rootPath ?? "",
       isDir: isDirAt,
-      onMove: tree.movePath,
+      onMove: tree.movePaths,
+      getSelectedPaths,
+      collapseSelectionTo,
       pathDropTarget,
     });
 
@@ -290,10 +352,19 @@ export const FileExplorer = memo(
     }, [dropTargetDir, rootPath, tree.expanded, tree.expand]);
 
     useEffect(() => {
-      if (selectedPath && !entryIndexByPath.has(selectedPath)) {
-        setSelectedPath(null);
-      }
-    }, [entryIndexByPath, selectedPath]);
+      setSelectedPaths((curr) => {
+        let changed = false;
+        const next = new Set(curr);
+        for (const p of curr) {
+          if (!entryIndexByPath.has(p)) {
+            next.delete(p);
+            changed = true;
+          }
+        }
+        return changed ? next : curr;
+      });
+      if (anchorPath && !entryIndexByPath.has(anchorPath)) setAnchorPath(null);
+    }, [entryIndexByPath, anchorPath]);
 
     const virtualizer = useVirtualizer({
       count: rows.length,
@@ -319,18 +390,18 @@ export const FileExplorer = memo(
       }
       if (!entryIndexByPath.has(activeFilePath)) return;
       lastSyncedActivePathRef.current = activeFilePath;
-      setSelectedPath(activeFilePath);
+      collapseSelectionTo(activeFilePath);
       requestAnimationFrame(() => scrollEntryIntoView(activeFilePath));
-    }, [activeFilePath, entryIndexByPath, scrollEntryIntoView]);
+    }, [activeFilePath, entryIndexByPath, scrollEntryIntoView, collapseSelectionTo]);
 
     useImperativeHandle(
       ref,
       () => ({
         focus: () => {
           containerRef.current?.focus();
-          if (!selectedPath && entryPaths.length > 0) {
+          if (selectedPathsRef.current.size === 0 && entryPaths.length > 0) {
             const first = entryPaths[0];
-            setSelectedPath(first);
+            collapseSelectionTo(first);
             requestAnimationFrame(() => scrollEntryIntoView(first));
           }
         },
@@ -345,7 +416,7 @@ export const FileExplorer = memo(
           searchRef.current?.focus();
         },
       }),
-      [entryPaths, scrollEntryIntoView, selectedPath],
+      [entryPaths, scrollEntryIntoView, collapseSelectionTo],
     );
 
     useGlobalShortcuts({
@@ -390,11 +461,17 @@ export const FileExplorer = memo(
         return;
       if (entryPaths.length === 0) return;
 
-      const currentIdx = selectedPath ? entryPaths.indexOf(selectedPath) : -1;
+      if (e.key === "Escape" && selectedPaths.size > 1) {
+        e.preventDefault();
+        collapseSelectionTo(anchorPath ?? entryPaths[0]);
+        return;
+      }
+
+      const currentIdx = anchorPath ? entryPaths.indexOf(anchorPath) : -1;
       const move = (next: number) => {
         const clamped = Math.max(0, Math.min(entryPaths.length - 1, next));
         const path = entryPaths[clamped];
-        setSelectedPath(path);
+        collapseSelectionTo(path);
         requestAnimationFrame(() => scrollEntryIntoView(path));
       };
 
@@ -433,7 +510,7 @@ export const FileExplorer = memo(
             tree.toggle(row.path);
           } else {
             const parent = row.path.slice(0, row.path.lastIndexOf("/"));
-            if (parent && parent !== rootPath) setSelectedPath(parent);
+            if (parent && parent !== rootPath) collapseSelectionTo(parent);
           }
           break;
         }
@@ -465,11 +542,12 @@ export const FileExplorer = memo(
               depth={row.depth}
               actions={rowActions}
               renameInProgress={renameInProgress}
-              isSelected={selectedPath === row.path}
+              isSelected={selectedPaths.has(row.path)}
               isRenaming={row.kind === "rename"}
               isDropTarget={dropTargetDir === row.path}
+              multiSelectActive={selectedPaths.size > 1}
               onOpenFile={onOpenFile}
-              onSelectPath={setSelectedPath}
+              onSelectPath={handleEntrySelect}
               gitStatusCode={row.gitStatusCode}
               gitignored={gitDecorations && row.gitignored}
             />
@@ -591,11 +669,20 @@ export const FileExplorer = memo(
                   const idx =
                     path != null ? entryIndexByPath.get(path) : undefined;
                   const row = idx !== undefined ? rows[idx] : undefined;
-                  setMenuTarget(
-                    row && row.kind === "entry"
-                      ? { path: row.path, name: row.name, isDir: row.isDir }
-                      : null,
-                  );
+                  if (row && row.kind === "entry") {
+                    const sel = selectedPathsRef.current;
+                    const isBatch = sel.has(row.path) && sel.size > 1;
+                    if (!isBatch) collapseSelectionTo(row.path);
+                    setMenuIsBatch(isBatch);
+                    setMenuTarget({
+                      path: row.path,
+                      name: row.name,
+                      isDir: row.isDir,
+                    });
+                  } else {
+                    setMenuIsBatch(false);
+                    setMenuTarget(null);
+                  }
                   setDeleteConfirm(false);
                   setMenuNonce((n) => n + 1);
                 }}
@@ -674,7 +761,26 @@ export const FileExplorer = memo(
                 if (tree.renaming || tree.pendingCreate) e.preventDefault();
               }}
             >
-              {menuTarget ? (
+              {menuTarget && menuIsBatch ? (
+                <ContextMenuItem
+                  className={COMPACT_ITEM}
+                  variant="destructive"
+                  onSelect={(e) => {
+                    if (deleteConfirm) {
+                      void tree.deletePaths([...selectedPathsRef.current]);
+                    } else {
+                      // Keep the menu open on the first click so the user
+                      // can confirm; let it close normally on the second.
+                      e.preventDefault();
+                      setDeleteConfirm(true);
+                    }
+                  }}
+                >
+                  {deleteConfirm
+                    ? "Click again to confirm"
+                    : `Delete ${selectedPaths.size} items`}
+                </ContextMenuItem>
+              ) : menuTarget ? (
                 <>
                   {!menuTarget.isDir && (
                     <ContextMenuItem
