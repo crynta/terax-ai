@@ -68,6 +68,19 @@ export function planBatchMove(
   return items;
 }
 
+// A selection can contain both a directory and one of its own descendants;
+// moving both independently (in parallel) can move the child twice or race
+// against the parent's own move. Drop any source nested under another
+// selected source before planning or running the moves.
+export function excludeNestedSources(sources: string[]): string[] {
+  return sources.filter(
+    (path) =>
+      !sources.some(
+        (other) => other !== path && path.startsWith(`${other}/`),
+      ),
+  );
+}
+
 const EXPANSION_CACHE_LIMIT = 8;
 const expansionCache = new Map<string, string[]>();
 
@@ -495,9 +508,28 @@ export function useFileTree(rootPath: string | null, options?: Options) {
       if (sources.length === 0) return;
 
       const target = nodesRef.current[toDir];
-      const existingNames =
-        target?.status === "loaded" ? target.entries.map((e) => e.name) : [];
-      const items = planBatchMove(sources, toDir, existingNames);
+      let existingNames: string[];
+      if (target?.status === "loaded") {
+        existingNames = target.entries.map((e) => e.name);
+      } else {
+        try {
+          const entries = await invoke<DirEntry[]>("fs_read_dir", {
+            path: toDir,
+            showHidden: showHiddenRef.current,
+            gitDecorations: gitDecorationsRef.current,
+            workspace: currentWorkspaceEnv(),
+          });
+          existingNames = entries.map((e) => e.name);
+        } catch (e) {
+          console.error("fs_read_dir (move target) failed:", e);
+          existingNames = [];
+        }
+      }
+      const items = planBatchMove(
+        excludeNestedSources(sources),
+        toDir,
+        existingNames,
+      );
       if (items.length === 0) return;
 
       const parents = new Set<string>([toDir]);
@@ -534,15 +566,44 @@ export function useFileTree(rootPath: string | null, options?: Options) {
           });
         });
         if (resolution === "skip") continue;
+        // Replace without ever deleting the existing destination outright: move
+        // it aside first, then move the source in. If the second rename fails,
+        // move the backup back rather than leaving the destination gone.
+        const backupTo = `${item.to}.terax-replace-${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2)}`;
         try {
-          await invoke("fs_delete", {
-            path: item.to,
+          await invoke("fs_rename", {
+            from: item.to,
+            to: backupTo,
             workspace: currentWorkspaceEnv(),
           });
+        } catch (e) {
+          anyUnexpectedFailure = true;
+          console.error("fs_rename (replace backup) failed:", e);
+          continue;
+        }
+        try {
           await moveOne(item.from, item.to);
+          await invoke("fs_delete", {
+            path: backupTo,
+            workspace: currentWorkspaceEnv(),
+          });
         } catch (e) {
           anyUnexpectedFailure = true;
           console.error("fs_rename (replace) failed:", e);
+          try {
+            await invoke("fs_rename", {
+              from: backupTo,
+              to: item.to,
+              workspace: currentWorkspaceEnv(),
+            });
+          } catch (restoreErr) {
+            console.error(
+              `fs_rename (restore after failed replace) failed; original "${item.name}" left at ${backupTo}:`,
+              restoreErr,
+            );
+          }
         }
       }
 

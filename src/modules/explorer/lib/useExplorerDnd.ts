@@ -1,5 +1,6 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { excludeNestedSources } from "./useFileTree";
 
 export type ExplorerPathDropTarget = {
   updateTarget: (clientX: number, clientY: number) => boolean;
@@ -132,7 +133,7 @@ export function useExplorerDnd({
         lastPosRef.current = { x: ev.clientX, y: ev.clientY };
         const sel = optsRef.current.getSelectedPaths();
         if (sel.has(source) && sel.size > 1) {
-          sources = [...sel];
+          sources = excludeNestedSources([...sel]);
         } else {
           sources = [source];
           optsRef.current.collapseSelectionTo(source);

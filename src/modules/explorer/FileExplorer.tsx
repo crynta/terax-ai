@@ -219,9 +219,13 @@ export const FileExplorer = memo(
     );
     const [anchorPath, setAnchorPath] = useState<string | null>(null);
     const selectedPathsRef = useRef(selectedPaths);
-    selectedPathsRef.current = selectedPaths;
+    useEffect(() => {
+      selectedPathsRef.current = selectedPaths;
+    }, [selectedPaths]);
     const anchorPathRef = useRef(anchorPath);
-    anchorPathRef.current = anchorPath;
+    useEffect(() => {
+      anchorPathRef.current = anchorPath;
+    }, [anchorPath]);
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [isSearchActive, setIsSearchActive] = useState(false);
     const searchRef = useRef<ExplorerSearchHandle>(null);
@@ -273,7 +277,9 @@ export const FileExplorer = memo(
       return out;
     }, [rows]);
     const entryPathsRef = useRef(entryPaths);
-    entryPathsRef.current = entryPaths;
+    useEffect(() => {
+      entryPathsRef.current = entryPaths;
+    }, [entryPaths]);
 
     const collapseSelectionTo = useCallback((path: string) => {
       setSelectedPaths(new Set([path]));

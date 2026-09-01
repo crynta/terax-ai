@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planBatchMove } from "./useFileTree";
+import { excludeNestedSources, planBatchMove } from "./useFileTree";
 
 describe("planBatchMove", () => {
   it("plans a conflict-free batch with no collisions", () => {
@@ -59,5 +59,36 @@ describe("planBatchMove", () => {
       "/repo/dest/a.ts",
       "/repo/dest/b.ts",
     ]);
+  });
+});
+
+describe("excludeNestedSources", () => {
+  it("drops a descendant when its ancestor is also selected", () => {
+    expect(
+      excludeNestedSources(["/repo/src", "/repo/src/nested/a.ts"]),
+    ).toEqual(["/repo/src"]);
+  });
+
+  it("drops multiple descendants at different depths", () => {
+    expect(
+      excludeNestedSources([
+        "/repo/src",
+        "/repo/src/a.ts",
+        "/repo/src/deep/nested/b.ts",
+        "/repo/other.ts",
+      ]),
+    ).toEqual(["/repo/src", "/repo/other.ts"]);
+  });
+
+  it("keeps unrelated sources whose names merely share a prefix", () => {
+    expect(
+      excludeNestedSources(["/repo/src", "/repo/src-backup/a.ts"]),
+    ).toEqual(["/repo/src", "/repo/src-backup/a.ts"]);
+  });
+
+  it("is a no-op when no source is nested under another", () => {
+    expect(
+      excludeNestedSources(["/repo/a.ts", "/repo/dir/b.ts", "/repo/c.ts"]),
+    ).toEqual(["/repo/a.ts", "/repo/dir/b.ts", "/repo/c.ts"]);
   });
 });
