@@ -446,14 +446,18 @@ export function useFileTree(rootPath: string | null, options?: Options) {
   const deletePaths = useCallback(
     async (paths: string[]) => {
       if (paths.length === 0) return;
+      // fs_delete already recurses into directories, so a selected descendant
+      // of a selected directory would race that directory's own deletion and
+      // surface as a spurious per-item failure.
+      const topLevelPaths = excludeNestedSources(paths);
       const results = await Promise.allSettled(
-        paths.map((path) =>
+        topLevelPaths.map((path) =>
           invoke("fs_delete", { path, workspace: currentWorkspaceEnv() }),
         ),
       );
       const parents = new Set<string>();
       let anyFailed = false;
-      paths.forEach((path, i) => {
+      topLevelPaths.forEach((path, i) => {
         if (results[i].status === "fulfilled") {
           options?.onPathDeleted?.(path);
           parents.add(dirname(path));
@@ -502,7 +506,7 @@ export function useFileTree(rootPath: string | null, options?: Options) {
   // Batch move: non-conflicting items move immediately in parallel; each name
   // collision (against the target dir or another item in the same batch) gets
   // an interactive Replace/Skip toast, mirroring VS Code. Silent on full
-  // success — the conflict toasts already say everything interactive.
+  // success, since the conflict toasts already say everything interactive.
   const movePaths = useCallback(
     async (sources: string[], toDir: string) => {
       if (sources.length === 0) return;
@@ -609,8 +613,8 @@ export function useFileTree(rootPath: string | null, options?: Options) {
 
       await Promise.all([...parents].map((p) => fetchChildren(p)));
 
-      if (!anySucceeded && anyUnexpectedFailure) {
-        toast.error("Move failed");
+      if (anyUnexpectedFailure) {
+        toast.error(anySucceeded ? "Some items could not be moved" : "Move failed");
       }
     },
     [fetchChildren, options],

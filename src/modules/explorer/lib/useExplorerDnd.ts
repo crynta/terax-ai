@@ -1,5 +1,11 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { excludeNestedSources } from "./useFileTree";
 
 export type ExplorerPathDropTarget = {
@@ -91,14 +97,26 @@ export function useExplorerDnd({
     collapseSelectionTo,
     pathDropTarget,
   });
-  optsRef.current = {
+  // Committed-state snapshot for the pointer listeners below (they attach
+  // once and read this ref on every move), so an in-flight drag can't pick up
+  // options from a render React later discards.
+  useLayoutEffect(() => {
+    optsRef.current = {
+      rootPath,
+      isDir,
+      onMove,
+      getSelectedPaths,
+      collapseSelectionTo,
+      pathDropTarget,
+    };
+  }, [
     rootPath,
     isDir,
     onMove,
     getSelectedPaths,
     collapseSelectionTo,
     pathDropTarget,
-  };
+  ]);
 
   const placeGhost = (x: number, y: number) => {
     lastPosRef.current = { x, y };

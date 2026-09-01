@@ -28,7 +28,7 @@ export type EntryRowProps = {
   isSelected: boolean;
   isRenaming: boolean;
   isDropTarget?: boolean;
-  /** True when more than one row is selected — rename doesn't generalize to
+  /** True when more than one row is selected: rename doesn't generalize to
    * a batch, so double-click-to-rename is disabled while it's active. */
   multiSelectActive?: boolean;
   onOpenFile: (path: string, pin?: boolean) => void;
