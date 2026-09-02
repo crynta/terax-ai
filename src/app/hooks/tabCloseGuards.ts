@@ -78,6 +78,20 @@ export function deletedPathTabs(
   return { dirtyIds, cleanIds };
 }
 
+export function spacesEmptiedByTabs(
+  tabs: readonly Tab[],
+  closeIds: readonly number[],
+): string[] {
+  const closing = new Set(closeIds);
+  const spaces = new Set(
+    tabs.filter((tab) => closing.has(tab.id)).map((tab) => tab.spaceId),
+  );
+  return [...spaces].filter(
+    (spaceId) =>
+      !tabs.some((tab) => tab.spaceId === spaceId && !closing.has(tab.id)),
+  );
+}
+
 const MAX_HAZARD_PASSES = 3;
 
 function sameIds(a: number[], b: number[]): boolean {

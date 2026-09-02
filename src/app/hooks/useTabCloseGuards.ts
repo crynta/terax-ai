@@ -26,6 +26,7 @@ type Params = {
   tabs: Tab[];
   activeId: number;
   disposeTab: (id: number) => void;
+  disposeDeletedTabs: (ids: number[]) => void;
   disposeTabs: (anchorId: number, plan: CloseTabsPlan) => void;
 };
 
@@ -38,6 +39,7 @@ export function useTabCloseGuards({
   tabs,
   activeId,
   disposeTab,
+  disposeDeletedTabs,
   disposeTabs,
 }: Params) {
   const tabsRef = useRef(tabs);
@@ -197,10 +199,10 @@ export function useTabCloseGuards({
 
   const confirmDeleteClose = useCallback(() => {
     if (pendingDeleteTabs !== null) {
-      for (const id of pendingDeleteTabs) disposeTab(id);
+      disposeDeletedTabs(pendingDeleteTabs);
       setPendingDeleteTabs(null);
     }
-  }, [pendingDeleteTabs, disposeTab]);
+  }, [pendingDeleteTabs, disposeDeletedTabs]);
 
   const cancelDeleteClose = useCallback(() => {
     setPendingDeleteTabs(null);
@@ -209,14 +211,14 @@ export function useTabCloseGuards({
   const handlePathsDeleted = useCallback(
     (paths: string[]) => {
       const affected = deletedPathTabs(tabsRef.current, paths);
-      for (const id of affected.cleanIds) disposeTab(id);
+      disposeDeletedTabs(affected.cleanIds);
       if (affected.dirtyIds.length > 0) {
         setPendingDeleteTabs((current) => [
           ...new Set([...(current ?? []), ...affected.dirtyIds]),
         ]);
       }
     },
-    [disposeTab],
+    [disposeDeletedTabs],
   );
 
   return {

@@ -9,6 +9,7 @@ import {
   hasNewCloseManyHazards,
   pathAtOrUnder,
   renamedPath,
+  spacesEmptiedByTabs,
 } from "./tabCloseGuards";
 import type { EditorTab, MarkdownTab } from "@/modules/tabs";
 
@@ -127,6 +128,19 @@ describe("path-backed explorer mutations", () => {
     expect(
       deletedPathTabs([markdown(4, "C:\\repo\\README.md")], ["C:/repo"]),
     ).toEqual({ dirtyIds: [], cleanIds: [4] });
+  });
+
+  it("identifies spaces emptied by deleting their final tabs", () => {
+    expect(
+      spacesEmptiedByTabs(
+        [
+          markdown(1, "/one.md"),
+          { ...markdown(2, "/two.md"), spaceId: "shared" },
+          editor(3, "/keep.ts", false, "shared"),
+        ],
+        [1, 2],
+      ),
+    ).toEqual(["local"]);
   });
 });
 

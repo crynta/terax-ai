@@ -127,7 +127,11 @@ import {
 } from "./components/WorkspaceInputBar";
 import { WorkspaceSurface } from "./components/WorkspaceSurface";
 import { useAppCloseGuard } from "./hooks/useAppCloseGuard";
-import { hasOpenPathTab, renamedPath } from "./hooks/tabCloseGuards";
+import {
+  hasOpenPathTab,
+  renamedPath,
+  spacesEmptiedByTabs,
+} from "./hooks/tabCloseGuards";
 import { useTabCloseGuards } from "./hooks/useTabCloseGuards";
 import { useWorkspaceSwitcher } from "./hooks/useWorkspaceSwitcher";
 
@@ -399,6 +403,20 @@ export default function App() {
     [closeTabs],
   );
 
+  const disposeDeletedTabs = useCallback(
+    (ids: number[]) => {
+      if (ids.length === 0) return;
+      for (const spaceId of spacesEmptiedByTabs(tabsRef.current, ids)) {
+        const root = useSpaces
+          .getState()
+          .spaces.find((s) => s.id === spaceId)?.root;
+        newTabInSpace(spaceId, root ?? undefined);
+      }
+      for (const id of ids) disposeTab(id);
+    },
+    [disposeTab, newTabInSpace],
+  );
+
   const {
     pendingCloseTab,
     pendingTerminalCloseTab,
@@ -421,6 +439,7 @@ export default function App() {
     tabs,
     activeId,
     disposeTab,
+    disposeDeletedTabs,
     disposeTabs,
   });
 

@@ -29,10 +29,17 @@ function joinPath(parent: string, name: string): string {
   return parent.endsWith("/") ? `${parent}${name}` : `${parent}/${name}`;
 }
 
+function normalizePath(path: string): string {
+  return path.replace(/\\/g, "/");
+}
+
 export function excludeNestedSources(sources: string[]): string[] {
-  return sources.filter(
+  const normalized = sources.map(normalizePath);
+  return normalized.filter(
     (path) =>
-      !sources.some((other) => other !== path && path.startsWith(`${other}/`)),
+      !normalized.some(
+        (other) => other !== path && path.startsWith(`${other}/`),
+      ),
   );
 }
 
@@ -41,6 +48,7 @@ export async function executeBatchMove(
   toDir: string,
   deps: BatchMoveDeps,
 ): Promise<BatchMoveOutcome> {
+  const targetDir = normalizePath(toDir);
   const outcome: BatchMoveOutcome = {
     moved: 0,
     blocked: 0,
@@ -49,7 +57,7 @@ export async function executeBatchMove(
 
   for (const from of excludeNestedSources(sources)) {
     const name = from.slice(from.lastIndexOf("/") + 1);
-    const item = { from, to: joinPath(toDir, name), name };
+    const item = { from, to: joinPath(targetDir, name), name };
     if (item.to === from) continue;
     if (!deps.isCurrent()) {
       break;

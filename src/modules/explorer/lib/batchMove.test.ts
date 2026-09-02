@@ -36,6 +36,12 @@ describe("excludeNestedSources", () => {
       ]),
     ).toEqual(["/repo/src", "/repo/other.ts"]);
   });
+
+  it("normalizes Windows descendants before filtering", () => {
+    expect(
+      excludeNestedSources(["C:\\repo\\src", "C:\\repo\\src\\a.ts"]),
+    ).toEqual(["C:/repo/src"]);
+  });
 });
 
 describe("executeBatchMove", () => {
@@ -60,6 +66,20 @@ describe("executeBatchMove", () => {
     expect(maxActive).toBe(1);
     expect(result.moved).toBe(2);
     expect(onMoved).toHaveBeenCalledTimes(2);
+  });
+
+  it("builds canonical destinations from Windows paths", async () => {
+    const onMoved = vi.fn();
+    await executeBatchMove(
+      ["C:\\repo\\a.ts"],
+      "C:\\repo\\dest",
+      deps(async () => ({ status: "moved" }), { onMoved }),
+    );
+    expect(onMoved).toHaveBeenCalledWith({
+      from: "C:/repo/a.ts",
+      to: "C:/repo/dest/a.ts",
+      name: "a.ts",
+    });
   });
 
   it("asks only after the backend reports a real filesystem conflict", async () => {
