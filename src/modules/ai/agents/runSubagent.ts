@@ -1,7 +1,13 @@
 import { generateText, stepCountIs } from "ai";
-import { DEFAULT_MODEL_ID, getModel, type ModelId } from "../config";
-import { buildLanguageModel } from "../lib/agent";
-import type { ProviderKeys } from "../lib/keyring";
+import {
+  DEFAULT_MODEL_ID,
+  getModel,
+  isCompatModelId,
+  type CustomEndpoint,
+  type ModelId,
+} from "../config";
+import { buildConfiguredLanguageModel, buildLanguageModel } from "../lib/agent";
+import type { CustomEndpointKeys, ProviderKeys } from "../lib/keyring";
 import type { ToolContext } from "../tools/context";
 import { buildFsTools } from "../tools/fs";
 import { buildSearchTools } from "../tools/search";
@@ -16,6 +22,8 @@ type Args = {
   modelId: string;
   toolContext: ToolContext;
   lmstudioBaseURL?: string;
+  customEndpoints?: readonly CustomEndpoint[];
+  customEndpointKeys?: CustomEndpointKeys;
   onStep?: (label: string) => void;
 };
 
@@ -32,6 +40,8 @@ export async function runSubagent({
   modelId,
   toolContext,
   lmstudioBaseURL,
+  customEndpoints,
+  customEndpointKeys,
   onStep,
 }: Args): Promise<RunResult> {
   const def = SUBAGENTS[type];
@@ -46,12 +56,19 @@ export async function runSubagent({
     if (t in readOnly) tools[t] = readOnly[t];
   }
 
-  const model = await buildLanguageModel(
-    getModel(modelId as ModelId).provider,
-    keys,
-    getModel(modelId as ModelId).id,
-    { lmstudioBaseURL },
-  );
+  // Custom-endpoint (compat-*) models aren't in MODELS, so getModel would throw.
+  // Resolve them via the shared compat-aware builder (endpoint baseURL + key).
+  const model = isCompatModelId(modelId)
+    ? await buildConfiguredLanguageModel(modelId, keys, {
+        customEndpoints,
+        customEndpointKeys,
+      })
+    : await buildLanguageModel(
+        getModel(modelId as ModelId).provider,
+        keys,
+        getModel(modelId as ModelId).id,
+        { lmstudioBaseURL },
+      );
 
   const start = Date.now();
   const result = await generateText({
