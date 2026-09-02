@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  isIme229PassthroughKey,
   terminalDeleteSequence,
   terminalLineNavigationSequence,
   terminalReadlineSequence,
@@ -15,6 +16,51 @@ const evt = (partial: Partial<TerminalKeyEvent>): TerminalKeyEvent => ({
   key: "",
   code: "",
   ...partial,
+});
+
+describe("isIme229PassthroughKey", () => {
+  it.each([
+    ["Option+Left", evt({ altKey: true, key: "ArrowLeft" })],
+    ["Option+Right", evt({ altKey: true, key: "ArrowRight" })],
+    ["Option+Up", evt({ altKey: true, key: "ArrowUp" })],
+    ["Option+Down", evt({ altKey: true, key: "ArrowDown" })],
+    ["Option+Backspace", evt({ altKey: true, key: "Backspace" })],
+  ])(
+    "passes %s through the 229 swallow (Option dead-key mistag, #956)",
+    (_name, event) => {
+      expect(isIme229PassthroughKey(event)).toBe(true);
+    },
+  );
+
+  it.each([
+    ["bare Left", evt({ key: "ArrowLeft" })],
+    ["bare Right", evt({ key: "ArrowRight" })],
+    ["bare Up", evt({ key: "ArrowUp" })],
+    ["bare Down", evt({ key: "ArrowDown" })],
+    ["bare Backspace", evt({ key: "Backspace" })],
+  ])(
+    "swallows %s (IME candidate-window navigation must not reach the shell)",
+    (_name, event) => {
+      expect(isIme229PassthroughKey(event)).toBe(false);
+    },
+  );
+
+  it.each([
+    ["Ctrl+Left", evt({ ctrlKey: true, key: "ArrowLeft" })],
+    ["Cmd+Left", evt({ metaKey: true, key: "ArrowLeft" })],
+    [
+      "Ctrl+Option+Left",
+      evt({ ctrlKey: true, altKey: true, key: "ArrowLeft" }),
+    ],
+    [
+      "Cmd+Option+Backspace",
+      evt({ metaKey: true, altKey: true, key: "Backspace" }),
+    ],
+    ["Option+A", evt({ altKey: true, key: "a" })],
+    ["Option+Enter", evt({ altKey: true, key: "Enter" })],
+  ])("swallows %s (not an Option dead-key mistag)", (_name, event) => {
+    expect(isIme229PassthroughKey(event)).toBe(false);
+  });
 });
 
 describe("terminalWordNavigationSequence", () => {
@@ -74,7 +120,12 @@ describe("terminalLineNavigationSequence", () => {
   it("does not remap Cmd+Option+Arrow (selection-style combos pass through)", () => {
     expect(
       terminalLineNavigationSequence(
-        evt({ metaKey: true, altKey: true, key: "ArrowLeft", code: "ArrowLeft" }),
+        evt({
+          metaKey: true,
+          altKey: true,
+          key: "ArrowLeft",
+          code: "ArrowLeft",
+        }),
         { isMac: true },
       ),
     ).toBeNull();
@@ -129,10 +180,9 @@ describe("terminalDeleteSequence", () => {
 
   it("does not remap plain Backspace", () => {
     expect(
-      terminalDeleteSequence(
-        evt({ key: "Backspace", code: "Backspace" }),
-        { isMac: true },
-      ),
+      terminalDeleteSequence(evt({ key: "Backspace", code: "Backspace" }), {
+        isMac: true,
+      }),
     ).toBeNull();
   });
 });

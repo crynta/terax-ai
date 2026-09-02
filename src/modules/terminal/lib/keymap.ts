@@ -5,7 +5,26 @@ export type TerminalKeyEvent = Pick<
 
 export type PlatformOpts = { isMac: boolean };
 
-export function terminalWordNavigationSequence(event: TerminalKeyEvent): string | null {
+/** WKWebView also mistags Option-modified dead keys (Option+←/→,
+ * Option+Backspace) with keyCode 229 ("Process") outside any IME session;
+ * the mistag carries altKey (#956). Only those events may pass through the
+ * 229 swallow so they still reach the readline remaps. Bare arrows/Backspace
+ * from IME candidate-window navigation report 229 WITHOUT alt and must stay
+ * swallowed so they never leak to the shell. */
+export function isIme229PassthroughKey(event: TerminalKeyEvent): boolean {
+  if (!event.altKey || event.ctrlKey || event.metaKey) return false;
+  return (
+    event.key === "ArrowLeft" ||
+    event.key === "ArrowRight" ||
+    event.key === "ArrowUp" ||
+    event.key === "ArrowDown" ||
+    event.key === "Backspace"
+  );
+}
+
+export function terminalWordNavigationSequence(
+  event: TerminalKeyEvent,
+): string | null {
   if (!event.altKey || event.ctrlKey || event.metaKey) return null;
   if (event.key === "ArrowLeft" || event.code === "ArrowLeft") return "\x1bb";
   if (event.key === "ArrowRight" || event.code === "ArrowRight") return "\x1bf";

@@ -180,6 +180,56 @@ describe("imeBridgeInput", () => {
     ).toBe("주");
   });
 
+  it("forwards a non-composed non-ASCII commit xterm's gate drops (Shift+; first press)", () => {
+    // WKWebView delivers the Chinese-IME full-width punctuation commit as
+    // insertText with composed=false while the previous key's
+    // keyPressHandled is still set: xterm's _inputEvent drops it, so the
+    // bridge must compensate.
+    expect(
+      imeBridgeInput(
+        createImeBridgeState(),
+        1,
+        { inputType: "insertText", data: "：", composed: false },
+        { keyDownSeen: false, keyPressHandled: true },
+      ),
+    ).toBe("：");
+  });
+
+  it("forwards a composed non-ASCII commit while keyDownSeen is stale (#1112)", () => {
+    expect(
+      imeBridgeInput(
+        createImeBridgeState(),
+        1,
+        { inputType: "insertText", data: "가", composed: true },
+        KEY_HELD,
+      ),
+    ).toBe("가");
+  });
+
+  it("never forwards when xterm's gate will deliver (no double write)", () => {
+    // composed=false + both flags clear: xterm's _inputEvent delivers this
+    // insertText itself, so the bridge must stand down.
+    expect(
+      imeBridgeInput(
+        createImeBridgeState(),
+        1,
+        { inputType: "insertText", data: "：", composed: false },
+        IDLE,
+      ),
+    ).toBeNull();
+  });
+
+  it("never forwards a composed commit xterm will deliver (kds=false, kph=false)", () => {
+    expect(
+      imeBridgeInput(
+        createImeBridgeState(),
+        1,
+        { inputType: "insertText", data: "あ", composed: true },
+        { keyDownSeen: false, keyPressHandled: false },
+      ),
+    ).toBeNull();
+  });
+
   it("delivers the first syllable typed fast after a space once", () => {
     expect(
       replay([
@@ -235,21 +285,72 @@ describe("imeBridgeInput", () => {
     ).toBe("å");
   });
 
-  it("does not duplicate ASCII key data", () => {
+  it("forwards an ASCII IME commit dropped by the held-key gate (Shift+3 → '#')", () => {
+    // Chinese-IME Shift+digit commits ASCII (@ # % & * +) as insertText with
+    // isComposing=false while the still-held Shift keydown keeps xterm's
+    // _keyDownSeen high — xterm's _inputEvent drops it, nothing else
+    // delivers it (keydown was 229-swallowed), so the bridge must compensate.
+    expect(
+      imeBridgeInput(
+        createImeBridgeState(),
+        1,
+        {
+          inputType: "insertText",
+          data: "#",
+          composed: true,
+          isComposing: false,
+        },
+        KEY_HELD,
+      ),
+    ).toBe("#");
+  });
+
+  it("never forwards keypress-delivered ASCII (kph=true, no double write)", () => {
     const state = createImeBridgeState();
     expect(
       imeBridgeInput(
         state,
         1,
-        { inputType: "insertText", data: " ", composed: true },
+        {
+          inputType: "insertText",
+          data: " ",
+          composed: true,
+          isComposing: false,
+        },
         AFTER_KEYPRESS,
       ),
     ).toBeNull();
+    // The A-Z/dead-key keypress path: xterm _keyPress delivered the char and
+    // set _keyPressHandled; the following input event must not re-send it.
     expect(
       imeBridgeInput(
         state,
         1,
-        { inputType: "insertText", data: "a", composed: true },
+        {
+          inputType: "insertText",
+          data: "A",
+          composed: true,
+          isComposing: false,
+        },
+        AFTER_KEYPRESS,
+      ),
+    ).toBeNull();
+  });
+
+  it("never forwards in-progress ASCII composition text (composition-bypassing builds)", () => {
+    // On WKWebView builds that skip composition events (#1112 path),
+    // in-progress pinyin can surface as plain ASCII insertText; isComposing
+    // stays true for those edits, so the bridge must leave them alone.
+    expect(
+      imeBridgeInput(
+        createImeBridgeState(),
+        1,
+        {
+          inputType: "insertText",
+          data: "i",
+          composed: true,
+          isComposing: true,
+        },
         KEY_HELD,
       ),
     ).toBeNull();
@@ -271,7 +372,7 @@ describe("imeBridgeInput", () => {
     );
   });
 
-  it("stands down permanently after native composition starts", () => {
+  it("stands down during a native composition session, then re-arms at compositionend", () => {
     const state = createImeBridgeState();
     noteNativeComposition(state);
     expect(
@@ -290,6 +391,66 @@ describe("imeBridgeInput", () => {
         KEY_HELD,
       ),
     ).toBeNull();
+
+    // compositionend (or blur) resets the latch: the bridge must compensate
+    // again afterwards.
+    resetImeBridge(state);
+    expect(
+      imeBridgeInput(
+        state,
+        1,
+        { inputType: "insertText", data: "주", composed: true },
+        KEY_HELD,
+      ),
+    ).toBe("주");
+  });
+
+  it("re-arms after compositionend and compensates the dropped Shift+punct commit (WKWebView trace scene 1)", () => {
+    // Measured trace: a Chinese-IME pinyin session latches nativeComposition;
+    // after compositionend the user presses Shift+; — the insertText arrives
+    // with composed=true while the still-held Shift keydown keeps xterm's
+    // _keyDownSeen high, so xterm's gate drops it. With the session-scoped
+    // latch the bridge must forward it (exactly once).
+    const state = createImeBridgeState();
+    noteNativeComposition(state);
+    resetImeBridge(state); // compositionend
+    expect(
+      imeBridgeInput(
+        state,
+        1,
+        { inputType: "insertText", data: "：", composed: true },
+        KEY_HELD,
+      ),
+    ).toBe("：");
+  });
+
+  it("stands down for an insertText swept by xterm's pending composition finalize", () => {
+    // Measured trace: the commit is delivered by CompositionHelper's 0ms
+    // finalize diff (set at compositionend), never by a post-compositionend
+    // insertText. Any insertText landing while that finalize send is pending
+    // (sendingComposition=true) is swept into its textarea diff — the bridge
+    // must not forward it even when the key flags say xterm's _inputEvent
+    // gate drops it, or the commit/punct would be written twice.
+    const state = createImeBridgeState();
+    noteNativeComposition(state);
+    resetImeBridge(state); // compositionend; finalize timer still pending
+    expect(
+      imeBridgeInput(
+        state,
+        1,
+        { inputType: "insertText", data: "：", composed: true },
+        { ...KEY_HELD, sendingComposition: true },
+      ),
+    ).toBeNull();
+    // Once the finalize send has completed, compensation resumes.
+    expect(
+      imeBridgeInput(
+        state,
+        1,
+        { inputType: "insertText", data: "：", composed: true },
+        { ...KEY_HELD, sendingComposition: false },
+      ),
+    ).toBe("：");
   });
 
   it("keeps native composition ownership across slot transitions", () => {
