@@ -5,11 +5,6 @@ import {
 } from "@/components/ui/resizable";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import {
-  hasOpenEditorAtPath,
-  projectRenamedPath,
-  spaceIdsForWorkspace,
-} from "@/app/lib/explorerPathMutations";
 import { consumeLaunchFiles, getLaunchDir } from "@/lib/launchDir";
 import { quoteShellArg } from "@/lib/shellQuote";
 import { usePresence } from "@/lib/usePresence";
@@ -42,11 +37,7 @@ import {
   useApplyEditorFontSize,
   useEditorFileSync,
 } from "@/modules/editor";
-import {
-  type ExplorerPathRename,
-  FileExplorer,
-  type FileExplorerHandle,
-} from "@/modules/explorer";
+import { FileExplorer, type FileExplorerHandle } from "@/modules/explorer";
 import type { GitHistorySearchHandle } from "@/modules/git-history";
 import {
   Header,
@@ -701,19 +692,12 @@ export default function App() {
     })();
   }, [booted, openLaunchFiles]);
 
-  const explorerSpaceIds = useCallback(
-    (workspaceKey: string) =>
-      spaceIdsForWorkspace(useSpaces.getState().spaces, workspaceKey),
-    [],
-  );
-
-  const handleExplorerPathsRenamed = useCallback(
-    (changes: ExplorerPathRename[], workspaceKey: string) => {
-      const spaceIds = explorerSpaceIds(workspaceKey);
+  const handleExplorerPathRenamed = useCallback(
+    (from: string, to: string) => {
       for (const tab of tabsRef.current) {
-        if (tab.kind !== "editor" || !spaceIds.has(tab.spaceId)) continue;
-        const path = projectRenamedPath(tab.path, changes);
-        if (path === tab.path) continue;
+        if (tab.kind !== "editor") continue;
+        if (tab.path !== from && !tab.path.startsWith(`${from}/`)) continue;
+        const path = `${to}${tab.path.slice(from.length)}`;
         const i = path.lastIndexOf("/");
         updateTab(tab.id, {
           path,
@@ -721,29 +705,17 @@ export default function App() {
         });
       }
     },
-    [explorerSpaceIds, updateTab],
-  );
-
-  const handleExplorerPathsDeleted = useCallback(
-    (paths: string[], workspaceKey: string) => {
-      handlePathsDeleted(paths, explorerSpaceIds(workspaceKey));
-    },
-    [explorerSpaceIds, handlePathsDeleted],
+    [updateTab],
   );
 
   const canReplaceExplorerPath = useCallback(
-    (
-      path: string,
-      completed: readonly ExplorerPathRename[],
-      workspaceKey: string,
-    ) =>
-      !hasOpenEditorAtPath(
-        tabsRef.current,
-        path,
-        completed,
-        explorerSpaceIds(workspaceKey),
+    (path: string) =>
+      !tabsRef.current.some(
+        (tab) =>
+          tab.kind === "editor" &&
+          (tab.path === path || tab.path.startsWith(`${path}/`)),
       ),
-    [explorerSpaceIds],
+    [],
   );
 
   const activeTerminalLeafCwd =
@@ -1464,8 +1436,8 @@ export default function App() {
                           }
                           activeFilePath={explorerActiveFilePath}
                           onOpenFile={handleOpenFile}
-                          onPathsRenamed={handleExplorerPathsRenamed}
-                          onPathsDeleted={handleExplorerPathsDeleted}
+                          onPathRenamed={handleExplorerPathRenamed}
+                          onPathsDeleted={handlePathsDeleted}
                           canReplacePath={canReplaceExplorerPath}
                           onRevealInTerminal={cdInNewTab}
                           onOpenInSourceControl={

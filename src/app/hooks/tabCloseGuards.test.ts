@@ -80,12 +80,11 @@ describe("deletedEditorTabs", () => {
           editor(3, "/repo/clean.ts", false),
         ],
         ["/repo/a.ts", "/repo/b.ts", "/repo/clean.ts"],
-        new Set(["local"]),
       ),
     ).toEqual({ dirtyIds: [1, 2], cleanIds: [3] });
   });
 
-  it("includes descendants but excludes matching paths from another workspace", () => {
+  it("includes descendants across open spaces", () => {
     expect(
       deletedEditorTabs(
         [
@@ -93,9 +92,8 @@ describe("deletedEditorTabs", () => {
           editor(2, "/repo/src/a.ts", true, "debian"),
         ],
         ["/repo/src"],
-        new Set(["ubuntu"]),
       ),
-    ).toEqual({ dirtyIds: [1], cleanIds: [] });
+    ).toEqual({ dirtyIds: [1, 2], cleanIds: [] });
   });
 });
 

@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
   excludeNestedSources,
   executeBatchMove,
-  planBatchMove,
   type FsMoveResult,
 } from "./batchMove";
 
@@ -14,33 +13,11 @@ function deps(
     move: (_item, replace) => move(replace),
     resolveConflict: async () => "replace",
     canReplace: () => true,
+    onMoved: () => undefined,
     isCurrent: () => true,
     ...overrides,
   };
 }
-
-describe("planBatchMove", () => {
-  it("drops no-ops and nested sources while preserving selection order", () => {
-    expect(
-      planBatchMove(
-        [
-          "/repo/dest/already.ts",
-          "/repo/src",
-          "/repo/src/nested/a.ts",
-          "/repo/other.ts",
-        ],
-        "/repo/dest",
-      ),
-    ).toEqual([
-      { from: "/repo/src", to: "/repo/dest/src", name: "src" },
-      {
-        from: "/repo/other.ts",
-        to: "/repo/dest/other.ts",
-        name: "other.ts",
-      },
-    ]);
-  });
-});
 
 describe("excludeNestedSources", () => {
   it("keeps unrelated paths whose names merely share a prefix", () => {
@@ -72,26 +49,17 @@ describe("executeBatchMove", () => {
       active -= 1;
       return { status: "moved" } as const;
     });
+    const onMoved = vi.fn();
 
     const result = await executeBatchMove(
-      ["/repo/a.ts", "/repo/b.ts"],
+      ["/repo/a.ts", "/repo/dest/already.ts", "/repo/b.ts"],
       "/repo/dest",
-      deps(move),
+      deps(move, { onMoved }),
     );
 
     expect(maxActive).toBe(1);
-    expect(result.renamed).toEqual([
-      {
-        from: "/repo/a.ts",
-        to: "/repo/dest/a.ts",
-        replaced: false,
-      },
-      {
-        from: "/repo/b.ts",
-        to: "/repo/dest/b.ts",
-        replaced: false,
-      },
-    ]);
+    expect(result.moved).toBe(2);
+    expect(onMoved).toHaveBeenCalledTimes(2);
   });
 
   it("asks only after the backend reports a real filesystem conflict", async () => {
@@ -109,11 +77,7 @@ describe("executeBatchMove", () => {
 
     expect(move.mock.calls).toEqual([[false], [true]]);
     expect(resolveConflict).toHaveBeenCalledOnce();
-    expect(result.renamed[0]).toEqual({
-      from: "/repo/Foo.ts",
-      to: "/repo/dest/Foo.ts",
-      replaced: true,
-    });
+    expect(result.moved).toBe(1);
   });
 
   it("does not replace a destination with an open editor", async () => {
@@ -127,8 +91,8 @@ describe("executeBatchMove", () => {
     );
 
     expect(move).toHaveBeenCalledOnce();
-    expect(result.blocked).toHaveLength(1);
-    expect(result.renamed).toEqual([]);
+    expect(result.blocked).toBe(1);
+    expect(result.moved).toBe(0);
   });
 
   it("cancels before replacement when the workspace changes during the prompt", async () => {
@@ -148,8 +112,7 @@ describe("executeBatchMove", () => {
     );
 
     expect(move).toHaveBeenCalledOnce();
-    expect(result.cancelled).toBe(true);
-    expect(result.renamed).toEqual([]);
+    expect(result.moved).toBe(0);
   });
 
   it("keeps a completed move in the outcome before cancelling the remainder", async () => {
@@ -165,14 +128,7 @@ describe("executeBatchMove", () => {
       deps(move, { isCurrent: () => current }),
     );
 
-    expect(result.cancelled).toBe(true);
-    expect(result.renamed).toEqual([
-      {
-        from: "/repo/a.ts",
-        to: "/repo/dest/a.ts",
-        replaced: false,
-      },
-    ]);
+    expect(result.moved).toBe(1);
   });
 
   it("skips folder conflicts without offering destructive replacement", async () => {
@@ -188,8 +144,7 @@ describe("executeBatchMove", () => {
     );
 
     expect(resolveConflict).not.toHaveBeenCalled();
-    expect(result.unreplaceable).toHaveLength(1);
-    expect(result.renamed).toEqual([]);
-    expect(result.failures).toEqual([]);
+    expect(result.moved).toBe(0);
+    expect(result.failures).toBe(1);
   });
 });

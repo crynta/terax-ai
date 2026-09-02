@@ -41,7 +41,6 @@ import {
   relativePath,
   revealInFinder,
 } from "./lib/contextActions";
-import type { ExplorerPathRename } from "./lib/batchMove";
 import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
 import { useExplorerDnd } from "./lib/useExplorerDnd";
@@ -64,16 +63,9 @@ type Props = {
   rootPath: string | null;
   activeFilePath?: string | null;
   onOpenFile: (path: string, pin?: boolean) => void;
-  onPathsRenamed?: (
-    changes: ExplorerPathRename[],
-    workspaceKey: string,
-  ) => void;
-  onPathsDeleted?: (paths: string[], workspaceKey: string) => void;
-  canReplacePath?: (
-    path: string,
-    completed: readonly ExplorerPathRename[],
-    workspaceKey: string,
-  ) => boolean;
+  onPathRenamed?: (from: string, to: string) => void;
+  onPathsDeleted?: (paths: string[]) => void;
+  canReplacePath?: (path: string) => boolean;
   onRevealInTerminal?: (path: string) => void;
   onOpenInSourceControl?: (path: string) => void;
   onOpenGitHistory?: (path: string) => void;
@@ -212,7 +204,7 @@ export const FileExplorer = memo(
       rootPath,
       activeFilePath,
       onOpenFile,
-      onPathsRenamed,
+      onPathRenamed,
       onPathsDeleted,
       canReplacePath,
       onRevealInTerminal,
@@ -225,7 +217,7 @@ export const FileExplorer = memo(
     ref,
   ) {
     const tree = useFileTree(rootPath, {
-      onPathsRenamed,
+      onPathRenamed,
       onPathsDeleted,
       canReplacePath,
     });

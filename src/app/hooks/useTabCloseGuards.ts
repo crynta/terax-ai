@@ -207,8 +207,8 @@ export function useTabCloseGuards({
   }, []);
 
   const handlePathsDeleted = useCallback(
-    (paths: string[], spaceIds: ReadonlySet<string>) => {
-      const affected = deletedEditorTabs(tabsRef.current, paths, spaceIds);
+    (paths: string[]) => {
+      const affected = deletedEditorTabs(tabsRef.current, paths);
       for (const id of affected.cleanIds) disposeTab(id);
       if (affected.dirtyIds.length > 0) {
         setPendingDeleteTabs((current) => [

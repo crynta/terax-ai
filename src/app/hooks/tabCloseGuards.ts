@@ -1,5 +1,8 @@
-import { pathAtOrUnder } from "@/app/lib/explorerPathMutations";
 import type { CloseTabsPlan, Tab } from "@/modules/tabs";
+
+function pathAtOrUnder(path: string, root: string): boolean {
+  return path === root || path.startsWith(`${root}/`);
+}
 
 export type CloseManyKind = "right" | "other";
 
@@ -36,12 +39,11 @@ export type CloseHazardSnapshot = {
 export function deletedEditorTabs(
   tabs: readonly Tab[],
   paths: readonly string[],
-  spaceIds: ReadonlySet<string>,
 ): { dirtyIds: number[]; cleanIds: number[] } {
   const dirtyIds: number[] = [];
   const cleanIds: number[] = [];
   for (const tab of tabs) {
-    if (tab.kind !== "editor" || !spaceIds.has(tab.spaceId)) continue;
+    if (tab.kind !== "editor") continue;
     if (!paths.some((path) => pathAtOrUnder(tab.path, path))) continue;
     (tab.dirty ? dirtyIds : cleanIds).push(tab.id);
   }

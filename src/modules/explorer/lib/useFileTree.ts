@@ -16,7 +16,6 @@ import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   executeBatchMove,
   excludeNestedSources,
-  type ExplorerPathRename,
   type FsMoveResult,
 } from "./batchMove";
 import { listenFsChanged, watchAdd, watchRemove } from "./watch";
@@ -94,16 +93,9 @@ function sameDirListing(a: DirEntry[], b: DirEntry[]): boolean {
 }
 
 type Options = {
-  onPathsRenamed?: (
-    changes: ExplorerPathRename[],
-    workspaceKey: string,
-  ) => void;
-  onPathsDeleted?: (paths: string[], workspaceKey: string) => void;
-  canReplacePath?: (
-    path: string,
-    completed: readonly ExplorerPathRename[],
-    workspaceKey: string,
-  ) => boolean;
+  onPathRenamed?: (from: string, to: string) => void;
+  onPathsDeleted?: (paths: string[]) => void;
+  canReplacePath?: (path: string) => boolean;
 };
 
 export function useFileTree(rootPath: string | null, options?: Options) {
@@ -126,30 +118,20 @@ export function useFileTree(rootPath: string | null, options?: Options) {
   const optionsRef = useRef(options);
   const scopeKey = `${workspaceKey}\u0000${rootPath ?? ""}`;
   const scopeKeyRef = useRef(scopeKey);
-  const conflictToastIdsRef = useRef<Set<string | number>>(new Set());
-  const batchMutationQueueRef = useRef<Promise<void>>(Promise.resolve());
-
-  const dismissConflictToasts = useCallback(() => {
-    for (const id of [...conflictToastIdsRef.current]) toast.dismiss(id);
-    conflictToastIdsRef.current.clear();
-  }, []);
 
   useLayoutEffect(() => {
     optionsRef.current = options;
   }, [options]);
 
   useLayoutEffect(() => {
-    if (scopeKeyRef.current === scopeKey) return;
     scopeKeyRef.current = scopeKey;
-    dismissConflictToasts();
-  }, [scopeKey, dismissConflictToasts]);
+  }, [scopeKey]);
 
   useEffect(
     () => () => {
       scopeKeyRef.current = "";
-      dismissConflictToasts();
     },
-    [dismissConflictToasts],
+    [],
   );
 
   useEffect(() => {
@@ -432,10 +414,7 @@ export function useFileTree(rootPath: string | null, options?: Options) {
           to,
           workspace,
         });
-        optionsRef.current?.onPathsRenamed?.(
-          [{ from: renaming, to, replaced: false }],
-          workspaceKey,
-        );
+        optionsRef.current?.onPathRenamed?.(renaming, to);
         if (scopeKeyRef.current === scopeKey) await fetchChildren(parent);
       } catch (e) {
         console.error("fs_rename failed:", e);
@@ -443,14 +422,14 @@ export function useFileTree(rootPath: string | null, options?: Options) {
         setRenaming(null);
       }
     },
-    [renaming, workspace, workspaceKey, scopeKey, fetchChildren],
+    [renaming, workspace, scopeKey, fetchChildren],
   );
 
   const deletePath = useCallback(
     async (path: string) => {
       try {
         await invoke("fs_delete", { path, workspace });
-        optionsRef.current?.onPathsDeleted?.([path], workspaceKey);
+        optionsRef.current?.onPathsDeleted?.([path]);
         if (scopeKeyRef.current === scopeKey) {
           await fetchChildren(dirname(path));
         }
@@ -458,7 +437,7 @@ export function useFileTree(rootPath: string | null, options?: Options) {
         console.error("fs_delete failed:", e);
       }
     },
-    [workspace, workspaceKey, scopeKey, fetchChildren],
+    [workspace, scopeKey, fetchChildren],
   );
 
   const deletePaths = useCallback(
@@ -479,7 +458,7 @@ export function useFileTree(rootPath: string | null, options?: Options) {
           }
         }
         if (deleted.length > 0) {
-          optionsRef.current?.onPathsDeleted?.(deleted, workspaceKey);
+          optionsRef.current?.onPathsDeleted?.(deleted);
         }
         if (scopeKeyRef.current === scopeKey) {
           const parents = new Set(deleted.map(dirname));
@@ -487,32 +466,20 @@ export function useFileTree(rootPath: string | null, options?: Options) {
         }
         if (failed > 0) toast.error("Delete failed for one or more items");
       };
-      const queued = batchMutationQueueRef.current.then(run, run);
-      batchMutationQueueRef.current = queued.catch(() => undefined);
-      await queued;
+      await run();
     },
-    [workspace, workspaceKey, scopeKey, fetchChildren],
+    [workspace, scopeKey, fetchChildren],
   );
 
   const resolveMoveConflict = useCallback(
     (name: string) =>
       new Promise<"replace" | "skip">((resolve) => {
-        let settled = false;
-        let id: string | number;
-        const finish = (resolution: "replace" | "skip") => {
-          if (settled) return;
-          settled = true;
-          conflictToastIdsRef.current.delete(id);
-          toast.dismiss(id);
-          resolve(resolution);
-        };
-        id = toast.warning(`"${name}" already exists`, {
+        toast.warning(`"${name}" already exists`, {
           duration: Infinity,
-          action: { label: "Replace", onClick: () => finish("replace") },
-          cancel: { label: "Skip", onClick: () => finish("skip") },
-          onDismiss: () => finish("skip"),
+          action: { label: "Replace", onClick: () => resolve("replace") },
+          cancel: { label: "Skip", onClick: () => resolve("skip") },
+          onDismiss: () => resolve("skip"),
         });
-        conflictToastIdsRef.current.add(id);
       }),
     [],
   );
@@ -522,6 +489,7 @@ export function useFileTree(rootPath: string | null, options?: Options) {
       if (sources.length === 0) return;
       const run = async () => {
         if (scopeKeyRef.current !== scopeKey) return;
+        const parents = new Set<string>([toDir]);
         const outcome = await executeBatchMove(sources, toDir, {
           move: (item, replace) =>
             invoke<FsMoveResult>("fs_move", {
@@ -531,60 +499,30 @@ export function useFileTree(rootPath: string | null, options?: Options) {
               workspace,
             }),
           resolveConflict: (item) => resolveMoveConflict(item.name),
-          canReplace: (item, completed) =>
-            optionsRef.current?.canReplacePath?.(
-              item.to,
-              completed,
-              workspaceKey,
-            ) ?? true,
+          canReplace: (item) =>
+            optionsRef.current?.canReplacePath?.(item.to) ?? true,
+          onMoved: (item) => {
+            parents.add(dirname(item.from));
+            optionsRef.current?.onPathRenamed?.(item.from, item.to);
+          },
           isCurrent: () => scopeKeyRef.current === scopeKey,
         });
 
-        if (outcome.renamed.length > 0) {
-          optionsRef.current?.onPathsRenamed?.(outcome.renamed, workspaceKey);
-        }
-        for (const failure of outcome.failures) {
-          console.error(
-            `fs_move (${failure.item.from} -> ${failure.item.to}) failed:`,
-            failure.error,
-          );
-        }
-        if (scopeKeyRef.current === scopeKey && outcome.renamed.length > 0) {
-          const parents = new Set<string>([
-            toDir,
-            ...outcome.renamed.map((change) => dirname(change.from)),
-          ]);
+        if (scopeKeyRef.current === scopeKey && outcome.moved > 0) {
           await Promise.all([...parents].map((path) => fetchChildren(path)));
         }
-        if (outcome.blocked.length > 0) {
-          toast.warning("Replace skipped", {
-            description:
-              outcome.blocked.length === 1
-                ? `Close the open editor for "${outcome.blocked[0].name}" before replacing it.`
-                : "Close the open destination editors before replacing these items.",
-          });
+        if (outcome.blocked > 0) {
+          toast.warning("Close destination before replacing");
         }
-        if (outcome.unreplaceable.length > 0) {
-          toast.warning("Folder conflict skipped", {
-            description:
-              outcome.unreplaceable.length === 1
-                ? `Move or remove the existing "${outcome.unreplaceable[0].name}" folder first.`
-                : "Move or remove the existing destination folders first.",
-          });
-        }
-        if (outcome.failures.length > 0) {
+        if (outcome.failures > 0) {
           toast.error(
-            outcome.renamed.length > 0
-              ? "Some items could not be moved"
-              : "Move failed",
+            outcome.moved > 0 ? "Some items could not be moved" : "Move failed",
           );
         }
       };
-      const queued = batchMutationQueueRef.current.then(run, run);
-      batchMutationQueueRef.current = queued.catch(() => undefined);
-      await queued;
+      await run();
     },
-    [workspace, workspaceKey, scopeKey, resolveMoveConflict, fetchChildren],
+    [workspace, scopeKey, resolveMoveConflict, fetchChildren],
   );
 
   return {
