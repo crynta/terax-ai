@@ -28,6 +28,8 @@ export type DirEntry = {
   gitignored: boolean;
 };
 
+type DeleteBatchResult = { deleted: string[]; failed: number };
+
 type ChildrenState =
   | { status: "idle" }
   | { status: "loading" }
@@ -118,20 +120,30 @@ export function useFileTree(rootPath: string | null, options?: Options) {
   const optionsRef = useRef(options);
   const scopeKey = `${workspaceKey}\u0000${rootPath ?? ""}`;
   const scopeKeyRef = useRef(scopeKey);
+  const conflictPromptsRef = useRef<Map<string | number, () => void>>(
+    new Map(),
+  );
+
+  const cancelConflictPrompts = useCallback(() => {
+    for (const cancel of [...conflictPromptsRef.current.values()]) cancel();
+    conflictPromptsRef.current.clear();
+  }, []);
 
   useLayoutEffect(() => {
     optionsRef.current = options;
   }, [options]);
 
   useLayoutEffect(() => {
+    if (scopeKeyRef.current !== scopeKey) cancelConflictPrompts();
     scopeKeyRef.current = scopeKey;
-  }, [scopeKey]);
+  }, [scopeKey, cancelConflictPrompts]);
 
   useEffect(
     () => () => {
       scopeKeyRef.current = "";
+      cancelConflictPrompts();
     },
-    [],
+    [cancelConflictPrompts],
   );
 
   useEffect(() => {
@@ -446,17 +458,10 @@ export function useFileTree(rootPath: string | null, options?: Options) {
       const topLevelPaths = excludeNestedSources(paths);
       const run = async () => {
         if (scopeKeyRef.current !== scopeKey) return;
-        const deleted: string[] = [];
-        let failed = 0;
-        for (const path of topLevelPaths) {
-          try {
-            await invoke("fs_delete", { path, workspace });
-            deleted.push(path);
-          } catch (error) {
-            failed += 1;
-            console.error("fs_delete failed:", error);
-          }
-        }
+        const { deleted, failed } = await invoke<DeleteBatchResult>(
+          "fs_delete_batch",
+          { paths: topLevelPaths, root: rootPath ?? "", workspace },
+        );
         if (deleted.length > 0) {
           optionsRef.current?.onPathsDeleted?.(deleted);
         }
@@ -468,18 +473,31 @@ export function useFileTree(rootPath: string | null, options?: Options) {
       };
       await run();
     },
-    [workspace, scopeKey, fetchChildren],
+    [workspace, rootPath, scopeKey, fetchChildren],
   );
 
   const resolveMoveConflict = useCallback(
     (name: string) =>
       new Promise<"replace" | "skip">((resolve) => {
-        toast.warning(`"${name}" already exists`, {
+        let settled = false;
+        let id: string | number;
+        const finish = (resolution: "replace" | "skip", dismiss: boolean) => {
+          if (settled) return;
+          settled = true;
+          conflictPromptsRef.current.delete(id);
+          resolve(resolution);
+          if (dismiss) toast.dismiss(id);
+        };
+        id = toast.warning(`"${name}" already exists`, {
           duration: Infinity,
-          action: { label: "Replace", onClick: () => resolve("replace") },
-          cancel: { label: "Skip", onClick: () => resolve("skip") },
-          onDismiss: () => resolve("skip"),
+          action: {
+            label: "Replace",
+            onClick: () => finish("replace", true),
+          },
+          cancel: { label: "Skip", onClick: () => finish("skip", true) },
+          onDismiss: () => finish("skip", false),
         });
+        conflictPromptsRef.current.set(id, () => finish("skip", true));
       }),
     [],
   );
@@ -491,11 +509,12 @@ export function useFileTree(rootPath: string | null, options?: Options) {
         if (scopeKeyRef.current !== scopeKey) return;
         const parents = new Set<string>([toDir]);
         const outcome = await executeBatchMove(sources, toDir, {
-          move: (item, replace) =>
+          move: (item, expectedConflict) =>
             invoke<FsMoveResult>("fs_move", {
               from: item.from,
               to: item.to,
-              replace,
+              root: rootPath ?? "",
+              expectedConflict,
               workspace,
             }),
           resolveConflict: (item) => resolveMoveConflict(item.name),
@@ -522,7 +541,7 @@ export function useFileTree(rootPath: string | null, options?: Options) {
       };
       await run();
     },
-    [workspace, scopeKey, resolveMoveConflict, fetchChildren],
+    [workspace, rootPath, scopeKey, resolveMoveConflict, fetchChildren],
   );
 
   return {

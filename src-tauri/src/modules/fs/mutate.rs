@@ -1,4 +1,4 @@
-use crate::modules::workspace::{resolve_path, WorkspaceEnv};
+use crate::modules::workspace::{resolve_path, WorkspaceEnv, WorkspaceRegistry};
 use serde::Serialize;
 use std::io;
 use std::path::Path;
@@ -11,7 +11,14 @@ use std::path::Path;
 )]
 pub enum FsMoveResult {
     Moved,
-    Conflict { replaceable: bool },
+    Conflict { replaceable: bool, token: String },
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FsDeleteBatchResult {
+    deleted: Vec<String>,
+    failed: usize,
 }
 
 fn metadata_if_exists(path: &Path) -> io::Result<Option<std::fs::Metadata>> {
@@ -27,6 +34,85 @@ fn is_conflict(error: &io::Error) -> bool {
         error.kind(),
         io::ErrorKind::AlreadyExists | io::ErrorKind::DirectoryNotEmpty
     )
+}
+
+fn resolve_authorized_root(
+    root: &str,
+    workspace: &WorkspaceEnv,
+    registry: &WorkspaceRegistry,
+) -> Result<std::path::PathBuf, String> {
+    let resolved = resolve_path(root, workspace);
+    let canonical = registry
+        .canonicalize_cached(resolved)
+        .map_err(|error| format!("workspace root is not accessible: {error}"))?;
+    if registry.is_authorized(&canonical) {
+        Ok(canonical)
+    } else {
+        Err(format!(
+            "workspace root is not authorized: {}",
+            canonical.display()
+        ))
+    }
+}
+
+fn authorize_mutation_entry(path: &Path, root: &Path) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("path has no parent: {}", path.display()))?;
+    let canonical = std::fs::canonicalize(parent)
+        .map_err(|error| format!("path parent is not accessible: {error}"))?;
+    if canonical.starts_with(root) {
+        Ok(())
+    } else {
+        Err(format!(
+            "path is outside the authorized workspace: {}",
+            path.display()
+        ))
+    }
+}
+
+#[cfg(unix)]
+fn conflict_token(metadata: &std::fs::Metadata) -> String {
+    use std::os::unix::fs::MetadataExt;
+    format!(
+        "{}:{}:{}:{}:{}:{}",
+        metadata.dev(),
+        metadata.ino(),
+        metadata.mode(),
+        metadata.size(),
+        metadata.mtime(),
+        metadata.mtime_nsec()
+    )
+}
+
+#[cfg(target_os = "windows")]
+fn conflict_token(metadata: &std::fs::Metadata) -> String {
+    use std::os::windows::fs::MetadataExt;
+    format!(
+        "{}:{}:{}:{}",
+        metadata.file_attributes(),
+        metadata.creation_time(),
+        metadata.last_write_time(),
+        metadata.file_size()
+    )
+}
+
+#[cfg(not(any(unix, target_os = "windows")))]
+fn conflict_token(metadata: &std::fs::Metadata) -> String {
+    use std::time::UNIX_EPOCH;
+    let modified = metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map_or(0, |duration| duration.as_nanos());
+    format!("{}:{modified}", metadata.len())
+}
+
+fn move_conflict(metadata: &std::fs::Metadata, replaceable: bool) -> FsMoveResult {
+    FsMoveResult::Conflict {
+        replaceable,
+        token: conflict_token(metadata),
+    }
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -188,12 +274,27 @@ pub fn fs_rename(from: String, to: String, workspace: Option<WorkspaceEnv>) -> R
 pub fn fs_move(
     from: String,
     to: String,
-    replace: bool,
+    root: String,
+    expected_conflict: Option<String>,
     workspace: Option<WorkspaceEnv>,
+    registry: tauri::State<'_, WorkspaceRegistry>,
 ) -> Result<FsMoveResult, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
-    let from_p = resolve_path(&from, &workspace);
-    let to_p = resolve_path(&to, &workspace);
+    let root = resolve_authorized_root(&root, &workspace, &registry)?;
+    fs_move_impl(&from, &to, &root, expected_conflict.as_deref(), &workspace)
+}
+
+fn fs_move_impl(
+    from: &str,
+    to: &str,
+    root: &Path,
+    expected_conflict: Option<&str>,
+    workspace: &WorkspaceEnv,
+) -> Result<FsMoveResult, String> {
+    let from_p = resolve_path(from, workspace);
+    let to_p = resolve_path(to, workspace);
+    authorize_mutation_entry(&from_p, root)?;
+    authorize_mutation_entry(&to_p, root)?;
     if from_p == to_p {
         return Ok(FsMoveResult::Moved);
     }
@@ -204,8 +305,9 @@ pub fn fs_move(
 
     if let Some(to_meta) = to_meta {
         let replaceable = !from_meta.is_dir() && !to_meta.is_dir();
-        if !replace || !replaceable {
-            return Ok(FsMoveResult::Conflict { replaceable });
+        let token = conflict_token(&to_meta);
+        if !replaceable || expected_conflict != Some(token.as_str()) {
+            return Ok(FsMoveResult::Conflict { replaceable, token });
         }
         replace_file(&from_p, &to_p).map_err(|error| {
             log::warn!(
@@ -221,10 +323,11 @@ pub fn fs_move(
     match rename_no_replace(&from_p, &to_p) {
         Ok(()) => Ok(FsMoveResult::Moved),
         Err(error) if is_conflict(&error) => {
-            let replaceable = metadata_if_exists(&to_p)
+            let to_meta = metadata_if_exists(&to_p)
                 .map_err(|metadata_error| metadata_error.to_string())?
-                .is_some_and(|to_meta| !from_meta.is_dir() && !to_meta.is_dir());
-            Ok(FsMoveResult::Conflict { replaceable })
+                .ok_or_else(|| "destination changed while moving".to_string())?;
+            let replaceable = !from_meta.is_dir() && !to_meta.is_dir();
+            Ok(move_conflict(&to_meta, replaceable))
         }
         Err(error) => {
             log::warn!(
@@ -247,6 +350,45 @@ pub fn fs_delete(path: String, workspace: Option<WorkspaceEnv>) -> Result<(), St
         log::warn!("fs_delete({}) failed: {e}", p.display());
         e.to_string()
     })
+}
+
+#[tauri::command]
+pub fn fs_delete_batch(
+    paths: Vec<String>,
+    root: String,
+    workspace: Option<WorkspaceEnv>,
+    registry: tauri::State<'_, WorkspaceRegistry>,
+) -> FsDeleteBatchResult {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let Ok(root) = resolve_authorized_root(&root, &workspace, &registry) else {
+        return FsDeleteBatchResult {
+            deleted: Vec::new(),
+            failed: paths.len(),
+        };
+    };
+    fs_delete_batch_impl(paths, &root, &workspace)
+}
+
+fn fs_delete_batch_impl(
+    paths: Vec<String>,
+    root: &Path,
+    workspace: &WorkspaceEnv,
+) -> FsDeleteBatchResult {
+    let mut deleted = Vec::with_capacity(paths.len());
+    let mut failed = 0;
+    for path in paths {
+        let resolved = resolve_path(&path, workspace);
+        let result = authorize_mutation_entry(&resolved, root)
+            .and_then(|()| remove_path(&resolved).map_err(|error| error.to_string()));
+        match result {
+            Ok(()) => deleted.push(path),
+            Err(error) => {
+                failed += 1;
+                log::warn!("fs_delete_batch({}) failed: {error}", resolved.display());
+            }
+        }
+    }
+    FsDeleteBatchResult { deleted, failed }
 }
 
 fn copy_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
@@ -300,6 +442,29 @@ mod tests {
 
     fn s(p: std::path::PathBuf) -> String {
         p.to_string_lossy().into_owned()
+    }
+
+    fn move_path(
+        root: &Path,
+        from: &Path,
+        to: &Path,
+        expected_conflict: Option<&str>,
+    ) -> Result<FsMoveResult, String> {
+        let root = std::fs::canonicalize(root).unwrap();
+        fs_move_impl(
+            &s(from.to_path_buf()),
+            &s(to.to_path_buf()),
+            &root,
+            expected_conflict,
+            &WorkspaceEnv::Local,
+        )
+    }
+
+    fn conflict(result: FsMoveResult) -> (bool, String) {
+        match result {
+            FsMoveResult::Conflict { replaceable, token } => (replaceable, token),
+            FsMoveResult::Moved => panic!("expected conflict"),
+        }
     }
 
     #[test]
@@ -359,9 +524,9 @@ mod tests {
         std::fs::write(&from, b"from").unwrap();
         std::fs::write(&to, b"to").unwrap();
 
-        let result = fs_move(s(from.clone()), s(to.clone()), false, None).unwrap();
+        let result = move_path(dir.path(), &from, &to, None).unwrap();
 
-        assert_eq!(result, FsMoveResult::Conflict { replaceable: true });
+        assert!(conflict(result).0);
         assert_eq!(std::fs::read(from).unwrap(), b"from");
         assert_eq!(std::fs::read(to).unwrap(), b"to");
     }
@@ -375,9 +540,9 @@ mod tests {
         std::fs::write(&from, b"from").unwrap();
         std::os::unix::fs::symlink(dir.path().join("missing"), &to).unwrap();
 
-        let result = fs_move(s(from.clone()), s(to.clone()), false, None).unwrap();
+        let result = move_path(dir.path(), &from, &to, None).unwrap();
 
-        assert_eq!(result, FsMoveResult::Conflict { replaceable: true });
+        assert!(conflict(result).0);
         assert_eq!(std::fs::read(from).unwrap(), b"from");
         assert!(std::fs::symlink_metadata(to)
             .unwrap()
@@ -388,8 +553,16 @@ mod tests {
     #[test]
     fn move_result_serializes_the_frontend_contract() {
         assert_eq!(
-            serde_json::to_value(FsMoveResult::Conflict { replaceable: false }).unwrap(),
-            serde_json::json!({ "status": "conflict", "replaceable": false })
+            serde_json::to_value(FsMoveResult::Conflict {
+                replaceable: false,
+                token: "opaque".into()
+            })
+            .unwrap(),
+            serde_json::json!({
+                "status": "conflict",
+                "replaceable": false,
+                "token": "opaque"
+            })
         );
         assert_eq!(
             serde_json::to_value(FsMoveResult::Moved).unwrap(),
@@ -405,11 +578,45 @@ mod tests {
         std::fs::write(&from, b"new").unwrap();
         std::fs::write(&to, b"old").unwrap();
 
-        let result = fs_move(s(from.clone()), s(to.clone()), true, None).unwrap();
+        let (_, token) = conflict(move_path(dir.path(), &from, &to, None).unwrap());
+        let result = move_path(dir.path(), &from, &to, Some(&token)).unwrap();
 
         assert_eq!(result, FsMoveResult::Moved);
         assert!(!from.exists());
         assert_eq!(std::fs::read(to).unwrap(), b"new");
+    }
+
+    #[test]
+    fn move_does_not_replace_a_conflict_that_changed_after_approval() {
+        let dir = tempfile::tempdir().unwrap();
+        let from = dir.path().join("from.txt");
+        let to = dir.path().join("to.txt");
+        std::fs::write(&from, b"new").unwrap();
+        std::fs::write(&to, b"old").unwrap();
+        let (_, token) = conflict(move_path(dir.path(), &from, &to, None).unwrap());
+        std::fs::write(&to, b"changed after prompt").unwrap();
+
+        let result = move_path(dir.path(), &from, &to, Some(&token)).unwrap();
+
+        assert!(conflict(result).0);
+        assert_eq!(std::fs::read(from).unwrap(), b"new");
+        assert_eq!(std::fs::read(to).unwrap(), b"changed after prompt");
+    }
+
+    #[test]
+    fn move_rejects_paths_outside_the_authorized_workspace() {
+        let allowed = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let from = outside.path().join("from.txt");
+        let to = allowed.path().join("to.txt");
+        std::fs::write(&from, b"keep").unwrap();
+        let root = std::fs::canonicalize(allowed.path()).unwrap();
+
+        let error =
+            fs_move_impl(&s(from.clone()), &s(to), &root, None, &WorkspaceEnv::Local).unwrap_err();
+
+        assert!(error.contains("outside the authorized workspace"));
+        assert_eq!(std::fs::read(from).unwrap(), b"keep");
     }
 
     #[test]
@@ -422,9 +629,9 @@ mod tests {
         std::fs::write(from.join("new.txt"), b"new").unwrap();
         std::fs::write(to.join("old.txt"), b"old").unwrap();
 
-        let result = fs_move(s(from.clone()), s(to.clone()), true, None).unwrap();
+        let result = move_path(dir.path(), &from, &to, None).unwrap();
 
-        assert_eq!(result, FsMoveResult::Conflict { replaceable: false });
+        assert!(!conflict(result).0);
         assert_eq!(std::fs::read(from.join("new.txt")).unwrap(), b"new");
         assert_eq!(std::fs::read(to.join("old.txt")).unwrap(), b"old");
     }
@@ -480,6 +687,25 @@ mod tests {
 
         let err = fs_delete(s(dir.path().join("missing")), None).unwrap_err();
         assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn batch_delete_reports_each_success_and_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("first.txt");
+        let second = dir.path().join("second.txt");
+        let missing = dir.path().join("missing.txt");
+        std::fs::write(&first, b"first").unwrap();
+        std::fs::write(&second, b"second").unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let paths = vec![s(first.clone()), s(missing), s(second.clone())];
+
+        let result = fs_delete_batch_impl(paths.clone(), &root, &WorkspaceEnv::Local);
+
+        assert_eq!(result.deleted, vec![paths[0].clone(), paths[2].clone()]);
+        assert_eq!(result.failed, 1);
+        assert!(!first.exists());
+        assert!(!second.exists());
     }
 
     // Deleting a symlink that points at a directory must remove only the link,

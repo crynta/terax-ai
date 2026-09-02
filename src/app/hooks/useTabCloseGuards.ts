@@ -2,7 +2,7 @@ import {
   type CloseManyHazards,
   type CloseManyKind,
   type CloseManyPending,
-  deletedEditorTabs,
+  deletedPathTabs,
   evaluateCloseHazards,
   hasCloseManyHazards,
   hasNewCloseManyHazards,
@@ -208,7 +208,7 @@ export function useTabCloseGuards({
 
   const handlePathsDeleted = useCallback(
     (paths: string[]) => {
-      const affected = deletedEditorTabs(tabsRef.current, paths);
+      const affected = deletedPathTabs(tabsRef.current, paths);
       for (const id of affected.cleanIds) disposeTab(id);
       if (affected.dirtyIds.length > 0) {
         setPendingDeleteTabs((current) => [

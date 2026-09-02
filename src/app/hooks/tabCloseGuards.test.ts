@@ -2,12 +2,15 @@ import { describe, expect, it, vi } from "vitest";
 import {
   type CloseHazardSnapshot,
   type CloseManyHazards,
-  deletedEditorTabs,
+  deletedPathTabs,
   evaluateCloseHazards,
+  hasOpenPathTab,
   hasCloseManyHazards,
   hasNewCloseManyHazards,
+  pathAtOrUnder,
+  renamedPath,
 } from "./tabCloseGuards";
-import type { EditorTab } from "@/modules/tabs";
+import type { EditorTab, MarkdownTab } from "@/modules/tabs";
 
 function hazards(
   dirtyIds: number[] = [],
@@ -55,7 +58,7 @@ describe("close-many hazards", () => {
   });
 });
 
-describe("deletedEditorTabs", () => {
+describe("path-backed explorer mutations", () => {
   const editor = (
     id: number,
     path: string,
@@ -71,9 +74,33 @@ describe("deletedEditorTabs", () => {
     spaceId,
   });
 
+  const markdown = (id: number, path: string): MarkdownTab => ({
+    id,
+    kind: "markdown",
+    title: path,
+    path,
+    spaceId: "local",
+  });
+
+  it("normalizes Windows separators for containment and rename", () => {
+    expect(pathAtOrUnder("C:\\repo\\src\\a.ts", "C:/repo/src")).toBe(true);
+    expect(
+      renamedPath("C:\\repo\\src\\a.ts", "C:/repo/src", "C:/repo/lib"),
+    ).toBe("C:/repo/lib/a.ts");
+  });
+
+  it("guards replacement when an editor or markdown tab is open", () => {
+    expect(hasOpenPathTab([markdown(1, "/repo/docs/a.md")], "/repo/docs")).toBe(
+      true,
+    );
+    expect(hasOpenPathTab([editor(2, "/repo/a.ts", false)], "/other")).toBe(
+      false,
+    );
+  });
+
   it("collects every dirty editor affected by unrelated batch paths", () => {
     expect(
-      deletedEditorTabs(
+      deletedPathTabs(
         [
           editor(1, "/repo/a.ts", true),
           editor(2, "/repo/b.ts", true),
@@ -86,7 +113,7 @@ describe("deletedEditorTabs", () => {
 
   it("includes descendants across open spaces", () => {
     expect(
-      deletedEditorTabs(
+      deletedPathTabs(
         [
           editor(1, "/repo/src/a.ts", true, "ubuntu"),
           editor(2, "/repo/src/a.ts", true, "debian"),
@@ -94,6 +121,12 @@ describe("deletedEditorTabs", () => {
         ["/repo/src"],
       ),
     ).toEqual({ dirtyIds: [1, 2], cleanIds: [] });
+  });
+
+  it("closes markdown tabs as clean path-backed views", () => {
+    expect(
+      deletedPathTabs([markdown(4, "C:\\repo\\README.md")], ["C:/repo"]),
+    ).toEqual({ dirtyIds: [], cleanIds: [4] });
   });
 });
 

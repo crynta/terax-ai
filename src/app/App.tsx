@@ -127,6 +127,7 @@ import {
 } from "./components/WorkspaceInputBar";
 import { WorkspaceSurface } from "./components/WorkspaceSurface";
 import { useAppCloseGuard } from "./hooks/useAppCloseGuard";
+import { hasOpenPathTab, renamedPath } from "./hooks/tabCloseGuards";
 import { useTabCloseGuards } from "./hooks/useTabCloseGuards";
 import { useWorkspaceSwitcher } from "./hooks/useWorkspaceSwitcher";
 
@@ -695,9 +696,9 @@ export default function App() {
   const handleExplorerPathRenamed = useCallback(
     (from: string, to: string) => {
       for (const tab of tabsRef.current) {
-        if (tab.kind !== "editor") continue;
-        if (tab.path !== from && !tab.path.startsWith(`${from}/`)) continue;
-        const path = `${to}${tab.path.slice(from.length)}`;
+        if (tab.kind !== "editor" && tab.kind !== "markdown") continue;
+        const path = renamedPath(tab.path, from, to);
+        if (path === null) continue;
         const i = path.lastIndexOf("/");
         updateTab(tab.id, {
           path,
@@ -709,12 +710,7 @@ export default function App() {
   );
 
   const canReplaceExplorerPath = useCallback(
-    (path: string) =>
-      !tabsRef.current.some(
-        (tab) =>
-          tab.kind === "editor" &&
-          (tab.path === path || tab.path.startsWith(`${path}/`)),
-      ),
+    (path: string) => !hasOpenPathTab(tabsRef.current, path),
     [],
   );
 

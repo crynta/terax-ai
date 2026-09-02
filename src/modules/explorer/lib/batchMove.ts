@@ -5,7 +5,7 @@ export type BatchMoveItem = {
 };
 
 export type FsMoveResult =
-  | { status: "conflict"; replaceable: boolean }
+  | { status: "conflict"; replaceable: boolean; token: string }
   | { status: "moved" };
 
 export type BatchMoveOutcome = {
@@ -15,7 +15,10 @@ export type BatchMoveOutcome = {
 };
 
 type BatchMoveDeps = {
-  move: (item: BatchMoveItem, replace: boolean) => Promise<FsMoveResult>;
+  move: (
+    item: BatchMoveItem,
+    expectedConflict: string | null,
+  ) => Promise<FsMoveResult>;
   resolveConflict: (item: BatchMoveItem) => Promise<"replace" | "skip">;
   canReplace: (item: BatchMoveItem) => boolean;
   onMoved: (item: BatchMoveItem) => void;
@@ -53,7 +56,7 @@ export async function executeBatchMove(
     }
 
     try {
-      let result = await deps.move(item, false);
+      let result = await deps.move(item, null);
 
       if (result.status === "conflict") {
         if (!result.replaceable) {
@@ -72,7 +75,7 @@ export async function executeBatchMove(
           outcome.blocked += 1;
           continue;
         }
-        result = await deps.move(item, true);
+        result = await deps.move(item, result.token);
       }
 
       if (result.status === "conflict") {

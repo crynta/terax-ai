@@ -6,11 +6,11 @@ import {
 } from "./batchMove";
 
 function deps(
-  move: (replace: boolean) => Promise<FsMoveResult>,
+  move: (expectedConflict: string | null) => Promise<FsMoveResult>,
   overrides: Partial<Parameters<typeof executeBatchMove>[2]> = {},
 ): Parameters<typeof executeBatchMove>[2] {
   return {
-    move: (_item, replace) => move(replace),
+    move: (_item, expectedConflict) => move(expectedConflict),
     resolveConflict: async () => "replace",
     canReplace: () => true,
     onMoved: () => undefined,
@@ -64,8 +64,12 @@ describe("executeBatchMove", () => {
 
   it("asks only after the backend reports a real filesystem conflict", async () => {
     const move = vi
-      .fn<(replace: boolean) => Promise<FsMoveResult>>()
-      .mockResolvedValueOnce({ status: "conflict", replaceable: true })
+      .fn<(expectedConflict: string | null) => Promise<FsMoveResult>>()
+      .mockResolvedValueOnce({
+        status: "conflict",
+        replaceable: true,
+        token: "v1",
+      })
       .mockResolvedValueOnce({ status: "moved" });
     const resolveConflict = vi.fn(async () => "replace" as const);
 
@@ -75,14 +79,15 @@ describe("executeBatchMove", () => {
       deps(move, { resolveConflict }),
     );
 
-    expect(move.mock.calls).toEqual([[false], [true]]);
+    expect(move.mock.calls).toEqual([[null], ["v1"]]);
     expect(resolveConflict).toHaveBeenCalledOnce();
     expect(result.moved).toBe(1);
   });
 
   it("does not replace a destination with an open editor", async () => {
     const move = vi.fn(
-      async () => ({ status: "conflict", replaceable: true }) as const,
+      async () =>
+        ({ status: "conflict", replaceable: true, token: "v1" }) as const,
     );
     const result = await executeBatchMove(
       ["/repo/a.ts"],
@@ -98,7 +103,8 @@ describe("executeBatchMove", () => {
   it("cancels before replacement when the workspace changes during the prompt", async () => {
     let current = true;
     const move = vi.fn(
-      async () => ({ status: "conflict", replaceable: true }) as const,
+      async () =>
+        ({ status: "conflict", replaceable: true, token: "v1" }) as const,
     );
     const resolveConflict = vi.fn(async () => {
       current = false;
@@ -133,7 +139,8 @@ describe("executeBatchMove", () => {
 
   it("skips folder conflicts without offering destructive replacement", async () => {
     const move = vi.fn(
-      async () => ({ status: "conflict", replaceable: false }) as const,
+      async () =>
+        ({ status: "conflict", replaceable: false, token: "folder" }) as const,
     );
     const resolveConflict = vi.fn(async () => "replace" as const);
 

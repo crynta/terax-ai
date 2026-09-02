@@ -1,7 +1,35 @@
 import type { CloseTabsPlan, Tab } from "@/modules/tabs";
 
-function pathAtOrUnder(path: string, root: string): boolean {
-  return path === root || path.startsWith(`${root}/`);
+function normalizePath(path: string): string {
+  return path.replace(/\\/g, "/");
+}
+
+export function pathAtOrUnder(path: string, root: string): boolean {
+  const normalizedPath = normalizePath(path);
+  const normalizedRoot = normalizePath(root);
+  return (
+    normalizedPath === normalizedRoot ||
+    normalizedPath.startsWith(`${normalizedRoot}/`)
+  );
+}
+
+export function renamedPath(
+  path: string,
+  from: string,
+  to: string,
+): string | null {
+  const normalizedPath = normalizePath(path);
+  const normalizedFrom = normalizePath(from);
+  if (!pathAtOrUnder(normalizedPath, normalizedFrom)) return null;
+  return `${normalizePath(to)}${normalizedPath.slice(normalizedFrom.length)}`;
+}
+
+export function hasOpenPathTab(tabs: readonly Tab[], path: string): boolean {
+  return tabs.some(
+    (tab) =>
+      (tab.kind === "editor" || tab.kind === "markdown") &&
+      pathAtOrUnder(tab.path, path),
+  );
 }
 
 export type CloseManyKind = "right" | "other";
@@ -36,16 +64,16 @@ export type CloseHazardSnapshot = {
   leafIds: number[];
 };
 
-export function deletedEditorTabs(
+export function deletedPathTabs(
   tabs: readonly Tab[],
   paths: readonly string[],
 ): { dirtyIds: number[]; cleanIds: number[] } {
   const dirtyIds: number[] = [];
   const cleanIds: number[] = [];
   for (const tab of tabs) {
-    if (tab.kind !== "editor") continue;
+    if (tab.kind !== "editor" && tab.kind !== "markdown") continue;
     if (!paths.some((path) => pathAtOrUnder(tab.path, path))) continue;
-    (tab.dirty ? dirtyIds : cleanIds).push(tab.id);
+    (tab.kind === "editor" && tab.dirty ? dirtyIds : cleanIds).push(tab.id);
   }
   return { dirtyIds, cleanIds };
 }
