@@ -53,8 +53,9 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { useEffect, useState } from "react";
-import { SectionHeader } from "../components/SectionHeader";
-import { SettingRow } from "../components/SettingRow";
+import { SectionHeader } from "@/settings/components/SectionHeader";
+import { SettingRow } from "@/settings/components/SettingRow";
+import { TerminalPasswordManager } from "@/settings/components/TerminalPasswordManager";
 
 const APPEARANCE: {
   id: ThemePref;
@@ -502,6 +503,8 @@ export function GeneralSection() {
           />
         </SettingRow>
       </div>
+
+      <TerminalPasswordManager />
 
       <div className="flex flex-col gap-2">
         <Label>Agents</Label>
