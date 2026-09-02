@@ -733,6 +733,41 @@ mod tests {
     }
 
     #[test]
+    fn wsl_drvfs_rejects_multi_character_and_non_alpha_drives() {
+        assert_eq!(wsl_drvfs_to_windows("/mnt/ab/Users/x"), None);
+        assert_eq!(wsl_drvfs_to_windows("/mnt/1/Users/x"), None);
+        assert_eq!(wsl_drvfs_to_windows("/mnt//Users/x"), None);
+    }
+
+    #[test]
+    fn wsl_drvfs_normalizes_backslash_input_and_lowercased_drives() {
+        assert_eq!(
+            wsl_drvfs_to_windows("\\mnt\\c\\Users\\vinicios"),
+            Some(PathBuf::from(r"C:\Users\vinicios"))
+        );
+        assert_eq!(
+            wsl_drvfs_to_windows("/mnt/z/"),
+            Some(PathBuf::from(r"Z:\"))
+        );
+    }
+
+    #[test]
+    fn safe_distro_names_accept_common_shapes() {
+        assert!(is_safe_distro_name("Ubuntu"));
+        assert!(is_safe_distro_name("Ubuntu-22.04"));
+        assert!(is_safe_distro_name("Debian GNU"));
+        assert!(is_safe_distro_name("openSUSE_Leap"));
+    }
+
+    #[test]
+    fn safe_distro_names_reject_traversal_and_overlong_names() {
+        assert!(!is_safe_distro_name(".."));
+        assert!(!is_safe_distro_name("ub..untu"));
+        assert!(!is_safe_distro_name(&"a".repeat(256)));
+        assert!(is_safe_distro_name(&"a".repeat(255)));
+    }
+
+    #[test]
     fn normalize_wsl_value_uses_last_nonempty_line() {
         assert_eq!(
             normalize_wsl_value("banner\n  /bin/zsh \n".into(), "/bin/sh"),
