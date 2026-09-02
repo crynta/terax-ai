@@ -132,6 +132,9 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     #[cfg(any(target_os = "linux", target_os = "windows"))]
     let builder = builder.decorations(false).transparent(true);
 
+    // Linux re-asserts decorations below; macOS centers below. Windows does
+    // neither, where the binding would otherwise trip `-D warnings`.
+    #[cfg_attr(target_os = "windows", allow(unused_variables))]
     let window = builder.build().map_err(|e| e.to_string())?;
 
     // Some Linux compositors (GNOME/Mutter with CSD-by-default) ignore the
