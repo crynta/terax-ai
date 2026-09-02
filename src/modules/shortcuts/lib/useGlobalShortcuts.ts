@@ -25,6 +25,10 @@ export function useGlobalShortcuts(
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Skip during IME composition (Chinese, Japanese, Korean input).
+      // keyCode 229 is Chromium's "Process" key for active IME sessions.
+      if (e.isComposing || e.keyCode === 229) return;
+
       const { handlers, options } = latest.current;
       for (const s of SHORTCUTS) {
         if (e.repeat && !s.allowRepeat) continue;
