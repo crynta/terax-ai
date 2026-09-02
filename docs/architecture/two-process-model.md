@@ -55,7 +55,7 @@ Output streams from `pty_open` via a Tauri `Channel<PtyEvent>`.
 #### Mutate
 
 - `fs_create_file` / `fs_create_dir`
-- `fs_rename` / `fs_delete` / `fs_copy`
+- `fs_rename` / `fs_move` / `fs_delete` / `fs_copy`
 
 #### Watch
 

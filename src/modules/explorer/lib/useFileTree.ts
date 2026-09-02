@@ -1,8 +1,24 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
-import { currentWorkspaceEnv } from "@/modules/workspace";
+import {
+  currentWorkspaceEnv,
+  useWorkspaceEnvStore,
+  workspaceScopeKey,
+} from "@/modules/workspace";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import {
+  executeBatchMove,
+  excludeNestedSources,
+  type ExplorerPathRename,
+  type FsMoveResult,
+} from "./batchMove";
 import { listenFsChanged, watchAdd, watchRemove } from "./watch";
 
 export type DirEntry = {
@@ -35,50 +51,6 @@ export function dirname(path: string): string {
   const i = path.lastIndexOf("/");
   if (i <= 0) return "/";
   return path.slice(0, i);
-}
-
-export type BatchMoveItem = {
-  from: string;
-  to: string;
-  name: string;
-  conflict: boolean;
-};
-
-// Pure planning step for a batch move: pairs each source with its destination
-// path and flags a conflict when the name collides with something already in
-// the target dir, or with an earlier item in the same batch (processed in
-// selection order, so the earlier item "wins" the name first). Sources
-// already directly in the target are no-ops and dropped from the plan.
-export function planBatchMove(
-  sources: string[],
-  toDir: string,
-  existingNames: string[],
-): BatchMoveItem[] {
-  const existing = new Set(existingNames);
-  const claimed = new Set<string>();
-  const items: BatchMoveItem[] = [];
-  for (const from of sources) {
-    const name = from.slice(from.lastIndexOf("/") + 1);
-    const to = joinPath(toDir, name);
-    if (to === from) continue;
-    const conflict = existing.has(name) || claimed.has(name);
-    claimed.add(name);
-    items.push({ from, to, name, conflict });
-  }
-  return items;
-}
-
-// A selection can contain both a directory and one of its own descendants;
-// moving both independently (in parallel) can move the child twice or race
-// against the parent's own move. Drop any source nested under another
-// selected source before planning or running the moves.
-export function excludeNestedSources(sources: string[]): string[] {
-  return sources.filter(
-    (path) =>
-      !sources.some(
-        (other) => other !== path && path.startsWith(`${other}/`),
-      ),
-  );
 }
 
 const EXPANSION_CACHE_LIMIT = 8;
@@ -122,11 +94,21 @@ function sameDirListing(a: DirEntry[], b: DirEntry[]): boolean {
 }
 
 type Options = {
-  onPathRenamed?: (from: string, to: string) => void;
-  onPathDeleted?: (path: string) => void;
+  onPathsRenamed?: (
+    changes: ExplorerPathRename[],
+    workspaceKey: string,
+  ) => void;
+  onPathsDeleted?: (paths: string[], workspaceKey: string) => void;
+  canReplacePath?: (
+    path: string,
+    completed: readonly ExplorerPathRename[],
+    workspaceKey: string,
+  ) => boolean;
 };
 
 export function useFileTree(rootPath: string | null, options?: Options) {
+  const workspace = useWorkspaceEnvStore((s) => s.env);
+  const workspaceKey = workspaceScopeKey(workspace);
   const showHidden = usePreferencesStore((s) => s.showHidden);
   const showHiddenRef = useRef(showHidden);
   const gitDecorations = usePreferencesStore((s) => s.explorerGitDecorations);
@@ -141,6 +123,34 @@ export function useFileTree(rootPath: string | null, options?: Options) {
   const expandedRef = useRef(expanded);
   const nodesRef = useRef(nodes);
   const watchedRef = useRef<Set<string>>(new Set());
+  const optionsRef = useRef(options);
+  const scopeKey = `${workspaceKey}\u0000${rootPath ?? ""}`;
+  const scopeKeyRef = useRef(scopeKey);
+  const conflictToastIdsRef = useRef<Set<string | number>>(new Set());
+  const batchMutationQueueRef = useRef<Promise<void>>(Promise.resolve());
+
+  const dismissConflictToasts = useCallback(() => {
+    for (const id of [...conflictToastIdsRef.current]) toast.dismiss(id);
+    conflictToastIdsRef.current.clear();
+  }, []);
+
+  useLayoutEffect(() => {
+    optionsRef.current = options;
+  }, [options]);
+
+  useLayoutEffect(() => {
+    if (scopeKeyRef.current === scopeKey) return;
+    scopeKeyRef.current = scopeKey;
+    dismissConflictToasts();
+  }, [scopeKey, dismissConflictToasts]);
+
+  useEffect(
+    () => () => {
+      scopeKeyRef.current = "";
+      dismissConflictToasts();
+    },
+    [dismissConflictToasts],
+  );
 
   useEffect(() => {
     showHiddenRef.current = showHidden;
@@ -187,7 +197,9 @@ export function useFileTree(rootPath: string | null, options?: Options) {
       }
 
       const liveDirs = new Set(
-        entries.filter((e) => e.kind === "dir").map((e) => joinPath(path, e.name)),
+        entries
+          .filter((e) => e.kind === "dir")
+          .map((e) => joinPath(path, e.name)),
       );
       const removedRoots: string[] = [];
       for (const key of Object.keys(nodesRef.current)) {
@@ -220,7 +232,8 @@ export function useFileTree(rootPath: string | null, options?: Options) {
           return changed ? n : c;
         });
         const toUnwatch: string[] = [];
-        for (const d of dead) if (watchedRef.current.delete(d)) toUnwatch.push(d);
+        for (const d of dead)
+          if (watchedRef.current.delete(d)) toUnwatch.push(d);
         watchRemove(toUnwatch);
       }
     } catch (e) {
@@ -417,207 +430,161 @@ export function useFileTree(rootPath: string | null, options?: Options) {
         await invoke("fs_rename", {
           from: renaming,
           to,
-          workspace: currentWorkspaceEnv(),
+          workspace,
         });
-        options?.onPathRenamed?.(renaming, to);
-        await fetchChildren(parent);
+        optionsRef.current?.onPathsRenamed?.(
+          [{ from: renaming, to, replaced: false }],
+          workspaceKey,
+        );
+        if (scopeKeyRef.current === scopeKey) await fetchChildren(parent);
       } catch (e) {
         console.error("fs_rename failed:", e);
       } finally {
         setRenaming(null);
       }
     },
-    [renaming, fetchChildren, options],
+    [renaming, workspace, workspaceKey, scopeKey, fetchChildren],
   );
 
   const deletePath = useCallback(
     async (path: string) => {
       try {
-        await invoke("fs_delete", { path, workspace: currentWorkspaceEnv() });
-        options?.onPathDeleted?.(path);
-        await fetchChildren(dirname(path));
+        await invoke("fs_delete", { path, workspace });
+        optionsRef.current?.onPathsDeleted?.([path], workspaceKey);
+        if (scopeKeyRef.current === scopeKey) {
+          await fetchChildren(dirname(path));
+        }
       } catch (e) {
         console.error("fs_delete failed:", e);
       }
     },
-    [fetchChildren, options],
+    [workspace, workspaceKey, scopeKey, fetchChildren],
   );
 
   const deletePaths = useCallback(
     async (paths: string[]) => {
       if (paths.length === 0) return;
-      // fs_delete already recurses into directories, so a selected descendant
-      // of a selected directory would race that directory's own deletion and
-      // surface as a spurious per-item failure.
       const topLevelPaths = excludeNestedSources(paths);
-      const results = await Promise.allSettled(
-        topLevelPaths.map((path) =>
-          invoke("fs_delete", { path, workspace: currentWorkspaceEnv() }),
-        ),
-      );
-      const parents = new Set<string>();
-      let anyFailed = false;
-      topLevelPaths.forEach((path, i) => {
-        if (results[i].status === "fulfilled") {
-          options?.onPathDeleted?.(path);
-          parents.add(dirname(path));
-        } else {
-          anyFailed = true;
-          console.error(
-            "fs_delete failed:",
-            (results[i] as PromiseRejectedResult).reason,
-          );
+      const run = async () => {
+        if (scopeKeyRef.current !== scopeKey) return;
+        const deleted: string[] = [];
+        let failed = 0;
+        for (const path of topLevelPaths) {
+          try {
+            await invoke("fs_delete", { path, workspace });
+            deleted.push(path);
+          } catch (error) {
+            failed += 1;
+            console.error("fs_delete failed:", error);
+          }
         }
-      });
-      await Promise.all([...parents].map((p) => fetchChildren(p)));
-      if (anyFailed) toast.error("Delete failed for one or more items");
+        if (deleted.length > 0) {
+          optionsRef.current?.onPathsDeleted?.(deleted, workspaceKey);
+        }
+        if (scopeKeyRef.current === scopeKey) {
+          const parents = new Set(deleted.map(dirname));
+          await Promise.all([...parents].map((path) => fetchChildren(path)));
+        }
+        if (failed > 0) toast.error("Delete failed for one or more items");
+      };
+      const queued = batchMutationQueueRef.current.then(run, run);
+      batchMutationQueueRef.current = queued.catch(() => undefined);
+      await queued;
     },
-    [fetchChildren, options],
+    [workspace, workspaceKey, scopeKey, fetchChildren],
   );
 
-  const movePath = useCallback(
-    async (from: string, toDir: string) => {
-      const name = from.slice(from.lastIndexOf("/") + 1);
-      const to = joinPath(toDir, name);
-      if (to === from) return;
-      const target = nodesRef.current[toDir];
-      if (
-        target?.status === "loaded" &&
-        target.entries.some((e) => e.name === name)
-      ) {
-        console.warn(`move skipped: "${name}" already exists in ${toDir}`);
-        return;
-      }
-      try {
-        await invoke("fs_rename", {
-          from,
-          to,
-          workspace: currentWorkspaceEnv(),
+  const resolveMoveConflict = useCallback(
+    (name: string) =>
+      new Promise<"replace" | "skip">((resolve) => {
+        let settled = false;
+        let id: string | number;
+        const finish = (resolution: "replace" | "skip") => {
+          if (settled) return;
+          settled = true;
+          conflictToastIdsRef.current.delete(id);
+          toast.dismiss(id);
+          resolve(resolution);
+        };
+        id = toast.warning(`"${name}" already exists`, {
+          duration: Infinity,
+          action: { label: "Replace", onClick: () => finish("replace") },
+          cancel: { label: "Skip", onClick: () => finish("skip") },
+          onDismiss: () => finish("skip"),
         });
-        options?.onPathRenamed?.(from, to);
-        await Promise.all([fetchChildren(dirname(from)), fetchChildren(toDir)]);
-      } catch (e) {
-        console.error("fs_rename (move) failed:", e);
-      }
-    },
-    [fetchChildren, options],
+        conflictToastIdsRef.current.add(id);
+      }),
+    [],
   );
 
-  // Batch move: non-conflicting items move immediately in parallel; each name
-  // collision (against the target dir or another item in the same batch) gets
-  // an interactive Replace/Skip toast, mirroring VS Code. Silent on full
-  // success, since the conflict toasts already say everything interactive.
   const movePaths = useCallback(
     async (sources: string[], toDir: string) => {
       if (sources.length === 0) return;
-
-      const target = nodesRef.current[toDir];
-      let existingNames: string[];
-      if (target?.status === "loaded") {
-        existingNames = target.entries.map((e) => e.name);
-      } else {
-        try {
-          const entries = await invoke<DirEntry[]>("fs_read_dir", {
-            path: toDir,
-            showHidden: showHiddenRef.current,
-            gitDecorations: gitDecorationsRef.current,
-            workspace: currentWorkspaceEnv(),
-          });
-          existingNames = entries.map((e) => e.name);
-        } catch (e) {
-          console.error("fs_read_dir (move target) failed:", e);
-          existingNames = [];
-        }
-      }
-      const items = planBatchMove(
-        excludeNestedSources(sources),
-        toDir,
-        existingNames,
-      );
-      if (items.length === 0) return;
-
-      const parents = new Set<string>([toDir]);
-      let anySucceeded = false;
-      let anyUnexpectedFailure = false;
-
-      const moveOne = async (from: string, to: string) => {
-        await invoke("fs_rename", { from, to, workspace: currentWorkspaceEnv() });
-        options?.onPathRenamed?.(from, to);
-        parents.add(dirname(from));
-        anySucceeded = true;
-      };
-
-      const nonConflicting = items.filter((i) => !i.conflict);
-      const conflicting = items.filter((i) => i.conflict);
-
-      const results = await Promise.allSettled(
-        nonConflicting.map((i) => moveOne(i.from, i.to)),
-      );
-      for (const r of results) {
-        if (r.status === "rejected") {
-          anyUnexpectedFailure = true;
-          console.error("fs_rename (move) failed:", r.reason);
-        }
-      }
-
-      for (const item of conflicting) {
-        const resolution = await new Promise<"replace" | "skip">((resolve) => {
-          toast.warning(`"${item.name}" already exists`, {
-            duration: Infinity,
-            action: { label: "Replace", onClick: () => resolve("replace") },
-            cancel: { label: "Skip", onClick: () => resolve("skip") },
-            onDismiss: () => resolve("skip"),
-          });
-        });
-        if (resolution === "skip") continue;
-        // Replace without ever deleting the existing destination outright: move
-        // it aside first, then move the source in. If the second rename fails,
-        // move the backup back rather than leaving the destination gone.
-        const backupTo = `${item.to}.terax-replace-${Date.now()}-${Math.random()
-          .toString(36)
-          .slice(2)}`;
-        try {
-          await invoke("fs_rename", {
-            from: item.to,
-            to: backupTo,
-            workspace: currentWorkspaceEnv(),
-          });
-        } catch (e) {
-          anyUnexpectedFailure = true;
-          console.error("fs_rename (replace backup) failed:", e);
-          continue;
-        }
-        try {
-          await moveOne(item.from, item.to);
-          await invoke("fs_delete", {
-            path: backupTo,
-            workspace: currentWorkspaceEnv(),
-          });
-        } catch (e) {
-          anyUnexpectedFailure = true;
-          console.error("fs_rename (replace) failed:", e);
-          try {
-            await invoke("fs_rename", {
-              from: backupTo,
+      const run = async () => {
+        if (scopeKeyRef.current !== scopeKey) return;
+        const outcome = await executeBatchMove(sources, toDir, {
+          move: (item, replace) =>
+            invoke<FsMoveResult>("fs_move", {
+              from: item.from,
               to: item.to,
-              workspace: currentWorkspaceEnv(),
-            });
-          } catch (restoreErr) {
-            console.error(
-              `fs_rename (restore after failed replace) failed; original "${item.name}" left at ${backupTo}:`,
-              restoreErr,
-            );
-          }
+              replace,
+              workspace,
+            }),
+          resolveConflict: (item) => resolveMoveConflict(item.name),
+          canReplace: (item, completed) =>
+            optionsRef.current?.canReplacePath?.(
+              item.to,
+              completed,
+              workspaceKey,
+            ) ?? true,
+          isCurrent: () => scopeKeyRef.current === scopeKey,
+        });
+
+        if (outcome.renamed.length > 0) {
+          optionsRef.current?.onPathsRenamed?.(outcome.renamed, workspaceKey);
         }
-      }
-
-      await Promise.all([...parents].map((p) => fetchChildren(p)));
-
-      if (anyUnexpectedFailure) {
-        toast.error(anySucceeded ? "Some items could not be moved" : "Move failed");
-      }
+        for (const failure of outcome.failures) {
+          console.error(
+            `fs_move (${failure.item.from} -> ${failure.item.to}) failed:`,
+            failure.error,
+          );
+        }
+        if (scopeKeyRef.current === scopeKey && outcome.renamed.length > 0) {
+          const parents = new Set<string>([
+            toDir,
+            ...outcome.renamed.map((change) => dirname(change.from)),
+          ]);
+          await Promise.all([...parents].map((path) => fetchChildren(path)));
+        }
+        if (outcome.blocked.length > 0) {
+          toast.warning("Replace skipped", {
+            description:
+              outcome.blocked.length === 1
+                ? `Close the open editor for "${outcome.blocked[0].name}" before replacing it.`
+                : "Close the open destination editors before replacing these items.",
+          });
+        }
+        if (outcome.unreplaceable.length > 0) {
+          toast.warning("Folder conflict skipped", {
+            description:
+              outcome.unreplaceable.length === 1
+                ? `Move or remove the existing "${outcome.unreplaceable[0].name}" folder first.`
+                : "Move or remove the existing destination folders first.",
+          });
+        }
+        if (outcome.failures.length > 0) {
+          toast.error(
+            outcome.renamed.length > 0
+              ? "Some items could not be moved"
+              : "Move failed",
+          );
+        }
+      };
+      const queued = batchMutationQueueRef.current.then(run, run);
+      batchMutationQueueRef.current = queued.catch(() => undefined);
+      await queued;
     },
-    [fetchChildren, options],
+    [workspace, workspaceKey, scopeKey, resolveMoveConflict, fetchChildren],
   );
 
   return {
@@ -636,7 +603,6 @@ export function useFileTree(rootPath: string | null, options?: Options) {
     commitRename,
     deletePath,
     deletePaths,
-    movePath,
     movePaths,
     joinPath,
   };

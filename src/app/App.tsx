@@ -5,6 +5,11 @@ import {
 } from "@/components/ui/resizable";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import {
+  hasOpenEditorAtPath,
+  projectRenamedPath,
+  spaceIdsForWorkspace,
+} from "@/app/lib/explorerPathMutations";
 import { consumeLaunchFiles, getLaunchDir } from "@/lib/launchDir";
 import { quoteShellArg } from "@/lib/shellQuote";
 import { usePresence } from "@/lib/usePresence";
@@ -37,7 +42,11 @@ import {
   useApplyEditorFontSize,
   useEditorFileSync,
 } from "@/modules/editor";
-import { FileExplorer, type FileExplorerHandle } from "@/modules/explorer";
+import {
+  type ExplorerPathRename,
+  FileExplorer,
+  type FileExplorerHandle,
+} from "@/modules/explorer";
 import type { GitHistorySearchHandle } from "@/modules/git-history";
 import {
   Header,
@@ -415,7 +424,7 @@ export default function App() {
     cancelDeleteClose,
     confirmCloseMany,
     cancelCloseMany,
-    handlePathDeleted,
+    handlePathsDeleted,
   } = useTabCloseGuards({
     tabs,
     activeId,
@@ -692,25 +701,49 @@ export default function App() {
     })();
   }, [booted, openLaunchFiles]);
 
-  const handlePathRenamed = useCallback(
-    (from: string, to: string) => {
-      for (const t of tabs) {
-        if (t.kind !== "editor") continue;
-        if (t.path === from) {
-          const i = to.lastIndexOf("/");
-          updateTab(t.id, { path: to, title: i === -1 ? to : to.slice(i + 1) });
-        } else if (t.path.startsWith(`${from}/`)) {
-          const suffix = t.path.slice(from.length);
-          const newPath = `${to}${suffix}`;
-          const i = newPath.lastIndexOf("/");
-          updateTab(t.id, {
-            path: newPath,
-            title: i === -1 ? newPath : newPath.slice(i + 1),
-          });
-        }
+  const explorerSpaceIds = useCallback(
+    (workspaceKey: string) =>
+      spaceIdsForWorkspace(useSpaces.getState().spaces, workspaceKey),
+    [],
+  );
+
+  const handleExplorerPathsRenamed = useCallback(
+    (changes: ExplorerPathRename[], workspaceKey: string) => {
+      const spaceIds = explorerSpaceIds(workspaceKey);
+      for (const tab of tabsRef.current) {
+        if (tab.kind !== "editor" || !spaceIds.has(tab.spaceId)) continue;
+        const path = projectRenamedPath(tab.path, changes);
+        if (path === tab.path) continue;
+        const i = path.lastIndexOf("/");
+        updateTab(tab.id, {
+          path,
+          title: i === -1 ? path : path.slice(i + 1),
+        });
       }
     },
-    [tabs, updateTab],
+    [explorerSpaceIds, updateTab],
+  );
+
+  const handleExplorerPathsDeleted = useCallback(
+    (paths: string[], workspaceKey: string) => {
+      handlePathsDeleted(paths, explorerSpaceIds(workspaceKey));
+    },
+    [explorerSpaceIds, handlePathsDeleted],
+  );
+
+  const canReplaceExplorerPath = useCallback(
+    (
+      path: string,
+      completed: readonly ExplorerPathRename[],
+      workspaceKey: string,
+    ) =>
+      !hasOpenEditorAtPath(
+        tabsRef.current,
+        path,
+        completed,
+        explorerSpaceIds(workspaceKey),
+      ),
+    [explorerSpaceIds],
   );
 
   const activeTerminalLeafCwd =
@@ -1431,8 +1464,9 @@ export default function App() {
                           }
                           activeFilePath={explorerActiveFilePath}
                           onOpenFile={handleOpenFile}
-                          onPathRenamed={handlePathRenamed}
-                          onPathDeleted={handlePathDeleted}
+                          onPathsRenamed={handleExplorerPathsRenamed}
+                          onPathsDeleted={handleExplorerPathsDeleted}
+                          canReplacePath={canReplaceExplorerPath}
                           onRevealInTerminal={cdInNewTab}
                           onOpenInSourceControl={
                             handleOpenRepositoryInSourceControl

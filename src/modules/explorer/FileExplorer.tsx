@@ -21,6 +21,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -40,6 +41,7 @@ import {
   relativePath,
   revealInFinder,
 } from "./lib/contextActions";
+import type { ExplorerPathRename } from "./lib/batchMove";
 import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
 import { useExplorerDnd } from "./lib/useExplorerDnd";
@@ -62,8 +64,16 @@ type Props = {
   rootPath: string | null;
   activeFilePath?: string | null;
   onOpenFile: (path: string, pin?: boolean) => void;
-  onPathRenamed?: (from: string, to: string) => void;
-  onPathDeleted?: (path: string) => void;
+  onPathsRenamed?: (
+    changes: ExplorerPathRename[],
+    workspaceKey: string,
+  ) => void;
+  onPathsDeleted?: (paths: string[], workspaceKey: string) => void;
+  canReplacePath?: (
+    path: string,
+    completed: readonly ExplorerPathRename[],
+    workspaceKey: string,
+  ) => boolean;
   onRevealInTerminal?: (path: string) => void;
   onOpenInSourceControl?: (path: string) => void;
   onOpenGitHistory?: (path: string) => void;
@@ -95,7 +105,13 @@ type Row =
       gitStatusCode: GitStatusCode | null;
     }
   | { kind: "pending"; key: string; depth: number; pendingKind: "file" | "dir" }
-  | { kind: "status"; key: string; depth: number; tone: "muted" | "error"; message: string };
+  | {
+      kind: "status";
+      key: string;
+      depth: number;
+      tone: "muted" | "error";
+      message: string;
+    };
 
 const ROW_HEIGHT = 24;
 const OVERSCAN = 8;
@@ -196,8 +212,9 @@ export const FileExplorer = memo(
       rootPath,
       activeFilePath,
       onOpenFile,
-      onPathRenamed,
-      onPathDeleted,
+      onPathsRenamed,
+      onPathsDeleted,
+      canReplacePath,
       onRevealInTerminal,
       onOpenInSourceControl,
       onOpenGitHistory,
@@ -207,7 +224,11 @@ export const FileExplorer = memo(
     },
     ref,
   ) {
-    const tree = useFileTree(rootPath, { onPathRenamed, onPathDeleted });
+    const tree = useFileTree(rootPath, {
+      onPathsRenamed,
+      onPathsDeleted,
+      canReplacePath,
+    });
     const gitDecorations = usePreferencesStore((s) => s.explorerGitDecorations);
     const { lookup: lookupGitStatus } = useGitStatus(
       rootPath,
@@ -219,11 +240,11 @@ export const FileExplorer = memo(
     );
     const [anchorPath, setAnchorPath] = useState<string | null>(null);
     const selectedPathsRef = useRef(selectedPaths);
-    useEffect(() => {
+    useLayoutEffect(() => {
       selectedPathsRef.current = selectedPaths;
     }, [selectedPaths]);
     const anchorPathRef = useRef(anchorPath);
-    useEffect(() => {
+    useLayoutEffect(() => {
       anchorPathRef.current = anchorPath;
     }, [anchorPath]);
     const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -233,7 +254,11 @@ export const FileExplorer = memo(
     const scrollRef = useRef<HTMLDivElement>(null);
 
     const { rows, entryIndexByPath } = useMemo(() => {
-      if (!rootPath) return { rows: [] as Row[], entryIndexByPath: new Map<string, number>() };
+      if (!rootPath)
+        return {
+          rows: [] as Row[],
+          entryIndexByPath: new Map<string, number>(),
+        };
       return buildRows(rootPath, tree, lookupGitStatus);
       // `tree` is intentionally omitted: its identity changes every render, but
       // the listed fields are the only inputs buildRows actually reads.
@@ -277,7 +302,7 @@ export const FileExplorer = memo(
       return out;
     }, [rows]);
     const entryPathsRef = useRef(entryPaths);
-    useEffect(() => {
+    useLayoutEffect(() => {
       entryPathsRef.current = entryPaths;
     }, [entryPaths]);
 
@@ -286,10 +311,7 @@ export const FileExplorer = memo(
       setAnchorPath(path);
     }, []);
 
-    const getSelectedPaths = useCallback(
-      () => selectedPathsRef.current,
-      [],
-    );
+    const getSelectedPaths = useCallback(() => selectedPathsRef.current, []);
 
     // Stable identity (reads fresh state off refs) so the memoized EntryRow
     // doesn't re-render on every selection change.
@@ -349,7 +371,8 @@ export const FileExplorer = memo(
     });
 
     const dropTargetDir = dnd.dropTargetDir ?? fileDrop.externalTargetDir;
-    const rootIsDropTarget = dropTargetDir != null && dropTargetDir === rootPath;
+    const rootIsDropTarget =
+      dropTargetDir != null && dropTargetDir === rootPath;
     useEffect(() => {
       if (!dropTargetDir || dropTargetDir === rootPath) return;
       if (tree.expanded.has(dropTargetDir)) return;
@@ -391,14 +414,22 @@ export const FileExplorer = memo(
 
     const lastSyncedActivePathRef = useRef<string | null>(null);
     useEffect(() => {
-      if (!activeFilePath || activeFilePath === lastSyncedActivePathRef.current) {
+      if (
+        !activeFilePath ||
+        activeFilePath === lastSyncedActivePathRef.current
+      ) {
         return;
       }
       if (!entryIndexByPath.has(activeFilePath)) return;
       lastSyncedActivePathRef.current = activeFilePath;
       collapseSelectionTo(activeFilePath);
       requestAnimationFrame(() => scrollEntryIntoView(activeFilePath));
-    }, [activeFilePath, entryIndexByPath, scrollEntryIntoView, collapseSelectionTo]);
+    }, [
+      activeFilePath,
+      entryIndexByPath,
+      scrollEntryIntoView,
+      collapseSelectionTo,
+    ]);
 
     useImperativeHandle(
       ref,
@@ -570,7 +601,11 @@ export const FileExplorer = memo(
           );
         case "status":
           return (
-            <StatusRow depth={row.depth} message={row.message} tone={row.tone} />
+            <StatusRow
+              depth={row.depth}
+              message={row.message}
+              tone={row.tone}
+            />
           );
       }
     };
@@ -863,7 +898,9 @@ export const FileExplorer = memo(
                   <ContextMenuItem
                     className={COMPACT_ITEM}
                     onSelect={() =>
-                      void copyToClipboard(relativePath(rootPath, menuTarget.path))
+                      void copyToClipboard(
+                        relativePath(rootPath, menuTarget.path),
+                      )
                     }
                   >
                     Copy Relative Path

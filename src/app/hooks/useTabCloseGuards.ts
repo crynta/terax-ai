@@ -2,6 +2,7 @@ import {
   type CloseManyHazards,
   type CloseManyKind,
   type CloseManyPending,
+  deletedEditorTabs,
   evaluateCloseHazards,
   hasCloseManyHazards,
   hasNewCloseManyHazards,
@@ -205,21 +206,17 @@ export function useTabCloseGuards({
     setPendingDeleteTabs(null);
   }, []);
 
-  const handlePathDeleted = useCallback(
-    (path: string) => {
-      const dirty: number[] = [];
-      for (const t of tabs) {
-        if (t.kind !== "editor") continue;
-        if (t.path !== path && !t.path.startsWith(`${path}/`)) continue;
-        if (t.dirty) {
-          dirty.push(t.id);
-        } else {
-          disposeTab(t.id);
-        }
+  const handlePathsDeleted = useCallback(
+    (paths: string[], spaceIds: ReadonlySet<string>) => {
+      const affected = deletedEditorTabs(tabsRef.current, paths, spaceIds);
+      for (const id of affected.cleanIds) disposeTab(id);
+      if (affected.dirtyIds.length > 0) {
+        setPendingDeleteTabs((current) => [
+          ...new Set([...(current ?? []), ...affected.dirtyIds]),
+        ]);
       }
-      if (dirty.length > 0) setPendingDeleteTabs(dirty);
     },
-    [tabs, disposeTab],
+    [disposeTab],
   );
 
   return {
@@ -239,6 +236,6 @@ export function useTabCloseGuards({
     cancelDeleteClose,
     confirmCloseMany,
     cancelCloseMany,
-    handlePathDeleted,
+    handlePathsDeleted,
   };
 }

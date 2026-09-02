@@ -2,10 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import {
   type CloseHazardSnapshot,
   type CloseManyHazards,
+  deletedEditorTabs,
   evaluateCloseHazards,
   hasCloseManyHazards,
   hasNewCloseManyHazards,
 } from "./tabCloseGuards";
+import type { EditorTab } from "@/modules/tabs";
 
 function hazards(
   dirtyIds: number[] = [],
@@ -50,6 +52,50 @@ describe("close-many hazards", () => {
     expect(
       hasNewCloseManyHazards(hazards([], [20]), hazards([], [20, 30])),
     ).toBe(true);
+  });
+});
+
+describe("deletedEditorTabs", () => {
+  const editor = (
+    id: number,
+    path: string,
+    dirty: boolean,
+    spaceId = "local",
+  ): EditorTab => ({
+    id,
+    kind: "editor",
+    title: path,
+    path,
+    dirty,
+    preview: false,
+    spaceId,
+  });
+
+  it("collects every dirty editor affected by unrelated batch paths", () => {
+    expect(
+      deletedEditorTabs(
+        [
+          editor(1, "/repo/a.ts", true),
+          editor(2, "/repo/b.ts", true),
+          editor(3, "/repo/clean.ts", false),
+        ],
+        ["/repo/a.ts", "/repo/b.ts", "/repo/clean.ts"],
+        new Set(["local"]),
+      ),
+    ).toEqual({ dirtyIds: [1, 2], cleanIds: [3] });
+  });
+
+  it("includes descendants but excludes matching paths from another workspace", () => {
+    expect(
+      deletedEditorTabs(
+        [
+          editor(1, "/repo/src/a.ts", true, "ubuntu"),
+          editor(2, "/repo/src/a.ts", true, "debian"),
+        ],
+        ["/repo/src"],
+        new Set(["ubuntu"]),
+      ),
+    ).toEqual({ dirtyIds: [1], cleanIds: [] });
   });
 });
 

@@ -1,4 +1,5 @@
-import type { CloseTabsPlan } from "@/modules/tabs";
+import { pathAtOrUnder } from "@/app/lib/explorerPathMutations";
+import type { CloseTabsPlan, Tab } from "@/modules/tabs";
 
 export type CloseManyKind = "right" | "other";
 
@@ -31,6 +32,21 @@ export type CloseHazardSnapshot = {
   dirtyIds: number[];
   leafIds: number[];
 };
+
+export function deletedEditorTabs(
+  tabs: readonly Tab[],
+  paths: readonly string[],
+  spaceIds: ReadonlySet<string>,
+): { dirtyIds: number[]; cleanIds: number[] } {
+  const dirtyIds: number[] = [];
+  const cleanIds: number[] = [];
+  for (const tab of tabs) {
+    if (tab.kind !== "editor" || !spaceIds.has(tab.spaceId)) continue;
+    if (!paths.some((path) => pathAtOrUnder(tab.path, path))) continue;
+    (tab.dirty ? dirtyIds : cleanIds).push(tab.id);
+  }
+  return { dirtyIds, cleanIds };
+}
 
 const MAX_HAZARD_PASSES = 3;
 

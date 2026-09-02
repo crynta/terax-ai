@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { excludeNestedSources } from "./useFileTree";
+import { excludeNestedSources } from "./batchMove";
 
 export type ExplorerPathDropTarget = {
   updateTarget: (clientX: number, clientY: number) => boolean;
@@ -43,7 +43,9 @@ export function resolveExplorerMoveTarget(
       ? hoveredPath
       : parentDir(hoveredPath)
     : rootPath;
-  const allAlreadyInTarget = sources.every((source) => parentDir(source) === target);
+  const allAlreadyInTarget = sources.every(
+    (source) => parentDir(source) === target,
+  );
   if (allAlreadyInTarget) return null;
   for (const source of sources) {
     if (target === source || target.startsWith(`${source}/`)) return null;
@@ -61,8 +63,7 @@ export function finishExplorerDrag(
   onMove: (from: string[], toDir: string) => void,
 ): void {
   const handledByPathTarget =
-    commit &&
-    (pathDropTarget?.dropPath(sources, clientX, clientY) ?? false);
+    commit && (pathDropTarget?.dropPath(sources, clientX, clientY) ?? false);
   if (commit && !handledByPathTarget && moveTarget) {
     onMove(sources, moveTarget);
   }
