@@ -70,7 +70,7 @@ export function buildUserPrompt(req: CompletionRequest): string {
         : `Indent: ${req.indentUnit.length} spaces`,
     );
   }
-  const metaBlock = meta.length ? meta.join("\n") + "\n\n" : "";
+  const metaBlock = meta.length ? `${meta.join("\n")}\n\n` : "";
 
   return `${metaBlock}PREFIX:
 <<<
