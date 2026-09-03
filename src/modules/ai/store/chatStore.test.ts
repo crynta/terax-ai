@@ -93,23 +93,23 @@ describe("chat LRU", () => {
     expect(made[8][1].stop).not.toHaveBeenCalled();
   });
 
-  it("never evicts the active session and stops the evicted chat after flush", async () => {
+  it("never evicts the active session and stops the evicted chat after flush", () => {
     useChatStore.setState({ activeSessionId: "keep" });
-    for (let i = 0; i < 8; i++) touchChat(`pad${i}`, fakeChat());
-
-    const pendingWrite = vi.fn();
-    vi.spyOn(await import("../lib/sessions"), "saveMessages").mockImplementation(
-      pendingWrite,
-    );
-
     const keep = fakeChat();
     touchChat("keep", keep);
-    // Overflow now: oldest ("pad0") is evicted, but "keep" must survive even
-    // though it is older than the last seven pads.
-    touchChat("trigger", fakeChat());
+    const pads = Array.from({ length: 8 }, (_, i) => {
+      const c = fakeChat();
+      touchChat(`pad${i}`, c);
+      return c;
+    });
 
+    // keep was inserted first so it is the oldest key while still active.
+    // Eviction must skip it and stop the next-oldest pad instead of breaking
+    // out of the loop and letting the Map exceed the cap.
     expect(chats.has("keep")).toBe(true);
     expect(chats.size).toBe(8);
+    expect(pads[0].stop).toHaveBeenCalledTimes(1);
+    expect(pads[1].stop).not.toHaveBeenCalled();
   });
 
   it("touching an existing chat moves it to the newest slot without stopping it", () => {
@@ -148,6 +148,7 @@ describe("session lifecycle", () => {
     await useChatStore.getState().hydrateSessions();
 
     expect(useChatStore.getState().activeSessionId).toBe("old-1");
+    expect(useChatStore.getState().sessions.map((s) => s.id)).toEqual(["old-1"]);
     expect(useChatStore.getState().sessionsHydrated).toBe(true);
   });
 
