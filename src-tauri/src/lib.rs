@@ -216,7 +216,6 @@ pub fn run() {
             if let Err(error) = control::start(_app.handle().clone(), control_for_setup.clone()) {
                 log::warn!("could not start Terax control server: {error}");
             }
-            voice::install_fn_monitor(_app.handle());
             #[cfg(target_os = "macos")]
             if let Some(main) = _app.get_webview_window("main") {
                 let handle = _app.handle().clone();
@@ -324,6 +323,7 @@ pub fn run() {
             open_settings_window,
             agent::agent_enable_hooks,
             agent::agent_hooks_status,
+            voice::voice_set_fn_monitor,
             secrets::secrets_get,
             secrets::secrets_set,
             secrets::secrets_delete,
