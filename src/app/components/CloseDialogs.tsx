@@ -1,5 +1,8 @@
 import type { CloseManyPending } from "@/app/hooks/tabCloseGuards";
-import type { AppCloseBlocker } from "@/app/hooks/useAppCloseGuard";
+import {
+  type AppCloseBlocker,
+  canOptOutOfAppClosePrompt,
+} from "@/app/hooks/useAppCloseGuard";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -10,7 +13,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { setConfirmCloseRunningTerminal } from "@/modules/settings/store";
 import type { Tab } from "@/modules/tabs";
+import { useId, useState } from "react";
 
 type Props = {
   tabs: Tab[];
@@ -44,6 +51,39 @@ function appCloseMessage(blocker: AppCloseBlocker): string {
     return `${dirty.charAt(0).toUpperCase()}${dirty.slice(1)}. Quitting will discard them.`;
   }
   return "A process is still running in a terminal. Quitting will terminate it.";
+}
+
+function OptOutRow({
+  checked,
+  onCheckedChange,
+}: {
+  checked: boolean;
+  onCheckedChange: (value: boolean) => void;
+}) {
+  const id = useId();
+  return (
+    <div className="-mt-3 flex items-center justify-center gap-2 sm:justify-start">
+      <Checkbox
+        id={id}
+        checked={checked}
+        onCheckedChange={(value) => onCheckedChange(value === true)}
+      />
+      <Label
+        htmlFor={id}
+        className="font-normal text-[12px] text-muted-foreground"
+      >
+        Don't ask again about running processes
+      </Label>
+    </div>
+  );
+}
+
+async function persistOptOut(): Promise<void> {
+  try {
+    await setConfirmCloseRunningTerminal(false);
+  } catch (e) {
+    console.error("close-confirmation opt-out failed", e);
+  }
 }
 
 function closeManyMessage(pending: CloseManyPending, tabs: Tab[]): string {
@@ -96,6 +136,35 @@ export function CloseDialogs({
   onCancelAppClose,
   onConfirmAppClose,
 }: Props) {
+  const [optOutTerminalClose, setOptOutTerminalClose] = useState(false);
+  const [optOutAppClose, setOptOutAppClose] = useState(false);
+  const appCloseCanOptOut =
+    pendingAppClose !== null && canOptOutOfAppClosePrompt(pendingAppClose);
+
+  const confirmTerminalClose = () => {
+    if (optOutTerminalClose) void persistOptOut();
+    setOptOutTerminalClose(false);
+    onConfirmTerminalClose();
+  };
+
+  const cancelTerminalClose = () => {
+    setOptOutTerminalClose(false);
+    onCancelTerminalClose();
+  };
+
+  // The pref write has to land before the window closes, or quitting drops it.
+  const confirmAppClose = async () => {
+    const optOut = appCloseCanOptOut && optOutAppClose;
+    setOptOutAppClose(false);
+    if (optOut) await persistOptOut();
+    onConfirmAppClose();
+  };
+
+  const cancelAppClose = () => {
+    setOptOutAppClose(false);
+    onCancelAppClose();
+  };
+
   return (
     <>
       <AlertDialog
@@ -126,7 +195,7 @@ export function CloseDialogs({
 
       <AlertDialog
         open={pendingTerminalCloseTab !== null}
-        onOpenChange={(open) => !open && onCancelTerminalClose()}
+        onOpenChange={(open) => !open && cancelTerminalClose()}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -135,11 +204,15 @@ export function CloseDialogs({
               A process is running. Closing this tab will terminate it.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <OptOutRow
+            checked={optOutTerminalClose}
+            onCheckedChange={setOptOutTerminalClose}
+          />
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={onCancelTerminalClose}>
+            <AlertDialogCancel onClick={cancelTerminalClose}>
               Cancel
             </AlertDialogCancel>
-            <AlertDialogAction onClick={onConfirmTerminalClose}>
+            <AlertDialogAction onClick={confirmTerminalClose}>
               Close Anyway
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -211,7 +284,7 @@ export function CloseDialogs({
 
       <AlertDialog
         open={pendingAppClose !== null}
-        onOpenChange={(open) => !open && onCancelAppClose()}
+        onOpenChange={(open) => !open && cancelAppClose()}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -220,11 +293,17 @@ export function CloseDialogs({
               {pendingAppClose ? appCloseMessage(pendingAppClose) : ""}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {appCloseCanOptOut ? (
+            <OptOutRow
+              checked={optOutAppClose}
+              onCheckedChange={setOptOutAppClose}
+            />
+          ) : null}
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={onCancelAppClose}>
+            <AlertDialogCancel onClick={cancelAppClose}>
               Cancel
             </AlertDialogCancel>
-            <AlertDialogAction onClick={onConfirmAppClose}>
+            <AlertDialogAction onClick={() => void confirmAppClose()}>
               Quit Anyway
             </AlertDialogAction>
           </AlertDialogFooter>

@@ -38,7 +38,8 @@ export function routeAgentNotification({
   leafId = 0,
   onActivate,
 }: RouteArgs): void {
-  if (!usePreferencesStore.getState().agentNotifications) return;
+  const preferences = usePreferencesStore.getState();
+  if (!preferences.agentNotifications) return;
   const delivery = resolveAgentNotificationDelivery({
     focused,
     visible,
@@ -51,12 +52,17 @@ export function routeAgentNotification({
 
   if (delivery === "native") {
     void osNotify(title, body ?? agent).then((result) => {
-      if (result === "requested") playAgentNotificationSound();
+      if (
+        result === "requested" &&
+        usePreferencesStore.getState().agentNotificationSound
+      ) {
+        playAgentNotificationSound();
+      }
     });
     return;
   }
   if (delivery === "toast") {
-    playAgentNotificationSound();
+    if (preferences.agentNotificationSound) playAgentNotificationSound();
     showAgentToast({ agent, title, body, onActivate });
   }
 }

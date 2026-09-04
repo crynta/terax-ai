@@ -42,6 +42,7 @@
     --color-card: var(--card);
     --color-foreground: var(--foreground);
     --color-background: var(--background);
+    --color-frame: var(--frame);
     --radius-sm: calc(var(--radius) * 0.6);
     --radius-md: calc(var(--radius) * 0.8);
     --radius-lg: var(--radius);
@@ -51,73 +52,75 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Baseline tokens mirror the built-in default theme, so the first paint already
+ * matches what `applyTheme` writes a frame later. */
 :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.148 0.004 228.8);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.148 0.004 228.8);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.148 0.004 228.8);
-    --primary: oklch(0.218 0.008 223.9);
-    --primary-foreground: oklch(0.987 0.002 197.1);
-    --secondary: oklch(0.963 0.002 197.1);
-    --secondary-foreground: oklch(0.218 0.008 223.9);
-    --muted: oklch(0.963 0.002 197.1);
-    --muted-foreground: oklch(0.56 0.021 213.5);
-    --accent: oklch(0.963 0.002 197.1);
-    --accent-foreground: oklch(0.218 0.008 223.9);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.925 0.005 214.3);
-    --input: oklch(0.925 0.005 214.3);
-    --ring: oklch(0.723 0.014 214.4);
-    --chart-1: oklch(0.872 0.007 219.6);
-    --chart-2: oklch(0.56 0.021 213.5);
-    --chart-3: oklch(0.45 0.017 213.2);
-    --chart-4: oklch(0.378 0.015 216);
-    --chart-5: oklch(0.275 0.011 216.9);
+    --background: #ffffff;
+    --foreground: #111111;
+    --card: #f3f3f3;
+    --card-foreground: #111111;
+    --popover: #ffffff;
+    --popover-foreground: #111111;
+    --primary: #111111;
+    --primary-foreground: #ffffff;
+    --secondary: #ededed;
+    --secondary-foreground: #111111;
+    --muted: #ededed;
+    --muted-foreground: #656565;
+    --accent: #e5e5e5;
+    --accent-foreground: #111111;
+    --destructive: #c0392f;
+    --border: rgba(0, 0, 0, 0.09);
+    --input: rgba(0, 0, 0, 0.13);
+    --ring: #8a8a8a;
+    --chart-1: #111111;
+    --chart-2: #4a4a4a;
+    --chart-3: #656565;
+    --chart-4: #8a8a8a;
+    --chart-5: #b4b4b4;
     --radius: 0.625rem;
-    --sidebar: oklch(0.987 0.002 197.1);
-    --sidebar-foreground: oklch(0.148 0.004 228.8);
-    --sidebar-primary: oklch(0.218 0.008 223.9);
-    --sidebar-primary-foreground: oklch(0.987 0.002 197.1);
-    --sidebar-accent: oklch(0.963 0.002 197.1);
-    --sidebar-accent-foreground: oklch(0.218 0.008 223.9);
-    --sidebar-border: oklch(0.925 0.005 214.3);
-    --sidebar-ring: oklch(0.723 0.014 214.4);
+    --sidebar: #f3f3f3;
+    --sidebar-foreground: #111111;
+    --sidebar-primary: #111111;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #e5e5e5;
+    --sidebar-accent-foreground: #111111;
+    --sidebar-border: rgba(0, 0, 0, 0.09);
+    --sidebar-ring: #8a8a8a;
 }
 
 .dark {
-    --background: oklch(0.148 0.004 228.8);
-    --foreground: oklch(0.987 0.002 197.1);
-    --card: oklch(0.218 0.008 223.9);
-    --card-foreground: oklch(0.987 0.002 197.1);
-    --popover: oklch(0.218 0.008 223.9);
-    --popover-foreground: oklch(0.987 0.002 197.1);
-    --primary: oklch(0.925 0.005 214.3);
-    --primary-foreground: oklch(0.218 0.008 223.9);
-    --secondary: oklch(0.275 0.011 216.9);
-    --secondary-foreground: oklch(0.987 0.002 197.1);
-    --muted: oklch(0.275 0.011 216.9);
-    --muted-foreground: oklch(0.723 0.014 214.4);
-    --accent: oklch(0.275 0.011 216.9);
-    --accent-foreground: oklch(0.987 0.002 197.1);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.56 0.021 213.5);
-    --chart-1: oklch(0.872 0.007 219.6);
-    --chart-2: oklch(0.56 0.021 213.5);
-    --chart-3: oklch(0.45 0.017 213.2);
-    --chart-4: oklch(0.378 0.015 216);
-    --chart-5: oklch(0.275 0.011 216.9);
-    --sidebar: oklch(0.218 0.008 223.9);
-    --sidebar-foreground: oklch(0.987 0.002 197.1);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.987 0.002 197.1);
-    --sidebar-accent: oklch(0.275 0.011 216.9);
-    --sidebar-accent-foreground: oklch(0.987 0.002 197.1);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.56 0.021 213.5);
+    --background: #141414;
+    --foreground: #f7f7f7;
+    --card: #1d1d1d;
+    --card-foreground: #f7f7f7;
+    --popover: #1d1d1d;
+    --popover-foreground: #f7f7f7;
+    --primary: #f7f7f7;
+    --primary-foreground: #141414;
+    --secondary: #2a2a2a;
+    --secondary-foreground: #f7f7f7;
+    --muted: #1d1d1d;
+    --muted-foreground: #a3a3a3;
+    --accent: #2a2a2a;
+    --accent-foreground: #f7f7f7;
+    --destructive: #e35d5d;
+    --border: rgba(255, 255, 255, 0.09);
+    --input: rgba(255, 255, 255, 0.13);
+    --ring: #8a8a8a;
+    --chart-1: #f7f7f7;
+    --chart-2: #b4b4b4;
+    --chart-3: #8a8a8a;
+    --chart-4: #656565;
+    --chart-5: #4a4a4a;
+    --sidebar: #1d1d1d;
+    --sidebar-foreground: #f7f7f7;
+    --sidebar-primary: #f7f7f7;
+    --sidebar-primary-foreground: #141414;
+    --sidebar-accent: #2a2a2a;
+    --sidebar-accent-foreground: #f7f7f7;
+    --sidebar-border: rgba(255, 255, 255, 0.09);
+    --sidebar-ring: #8a8a8a;
 }
 
 @layer base {
@@ -143,27 +146,88 @@
   --terminal-cursor: var(--foreground);
   --terminal-cursor-accent: var(--background);
   --terminal-selection: var(--accent);
-  --terminal-ansi-black: #18181b;
-  --terminal-ansi-red: #ef4444;
-  --terminal-ansi-green: #22c55e;
-  --terminal-ansi-yellow: #eab308;
-  --terminal-ansi-blue: #3b82f6;
-  --terminal-ansi-magenta: #a855f7;
-  --terminal-ansi-cyan: #06b6d4;
-  --terminal-ansi-white: #e4e4e7;
-  --terminal-ansi-bright-black: #52525b;
-  --terminal-ansi-bright-red: #f87171;
-  --terminal-ansi-bright-green: #4ade80;
-  --terminal-ansi-bright-yellow: #facc15;
-  --terminal-ansi-bright-blue: #60a5fa;
-  --terminal-ansi-bright-magenta: #c084fc;
-  --terminal-ansi-bright-cyan: #22d3ee;
-  --terminal-ansi-bright-white: #fafafa;
+  --terminal-ansi-black: #111111;
+  --terminal-ansi-red: #c0392f;
+  --terminal-ansi-green: #2f7d4f;
+  --terminal-ansi-yellow: #a37413;
+  --terminal-ansi-blue: #2f6bb5;
+  --terminal-ansi-magenta: #8a4fb5;
+  --terminal-ansi-cyan: #227d85;
+  --terminal-ansi-white: #cfcfcf;
+  --terminal-ansi-bright-black: #656565;
+  --terminal-ansi-bright-red: #d94f42;
+  --terminal-ansi-bright-green: #3d9c64;
+  --terminal-ansi-bright-yellow: #bf8a1f;
+  --terminal-ansi-bright-blue: #3f82d4;
+  --terminal-ansi-bright-magenta: #a065cf;
+  --terminal-ansi-bright-cyan: #2b98a2;
+  --terminal-ansi-bright-white: #111111;
+}
+
+/* The default theme short-circuits `applyTheme` (ThemeProvider calls
+ * clearTheme instead), so these vars are the whole palette, not a pre-paint
+ * placeholder. An unscoped ANSI block would put dark colours on a white
+ * terminal for every light-mode user. */
+.dark {
+  --terminal-ansi-black: #3f3f3f;
+  --terminal-ansi-red: #e35d5d;
+  --terminal-ansi-green: #6ec48f;
+  --terminal-ansi-yellow: #e0b34d;
+  --terminal-ansi-blue: #6ea8e8;
+  --terminal-ansi-magenta: #b98ce0;
+  --terminal-ansi-cyan: #5fc6cc;
+  --terminal-ansi-white: #d8d8d8;
+  --terminal-ansi-bright-black: #6e6e6e;
+  --terminal-ansi-bright-red: #f27f7f;
+  --terminal-ansi-bright-green: #85d9a4;
+  --terminal-ansi-bright-yellow: #eec469;
+  --terminal-ansi-bright-blue: #8dbcf2;
+  --terminal-ansi-bright-magenta: #cba5ee;
+  --terminal-ansi-bright-cyan: #7bdbe0;
+  --terminal-ansi-bright-white: #f7f7f7;
 }
 
 :root {
   --app-zoom: 1;
   --editor-font-size: 13px;
+}
+
+/* Floating-pane chrome. `--frame` is the canvas the panes sit on (header,
+ * status bar, gutters); a pane keeps `--background` so the xterm canvas and the
+ * pane surface stay the same color. Both are derived from tokens every theme
+ * already declares, so built-in and user themes get the separation for free. */
+:root {
+  --frame: color-mix(in oklab, var(--card) 97%, var(--foreground) 3%);
+  --pane-radius: calc(var(--radius) * 1.4);
+  --pane-shadow: none;
+}
+.dark {
+  --pane-shadow: inset 0 1px 0 oklch(1 0 0 / 0.035);
+}
+
+/* No drop shadow: panes meet the header and the status bar flush, so the only
+ * gutter is horizontal and anything cast downward would be clipped anyway
+ * (react-resizable-panels clips panel content at the panel box). Separation
+ * comes from the border plus the frame/pane tone step. */
+.terax-pane {
+  border-radius: var(--pane-radius);
+  border: 1px solid var(--border);
+  background: var(--background);
+  box-shadow: var(--pane-shadow);
+  overflow: hidden;
+}
+
+/* Window vibrancy (macOS NSVisualEffectView / Windows Mica). Only the frame
+ * goes translucent: panes keep `--background` so terminal and editor text
+ * stays on a solid, readable surface and the xterm canvas still matches its
+ * container. Redefining `--frame` rather than layering an overlay means
+ * `bg-frame` and the borderless-chrome `#root` both follow automatically. */
+html[data-vibrancy="on"],
+html[data-vibrancy="on"] body {
+  background: transparent;
+}
+html[data-vibrancy="on"] {
+  --frame: color-mix(in oklab, var(--card) 55%, transparent);
 }
 
 html[data-chrome="borderless"] .terax-bg-surface {
@@ -190,6 +254,9 @@ html[data-chrome="borderless"] #settings-root {
   overflow: hidden;
   border: 1px solid var(--border);
   background: var(--background);
+}
+html[data-chrome="borderless"] #root {
+  background: var(--frame);
 }
 
 /*
@@ -315,6 +382,35 @@ html *::-webkit-scrollbar {
   width: 0;
   height: 0;
   display: none;
+}
+
+.terax-code-editor .cm-scroller {
+  margin-right: -4px;
+  scrollbar-width: thin !important;
+  scrollbar-color: color-mix(in srgb, var(--foreground) 18%, transparent)
+    transparent !important;
+}
+.terax-code-editor .cm-scroller::-webkit-scrollbar {
+  width: 7px !important;
+  height: 7px !important;
+  display: block !important;
+}
+.terax-code-editor .cm-scroller::-webkit-scrollbar-track,
+.terax-code-editor .cm-scroller::-webkit-scrollbar-corner {
+  background: transparent;
+}
+.terax-code-editor .cm-scroller::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 18%, transparent);
+  background-clip: padding-box;
+}
+.terax-code-editor .cm-scroller::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(
+    in srgb,
+    var(--foreground) 30%,
+    transparent
+  );
 }
 
 /* Motion tokens. Reduced-motion zeroes the durations as a global snap. */

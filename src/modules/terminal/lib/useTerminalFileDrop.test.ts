@@ -28,9 +28,27 @@ describe("createTerminalPathDropTarget", () => {
       setTarget,
     });
 
-    expect(target.dropPath("/repo/My File.ts", 40, 50)).toBe(true);
+    expect(target.dropPath(["/repo/My File.ts"], 40, 50)).toBe(true);
     expect(setTarget).toHaveBeenCalledWith(null);
     expect(paste).toHaveBeenCalledWith(11, "'/repo/My File.ts' ");
+  });
+
+  it("pastes multiple dropped paths quoted", () => {
+    const paste = vi.fn(() => true);
+    const setTarget = vi.fn();
+    const target = createTerminalPathDropTarget({
+      leafIdAtPoint: () => 11,
+      paste,
+      setTarget,
+    });
+
+    expect(
+      target.dropPath(["/repo/a.ts", "/repo/b file.ts"], 40, 50),
+    ).toBe(true);
+    expect(paste).toHaveBeenCalledWith(
+      11,
+      "/repo/a.ts '/repo/b file.ts' ",
+    );
   });
 
   it("clears stale state when a drop misses every terminal", () => {
@@ -42,7 +60,7 @@ describe("createTerminalPathDropTarget", () => {
       setTarget,
     });
 
-    expect(target.dropPath("/repo/file.ts", 1, 2)).toBe(false);
+    expect(target.dropPath(["/repo/file.ts"], 1, 2)).toBe(false);
     expect(setTarget).toHaveBeenCalledWith(null);
     expect(paste).not.toHaveBeenCalled();
   });

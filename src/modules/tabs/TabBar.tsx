@@ -714,7 +714,10 @@ export function TabIcon({ tab }: { tab: Tab }) {
       />
     );
   }
-  if (agentStatus.state === "working" && agentStatus.agent) {
+  if (
+    (agentStatus.state === "working" || agentStatus.state === "idle") &&
+    agentStatus.agent
+  ) {
     return (
       <AgentIcon agent={agentStatus.agent} size={14} className="shrink-0" />
     );
