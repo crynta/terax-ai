@@ -43,6 +43,8 @@ export type ShortcutId =
   | "ai.toggle"
   | "ai.toggleMini"
   | "ai.askSelection"
+  | "voice.toggle"
+  | "voice.cancel"
   | "agent.focusAttention"
   | "settings.open"
   | "sidebar.toggle"
@@ -272,6 +274,18 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Toggle AI agent",
     group: "AI",
     defaultBindings: [{ [MOD_PROP]: true, key: "i" }],
+  },
+  {
+    id: "voice.toggle",
+    label: "Toggle voice dictation",
+    group: "AI",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "m" }],
+  },
+  {
+    id: "voice.cancel",
+    label: "Cancel voice dictation",
+    group: "AI",
+    defaultBindings: [],
   },
   {
     id: "ai.toggleMini",

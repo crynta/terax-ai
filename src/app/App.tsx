@@ -106,6 +106,7 @@ import { UpdaterDialog } from "@/modules/updater";
 import {
   usePushToTalk,
   useVoiceController,
+  useVoiceStore,
   VoiceHud,
 } from "@/modules/voice";
 import {
@@ -967,6 +968,8 @@ export default function App() {
         toggleMini();
       },
       "ai.askSelection": onAskFromSelection,
+      "voice.toggle": () => useVoiceStore.getState().toggle(),
+      "voice.cancel": () => useVoiceStore.getState().requestCancel(),
       "agent.focusAttention": () => {
         const t = nextAttentionTarget();
         if (t) activateAgentTarget(t.tabId, t.leafId);
@@ -1305,6 +1308,8 @@ export default function App() {
             toggleHiddenFiles,
             toggleAi: togglePanelAndFocus,
             askAiSelection: askFromSelection,
+            toggleVoice: () => useVoiceStore.getState().toggle(),
+            cancelVoice: () => useVoiceStore.getState().requestCancel(),
             openSettings: () => void openSettingsWindow(),
             openKeyboardShortcuts: () => void openSettingsWindow("shortcuts"),
             spaces: useSpaces.getState().spaces,
