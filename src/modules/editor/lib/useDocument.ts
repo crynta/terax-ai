@@ -188,6 +188,9 @@ export function useDocument({ path, onDirtyChange }: Options) {
         options?.force === true || takeForceReload(path);
       if (!shouldProceedReload(dirtyRef.current, { force })) return false;
       if (force) {
+        // Stop pending autosave so it cannot write discarded bufferRef back
+        // after we clear dirty for the force path (#1251 / CodeRabbit).
+        clearAutoSaveTimer();
         // Drop dirty immediately so in-flight checks and the UI clear; the
         // disk read then replaces the discarded buffer content.
         dirtyRef.current = false;
@@ -201,11 +204,18 @@ export function useDocument({ path, onDirtyChange }: Options) {
           adoptRead(res, !force);
         })
         // Transient failures (e.g. ENOENT mid atomic-rename) must not replace
-        // a healthy buffer with an error screen.
-        .catch((e) => console.warn("[editor] reload failed", path, e));
+        // a healthy buffer with an error screen. If force cleared dirty but
+        // the read failed, restore dirty so discarded edits stay warnable.
+        .catch((e) => {
+          console.warn("[editor] reload failed", path, e);
+          if (force && bufferRef.current !== savedRef.current) {
+            dirtyRef.current = true;
+            setDirty(true);
+          }
+        });
       return true;
     },
-    [readFromDisk, adoptRead, path],
+    [readFromDisk, adoptRead, path, clearAutoSaveTimer],
   );
 
   const save = useCallback(async (): Promise<boolean> => {
