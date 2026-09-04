@@ -7,8 +7,19 @@ export type EditorForceReloadDetail = {
   paths: string[];
 };
 
+/** Paths that must force-reload on the next reload() call (even if dirty). */
+const pendingForcePaths = new Set<string>();
+
 export function normalizeEditorPath(path: string): string {
   return path.replace(/\\/g, "/");
+}
+
+/** True once: marks this path for a dirty-bypassing reload (used by useDocument). */
+export function takeForceReload(path: string): boolean {
+  const normalized = normalizeEditorPath(path);
+  if (!pendingForcePaths.has(normalized)) return false;
+  pendingForcePaths.delete(normalized);
+  return true;
 }
 
 /** Dispatch a window event listing paths that must reload from disk
@@ -20,6 +31,7 @@ export function notifyEditorForceReload(paths: readonly string[]): void {
     ),
   ];
   if (normalized.length === 0) return;
+  for (const path of normalized) pendingForcePaths.add(path);
   window.dispatchEvent(
     new CustomEvent<EditorForceReloadDetail>(EDITOR_FORCE_RELOAD_EVENT, {
       detail: { paths: normalized },
@@ -40,4 +52,9 @@ export function editorTabIdsForPaths(
     if (want.has(normalizeEditorPath(tab.path))) ids.push(tab.id);
   }
   return ids;
+}
+
+/** Test helper: clear pending force paths between cases. */
+export function clearPendingForceReloads(): void {
+  pendingForcePaths.clear();
 }
