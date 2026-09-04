@@ -110,13 +110,22 @@ export function useSpacesBoot({
         });
         let spacesForHydrate = spaces;
         if (failed.size > 0) {
-          fixBrokenCwds(restored, failed, fallback);
-          spacesForHydrate = fixBrokenSpaceRoots(spaces, failed, fallback);
+          // Prefer a fallback that actually authorizes; never persist a dead launch cwd.
+          let safeFallback: string | null = null;
+          for (const candidate of [launchCwd, restoredHome, home]) {
+            if (!candidate || failed.has(candidate)) continue;
+            try {
+              await native.workspaceAuthorize(candidate);
+              safeFallback = candidate;
+              break;
+            } catch {
+              failed.add(candidate);
+            }
+          }
+          fixBrokenCwds(restored, failed, safeFallback);
+          spacesForHydrate = fixBrokenSpaceRoots(spaces, failed, safeFallback);
           if (spacesForHydrate !== spaces) {
             await saveSpacesList(spacesForHydrate);
-          }
-          if (fallback) {
-            await native.workspaceAuthorize(fallback).catch(() => undefined);
           }
         }
 
