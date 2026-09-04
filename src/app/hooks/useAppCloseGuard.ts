@@ -1,5 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
+import { IS_MAC } from "@/lib/platform";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { Tab } from "@/modules/tabs";
 import { leafHasForegroundProcess, leafIds } from "@/modules/terminal";
@@ -29,7 +30,7 @@ export function canOptOutOfAppClosePrompt(blocker: AppCloseBlocker): boolean {
 
 export function useAppCloseGuard(
   tabsRef: RefObject<Tab[]>,
-  onCloseActiveTab: () => void,
+  onCloseActiveTab?: () => void,
 ) {
   const [pendingAppClose, setPendingAppClose] =
     useState<AppCloseBlocker | null>(null);
@@ -53,7 +54,23 @@ export function useAppCloseGuard(
             tabsRef.current.length,
           )
         ) {
-          onCloseActiveTabRef.current();
+          const closeTab = onCloseActiveTabRef.current;
+          if (closeTab) {
+            closeTab();
+            return;
+          }
+          // App may still call useAppCloseGuard(tabsRef) with one arg; replay
+          // the tab.close chord so the existing shortcut path closes the tab.
+          window.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key: "w",
+              code: "KeyW",
+              metaKey: IS_MAC,
+              ctrlKey: !IS_MAC,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
           return;
         }
         // Opting out skips the per-leaf IPC entirely; it never relaxes the
