@@ -19,13 +19,17 @@ export function absoluteEditorPaths(
   repoRoot: string,
   paths: readonly string[],
 ): string[] {
-  const root = normalizeEditorPath(repoRoot).replace(/\/$/, "");
+  const normalizedRoot = normalizeEditorPath(repoRoot);
+  const root =
+    normalizedRoot === "/" ? "/" : normalizedRoot.replace(/\/$/, "");
   const out: string[] = [];
   for (const raw of paths) {
     const path = normalizeEditorPath(raw);
     if (!path) continue;
     if (path.startsWith("/") || /^[A-Za-z]:\//.test(path)) {
       out.push(path);
+    } else if (root === "/") {
+      out.push(`/${path}`);
     } else if (root) {
       out.push(`${root}/${path}`);
     } else {
