@@ -6,11 +6,16 @@
  * cleanly without racing sendAutomaticallyWhen via addToolApprovalResponse.
  *
  * See: https://github.com/crynta/terax-ai/issues/514
+ *
+ * Uses `import type` only from `ai` so this helper stays out of the eager
+ * startup graph (see src/app/eager-budget.test.ts).
  */
 
-import { isToolUIPart, type UIMessage } from "ai";
+import type { UIMessage } from "ai";
 
 export const FOLLOW_UP_DENY_REASON = "Superseded by follow-up prompt";
+
+type MessagePart = UIMessage["parts"][number];
 
 function hasApprovalId(
   approval: unknown,
@@ -20,6 +25,26 @@ function hasApprovalId(
     approval !== null &&
     typeof (approval as { id?: unknown }).id === "string" &&
     (approval as { id: string }).id.length > 0
+  );
+}
+
+/** Local stand-in for isToolUIPart — avoids a runtime `ai` import. */
+function isToolPart(
+  part: MessagePart,
+): part is MessagePart & {
+  type: string;
+  state?: string;
+  toolCallId?: string;
+  input?: unknown;
+  approval?: unknown;
+} {
+  return (
+    typeof part === "object" &&
+    part !== null &&
+    "type" in part &&
+    typeof (part as { type: unknown }).type === "string" &&
+    ((part as { type: string }).type.startsWith("tool-") ||
+      (part as { type: string }).type === "dynamic-tool")
   );
 }
 
@@ -37,7 +62,7 @@ export function denyPendingToolApprovals(
   for (const m of messages) {
     if (m.role !== "assistant") continue;
     m.parts = m.parts.map((part) => {
-      if (!isToolUIPart(part)) return part;
+      if (!isToolPart(part)) return part;
       if (part.state !== "approval-requested") return part;
       if (!hasApprovalId(part.approval)) return part;
       if (typeof part.toolCallId !== "string" || part.toolCallId.length === 0) {
@@ -65,7 +90,7 @@ export function listPendingApprovalIds(messages: UIMessage[]): string[] {
   for (const m of messages) {
     if (m.role !== "assistant") continue;
     for (const part of m.parts) {
-      if (!isToolUIPart(part)) continue;
+      if (!isToolPart(part)) continue;
       if (part.state !== "approval-requested") continue;
       if (!hasApprovalId(part.approval)) continue;
       ids.push(part.approval.id);
