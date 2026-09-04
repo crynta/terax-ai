@@ -19,6 +19,7 @@ export function MarkdownLink({
     if (event.defaultPrevented || !href || !isExternalUrl(href)) return;
 
     event.preventDefault();
+    event.stopPropagation();
     void openExternalUrl(href, onSettled);
   };
 
@@ -27,8 +28,8 @@ export function MarkdownLink({
       {...props}
       href={href}
       onClick={handleClick}
+      onAuxClick={handleClick}
       rel="noreferrer"
-      target="_blank"
     >
       {children}
     </a>
