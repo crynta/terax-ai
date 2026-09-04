@@ -66,23 +66,17 @@ export function useWhisperRecording({
 
   const sttOptions: SttOptions = { groqSttModel, whispercppBaseURL };
 
-  const latestRef = useRef({
+  const latest = {
     apiKeys,
     sttProvider,
     sttOptions,
     supported,
     hasKey,
     onResult,
-  });
+  };
+  const latestRef = useRef(latest);
   useEffect(() => {
-    latestRef.current = {
-      apiKeys,
-      sttProvider,
-      sttOptions,
-      supported,
-      hasKey,
-      onResult,
-    };
+    latestRef.current = latest;
   });
 
   const setPhase = useCallback((next: State) => {

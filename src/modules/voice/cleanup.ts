@@ -17,30 +17,20 @@ export function normalizeTranscript(raw: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-export function shouldSkipCleanup(
-  text: string,
-  maxChars: number = CLEANUP_MAX_CHARS,
-): boolean {
-  return text.length > maxChars;
+export function shouldSkipCleanup(text: string): boolean {
+  return text.length > CLEANUP_MAX_CHARS;
 }
 
-export function cleanupOutputTokens(
-  text: string,
-  cap: number = CLEANUP_OUTPUT_TOKEN_CAP,
-): number {
-  return Math.min(cap, Math.ceil(text.length / 3) + 256);
+export function cleanupOutputTokens(text: string): number {
+  return Math.min(CLEANUP_OUTPUT_TOKEN_CAP, Math.ceil(text.length / 3) + 256);
 }
 
-export function keepsFullTranscript(
-  original: string,
-  cleaned: string,
-  minRetention: number = CLEANUP_MIN_RETENTION,
-): boolean {
+export function keepsFullTranscript(original: string, cleaned: string): boolean {
   const kept = cleaned.trim();
   if (!kept) return false;
   const source = original.trim();
   if (!source) return false;
-  return kept.length >= Math.floor(source.length * minRetention);
+  return kept.length >= Math.floor(source.length * CLEANUP_MIN_RETENTION);
 }
 
 type Prefs = ReturnType<typeof usePreferencesStore.getState>;

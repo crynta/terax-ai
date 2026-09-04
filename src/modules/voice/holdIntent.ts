@@ -37,7 +37,6 @@ const go = (
 export function reduceHold(
   state: HoldState,
   event: HoldEvent,
-  tapThresholdMs: number = TAP_THRESHOLD_MS,
 ): HoldTransition {
   if (event.type === "cancel") {
     return state.phase === "idle" ? stay(state) : go("idle", "cancel");
@@ -51,7 +50,7 @@ export function reduceHold(
 
     case "holding":
       if (event.type === "up") {
-        return event.at - state.downAt >= tapThresholdMs
+        return event.at - state.downAt >= TAP_THRESHOLD_MS
           ? go("idle", "stop")
           : go("latched", "none");
       }
@@ -77,12 +76,8 @@ export function reduceHold(
   }
 }
 
-export function holdTimeoutMs(
-  phase: HoldPhase,
-  holdMaxMs: number = HOLD_MAX_MS,
-  latchMaxMs: number = LATCH_MAX_MS,
-): number | null {
-  if (phase === "holding") return holdMaxMs;
-  if (phase === "latched") return latchMaxMs;
+export function holdTimeoutMs(phase: HoldPhase): number | null {
+  if (phase === "holding") return HOLD_MAX_MS;
+  if (phase === "latched") return LATCH_MAX_MS;
   return null;
 }
