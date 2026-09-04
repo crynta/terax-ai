@@ -10,7 +10,9 @@ export function useVoiceController({
   resolveTarget: () => (text: string) => void;
 }) {
   const resolveRef = useRef(resolveTarget);
-  resolveRef.current = resolveTarget;
+  useEffect(() => {
+    resolveRef.current = resolveTarget;
+  });
 
   const onResult = useCallback(async (raw: string) => {
     const apply = resolveRef.current();
@@ -27,24 +29,24 @@ export function useVoiceController({
 
   const voice = useWhisperRecording({ onResult });
 
-  const voiceRef = useRef(voice);
-  voiceRef.current = voice;
-
   const bindImpl = useVoiceStore((s) => s.bindImpl);
   const setStatus = useVoiceStore((s) => s.setStatus);
 
+  const { start, stop, cancel, state, supported, hasKey } = voice;
+
   useEffect(() => {
-    setStatus(voice.state);
-  }, [voice.state, setStatus]);
+    setStatus(state);
+  }, [state, setStatus]);
 
   useEffect(() => {
     bindImpl({
-      start: () => void voiceRef.current.start(),
-      stop: () => voiceRef.current.stop(),
-      supported: voice.supported,
-      hasKey: voice.hasKey,
+      start: () => void start(),
+      stop,
+      cancel,
+      supported,
+      hasKey,
     });
-  }, [bindImpl, voice.supported, voice.hasKey]);
+  }, [bindImpl, start, stop, cancel, supported, hasKey]);
 
   return voice;
 }

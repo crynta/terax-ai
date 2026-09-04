@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { VoiceHoldMods } from "@/modules/settings/store";
@@ -6,7 +7,7 @@ import { useVoiceStore } from "./voiceStore";
 
 const MODIFIER_KEYS = new Set(["Control", "Alt", "Shift", "Meta"]);
 
-function modsHeld(e: KeyboardEvent, mods: VoiceHoldMods): boolean {
+export function modsHeld(e: KeyboardEvent, mods: VoiceHoldMods): boolean {
   const any = !!(mods.ctrl || mods.alt || mods.shift || mods.meta);
   return (
     any &&
@@ -20,11 +21,37 @@ function modsHeld(e: KeyboardEvent, mods: VoiceHoldMods): boolean {
 export function usePushToTalk() {
   const enabled = usePreferencesStore((s) => s.voiceHoldEnabled);
   const useFn = usePreferencesStore((s) => s.voiceHoldUseFn);
-  const startedByHold = useRef(false);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.repeat) return;
+      if (useVoiceStore.getState().status === "idle") return;
+      e.preventDefault();
+      e.stopPropagation();
+      useVoiceStore.getState().requestCancel();
+    };
+    const onBlur = () => {
+      if (useVoiceStore.getState().status === "idle") return;
+      useVoiceStore.getState().dispatchHold({ type: "blur" });
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") return;
+      onBlur();
+    };
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+    window.addEventListener("blur", onBlur);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, { capture: true });
+      window.removeEventListener("blur", onBlur);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
 
   useEffect(() => {
     if (!enabled || !useFn) return;
     let active = true;
+    void invoke("voice_set_fn_monitor", { enabled: true });
     let unlistenDown: UnlistenFn | undefined;
     let unlistenUp: UnlistenFn | undefined;
     const keep = (set: (u: UnlistenFn) => void) => (u: UnlistenFn) => {
@@ -32,21 +59,22 @@ export function usePushToTalk() {
       else u();
     };
     void listen("voice://fn-down", () => {
-      if (useVoiceStore.getState().status === "idle") {
-        startedByHold.current = true;
-        useVoiceStore.getState().start();
-      }
+      useVoiceStore.getState().dispatchHold({
+        type: "down",
+        at: performance.now(),
+      });
     }).then(keep((u) => (unlistenDown = u)));
     void listen("voice://fn-up", () => {
-      if (startedByHold.current) {
-        startedByHold.current = false;
-        useVoiceStore.getState().stop();
-      }
+      useVoiceStore.getState().dispatchHold({
+        type: "up",
+        at: performance.now(),
+      });
     }).then(keep((u) => (unlistenUp = u)));
     return () => {
       active = false;
       unlistenDown?.();
       unlistenUp?.();
+      void invoke("voice_set_fn_monitor", { enabled: false });
     };
   }, [enabled, useFn]);
 
@@ -54,21 +82,18 @@ export function usePushToTalk() {
     if (!enabled || useFn) return;
     const onDown = (e: KeyboardEvent) => {
       if (e.repeat || !MODIFIER_KEYS.has(e.key)) return;
-      const mods = usePreferencesStore.getState().voiceHoldMods;
-      if (modsHeld(e, mods) && useVoiceStore.getState().status === "idle") {
-        startedByHold.current = true;
-        useVoiceStore.getState().start();
-      }
+      if (!modsHeld(e, usePreferencesStore.getState().voiceHoldMods)) return;
+      useVoiceStore.getState().dispatchHold({
+        type: "down",
+        at: performance.now(),
+      });
     };
     const onUp = (e: KeyboardEvent) => {
       if (!MODIFIER_KEYS.has(e.key)) return;
-      if (
-        startedByHold.current &&
-        useVoiceStore.getState().status === "recording"
-      ) {
-        startedByHold.current = false;
-        useVoiceStore.getState().stop();
-      }
+      useVoiceStore.getState().dispatchHold({
+        type: "up",
+        at: performance.now(),
+      });
     };
     window.addEventListener("keydown", onDown, { capture: true });
     window.addEventListener("keyup", onUp, { capture: true });
