@@ -32,6 +32,13 @@ describe("absoluteEditorPaths", () => {
       "C:/x/y.ts",
     ]);
   });
+
+  it("preserves POSIX root when joining relative paths", () => {
+    expect(absoluteEditorPaths("/", ["src/main.ts", "a.ts"])).toEqual([
+      "/src/main.ts",
+      "/a.ts",
+    ]);
+  });
 });
 
 describe("shouldProceedReload", () => {
