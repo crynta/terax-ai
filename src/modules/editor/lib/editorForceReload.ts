@@ -39,16 +39,17 @@ export function notifyEditorForceReload(paths: readonly string[]): void {
   );
 }
 
-/** Editor tab ids whose path is in the discarded set. */
+/** Editor tab ids whose path is in the discarded set.
+ * `path` is optional so callers can pass the full Tab union. */
 export function editorTabIdsForPaths(
-  tabs: ReadonlyArray<{ id: number; kind: string; path: string }>,
+  tabs: ReadonlyArray<{ id: number; kind: string; path?: string }>,
   paths: readonly string[],
 ): number[] {
   const want = new Set(paths.map(normalizeEditorPath));
   if (want.size === 0) return [];
   const ids: number[] = [];
   for (const tab of tabs) {
-    if (tab.kind !== "editor") continue;
+    if (tab.kind !== "editor" || tab.path == null) continue;
     if (want.has(normalizeEditorPath(tab.path))) ids.push(tab.id);
   }
   return ids;
