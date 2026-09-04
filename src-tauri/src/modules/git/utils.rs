@@ -26,37 +26,45 @@ fn normalize_git_path(path: &str) -> String {
     path.replace('\\', "/")
 }
 
-/// Normalize a path for containment checks using the same rules as
-/// `crate::modules::fs::strip_verbatim` (always, so prefixed vs plain drive
-/// mismatches can be unit-tested on any host).
-fn normalize_for_containment(p: &Path) -> String {
-    let s = p.to_string_lossy();
-    // Build Windows verbatim prefixes at runtime (matches fs::strip_verbatim).
-    let q = '?';
-    let verbatim_unc = format!("\\\\{q}\\UNC\\");
-    let verbatim = format!("\\\\{q}\\");
-    let verbatim_fwd = format!("//{q}/");
-    let stripped = if let Some(rest) = s.strip_prefix(verbatim_unc.as_str()) {
-        format!("\\\\{rest}")
-    } else if let Some(rest) = s.strip_prefix(verbatim.as_str()) {
+/// Strip Windows verbatim prefixes and normalize separators for containment.
+/// Pure so Windows prefix-mismatch cases stay unit-testable on any host.
+/// Must not be used for real Unix path containment (backslashes are legal names).
+fn strip_verbatim_for_containment(s: &str) -> String {
+    let stripped = if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{rest}")
+    } else if let Some(rest) = s.strip_prefix(r"\\?\") {
         rest.to_string()
-    } else if let Some(rest) = s.strip_prefix(verbatim_fwd.as_str()) {
+    } else if let Some(rest) = s.strip_prefix(r"//?/") {
         rest.to_string()
     } else {
-        s.into_owned()
+        s.to_string()
     };
     stripped.replace('\\', "/")
 }
 
-/// True if `candidate` is inside (or equal to) `repo_root` after stripping
-/// Windows verbatim prefixes. Fixes Select-All staging of deleted paths when
-/// `canonicalize` returns a prefixed path while `repo_root` is unprefixed (#814).
-fn path_is_under(repo_root: &Path, candidate: &Path) -> bool {
-    let root = normalize_for_containment(repo_root);
-    let cand = normalize_for_containment(candidate);
+/// Windows string containment after verbatim-prefix strip (testable on any host).
+fn windows_path_is_under(repo_root: &str, candidate: &str) -> bool {
+    let root = strip_verbatim_for_containment(repo_root);
+    let cand = strip_verbatim_for_containment(candidate);
     Path::new(&cand).starts_with(Path::new(&root))
 }
 
+/// True if `candidate` is inside (or equal to) `repo_root`.
+/// On Windows, strips `\\?\` / `//?/` so canonicalize vs plain roots still match (#814).
+/// On Unix/macOS, uses native `Path` containment and never rewrites backslashes.
+fn path_is_under(repo_root: &Path, candidate: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        windows_path_is_under(
+            &repo_root.to_string_lossy(),
+            &candidate.to_string_lossy(),
+        )
+    }
+    #[cfg(not(windows))]
+    {
+        candidate.starts_with(repo_root)
+    }
+}
 
 pub fn canonical_dir(
     registry: &WorkspaceRegistry,
@@ -258,54 +266,59 @@ mod tests {
     }
 
     #[test]
-    fn path_is_under_ignores_windows_verbatim_prefix_mismatch() {
-        let q = '?';
+    fn windows_path_is_under_ignores_verbatim_prefix_mismatch() {
         // Simulate canonicalize returning a prefixed path while repo_root is plain.
-        let root = PathBuf::from(format!("C:\\Users\\dev\\project"));
-        let prefixed = PathBuf::from(format!("\\\\{q}\\C:\\Users\\dev\\project\\src\\gone.rs"));
-        assert!(path_is_under(&root, &prefixed));
-
+        assert!(windows_path_is_under(
+            r"C:\Users\dev\project",
+            r"\\?\C:\Users\dev\project\src\gone.rs",
+        ));
         // Reverse: root prefixed, candidate plain.
-        let root_prefixed = PathBuf::from(format!("\\\\{q}\\C:\\Users\\dev\\project"));
-        let plain = PathBuf::from(format!("C:\\Users\\dev\\project\\deleted.txt"));
-        assert!(path_is_under(&root_prefixed, &plain));
-
-        assert!(path_is_under(&root, &root_prefixed));
-        assert!(path_is_under(&root_prefixed, &root));
+        assert!(windows_path_is_under(
+            r"\\?\C:\Users\dev\project",
+            r"C:\Users\dev\project\deleted.txt",
+        ));
+        assert!(windows_path_is_under(
+            r"C:\Users\dev\project",
+            r"\\?\C:\Users\dev\project",
+        ));
+        assert!(windows_path_is_under(
+            r"\\?\C:\Users\dev\project",
+            r"C:\Users\dev\project",
+        ));
     }
 
     #[test]
-    fn path_is_under_rejects_outside_despite_prefix() {
-        let q = '?';
-        let root = PathBuf::from(format!("C:\\Users\\dev\\project"));
-        let outside = PathBuf::from(format!("\\\\{q}\\C:\\Users\\dev\\other\\file.rs"));
-        assert!(!path_is_under(&root, &outside));
-
-        let sibling = PathBuf::from(format!("\\\\{q}\\C:\\Users\\dev\\project-evil\\x"));
-        assert!(!path_is_under(&root, &sibling));
+    fn windows_path_is_under_rejects_outside_despite_prefix() {
+        assert!(!windows_path_is_under(
+            r"C:\Users\dev\project",
+            r"\\?\C:\Users\dev\other\file.rs",
+        ));
+        assert!(!windows_path_is_under(
+            r"C:\Users\dev\project",
+            r"\\?\C:\Users\dev\project-evil\x",
+        ));
     }
 
     #[test]
-    fn path_is_under_handles_forward_slash_verbatim() {
-        let q = '?';
-        let root = PathBuf::from("C:/Users/dev/project");
-        let prefixed = PathBuf::from(format!("//{q}/C:/Users/dev/project/src/a.rs"));
-        assert!(path_is_under(&root, &prefixed));
+    fn windows_path_is_under_handles_forward_slash_verbatim() {
+        assert!(windows_path_is_under(
+            "C:/Users/dev/project",
+            "//?/C:/Users/dev/project/src/a.rs",
+        ));
     }
 
     #[test]
-    fn normalize_for_containment_matches_fs_strip_verbatim_rules() {
-        let q = '?';
+    fn strip_verbatim_for_containment_matches_fs_rules() {
         assert_eq!(
-            normalize_for_containment(Path::new(&format!("\\\\{q}\\C:\\Users\\foo"))),
+            strip_verbatim_for_containment(r"\\?\C:\Users\foo"),
             "C:/Users/foo"
         );
         assert_eq!(
-            normalize_for_containment(Path::new(&format!("C:\\Users\\foo"))),
+            strip_verbatim_for_containment(r"C:\Users\foo"),
             "C:/Users/foo"
         );
         assert_eq!(
-            normalize_for_containment(Path::new(&format!("\\\\{q}\\UNC\\server\\share\\dir"))),
+            strip_verbatim_for_containment(r"\\?\UNC\server\share\dir"),
             "//server/share/dir"
         );
     }
