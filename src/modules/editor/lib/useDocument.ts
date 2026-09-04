@@ -4,6 +4,7 @@ import { currentWorkspaceEnv } from "@/modules/workspace";
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { takeForceReload } from "./editorForceReload";
 import { detectEol, type Eol, normalizeToLf, restoreEol } from "./eol";
 
 type ReadResult =
@@ -183,8 +184,9 @@ export function useDocument({ path, onDirtyChange }: Options) {
   // external fs events. Force is reserved for intentional discard (#988).
   const reload = useCallback(
     (options?: ReloadOptions): boolean => {
-      const force = options?.force === true;
-      if (!shouldProceedReload(dirtyRef.current, options)) return false;
+      const force =
+        options?.force === true || takeForceReload(path);
+      if (!shouldProceedReload(dirtyRef.current, { force })) return false;
       if (force) {
         // Drop dirty immediately so in-flight checks and the UI clear; the
         // disk read then replaces the discarded buffer content.
