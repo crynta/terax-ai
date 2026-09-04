@@ -40,36 +40,33 @@ export function useWorkspaceCwd(
       : spaceTabs.find((t) => t.id === activeTab.id);
   }, [activeTab, resolvedSpaceId, spaceTabs]);
 
-  const lastTerminalCwd = useRef<string | null>(null);
-  const lastSpaceId = useRef(resolvedSpaceId);
-
-  if (lastSpaceId.current !== resolvedSpaceId) {
-    lastSpaceId.current = resolvedSpaceId;
-    lastTerminalCwd.current = null;
-  }
+  // Space-keyed cache — never mutate refs during render (React may discard).
+  const cwdBySpaceRef = useRef(new Map<string, string>());
 
   useEffect(() => {
     if (spaceActiveTab?.kind === "terminal" && spaceActiveTab.cwd) {
-      lastTerminalCwd.current = spaceActiveTab.cwd;
+      cwdBySpaceRef.current.set(resolvedSpaceId, spaceActiveTab.cwd);
     }
-  }, [spaceActiveTab]);
+  }, [spaceActiveTab, resolvedSpaceId]);
 
   const explorerRoot = useMemo<string | null>(() => {
     if (spaceActiveTab?.kind === "terminal" && spaceActiveTab.cwd) {
       return spaceActiveTab.cwd;
     }
-    if (lastTerminalCwd.current) return lastTerminalCwd.current;
+    const cached = cwdBySpaceRef.current.get(resolvedSpaceId);
+    if (cached) return cached;
     const anyTerm = spaceTabs.find((t) => t.kind === "terminal" && t.cwd);
     if (anyTerm?.kind === "terminal" && anyTerm.cwd) return anyTerm.cwd;
     return resolvedSpaceRoot ?? home;
-  }, [spaceActiveTab, spaceTabs, home, resolvedSpaceRoot]);
+  }, [spaceActiveTab, spaceTabs, home, resolvedSpaceRoot, resolvedSpaceId]);
 
   const inheritedCwdForNewTab = useCallback((): string | undefined => {
     if (spaceActiveTab?.kind === "terminal" && spaceActiveTab.cwd) {
       return spaceActiveTab.cwd;
     }
-    return lastTerminalCwd.current ?? resolvedSpaceRoot ?? home ?? undefined;
-  }, [spaceActiveTab, home, resolvedSpaceRoot]);
+    const cached = cwdBySpaceRef.current.get(resolvedSpaceId);
+    return cached ?? resolvedSpaceRoot ?? home ?? undefined;
+  }, [spaceActiveTab, home, resolvedSpaceRoot, resolvedSpaceId]);
 
   return { explorerRoot, inheritedCwdForNewTab };
 }
