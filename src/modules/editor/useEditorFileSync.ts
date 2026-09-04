@@ -8,6 +8,11 @@ import type { Tab } from "@/modules/tabs";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { type RefObject, useEffect, useRef } from "react";
 import type { EditorPaneHandle } from "./EditorPane";
+import {
+  EDITOR_FORCE_RELOAD_EVENT,
+  editorTabIdsForPaths,
+  type EditorForceReloadDetail,
+} from "./lib/editorForceReload";
 
 type Params = {
   tabs: Tab[];
@@ -59,6 +64,23 @@ export function useEditorFileSync({ tabs, tabsRef, editorRefs }: Params) {
       );
     return () => {
       void unlistenPromise.then((un) => un());
+    };
+  }, [tabsRef, editorRefs]);
+
+  // After Source Control discard, buffers are still dirty with the discarded
+  // edits — a normal reload no-ops. Listen for the force-reload signal and
+  // re-read matching open editors from disk (#988).
+  useEffect(() => {
+    const onForceReload = (event: Event) => {
+      const detail = (event as CustomEvent<EditorForceReloadDetail>).detail;
+      if (!detail?.paths?.length) return;
+      for (const id of editorTabIdsForPaths(tabsRef.current, detail.paths)) {
+        editorRefs.current.get(id)?.reload({ force: true });
+      }
+    };
+    window.addEventListener(EDITOR_FORCE_RELOAD_EVENT, onForceReload);
+    return () => {
+      window.removeEventListener(EDITOR_FORCE_RELOAD_EVENT, onForceReload);
     };
   }, [tabsRef, editorRefs]);
 
