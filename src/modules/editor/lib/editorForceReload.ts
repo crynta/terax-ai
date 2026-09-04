@@ -14,12 +14,40 @@ export function normalizeEditorPath(path: string): string {
   return path.replace(/\\/g, "/");
 }
 
+/** Join repo-relative discard paths onto repoRoot for editor tab matching. */
+export function absoluteEditorPaths(
+  repoRoot: string,
+  paths: readonly string[],
+): string[] {
+  const root = normalizeEditorPath(repoRoot).replace(/\/$/, "");
+  const out: string[] = [];
+  for (const raw of paths) {
+    const path = normalizeEditorPath(raw);
+    if (!path) continue;
+    if (path.startsWith("/") || /^[A-Za-z]:\//.test(path)) {
+      out.push(path);
+    } else if (root) {
+      out.push(`${root}/${path}`);
+    } else {
+      out.push(path);
+    }
+  }
+  return out;
+}
+
 /** True once: marks this path for a dirty-bypassing reload (used by useDocument). */
 export function takeForceReload(path: string): boolean {
   const normalized = normalizeEditorPath(path);
   if (!pendingForcePaths.has(normalized)) return false;
   pendingForcePaths.delete(normalized);
   return true;
+}
+
+/** Re-arm force markers so each matching tab can consume one (sibling tabs). */
+export function armForceReload(paths: readonly string[]): void {
+  for (const path of paths.map(normalizeEditorPath).filter((p) => p.length > 0)) {
+    pendingForcePaths.add(path);
+  }
 }
 
 /** Dispatch a window event listing paths that must reload from disk
@@ -31,7 +59,7 @@ export function notifyEditorForceReload(paths: readonly string[]): void {
     ),
   ];
   if (normalized.length === 0) return;
-  for (const path of normalized) pendingForcePaths.add(path);
+  armForceReload(normalized);
   window.dispatchEvent(
     new CustomEvent<EditorForceReloadDetail>(EDITOR_FORCE_RELOAD_EVENT, {
       detail: { paths: normalized },
