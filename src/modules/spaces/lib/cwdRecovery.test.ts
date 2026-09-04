@@ -1,4 +1,4 @@
-import type { Tab } from "@/modules/tabs";
+import type { Tab, TerminalTab } from "@/modules/tabs";
 import type { PaneNode } from "@/modules/terminal/lib/panes";
 import { describe, expect, it } from "vitest";
 import {
@@ -16,7 +16,7 @@ function terminalTab(
   id: number,
   cwd: string | undefined,
   paneTree: PaneNode,
-): Tab {
+): TerminalTab {
   return {
     id,
     kind: "terminal",
@@ -25,7 +25,7 @@ function terminalTab(
     cwd,
     paneTree,
     activeLeafId: id,
-  } as Tab;
+  };
 }
 
 function space(over: Partial<SpaceMeta>): SpaceMeta {
@@ -67,7 +67,7 @@ describe("uniqueCwds", () => {
 
 describe("fixBrokenCwds", () => {
   it("rewrites broken tab and leaf cwds to the fallback", () => {
-    const tabs = [
+    const tabs: TerminalTab[] = [
       terminalTab(1, "/gone", leaf(10, "/gone")),
       terminalTab(2, "/ok", leaf(11, "/ok")),
     ];
@@ -78,7 +78,7 @@ describe("fixBrokenCwds", () => {
   });
 
   it("clears broken cwds when fallback is null", () => {
-    const tabs = [terminalTab(1, "/gone", leaf(10, "/gone"))];
+    const tabs: TerminalTab[] = [terminalTab(1, "/gone", leaf(10, "/gone"))];
     fixBrokenCwds(tabs, new Set(["/gone"]), null);
     expect(tabs[0].cwd).toBeUndefined();
     expect((tabs[0].paneTree as { cwd?: string }).cwd).toBeUndefined();
