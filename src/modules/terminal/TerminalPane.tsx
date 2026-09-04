@@ -73,6 +73,16 @@ export const TerminalPane = memo(
       return () => cancelAnimationFrame(id);
     }, [resolvedMode, activeTheme, session]);
 
+    useEffect(() => {
+      const node = containerRef.current;
+      if (!node) return;
+      const handleContextMenu = (event: MouseEvent) => {
+        if (session.shouldSuppressContextMenu()) event.preventDefault();
+      };
+      node.addEventListener("contextmenu", handleContextMenu);
+      return () => node.removeEventListener("contextmenu", handleContextMenu);
+    }, [session]);
+
     useImperativeHandle(
       ref,
       () => ({
