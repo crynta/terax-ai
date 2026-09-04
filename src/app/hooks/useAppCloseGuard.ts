@@ -3,6 +3,7 @@ import { type RefObject, useCallback, useEffect, useRef, useState } from "react"
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { Tab } from "@/modules/tabs";
 import { leafHasForegroundProcess, leafIds } from "@/modules/terminal";
+import { shouldTreatCloseAsTabClose } from "./closeFromPreview";
 
 async function anyTerminalBusy(tabs: Tab[]): Promise<boolean> {
   const leaves = tabs.flatMap((t) =>
@@ -26,10 +27,15 @@ export function canOptOutOfAppClosePrompt(blocker: AppCloseBlocker): boolean {
   return blocker.busyTerminal && blocker.dirtyEditors === 0;
 }
 
-export function useAppCloseGuard(tabsRef: RefObject<Tab[]>) {
+export function useAppCloseGuard(
+  tabsRef: RefObject<Tab[]>,
+  onCloseActiveTab: () => void,
+) {
   const [pendingAppClose, setPendingAppClose] =
     useState<AppCloseBlocker | null>(null);
   const forceClose = useRef(false);
+  const onCloseActiveTabRef = useRef(onCloseActiveTab);
+  onCloseActiveTabRef.current = onCloseActiveTab;
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -38,6 +44,18 @@ export function useAppCloseGuard(tabsRef: RefObject<Tab[]>) {
       .onCloseRequested(async (event) => {
         if (forceClose.current) return;
         event.preventDefault();
+        // Cmd/Ctrl+W inside a Preview iframe arrives as CloseRequested (WKWebView).
+        // Only remap when focus is in the preview frame — window X / File→Quit
+        // must still run the busy/dirty checks and quit.
+        if (
+          shouldTreatCloseAsTabClose(
+            document.activeElement,
+            tabsRef.current.length,
+          )
+        ) {
+          onCloseActiveTabRef.current();
+          return;
+        }
         // Opting out skips the per-leaf IPC entirely; it never relaxes the
         // unsaved-changes guard below.
         const busyTerminal =
