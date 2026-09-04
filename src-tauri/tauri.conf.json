@@ -11,6 +11,7 @@
     "removeUnusedCommands": true
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "Terax",
@@ -21,6 +22,7 @@
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "visible": false,
+        "transparent": true,
         "dragDropEnabled": true
       }
     ],

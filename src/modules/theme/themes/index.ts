@@ -14,9 +14,11 @@ import { solarized } from "./solarized";
 import { teraxDefault } from "./terax-default";
 import { tide } from "./tide";
 import { tokyoNight } from "./tokyo-night";
+import { xcode } from "./xcode";
 
 const BUILTIN: Theme[] = [
   teraxDefault,
+  xcode,
   claude,
   kanagawa,
   kanagawaDragon,

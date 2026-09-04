@@ -59,4 +59,11 @@ describe("testAgentOsNotification", () => {
     await expect(testAgentOsNotification()).resolves.toBe("requested");
     expect(sound.playAgentNotificationSound).toHaveBeenCalledOnce();
   });
+
+  it("keeps a native test silent when sound is disabled", async () => {
+    const { testAgentOsNotification } = await import("./notify");
+
+    await expect(testAgentOsNotification(false)).resolves.toBe("requested");
+    expect(sound.playAgentNotificationSound).not.toHaveBeenCalled();
+  });
 });

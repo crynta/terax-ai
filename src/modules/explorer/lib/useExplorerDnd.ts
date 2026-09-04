@@ -1,16 +1,25 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { excludeNestedSources } from "./batchMove";
 
 export type ExplorerPathDropTarget = {
   updateTarget: (clientX: number, clientY: number) => boolean;
-  dropPath: (path: string, clientX: number, clientY: number) => boolean;
+  dropPath: (paths: string[], clientX: number, clientY: number) => boolean;
   clearTarget: () => void;
 };
 
 type Options = {
   rootPath: string;
   isDir: (path: string) => boolean | undefined;
-  onMove: (from: string, toDir: string) => void;
+  onMove: (from: string[], toDir: string) => void;
+  getSelectedPaths: () => Set<string>;
+  collapseSelectionTo: (path: string) => void;
   pathDropTarget?: ExplorerPathDropTarget;
 };
 
@@ -22,7 +31,7 @@ function parentDir(path: string): string {
 }
 
 export function resolveExplorerMoveTarget(
-  source: string,
+  sources: string[],
   rootPath: string,
   hoveredPath: string | null,
   insideExplorer: boolean,
@@ -34,30 +43,29 @@ export function resolveExplorerMoveTarget(
       ? hoveredPath
       : parentDir(hoveredPath)
     : rootPath;
-  if (
-    target === source ||
-    target.startsWith(`${source}/`) ||
-    parentDir(source) === target
-  ) {
-    return null;
+  const allAlreadyInTarget = sources.every(
+    (source) => parentDir(source) === target,
+  );
+  if (allAlreadyInTarget) return null;
+  for (const source of sources) {
+    if (target === source || target.startsWith(`${source}/`)) return null;
   }
   return target;
 }
 
 export function finishExplorerDrag(
   commit: boolean,
-  source: string,
+  sources: string[],
   clientX: number,
   clientY: number,
   moveTarget: string | null,
   pathDropTarget: ExplorerPathDropTarget | undefined,
-  onMove: (from: string, toDir: string) => void,
+  onMove: (from: string[], toDir: string) => void,
 ): void {
   const handledByPathTarget =
-    commit &&
-    (pathDropTarget?.dropPath(source, clientX, clientY) ?? false);
+    commit && (pathDropTarget?.dropPath(sources, clientX, clientY) ?? false);
   if (commit && !handledByPathTarget && moveTarget) {
-    onMove(source, moveTarget);
+    onMove(sources, moveTarget);
   }
   pathDropTarget?.clearTarget();
 }
@@ -70,6 +78,8 @@ export function useExplorerDnd({
   rootPath,
   isDir,
   onMove,
+  getSelectedPaths,
+  collapseSelectionTo,
   pathDropTarget,
 }: Options) {
   const [dragLabel, setDragLabel] = useState<string | null>(null);
@@ -80,8 +90,34 @@ export function useExplorerDnd({
   const dropTargetRef = useRef<string | null>(null);
   const suppressClickRef = useRef(false);
   const cleanupRef = useRef<(() => void) | null>(null);
-  const optsRef = useRef({ rootPath, isDir, onMove, pathDropTarget });
-  optsRef.current = { rootPath, isDir, onMove, pathDropTarget };
+  const optsRef = useRef({
+    rootPath,
+    isDir,
+    onMove,
+    getSelectedPaths,
+    collapseSelectionTo,
+    pathDropTarget,
+  });
+  // Committed-state snapshot for the pointer listeners below (they attach
+  // once and read this ref on every move), so an in-flight drag can't pick up
+  // options from a render React later discards.
+  useLayoutEffect(() => {
+    optsRef.current = {
+      rootPath,
+      isDir,
+      onMove,
+      getSelectedPaths,
+      collapseSelectionTo,
+      pathDropTarget,
+    };
+  }, [
+    rootPath,
+    isDir,
+    onMove,
+    getSelectedPaths,
+    collapseSelectionTo,
+    pathDropTarget,
+  ]);
 
   const placeGhost = (x: number, y: number) => {
     lastPosRef.current = { x, y };
@@ -102,17 +138,30 @@ export function useExplorerDnd({
     const el = (e.target as HTMLElement).closest<HTMLElement>("[data-fs-path]");
     const source = el?.getAttribute("data-fs-path");
     if (!source) return;
-    const name = source.slice(source.lastIndexOf("/") + 1);
     const sx = e.clientX;
     const sy = e.clientY;
     let active = false;
+    // Decided at drag-activation (not pointerdown), so a plain click that never
+    // crosses the threshold never touches selection.
+    let sources: string[] = [source];
 
     const move = (ev: PointerEvent) => {
       if (!active) {
         if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < THRESHOLD) return;
         active = true;
         lastPosRef.current = { x: ev.clientX, y: ev.clientY };
-        setDragLabel(name);
+        const sel = optsRef.current.getSelectedPaths();
+        if (sel.has(source) && sel.size > 1) {
+          sources = excludeNestedSources([...sel]);
+        } else {
+          sources = [source];
+          optsRef.current.collapseSelectionTo(source);
+        }
+        setDragLabel(
+          sources.length > 1
+            ? `${sources.length} items`
+            : source.slice(source.lastIndexOf("/") + 1),
+        );
       }
       placeGhost(ev.clientX, ev.clientY);
       const { rootPath, isDir, pathDropTarget } = optsRef.current;
@@ -124,7 +173,7 @@ export function useExplorerDnd({
       const valid = terminalTargeted
         ? null
         : resolveExplorerMoveTarget(
-            source,
+            sources,
             rootPath,
             p ?? null,
             element?.closest("[data-explorer-drop]") != null,
@@ -147,7 +196,7 @@ export function useExplorerDnd({
       const { x, y } = lastPosRef.current;
       finishExplorerDrag(
         commit,
-        source,
+        sources,
         x,
         y,
         dropTargetRef.current,

@@ -116,7 +116,7 @@ export function Header({
     <div
       ref={rootRef}
       data-tauri-drag-region
-      className={`flex h-10 shrink-0 items-center gap-2 border-b border-border/60 bg-card select-none ${
+      className={`flex h-10 shrink-0 items-center gap-2 select-none ${
         IS_MAC ? "pr-2 pl-20" : "pr-0 pl-2"
       }`}
     >
@@ -149,9 +149,13 @@ export function Header({
         )}
       </div>
 
-      {!IS_MAC && <span className="mx-1 h-full w-px shrink-0 bg-border/70" />}
+      {!IS_MAC && (
+        <span className="mx-1.5 h-4 w-px shrink-0 rounded-full bg-border" />
+      )}
 
-      {IS_MAC && <span className="mr-1 h-full w-px shrink-0 bg-border/70" />}
+      {IS_MAC && (
+        <span className="mr-1.5 h-4 w-px shrink-0 rounded-full bg-border" />
+      )}
 
       <div
         className="flex min-w-0 flex-1 items-center gap-2"
