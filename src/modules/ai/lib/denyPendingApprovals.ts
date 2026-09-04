@@ -28,7 +28,7 @@ function hasApprovalId(
   );
 }
 
-/** Local stand-in for isToolUIPart — avoids a runtime `ai` import. */
+/** Local stand-in for isToolUIPart - avoids a runtime `ai` import. */
 function isToolPart(
   part: MessagePart,
 ): part is MessagePart & {
