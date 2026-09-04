@@ -592,6 +592,7 @@ export default function App() {
     scheduleFocusNewTerminalTab(tabId, {
       getTab: (id) => tabsRef.current.find((x) => x.id === id),
       getHandle: (leafId) => terminalRefs.current.get(leafId),
+      isActive: () => activeIdRef.current === tabId,
     });
   }, []);
 
