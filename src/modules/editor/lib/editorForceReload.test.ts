@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   EDITOR_FORCE_RELOAD_EVENT,
+  absoluteEditorPaths,
+  armForceReload,
   clearPendingForceReloads,
   editorTabIdsForPaths,
   normalizeEditorPath,
@@ -13,6 +15,22 @@ import { shouldProceedReload } from "./useDocument";
 describe("normalizeEditorPath", () => {
   it("normalizes Windows separators", () => {
     expect(normalizeEditorPath("C:\\repo\\main.go")).toBe("C:/repo/main.go");
+  });
+});
+
+describe("absoluteEditorPaths", () => {
+  it("joins repo-relative paths to the repo root", () => {
+    expect(absoluteEditorPaths("C:\\repo", ["src/a.ts", "b.ts"])).toEqual([
+      "C:/repo/src/a.ts",
+      "C:/repo/b.ts",
+    ]);
+  });
+
+  it("keeps already-absolute paths", () => {
+    expect(absoluteEditorPaths("/repo", ["/repo/a.ts", "C:\\x\\y.ts"])).toEqual([
+      "/repo/a.ts",
+      "C:/x/y.ts",
+    ]);
   });
 });
 
@@ -41,7 +59,11 @@ describe("editorTabIdsForPaths", () => {
   ];
 
   it("returns only matching editor tabs for discarded paths", () => {
-    expect(editorTabIdsForPaths(tabs, ["/repo/main.go"])).toEqual([1, 4]);
+    expect(editorTabIdsForPaths(tabs, ["/repo/main.go"])).toEqual([1]);
+  });
+
+  it("matches Windows-normalized absolute paths separately", () => {
+    expect(editorTabIdsForPaths(tabs, ["C:/repo/main.go"])).toEqual([4]);
   });
 
   it("leaves unrelated dirty editor tabs alone", () => {
@@ -84,5 +106,12 @@ describe("notifyEditorForceReload + takeForceReload", () => {
     expect(takeForceReload("/repo/main.go")).toBe(false);
     // unrelated path never marked
     expect(takeForceReload("/repo/other.go")).toBe(false);
+  });
+
+  it("armForceReload re-marks a path for sibling tabs", () => {
+    armForceReload(["/repo/main.go"]);
+    expect(takeForceReload("/repo/main.go")).toBe(true);
+    armForceReload(["/repo/main.go"]);
+    expect(takeForceReload("/repo/main.go")).toBe(true);
   });
 });
