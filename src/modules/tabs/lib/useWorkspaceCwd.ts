@@ -1,5 +1,6 @@
+import { useSpaces } from "@/modules/spaces";
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import type { Tab } from "./useTabs";
+import { DEFAULT_SPACE_ID, type Tab } from "./useTabs";
 
 type Result = {
   explorerRoot: string | null;
@@ -8,7 +9,9 @@ type Result = {
 
 /**
  * Explorer / source-control root for the *active space* only.
- * Passing the global tab list leaked lastTerminalCwd + tabs.find across spaces (#1159).
+ * Filtering the global tab list here stops lastTerminalCwd + tabs.find
+ * from leaking across spaces (#1159). Optional spaceId/spaceRoot args
+ * remain for tests / explicit overrides.
  */
 export function useWorkspaceCwd(
   activeTab: Tab | undefined,
@@ -17,35 +20,56 @@ export function useWorkspaceCwd(
   spaceId?: string | null,
   spaceRoot?: string | null,
 ): Result {
-  const lastTerminalCwd = useRef<string | null>(null);
-  const lastSpaceId = useRef(spaceId);
+  const storeSpaceId = useSpaces((s) => s.activeId);
+  const spaces = useSpaces((s) => s.spaces);
+  const resolvedSpaceId = spaceId ?? storeSpaceId ?? DEFAULT_SPACE_ID;
+  const resolvedSpaceRoot =
+    spaceRoot ??
+    spaces.find((s) => s.id === resolvedSpaceId)?.root ??
+    null;
 
-  if (lastSpaceId.current !== spaceId) {
-    lastSpaceId.current = spaceId;
+  const spaceTabs = useMemo(
+    () => tabs.filter((t) => t.spaceId === resolvedSpaceId),
+    [tabs, resolvedSpaceId],
+  );
+
+  const spaceActiveTab = useMemo(() => {
+    if (!activeTab) return undefined;
+    return activeTab.spaceId === resolvedSpaceId
+      ? activeTab
+      : spaceTabs.find((t) => t.id === activeTab.id);
+  }, [activeTab, resolvedSpaceId, spaceTabs]);
+
+  const lastTerminalCwd = useRef<string | null>(null);
+  const lastSpaceId = useRef(resolvedSpaceId);
+
+  if (lastSpaceId.current !== resolvedSpaceId) {
+    lastSpaceId.current = resolvedSpaceId;
     lastTerminalCwd.current = null;
   }
 
   useEffect(() => {
-    if (activeTab?.kind === "terminal" && activeTab.cwd) {
-      lastTerminalCwd.current = activeTab.cwd;
+    if (spaceActiveTab?.kind === "terminal" && spaceActiveTab.cwd) {
+      lastTerminalCwd.current = spaceActiveTab.cwd;
     }
-  }, [activeTab]);
+  }, [spaceActiveTab]);
 
   const explorerRoot = useMemo<string | null>(() => {
-    if (activeTab?.kind === "terminal" && activeTab.cwd) return activeTab.cwd;
+    if (spaceActiveTab?.kind === "terminal" && spaceActiveTab.cwd) {
+      return spaceActiveTab.cwd;
+    }
     if (lastTerminalCwd.current) return lastTerminalCwd.current;
-    const anyTerm = tabs.find((t) => t.kind === "terminal" && t.cwd);
+    const anyTerm = spaceTabs.find((t) => t.kind === "terminal" && t.cwd);
     if (anyTerm?.kind === "terminal" && anyTerm.cwd) return anyTerm.cwd;
-    return spaceRoot ?? home;
-  }, [activeTab, tabs, home, spaceRoot]);
+    return resolvedSpaceRoot ?? home;
+  }, [spaceActiveTab, spaceTabs, home, resolvedSpaceRoot]);
 
   const inheritedCwdForNewTab = useCallback((): string | undefined => {
-    if (activeTab?.kind === "terminal" && activeTab.cwd) return activeTab.cwd;
-    // Editor tabs inherit the last terminal's cwd (or workspace home), not
-    // the file's folder — opening a new terminal from a file shouldn't
-    // hijack the user's working directory context.
-    return lastTerminalCwd.current ?? spaceRoot ?? home ?? undefined;
-  }, [activeTab, home, spaceRoot]);
+    if (spaceActiveTab?.kind === "terminal" && spaceActiveTab.cwd) {
+      return spaceActiveTab.cwd;
+    }
+    return lastTerminalCwd.current ?? resolvedSpaceRoot ?? home ?? undefined;
+  }, [spaceActiveTab, home, resolvedSpaceRoot]);
 
   return { explorerRoot, inheritedCwdForNewTab };
 }
