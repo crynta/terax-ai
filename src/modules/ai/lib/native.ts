@@ -1,4 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
+import {
+  absoluteEditorPaths,
+  notifyEditorForceReload,
+} from "@/modules/editor/lib/editorForceReload";
 import { currentWorkspaceEnv } from "@/modules/workspace";
 
 export type ReadResult =
@@ -305,12 +309,21 @@ export const native = {
       paths,
       workspace: currentWorkspaceEnv(),
     }),
-  gitDiscard: (repoRoot: string, entries: GitDiscardEntry[]) =>
-    invoke<void>("git_discard", {
+  gitDiscard: async (repoRoot: string, entries: GitDiscardEntry[]) => {
+    await invoke<void>("git_discard", {
       repoRoot,
       entries,
       workspace: currentWorkspaceEnv(),
-    }),
+    });
+    // Open buffers stay dirty with discarded edits; force-reload them (#988).
+    // Resolve against repoRoot so relative status paths match absolute editor tabs.
+    notifyEditorForceReload(
+      absoluteEditorPaths(
+        repoRoot,
+        entries.map((entry) => entry.path),
+      ),
+    );
+  },
   gitCommit: (repoRoot: string, message: string) =>
     invoke<GitCommitResult>("git_commit", {
       repoRoot,
