@@ -6,12 +6,24 @@ type Result = {
   inheritedCwdForNewTab: () => string | undefined;
 };
 
+/**
+ * Explorer / source-control root for the *active space* only.
+ * Passing the global tab list leaked lastTerminalCwd + tabs.find across spaces (#1159).
+ */
 export function useWorkspaceCwd(
   activeTab: Tab | undefined,
   tabs: Tab[],
   home: string | null,
+  spaceId?: string | null,
+  spaceRoot?: string | null,
 ): Result {
   const lastTerminalCwd = useRef<string | null>(null);
+  const lastSpaceId = useRef(spaceId);
+
+  if (lastSpaceId.current !== spaceId) {
+    lastSpaceId.current = spaceId;
+    lastTerminalCwd.current = null;
+  }
 
   useEffect(() => {
     if (activeTab?.kind === "terminal" && activeTab.cwd) {
@@ -24,16 +36,16 @@ export function useWorkspaceCwd(
     if (lastTerminalCwd.current) return lastTerminalCwd.current;
     const anyTerm = tabs.find((t) => t.kind === "terminal" && t.cwd);
     if (anyTerm?.kind === "terminal" && anyTerm.cwd) return anyTerm.cwd;
-    return home;
-  }, [activeTab, tabs, home]);
+    return spaceRoot ?? home;
+  }, [activeTab, tabs, home, spaceRoot]);
 
   const inheritedCwdForNewTab = useCallback((): string | undefined => {
     if (activeTab?.kind === "terminal" && activeTab.cwd) return activeTab.cwd;
     // Editor tabs inherit the last terminal's cwd (or workspace home), not
     // the file's folder — opening a new terminal from a file shouldn't
     // hijack the user's working directory context.
-    return lastTerminalCwd.current ?? home ?? undefined;
-  }, [activeTab, home]);
+    return lastTerminalCwd.current ?? spaceRoot ?? home ?? undefined;
+  }, [activeTab, home, spaceRoot]);
 
   return { explorerRoot, inheritedCwdForNewTab };
 }
