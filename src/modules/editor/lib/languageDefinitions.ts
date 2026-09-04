@@ -158,8 +158,15 @@ export const LANGUAGES: LanguageDefinition[] = [
     userSelectable: true,
   },
   {
+    name: "Svelte",
+    extensions: ["svelte"],
+    loader: () =>
+      import("@replit/codemirror-lang-svelte").then((m) => m.svelte()),
+    userSelectable: true,
+  },
+  {
     name: "HTML",
-    extensions: ["html", "htm", "svelte", "twig"],
+    extensions: ["html", "htm", "twig"],
     loader: () => import("@codemirror/lang-html").then((m) => m.html()),
     userSelectable: true,
   },

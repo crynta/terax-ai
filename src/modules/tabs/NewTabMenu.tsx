@@ -76,7 +76,7 @@ export function NewTabMenu({
               <Button
                 variant="ghost"
                 size="icon"
-                className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                className="ml-1 size-6 shrink-0 rounded-full bg-foreground/[0.06] text-muted-foreground ring-1 ring-inset ring-foreground/[0.04] hover:bg-foreground/[0.12] hover:text-foreground"
                 title="New tab"
               >
                 <HugeiconsIcon icon={PlusSignIcon} size={14} strokeWidth={2} />

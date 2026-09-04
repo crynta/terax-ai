@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  isAgentActivePty,
   phaseForSignal,
   tabAgentStatus,
   useAgentActivityStore,
@@ -27,6 +28,10 @@ describe("tabAgentStatus", () => {
       state: null,
       agent: null,
     });
+    expect(tabAgentStatus({ 1: "idle" }, { 1: "codex" }, [1])).toEqual({
+      state: "idle",
+      agent: "codex",
+    });
   });
 
   it("orders attention > working > finished", () => {
@@ -50,6 +55,14 @@ describe("tabAgentStatus", () => {
     expect(tabAgentStatus(phases, { 7: "claude" }, [7])).toEqual({
       state: "working",
       agent: "claude",
+    });
+  });
+
+  it("surfaces the acknowledged agent name for its icon", () => {
+    const phases = { 7: "idle" } as const;
+    expect(tabAgentStatus(phases, { 7: "gemini" }, [7])).toEqual({
+      state: "idle",
+      agent: "gemini",
     });
   });
 
@@ -82,5 +95,25 @@ describe("useAgentActivityStore", () => {
     const state = useAgentActivityStore.getState();
     expect(1 in state.phases).toBe(false);
     expect(1 in state.agents).toBe(false);
+  });
+
+  it("acknowledges attention without losing active agent state", () => {
+    const { setPhase, setAgent, acknowledgeAttention } =
+      useAgentActivityStore.getState();
+    setPhase(1, "attention");
+    setAgent(1, "gemini");
+    setPhase(2, "working");
+    const agents = useAgentActivityStore.getState().agents;
+
+    acknowledgeAttention([1, 2, 3]);
+
+    const state = useAgentActivityStore.getState();
+    expect(state.phases).toEqual({ 1: "idle", 2: "working" });
+    expect(state.agents).toBe(agents);
+    expect(isAgentActivePty(1)).toBe(true);
+    expect(tabAgentStatus(state.phases, state.agents, [1])).toEqual({
+      state: "idle",
+      agent: "gemini",
+    });
   });
 });

@@ -27,6 +27,7 @@ export type SourceControlRemoteActionResult = {
 };
 
 export type SourceControlSummary = {
+  contextPath: string | null;
   repo: GitRepoInfo | null;
   status: GitStatusSnapshot | null;
   changedCount: number;
@@ -58,6 +59,7 @@ export type SourceControlRemoteIndicator = {
 };
 
 type SourceControlSummaryState = {
+  contextPath: string | null;
   repo: GitRepoInfo | null;
   status: GitStatusSnapshot | null;
   hasRepo: boolean;
@@ -66,6 +68,71 @@ type SourceControlSummaryState = {
   busyAction: SourceControlRemoteAction | null;
   lastRemoteError: string | null;
 };
+
+type RefreshableSourceControlState = Pick<
+  SourceControlSummaryState,
+  | "contextPath"
+  | "repo"
+  | "status"
+  | "hasRepo"
+  | "isLoading"
+  | "localError"
+  | "lastRemoteError"
+>;
+
+type InflightRefresh = {
+  contextKey: string;
+  mode: SourceControlRefreshMode;
+  promise: Promise<void>;
+};
+
+function sourceControlContextKey(
+  workspaceKey: string,
+  contextPath: string | null,
+): string {
+  return `${workspaceKey}\0${contextPath ?? ""}`;
+}
+
+function normalizedContextPath(path: string): string {
+  const normalized = path.replace(/\\/g, "/");
+  if (normalized === "/" || /^[A-Za-z]:\/$/.test(normalized)) {
+    return normalized;
+  }
+  return normalized.replace(/\/+$/, "");
+}
+
+export function repositoryContainsContext(
+  repoRoot: string | null,
+  contextPath: string | null,
+): boolean {
+  if (!repoRoot || !contextPath) return false;
+  let root = normalizedContextPath(repoRoot);
+  let context = normalizedContextPath(contextPath);
+  const windowsPaths =
+    (/^[A-Za-z]:\//.test(root) && /^[A-Za-z]:\//.test(context)) ||
+    (root.startsWith("//") && context.startsWith("//"));
+  if (windowsPaths) {
+    root = root.toLowerCase();
+    context = context.toLowerCase();
+  }
+  const prefix = root.endsWith("/") ? root : `${root}/`;
+  return context === root || context.startsWith(prefix);
+}
+
+export function beginSourceControlRefresh<
+  T extends RefreshableSourceControlState,
+>(current: T, contextPath: string, reuseCurrentRepository: boolean): T {
+  return {
+    ...current,
+    contextPath,
+    repo: reuseCurrentRepository ? current.repo : null,
+    status: reuseCurrentRepository ? current.status : null,
+    hasRepo: reuseCurrentRepository ? current.hasRepo : false,
+    isLoading: true,
+    localError: null,
+    lastRemoteError: reuseCurrentRepository ? current.lastRemoteError : null,
+  };
+}
 
 function normalizeError(error: unknown): string {
   if (typeof error === "string") return error;
@@ -153,6 +220,7 @@ export function useSourceControl(
   const workspaceEnv = useWorkspaceEnvStore((s) => s.env);
   const workspaceKey = workspaceScopeKey(workspaceEnv);
   const [state, setState] = useState<SourceControlSummaryState>({
+    contextPath: null,
     repo: null,
     status: null,
     hasRepo: false,
@@ -163,11 +231,14 @@ export function useSourceControl(
   });
   const stateRef = useRef(state);
   const requestIdRef = useRef(0);
-  const inflightRef = useRef<Promise<void> | null>(null);
-  const inflightModeRef = useRef<SourceControlRefreshMode>("never");
+  const inflightRef = useRef<InflightRefresh | null>(null);
   const autoFetchByRepoRef = useRef(new Map<string, number>());
   const enabledRef = useRef(enabled);
   const lastRefreshAtRef = useRef(0);
+  const resetWorkspaceKeyRef = useRef(workspaceKey);
+  const contextKey = sourceControlContextKey(workspaceKey, contextPath);
+  const contextKeyRef = useRef(contextKey);
+  contextKeyRef.current = contextKey;
 
   useEffect(() => {
     stateRef.current = state;
@@ -178,11 +249,13 @@ export function useSourceControl(
   }, [enabled]);
 
   useEffect(() => {
+    if (resetWorkspaceKeyRef.current === workspaceKey) return;
+    resetWorkspaceKeyRef.current = workspaceKey;
     requestIdRef.current++;
     inflightRef.current = null;
-    inflightModeRef.current = "never";
     autoFetchByRepoRef.current.clear();
     setState({
+      contextPath: null,
       repo: null,
       status: null,
       hasRepo: false,
@@ -207,11 +280,22 @@ export function useSourceControl(
 
   const doRefresh = useCallback(
     async (remoteMode: SourceControlRefreshMode): Promise<void> => {
-      if (!enabledRef.current) return;
+      const refreshContextKey = contextKey;
+      if (
+        !enabledRef.current ||
+        refreshContextKey !== contextKeyRef.current
+      ) {
+        return;
+      }
       const requestId = ++requestIdRef.current;
+      const isCurrentRequest = () =>
+        requestId === requestIdRef.current &&
+        refreshContextKey === contextKeyRef.current;
 
       if (!contextPath) {
+        if (!isCurrentRequest()) return;
         setState({
+          contextPath: null,
           repo: null,
           status: null,
           hasRepo: false,
@@ -224,13 +308,13 @@ export function useSourceControl(
       }
 
       const activeRoot = stateRef.current.repo?.repoRoot ?? null;
-      const reusableRoot =
-        activeRoot &&
-        (contextPath === activeRoot || contextPath.startsWith(`${activeRoot}/`))
-          ? activeRoot
-          : undefined;
+      const reusableRoot = repositoryContainsContext(activeRoot, contextPath)
+        ? activeRoot
+        : null;
 
-      setState((current) => ({ ...current, isLoading: true, localError: null }));
+      setState((current) =>
+        beginSourceControlRefresh(current, contextPath, !!reusableRoot),
+      );
 
       try {
         let repo: GitRepoInfo | null;
@@ -240,7 +324,7 @@ export function useSourceControl(
           try {
             repo = stateRef.current.repo ?? null;
             status = await native.gitStatus(reusableRoot);
-            if (requestId !== requestIdRef.current) return;
+            if (!isCurrentRequest()) return;
             if (!repo || repo.repoRoot !== reusableRoot) {
               repo = {
                 repoRoot: reusableRoot,
@@ -251,7 +335,7 @@ export function useSourceControl(
             }
           } catch {
             const snapshot = await native.gitPanelSnapshot(contextPath);
-            if (requestId !== requestIdRef.current) return;
+            if (!isCurrentRequest()) return;
             if (!snapshot.repo) {
               setState((current) => ({
                 ...current,
@@ -268,7 +352,7 @@ export function useSourceControl(
           }
         } else {
           const snapshot = await native.gitPanelSnapshot(contextPath);
-          if (requestId !== requestIdRef.current) return;
+          if (!isCurrentRequest()) return;
           if (!snapshot.repo) {
             setState((current) => ({
               ...current,
@@ -310,14 +394,15 @@ export function useSourceControl(
             await native.gitFetch(repo.repoRoot);
             touchAutoFetch(autoFetchByRepoRef.current, repo.repoRoot);
             nextRemoteError = null;
-            if (requestId !== requestIdRef.current) return;
+            if (!isCurrentRequest()) return;
             status = await native.gitStatus(repo.repoRoot);
-            if (requestId !== requestIdRef.current) return;
+            if (!isCurrentRequest()) return;
           } catch (error) {
             nextRemoteError = normalizeError(error);
           }
         }
 
+        if (!isCurrentRequest()) return;
         setState((current) => ({
           ...current,
           repo,
@@ -328,7 +413,7 @@ export function useSourceControl(
           lastRemoteError: nextRemoteError,
         }));
       } catch (error) {
-        if (requestId !== requestIdRef.current) return;
+        if (!isCurrentRequest()) return;
         setState((current) => ({
           ...current,
           repo: null,
@@ -338,34 +423,34 @@ export function useSourceControl(
           localError: normalizeError(error),
         }));
       } finally {
-        lastRefreshAtRef.current = Date.now();
+        if (isCurrentRequest()) {
+          lastRefreshAtRef.current = Date.now();
+        }
       }
     },
-    [contextPath, workspaceKey],
+    [contextKey, contextPath],
   );
 
   const refresh = useCallback(
     async (options?: { remote?: SourceControlRefreshMode }) => {
       const remoteMode = options?.remote ?? "never";
       const inflight = inflightRef.current;
-      if (inflight) {
-        const cur = inflightModeRef.current;
+      if (inflight?.contextKey === contextKey) {
+        const cur = inflight.mode;
         const upgrade =
           (cur === "never" && remoteMode !== "never") ||
           (cur === "auto" && remoteMode === "always");
-        if (!upgrade) return inflight;
+        if (!upgrade) return inflight.promise;
       }
-      inflightModeRef.current = remoteMode;
       const run = doRefresh(remoteMode).finally(() => {
-        if (inflightRef.current === run) {
+        if (inflightRef.current?.promise === run) {
           inflightRef.current = null;
-          inflightModeRef.current = "never";
         }
       });
-      inflightRef.current = run;
+      inflightRef.current = { contextKey, mode: remoteMode, promise: run };
       return run;
     },
-    [doRefresh],
+    [contextKey, doRefresh],
   );
 
   const runRemoteAction = useCallback(
@@ -386,6 +471,9 @@ export function useSourceControl(
       }
 
       setState((current) => ({ ...current, busyAction: action }));
+      const actionContextKey = contextKeyRef.current;
+      const isCurrentContext = () =>
+        actionContextKey === contextKeyRef.current;
 
       try {
         if (action === "fetch") {
@@ -398,13 +486,17 @@ export function useSourceControl(
         } else {
           await native.gitPush(repo.repoRoot);
         }
-        setState((current) => ({ ...current, lastRemoteError: null }));
-        await refresh({ remote: "never" });
+        if (isCurrentContext()) {
+          setState((current) => ({ ...current, lastRemoteError: null }));
+          await refresh({ remote: "never" });
+        }
         return { ok: true, action };
       } catch (error) {
         const message = normalizeError(error);
-        setState((current) => ({ ...current, lastRemoteError: message }));
-        await refresh({ remote: "never" }).catch(() => {});
+        if (isCurrentContext()) {
+          setState((current) => ({ ...current, lastRemoteError: message }));
+          await refresh({ remote: "never" }).catch(() => {});
+        }
         return { ok: false, action, error: message };
       } finally {
         setState((current) => ({ ...current, busyAction: null }));
@@ -417,6 +509,7 @@ export function useSourceControl(
     if (!enabled) {
       requestIdRef.current++;
       setState({
+        contextPath: null,
         repo: null,
         status: null,
         hasRepo: false,
@@ -430,12 +523,16 @@ export function useSourceControl(
     setState((current) => ({ ...current, lastRemoteError: null }));
     const run = () => {
       const root = stateRef.current.repo?.repoRoot;
-      const sameRepo =
-        !!root &&
-        !!contextPath &&
-        (contextPath === root || contextPath.startsWith(`${root}/`));
+      const sameRepo = repositoryContainsContext(root ?? null, contextPath);
       const fresh = Date.now() - lastRefreshAtRef.current < SC_STATUS_TTL_MS;
-      if (fresh && sameRepo && stateRef.current.hasRepo) return;
+      if (fresh && sameRepo && stateRef.current.hasRepo) {
+        setState((current) =>
+          current.contextPath === contextPath
+            ? current
+            : { ...current, contextPath },
+        );
+        return;
+      }
       void refresh({ remote: "never" });
     };
     const idle =
@@ -453,7 +550,7 @@ export function useSourceControl(
         window.clearTimeout(idle as number);
       }
     };
-  }, [refresh, contextPath, enabled, workspaceKey]);
+  }, [refresh, contextPath, enabled]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -476,6 +573,7 @@ export function useSourceControl(
 
   return useMemo<SourceControlSummary>(
     () => ({
+      contextPath: state.contextPath,
       repo: state.repo,
       status: state.status,
       changedCount: state.status?.changedFiles.length ?? 0,

@@ -1,4 +1,7 @@
 pub mod agent;
+#[cfg(target_os = "macos")]
+pub mod app_menu;
+pub mod control;
 pub mod fs;
 pub mod git;
 pub mod history;
@@ -8,4 +11,5 @@ pub mod proc;
 pub mod pty;
 pub mod secrets;
 pub mod shell;
+pub mod vibrancy;
 pub mod workspace;

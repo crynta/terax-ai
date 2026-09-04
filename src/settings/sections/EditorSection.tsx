@@ -17,7 +17,10 @@ import {
   AUTO_SAVE_DELAY_MAX,
   AUTO_SAVE_DELAY_MIN,
   clampAutoSaveDelay,
+  clampEditorWordWrapColumn,
   EDITOR_FONT_SIZES,
+  EDITOR_WORD_WRAP_COLUMN_MAX,
+  EDITOR_WORD_WRAP_COLUMN_MIN,
   type EditorFormatter,
   setEditorAutoSave,
   setEditorAutoSaveDelay,
@@ -27,6 +30,7 @@ import {
   setEditorFormatter,
   setEditorFormatterByLang,
   setEditorWordWrap,
+  setEditorWordWrapColumn,
   setVimMode,
 } from "@/modules/settings/store";
 import { Cancel01Icon } from "@hugeicons/core-free-icons";
@@ -42,6 +46,9 @@ export function EditorSection() {
   const editorFontSize = usePreferencesStore((s) => s.editorFontSize);
   const vimMode = usePreferencesStore((s) => s.vimMode);
   const editorWordWrap = usePreferencesStore((s) => s.editorWordWrap);
+  const editorWordWrapColumn = usePreferencesStore(
+    (s) => s.editorWordWrapColumn,
+  );
   const editorAutoSave = usePreferencesStore((s) => s.editorAutoSave);
   const editorAutoSaveDelay = usePreferencesStore((s) => s.editorAutoSaveDelay);
   const editorFormatOnSave = usePreferencesStore((s) => s.editorFormatOnSave);
@@ -105,6 +112,12 @@ export function EditorSection() {
             onCheckedChange={(v) => void setEditorWordWrap(v)}
           />
         </SettingRow>
+        {editorWordWrap && (
+          <WordWrapColumnInput
+            value={editorWordWrapColumn}
+            onChange={(v) => void setEditorWordWrapColumn(v)}
+          />
+        )}
       </div>
 
       <div className="flex flex-col gap-2">
@@ -343,6 +356,55 @@ function AutoSaveDelayInput({
           className="h-8 w-20 rounded-md border border-border bg-background px-2.5 text-right text-[12px] md:text-[12px] tabular-nums outline-none focus:border-foreground/40 focus-visible:ring-0 focus-visible:border-foreground/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
         />
         <span className="text-[11px] text-muted-foreground">ms</span>
+      </div>
+    </SettingRow>
+  );
+}
+
+function WordWrapColumnInput({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+
+  useEffect(() => {
+    setDraft(String(value));
+  }, [value]);
+
+  const commit = () => {
+    const n = Number(draft);
+    if (!Number.isFinite(n)) {
+      setDraft(String(value));
+      return;
+    }
+    const clamped = clampEditorWordWrapColumn(n);
+    setDraft(String(clamped));
+    if (clamped !== value) onChange(clamped);
+  };
+
+  return (
+    <SettingRow
+      title="Wrap column"
+      description="Soft-wrap at this column, or earlier when the editor is narrower."
+    >
+      <div className="flex items-center gap-2">
+        <Input
+          type="number"
+          min={EDITOR_WORD_WRAP_COLUMN_MIN}
+          max={EDITOR_WORD_WRAP_COLUMN_MAX}
+          step={1}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+          }}
+          className="h-8 w-20 rounded-md border border-border bg-background px-2.5 text-right text-[12px] md:text-[12px] tabular-nums outline-none focus:border-foreground/40 focus-visible:ring-0 focus-visible:border-foreground/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+        />
+        <span className="text-[11px] text-muted-foreground">columns</span>
       </div>
     </SettingRow>
   );

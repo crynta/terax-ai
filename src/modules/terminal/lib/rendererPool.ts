@@ -1,7 +1,8 @@
+import { openExternalUrl } from "@/lib/external-link";
 import { resolveFontFamily } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import type { TerminalCursorStyle } from "@/modules/settings/store";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { SerializeAddon } from "@xterm/addon-serialize";
@@ -10,11 +11,22 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { type FontWeight, Terminal } from "@xterm/xterm";
 import { shouldCursorBlink } from "./cursorBlink";
 import {
+  clearXtermKeyData,
+  createImeBridgeState,
+  type ImeBridgeState,
+  imeBridgeInput,
+  noteNativeComposition,
+  noteXtermKeyData,
+  resetImeBridge,
+  transitionImeBridgeOwner,
+} from "./imeBridge";
+import { terminalReadlineSequence } from "./keymap";
+import {
   readTerminalClipboard,
   writeTerminalClipboard,
 } from "./terminalClipboard";
+import { createTerminalLinkHandler } from "./terminalLinks";
 import { pasteIntoTerminal } from "./terminalPaste";
-import { terminalReadlineSequence } from "./keymap";
 
 export const POOL_MAX_SIZE = 5;
 const FIT_DEBOUNCE_MS = 8;
@@ -67,6 +79,7 @@ export type Slot = {
   lastW: number;
   lastH: number;
   lastUsedAt: number;
+  imeState: ImeBridgeState;
 };
 
 const slots: Slot[] = [];
@@ -186,7 +199,7 @@ function termOptions() {
     fontSize: font.fontSize,
     theme: buildTerminalTheme(),
     cursorBlink: false,
-    cursorStyle: "bar" as const,
+    cursorStyle: prefs.terminalCursorStyle,
     cursorInactiveStyle: "outline" as const,
     scrollback: prefs.terminalScrollback,
     allowProposedApi: true,
@@ -203,7 +216,12 @@ export function applyBackgroundActive(active: boolean): void {
 }
 
 function createSlot(): Slot {
-  const term = new Terminal(termOptions());
+  let focusTerminal = () => {};
+  const term = new Terminal({
+    ...termOptions(),
+    linkHandler: createTerminalLinkHandler(() => focusTerminal()),
+  });
+  focusTerminal = () => term.focus();
   const fitAddon = new FitAddon();
   const searchAddon = new SearchAddon();
   const serializeAddon = new SerializeAddon();
@@ -211,7 +229,9 @@ function createSlot(): Slot {
   term.loadAddon(searchAddon);
   term.loadAddon(serializeAddon);
   term.loadAddon(
-    new WebLinksAddon((_e, uri) => openUrl(uri).catch(console.error)),
+    new WebLinksAddon((_e, uri) => {
+      void openExternalUrl(uri, () => term.focus());
+    }),
   );
 
   const host = document.createElement("div");
@@ -244,7 +264,47 @@ function createSlot(): Slot {
     lastW: 0,
     lastH: 0,
     lastUsedAt: 0,
+    imeState: createImeBridgeState(),
   };
+
+  // Some WKWebView builds bypass xterm's composition events. The pure bridge
+  // repairs that path and stands down when native composition is observed.
+  if (IS_MAC) {
+    const ta = slot.term.textarea;
+    if (ta) {
+      const imeState = slot.imeState;
+      term.onKey(({ key }) => {
+        const leafId = slot.currentLeafId;
+        if (leafId !== null) noteXtermKeyData(imeState, leafId, key);
+      });
+      ta.addEventListener("keyup", () => clearXtermKeyData(imeState));
+      ta.addEventListener("input", (ev) => {
+        const e = ev as InputEvent;
+        if (slot.currentLeafId === null) return;
+        const core = (
+          slot.term as unknown as {
+            _core?: { _keyDownSeen?: boolean; _keyPressHandled?: boolean };
+          }
+        )._core;
+        const out = imeBridgeInput(
+          imeState,
+          slot.currentLeafId,
+          { inputType: e.inputType, data: e.data, composed: e.composed },
+          {
+            keyDownSeen: core?._keyDownSeen ?? false,
+            keyPressHandled: core?._keyPressHandled ?? false,
+          },
+        );
+        if (out) adapter?.resolveLeaf(slot.currentLeafId)?.writeToPty(out);
+      });
+      // Native composition means xterm owns this slot's IME delivery.
+      ta.addEventListener("compositionstart", () =>
+        noteNativeComposition(imeState),
+      );
+      ta.addEventListener("compositionend", () => resetImeBridge(imeState));
+      ta.addEventListener("blur", () => resetImeBridge(imeState));
+    }
+  }
 
   term.attachCustomKeyEventHandler((event) => {
     // During IME composition the browser is assembling a multi-keystroke
@@ -286,7 +346,8 @@ function createSlot(): Slot {
       if (event.type === "keydown") {
         const targetLeafId = slot.currentLeafId;
         void readTerminalClipboard().then((text) => {
-          if (text && slot.currentLeafId === targetLeafId) slot.term.paste(text);
+          if (text && slot.currentLeafId === targetLeafId)
+            slot.term.paste(text);
         });
       }
       event.preventDefault();
@@ -431,6 +492,7 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
   slot.retainedLeafId = null;
   slot.currentLeafId = p.leafId;
   slot.lastUsedAt = performance.now();
+  transitionImeBridgeOwner(slot.imeState, p.leafId);
 
   cancelPendingUnhide(slot);
   cancelWebglReap(slot);
@@ -666,6 +728,7 @@ function detachSlotFromLeaf(slot: Slot, retain: boolean): void {
 
   slot.currentLeafId = null;
   slot.lastUsedAt = performance.now();
+  transitionImeBridgeOwner(slot.imeState, null);
   scheduleWebglReap(slot);
   scheduleSlotReap(slot);
 }
@@ -957,6 +1020,13 @@ export function applyCursorBlink(enabled: boolean): void {
       slot,
       adapter?.isLeafFocused(slot.currentLeafId) ?? false,
     );
+  }
+}
+
+export function applyCursorStyle(style: TerminalCursorStyle): void {
+  for (const slot of slots) {
+    if (slot.term.options.cursorStyle === style) continue;
+    slot.term.options.cursorStyle = style;
   }
 }
 

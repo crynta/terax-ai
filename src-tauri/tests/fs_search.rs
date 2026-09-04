@@ -243,14 +243,30 @@ fn read_dir_orders_dirs_before_files_then_alpha() {
     let fx = FsFixture::new();
     fx.mkdir("zdir");
     fx.mkdir("adir");
+    fx.mkdir("dir10");
+    fx.mkdir("dir2");
     fx.write("zfile.txt", "");
     fx.write("afile.txt", "");
+    fx.write("file10.txt", "");
+    fx.write("file2.txt", "");
 
     let entries = fs_read_dir(fx.root_str(), false, None, None).expect("read_dir");
     let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
-    assert_eq!(names, vec!["adir", "zdir", "afile.txt", "zfile.txt"]);
+    assert_eq!(
+        names,
+        vec![
+            "adir",
+            "dir2",
+            "dir10",
+            "zdir",
+            "afile.txt",
+            "file2.txt",
+            "file10.txt",
+            "zfile.txt",
+        ],
+    );
     assert!(matches!(entries[0].kind, EntryKind::Dir));
-    assert!(matches!(entries[2].kind, EntryKind::File));
+    assert!(matches!(entries[4].kind, EntryKind::File));
 }
 
 #[test]
@@ -319,12 +335,12 @@ fn read_dir_returns_size_for_files() {
 #[test]
 fn list_subdirs_returns_only_directories() {
     let fx = FsFixture::new();
-    fx.mkdir("dir_a");
-    fx.mkdir("dir_b");
+    fx.mkdir("dir_10");
+    fx.mkdir("dir_2");
     fx.write("not_a_dir.txt", "");
 
     let dirs = list_subdirs(fx.root_str(), false, None).expect("list_subdirs");
-    assert_eq!(dirs, vec!["dir_a", "dir_b"]);
+    assert_eq!(dirs, vec!["dir_2", "dir_10"]);
 }
 
 #[test]

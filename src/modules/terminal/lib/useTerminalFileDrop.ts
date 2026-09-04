@@ -6,7 +6,7 @@ import { pasteIntoLeaf } from "./rendererPool";
 
 export type TerminalPathDropTarget = {
   updateTarget: (clientX: number, clientY: number) => boolean;
-  dropPath: (path: string, clientX: number, clientY: number) => boolean;
+  dropPath: (paths: string[], clientX: number, clientY: number) => boolean;
   clearTarget: () => void;
 };
 
@@ -44,11 +44,11 @@ export function createTerminalPathDropTarget({
       setTarget(leafId);
       return leafId !== null;
     },
-    dropPath(path, clientX, clientY) {
+    dropPath(paths, clientX, clientY) {
       setTarget(null);
       const leafId = leafIdAtPoint(clientX, clientY);
       if (leafId === null) return false;
-      paste(leafId, formatDroppedPaths([path]));
+      paste(leafId, formatDroppedPaths(paths));
       return true;
     },
     clearTarget() {

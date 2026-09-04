@@ -15,6 +15,7 @@ describe("resolveFormatter", () => {
     expect(resolveFormatter("ts", prefs("biome"))).toBe("biome");
     expect(resolveFormatter("py", prefs("biome"))).toBe("lsp");
     expect(resolveFormatter("rs", prefs("prettier"))).toBe("lsp");
+    expect(resolveFormatter("svelte", prefs("prettier"))).toBe("prettier");
   });
 
   it("lsp and custom globals always apply", () => {
