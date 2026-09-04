@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   EDITOR_FORCE_RELOAD_EVENT,
   absoluteEditorPaths,
@@ -83,16 +83,26 @@ describe("editorTabIdsForPaths", () => {
 });
 
 describe("notifyEditorForceReload + takeForceReload", () => {
+  beforeEach(() => {
+    // Vitest runs in Node; stub window so dispatchEvent tests do not need jsdom.
+    vi.stubGlobal("window", {
+      dispatchEvent: vi.fn(() => true),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    });
+  });
+
   afterEach(() => {
     clearPendingForceReloads();
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
   it("dispatches editor:force-reload with normalized paths", () => {
-    const spy = vi.spyOn(window, "dispatchEvent");
     notifyEditorForceReload(["/repo/main.go", "C:\\repo\\other.go", ""]);
-    expect(spy).toHaveBeenCalledTimes(1);
-    const event = spy.mock.calls[0][0] as CustomEvent<EditorForceReloadDetail>;
+    expect(window.dispatchEvent).toHaveBeenCalledTimes(1);
+    const event = (window.dispatchEvent as ReturnType<typeof vi.fn>).mock
+      .calls[0][0] as CustomEvent<EditorForceReloadDetail>;
     expect(event.type).toBe(EDITOR_FORCE_RELOAD_EVENT);
     expect(event.detail.paths).toEqual([
       "/repo/main.go",
@@ -101,9 +111,8 @@ describe("notifyEditorForceReload + takeForceReload", () => {
   });
 
   it("is a no-op for an empty path list", () => {
-    const spy = vi.spyOn(window, "dispatchEvent");
     notifyEditorForceReload([]);
-    expect(spy).not.toHaveBeenCalled();
+    expect(window.dispatchEvent).not.toHaveBeenCalled();
   });
 
   it("force-reloads the discarded path and leaves unrelated tabs alone", () => {
