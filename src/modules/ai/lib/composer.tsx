@@ -315,9 +315,7 @@ export function AiComposerProvider({ children }: ProviderProps) {
       // MissingToolResultsError (Fixes #514). Prefer mutating to
       // output-denied over addToolApprovalResponse to avoid racing
       // sendAutomaticallyWhen.
-      denyPendingToolApprovals(
-        chat.messages as Parameters<typeof denyPendingToolApprovals>[0],
-      );
+      denyPendingToolApprovals(chat.messages);
       void chat.sendMessage({ role: "user", parts } as Parameters<
         typeof chat.sendMessage
       >[0]);
