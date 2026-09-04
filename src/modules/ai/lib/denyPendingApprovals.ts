@@ -51,7 +51,7 @@ function isToolPart(
 /**
  * In-place: rewrite every valid approval-requested tool part to output-denied.
  * Only mutates AI SDK tool parts that already carry toolCallId, input, and
- * approval.id — incomplete parts are left alone so we never emit invalid
+ * approval.id - incomplete parts are left alone so we never emit invalid
  * output-denied shapes. Returns the number of parts denied (0 if none pending).
  */
 export function denyPendingToolApprovals(
