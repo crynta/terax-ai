@@ -10,6 +10,7 @@ import { type RefObject, useEffect, useRef } from "react";
 import type { EditorPaneHandle } from "./EditorPane";
 import {
   EDITOR_FORCE_RELOAD_EVENT,
+  armForceReload,
   editorTabIdsForPaths,
   type EditorForceReloadDetail,
 } from "./lib/editorForceReload";
@@ -68,13 +69,15 @@ export function useEditorFileSync({ tabs, tabsRef, editorRefs }: Params) {
   }, [tabsRef, editorRefs]);
 
   // After Source Control discard, buffers are still dirty with the discarded
-  // edits — a normal reload no-ops. Listen for the force-reload signal and
+  // edits: a normal reload no-ops. Listen for the force-reload signal and
   // re-read matching open editors from disk (#988).
   useEffect(() => {
     const onForceReload = (event: Event) => {
       const detail = (event as CustomEvent<EditorForceReloadDetail>).detail;
       if (!detail?.paths?.length) return;
       for (const id of editorTabIdsForPaths(tabsRef.current, detail.paths)) {
+        // Re-arm before each tab so the first takeForceReload does not starve siblings.
+        armForceReload(detail.paths);
         editorRefs.current.get(id)?.reload();
       }
     };
