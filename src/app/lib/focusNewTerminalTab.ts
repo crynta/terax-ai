@@ -3,7 +3,7 @@ export const FOCUS_NEW_TERMINAL_DELAY_MS = 80;
 
 export type FocusableTerminal = { focus: () => void };
 
-/** Minimal tab shape — accept any Tab-like so App can pass `tabsRef.find` directly. */
+/** Minimal tab shape: accept any Tab-like so App can pass `tabsRef.find` directly. */
 export type TerminalTabLike = {
   kind: string;
   activeLeafId?: number;
@@ -11,7 +11,7 @@ export type TerminalTabLike = {
 
 /**
  * After `newTab` / `newPrivateTab` / `newBlockTab`, the xterm slot may not be
- * bound yet — and while the slot is still in its anti-flash hide window,
+ * bound yet, and while the slot is still in its anti-flash hide window,
  * Chromium rejects focus on a `visibility:hidden` subtree. Schedule a short
  * deferred focus (same timing as `cdInNewTab`) so typing works immediately
  * without an extra click (#411).
