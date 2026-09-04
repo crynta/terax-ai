@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   EDITOR_FORCE_RELOAD_EVENT,
+  clearPendingForceReloads,
   editorTabIdsForPaths,
   normalizeEditorPath,
   notifyEditorForceReload,
+  takeForceReload,
   type EditorForceReloadDetail,
 } from "./editorForceReload";
 import { shouldProceedReload } from "./useDocument";
@@ -51,8 +53,9 @@ describe("editorTabIdsForPaths", () => {
   });
 });
 
-describe("notifyEditorForceReload", () => {
+describe("notifyEditorForceReload + takeForceReload", () => {
   afterEach(() => {
+    clearPendingForceReloads();
     vi.restoreAllMocks();
   });
 
@@ -72,5 +75,14 @@ describe("notifyEditorForceReload", () => {
     const spy = vi.spyOn(window, "dispatchEvent");
     notifyEditorForceReload([]);
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("force-reloads the discarded path and leaves unrelated tabs alone", () => {
+    notifyEditorForceReload(["/repo/main.go"]);
+    expect(takeForceReload("/repo/main.go")).toBe(true);
+    // consumed once
+    expect(takeForceReload("/repo/main.go")).toBe(false);
+    // unrelated path never marked
+    expect(takeForceReload("/repo/other.go")).toBe(false);
   });
 });

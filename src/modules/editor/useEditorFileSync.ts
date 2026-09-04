@@ -75,7 +75,7 @@ export function useEditorFileSync({ tabs, tabsRef, editorRefs }: Params) {
       const detail = (event as CustomEvent<EditorForceReloadDetail>).detail;
       if (!detail?.paths?.length) return;
       for (const id of editorTabIdsForPaths(tabsRef.current, detail.paths)) {
-        editorRefs.current.get(id)?.reload({ force: true });
+        editorRefs.current.get(id)?.reload();
       }
     };
     window.addEventListener(EDITOR_FORCE_RELOAD_EVENT, onForceReload);
