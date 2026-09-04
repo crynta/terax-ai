@@ -1,11 +1,12 @@
 import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
-import path from "path";
+import path from "node:path";
 import { defineConfig, type PluginOption, type UserConfig } from "vite";
 import Inspect from "vite-plugin-inspect";
 
 const host = process.env.TAURI_DEV_HOST;
+const rootDir = import.meta.dirname;
 
 // Bundle/treemap analysis is opt-in: `ANALYZE=true pnpm build` emits stats.html.
 const analyze = process.env.ANALYZE === "true";
@@ -41,10 +42,10 @@ export default defineConfig(async ({ mode }): Promise<UserConfig> => ({
   ],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      "@": path.resolve(rootDir, "./src"),
       // Shim keeps the ~117 kB CJS protocol package out of the bundle.
       "vscode-languageserver-protocol": path.resolve(
-        __dirname,
+        rootDir,
         "./src/modules/lsp/lib/protocolShim.ts",
       ),
     },
@@ -55,8 +56,8 @@ export default defineConfig(async ({ mode }): Promise<UserConfig> => ({
     chunkSizeWarningLimit: 1500,
     rolldownOptions: {
       input: {
-        main: path.resolve(__dirname, "index.html"),
-        settings: path.resolve(__dirname, "settings.html"),
+        main: path.resolve(rootDir, "index.html"),
+        settings: path.resolve(rootDir, "settings.html"),
       },
       // Oxc drops `debugger` by default. These calls return undefined, so
       // marking them pure lets DCE strip them from production builds.

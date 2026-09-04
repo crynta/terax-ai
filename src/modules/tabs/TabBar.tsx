@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { AgentIcon } from "@/modules/agents/lib/agentIcon";
 import type { AgentLaunchRequest } from "@/modules/agents/lib/launcher";
 import {
   ALL_LANGUAGES,
@@ -21,7 +22,6 @@ import {
 } from "@/modules/editor/lib/languageDefinitions";
 import { resolveDisplayName } from "@/modules/editor/lib/languageResolver";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
-import { AgentIcon } from "@/modules/agents/lib/agentIcon";
 import {
   leafIds,
   ptyIdForLeaf,
@@ -29,7 +29,9 @@ import {
   useAgentActivityStore,
 } from "@/modules/terminal";
 import {
+  ArrowRight01Icon,
   Cancel01Icon,
+  CancelCircleIcon,
   CheckmarkCircle01Icon,
   Clock01Icon,
   ComputerTerminal02Icon,
@@ -65,6 +67,10 @@ type Props = {
   onNewGitGraph: () => void;
   onLaunchAgents: (request: AgentLaunchRequest) => void;
   onClose: (id: number) => void;
+  /** Chrome-style: close every tab to the right of the given tab. */
+  onCloseTabsToRight: (id: number) => void;
+  /** Chrome-style: close every tab except the given tab. */
+  onCloseOtherTabs: (id: number) => void;
   /** Pin (promote) a preview tab to persistent on double-click. */
   onPin: (id: number) => void;
   /** Set a terminal tab's custom label; empty string resets to default. */
@@ -87,6 +93,8 @@ export function TabBar({
   onNewGitGraph,
   onLaunchAgents,
   onClose,
+  onCloseTabsToRight,
+  onCloseOtherTabs,
   onPin,
   onRename,
   onReorder,
@@ -367,6 +375,11 @@ export function TabBar({
                             role="button"
                             tabIndex={-1}
                             data-no-drag
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
                             className="inline-flex shrink-0 cursor-pointer items-center justify-center rounded-sm p-1 -m-1 transition-all hover:bg-accent hover:text-accent-foreground hover:ring-1 hover:ring-primary/30 hover:shadow-[0_0_4px_var(--color-popover-foreground)]"
                           >
                             <TabIcon tab={t} />
@@ -469,6 +482,14 @@ export function TabBar({
                       role="button"
                       aria-label="Close tab"
                       data-no-drag
+                      onPointerDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
                       onClick={(e) => {
                         e.stopPropagation();
                         onClose(t.id);
@@ -485,46 +506,73 @@ export function TabBar({
                 </TabsTrigger>
               );
 
-              const tabNode =
-                t.kind === "terminal" ? (
-                  <ContextMenu>
-                    <ContextMenuTrigger asChild>{trigger}</ContextMenuTrigger>
-                    <ContextMenuContent
-                      className="min-w-32 p-1"
-                      onCloseAutoFocus={(e) => e.preventDefault()}
+              const hasTabsToRight = i < tabs.length - 1;
+
+              const tabNode = (
+                <ContextMenu>
+                  <ContextMenuTrigger asChild>{trigger}</ContextMenuTrigger>
+                  <ContextMenuContent
+                    className="min-w-32 p-1"
+                    onCloseAutoFocus={(e) => e.preventDefault()}
+                  >
+                    {t.kind === "terminal" && (
+                      <>
+                        <ContextMenuItem
+                          className="gap-2 rounded-xl px-2.5 py-1.5 text-[13px]"
+                          onSelect={() => setEditingId(t.id)}
+                        >
+                          <HugeiconsIcon
+                            icon={PencilEdit02Icon}
+                            size={13}
+                            strokeWidth={1.75}
+                          />
+                          <span className="flex-1">Rename</span>
+                        </ContextMenuItem>
+                        {tabs.length > 1 && (
+                          <>
+                            <ContextMenuSeparator />
+                            <ContextMenuItem
+                              className="gap-2 rounded-xl px-2.5 py-1.5 text-[13px]"
+                              onSelect={() => onClose(t.id)}
+                            >
+                              <HugeiconsIcon
+                                icon={Cancel01Icon}
+                                size={13}
+                                strokeWidth={1.75}
+                              />
+                              <span className="flex-1">Close</span>
+                            </ContextMenuItem>
+                          </>
+                        )}
+                      </>
+                    )}
+                    <ContextMenuItem
+                      className="gap-2 rounded-xl px-2.5 py-1.5 text-[13px]"
+                      disabled={!hasTabsToRight}
+                      onSelect={() => onCloseTabsToRight(t.id)}
                     >
-                      <ContextMenuItem
-                        className="gap-2 rounded-xl px-2.5 py-1.5 text-[13px]"
-                        onSelect={() => setEditingId(t.id)}
-                      >
-                        <HugeiconsIcon
-                          icon={PencilEdit02Icon}
-                          size={13}
-                          strokeWidth={1.75}
-                        />
-                        <span className="flex-1">Rename</span>
-                      </ContextMenuItem>
-                      {tabs.length > 1 && (
-                        <>
-                          <ContextMenuSeparator />
-                          <ContextMenuItem
-                            className="gap-2 rounded-xl px-2.5 py-1.5 text-[13px]"
-                            onSelect={() => onClose(t.id)}
-                          >
-                            <HugeiconsIcon
-                              icon={Cancel01Icon}
-                              size={13}
-                              strokeWidth={1.75}
-                            />
-                            <span className="flex-1">Close</span>
-                          </ContextMenuItem>
-                        </>
-                      )}
-                    </ContextMenuContent>
-                  </ContextMenu>
-                ) : (
-                  trigger
-                );
+                      <HugeiconsIcon
+                        icon={ArrowRight01Icon}
+                        size={13}
+                        strokeWidth={1.75}
+                      />
+                      <span className="flex-1">Close tabs to the right</span>
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      className="gap-2 rounded-xl px-2.5 py-1.5 text-[13px]"
+                      disabled={tabs.length <= 1}
+                      onSelect={() => onCloseOtherTabs(t.id)}
+                    >
+                      <HugeiconsIcon
+                        icon={CancelCircleIcon}
+                        size={13}
+                        strokeWidth={1.75}
+                      />
+                      <span className="flex-1">Close other tabs</span>
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
+              );
 
               return (
                 <Fragment key={t.id}>
@@ -666,8 +714,13 @@ export function TabIcon({ tab }: { tab: Tab }) {
       />
     );
   }
-  if (agentStatus.state === "working" && agentStatus.agent) {
-    return <AgentIcon agent={agentStatus.agent} size={14} className="shrink-0" />;
+  if (
+    (agentStatus.state === "working" || agentStatus.state === "idle") &&
+    agentStatus.agent
+  ) {
+    return (
+      <AgentIcon agent={agentStatus.agent} size={14} className="shrink-0" />
+    );
   }
   return (
     <HugeiconsIcon

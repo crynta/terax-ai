@@ -5,6 +5,17 @@ description = "Terax — an open-source AI-native terminal emulator"
 authors = ["crynta"]
 license = "Apache-2.0"
 edition = "2021"
+default-run = "terax"
+
+[workspace]
+members = ["crates/terax-cli", "crates/terax-control-protocol"]
+default-members = [".", "crates/terax-cli", "crates/terax-control-protocol"]
+resolver = "2"
+
+[workspace.package]
+version = "0.8.6"
+edition = "2021"
+license = "Apache-2.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -17,12 +28,16 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+serde_json = "1"
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset"] }
+# macos-private-api backs the transparent window NSVisualEffectView needs.
+tauri = { version = "2", features = ["macos-private-api", "protocol-asset"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+getrandom = "0.3"
+terax-control-protocol = { path = "crates/terax-control-protocol" }
 portable-pty = "0.9"
 dirs = "6"
 log = "0.4"
@@ -64,6 +79,7 @@ objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSString", "NSUserDefaults"] }
 objc2-app-kit = { version = "0.3", features = ["NSEvent", "NSResponder"] }
 block2 = "0.6"
+window-vibrancy = "0.8"
 
 # WebKitGTK can't read external clipboard copies; mac/win webviews can.
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -73,11 +89,15 @@ tauri-plugin-clipboard-manager = "2"
 keyring = { version = "3.6", default-features = false, features = [
 	"windows-native",
 ] }
+window-vibrancy = "0.8"
 windows-sys = { version = "0.61", features = [
+	"Wdk_System_SystemServices",
 	"Win32_Foundation",
 	"Win32_Security",
+	"Win32_Storage_FileSystem",
 	"Win32_System_Console",
 	"Win32_System_JobObjects",
+	"Win32_System_SystemInformation",
 	"Win32_System_ProcessStatus",
 	"Win32_System_Threading",
 	"Win32_System_Diagnostics_ToolHelp",
@@ -97,3 +117,8 @@ lto = "fat"
 opt-level = "s"
 panic = "abort"
 strip = true
+
+# rust-lang/rust#110536: stripping proc-macro dylibs breaks the dlopen rustc does
+# at compile time on macOS, reported as a bogus E0463. Never shipped, so nothing to strip.
+[profile.release.build-override]
+strip = false

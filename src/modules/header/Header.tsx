@@ -36,6 +36,10 @@ type Props = {
   onNewGitGraph: () => void;
   onLaunchAgents: (request: AgentLaunchRequest) => void;
   onClose: (id: number) => void;
+  /** Chrome-style: close every tab to the right of the given tab. */
+  onCloseTabsToRight: (id: number) => void;
+  /** Chrome-style: close every tab except the given tab. */
+  onCloseOtherTabs: (id: number) => void;
   /** Promote a preview (transient) tab to persistent. */
   onPin: (id: number) => void;
   /** Set a terminal tab's custom label; empty string resets to default. */
@@ -67,6 +71,8 @@ export function Header({
   onNewGitGraph,
   onLaunchAgents,
   onClose,
+  onCloseTabsToRight,
+  onCloseOtherTabs,
   onPin,
   onRename,
   onReorder,
@@ -110,7 +116,7 @@ export function Header({
     <div
       ref={rootRef}
       data-tauri-drag-region
-      className={`flex h-10 shrink-0 items-center gap-2 border-b border-border/60 bg-card select-none ${
+      className={`flex h-10 shrink-0 items-center gap-2 select-none ${
         IS_MAC ? "pr-2 pl-20" : "pr-0 pl-2"
       }`}
     >
@@ -143,9 +149,13 @@ export function Header({
         )}
       </div>
 
-      {!IS_MAC && <span className="mx-1 h-full w-px shrink-0 bg-border/70" />}
+      {!IS_MAC && (
+        <span className="mx-1.5 h-4 w-px shrink-0 rounded-full bg-border" />
+      )}
 
-      {IS_MAC && <span className="mr-1 h-full w-px shrink-0 bg-border/70" />}
+      {IS_MAC && (
+        <span className="mr-1.5 h-4 w-px shrink-0 rounded-full bg-border" />
+      )}
 
       <div
         className="flex min-w-0 flex-1 items-center gap-2"
@@ -164,6 +174,8 @@ export function Header({
           onNewGitGraph={onNewGitGraph}
           onLaunchAgents={onLaunchAgents}
           onClose={onClose}
+          onCloseTabsToRight={onCloseTabsToRight}
+          onCloseOtherTabs={onCloseOtherTabs}
           onPin={onPin}
           onRename={onRename}
           onReorder={onReorder}

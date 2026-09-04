@@ -4,13 +4,14 @@
   "version": "0.8.6",
   "identifier": "app.crynta.terax",
   "build": {
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "pnpm build:cli:dev && pnpm dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "pnpm build:cli && pnpm build",
     "frontendDist": "../dist",
     "removeUnusedCommands": true
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "Terax",
@@ -21,6 +22,7 @@
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "visible": false,
+        "transparent": true,
         "dragDropEnabled": true
       }
     ],
@@ -34,6 +36,9 @@
   },
   "bundle": {
     "active": true,
+    "externalBin": [
+      "binaries/terax-cli"
+    ],
     "targets": "all",
     "createUpdaterArtifacts": true,
     "copyright": "Copyright 2026 Crynta",

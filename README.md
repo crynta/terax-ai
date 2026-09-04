@@ -3,14 +3,6 @@
   <h1>Terax</h1>
 
   <p><strong>Lightweight Terminal-first AI-native dev workspace.</strong></p>
-
-  <p>
-    <img src="https://img.shields.io/github/v/release/crynta/terax-ai?label=version&color=blue" alt="version" />
-    <img src="https://img.shields.io/github/downloads/crynta/terax-ai/total?label=downloads&color=blue" alt="downloads" />
-    <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey" alt="platform" />
-    <a href="https://discord.gg/tyveTUyEp7"><img src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
-  </p>
-
   <p>
     <a href="https://terax.app">Website</a>
     ·
@@ -18,25 +10,47 @@
     ·
     <a href="https://github.com/crynta/Terax-website">Website's source code</a>
   </p>
+
+  <p>
+    <img src="https://img.shields.io/github/v/release/crynta/terax-ai?label=version&color=blue" alt="version" />
+    <img src="https://img.shields.io/github/downloads/crynta/terax-ai/total?label=downloads&color=blue" alt="downloads" />
+    <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey" alt="platform" />
+    <a href="https://discord.gg/tyveTUyEp7"><img src="https://img.shields.io/badge/Discord-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
+    <a href="https://www.youtube.com/@crynta"><img src="https://img.shields.io/badge/Youtube-FF0000?logo=youtube&logoColor=white" alt="YouTube" /></a>
+  </p>
 </div>
+
+<p align="center">
+  <a href="docs/readme/README.zh-CN.md">简体中文</a> |
+  <a href="docs/readme/README.es.md">Español</a> |
+  <a href="docs/readme/README.de.md">Deutsch</a> |
+  <a href="docs/readme/README.fr.md">Français</a> |
+  <a href="docs/readme/README.ja.md">日本語</a> |
+  <a href="docs/readme/README.ko.md">한국어</a> |
+  <a href="docs/readme/README.pt-BR.md">Português</a> |
+  <a href="docs/readme/README.pl.md">Polski</a> |
+  <a href="docs/readme/README.ru.md">Русский</a> |
+  <a href="docs/readme/README.id.md">Bahasa Indonesia</a> |
+  <a href="docs/readme/README.hi.md">हिन्दी</a>
+</p>
 
 ---
 
-Terax is a lightweight open-source terminal (ADE) built on Tauri 2 + Rust and React 19. A native PTY backend with a WebGL renderer, an agentic AI side-panel that runs against your own keys or fully local models, plus a code editor, file explorer, source control with a git graph, and a web preview pane built in. About 7-8 MB on disk. No telemetry. No account.
+Terax is a lightweight open-source terminal-first AI-native development environment (ADE) built on Tauri 2 + Rust and React 19. A native PTY backend with a WebGL renderer, an agentic AI side-panel that runs against your own keys or fully local models, plus a code editor, file explorer, source control with a git graph, and a web preview pane built in. About 7-8 MB on disk. No telemetry. No account.
 
 ## Screenshots
 
 <table>
   <tr>
-    <td align="center"><img src="docs/terminal.png" alt="Terminal" /><br/><sub>Multi-tab terminal with WebGL rendering</sub></td>
-    <td align="center"><img src="docs/themes.png" alt="Themes and background image" /><br/><sub>Custom themes, presets, and background images</sub></td>
-  </tr>
-  <tr>
     <td align="center"><img src="docs/web-preview.png" alt="Web preview" /><br/><sub>Web preview of local dev servers</sub></td>
-    <td align="center"><img src="docs/source-control.png" alt="Source control and git graph" /><br/><sub>Source control panel with git graph in history</sub></td>
+    <td align="center"><img src="docs/ai-workflow.png" alt="AI window" /><br/><sub>Agentic AI workflow with edit diffs in the code editor</sub></td>
   </tr>
   <tr>
-    <td colspan="2" align="center"><img src="docs/ai-workflow.png" alt="AI window" /><br/><sub>Agentic AI workflow with edit diffs in the code editor</sub></td>
+    <td align="center"><img src="docs/themes.png" alt="Themes and background image" style="margin-top: 12px;"/><br/><sub>Custom themes, presets, and background images</sub></td>
+    <td align="center"><img src="docs/source-control.png" alt="Source control and git graph" style="margin-top: 12px;"/><br/><sub>Source control panel with git graph in history</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><img src="docs/terminal.png" alt="Terminal" style="border-radius: 4px; margin-top: 12px;" /><br/><sub>Block-based WebGL terminal with editor-like input panel</sub></td>
   </tr>
 </table>
 
@@ -49,15 +63,19 @@ Terax is a lightweight open-source terminal (ADE) built on Tauri 2 + Rust and Re
 - Native PTY backend via `portable-pty` (zsh, bash, pwsh, fish, cmd)
 - Split panels (horizontal and vertical)
 - Inline search, link detection, true-color
+- Drag files from the explorer or desktop into a terminal as shell-safe quoted paths
 - Per-tab workspace environments on Windows (Local, or any installed WSL distro)
+- Spaces restore tabs, working directories, and split layouts across launches
 
 ### Code editor
 
 - CodeMirror 6 (supports all popular languages - TS/JS, Rust, Python, Go, C/C++, Java, HTML/CSS, JSON, Markdown, etc.)
 - Inline AI autocomplete with local model support
 - AI edit diffs, accept or reject hunk by hunk
+- Opt-in language server support with diagnostics, navigation, completion, formatting, and custom servers
+- Rendered Markdown plus image, video, audio, and PDF viewing
 - Vim mode
-- Ten built-in editor themes: Atom One, Aura, Copilot, GitHub Dark / Light, Gruvbox Dark, Nord, Tokyo Night, Xcode Dark / Light
+- Built-in editor themes including Kanagawa, Catppuccin, Rosé Pine, Everforest, Dracula, Solarized, Nord, Tokyo Night, GitHub, and Xcode
 
 ### Source control
 
@@ -70,6 +88,7 @@ Terax is a lightweight open-source terminal (ADE) built on Tauri 2 + Rust and Re
 
 - Catppuccin icon theme
 - Fuzzy search, keyboard navigation, inline rename, context actions
+- Live updates when files change on disk
 - Attach files and selections directly to the AI side-panel
 
 ### Web preview
@@ -89,7 +108,8 @@ Terax is a lightweight open-source terminal (ADE) built on Tauri 2 + Rust and Re
 - **BYOK providers:** OpenAI, Anthropic, Google (Gemini), Groq, xAI (Grok), Cerebras, OpenRouter, DeepSeek, Mistral, plus any OpenAI-compatible endpoint
 - **Local / offline:** LM Studio, MLX, Ollama
 - **Agentic workflow:** plans, sub-agents, project memory via `TERAX.md`, file read / write / edit / multi-edit / grep / glob, bash with approval gating, background processes
-- **Composer:** snippets via `#handle`, files via `@path`, slash commands, voice input, attach-to-agent from explorer or selection
+- **Coding-agent orchestration:** spawn Claude Code in a terminal, inspect its output, and send follow-up work through approval-gated tools
+- **Composer:** prompt snippets via `#handle`, files via `@path`, voice input, attach-to-agent from explorer or selection
 - **Custom agents** with their own system prompt and tool subset
 - **Plan mode** for multi-step work, generates and confirms before doing
 
@@ -99,7 +119,6 @@ Latest installers are on the [Releases](https://github.com/crynta/terax-ai/relea
 
 ### Windows notes
 
-- On first launch Windows shows "Windows protected your PC" because Terax isn't code-signed yet. Click **More info** then **Run anyway**.
 - Default shell detection: `pwsh.exe` (PowerShell 7+) -> `powershell.exe` (Windows PowerShell 5.1) -> `cmd.exe`.
 - WSL is a first-class workspace environment, not a wrapped subprocess.
 

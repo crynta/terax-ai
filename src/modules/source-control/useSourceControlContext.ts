@@ -2,15 +2,13 @@ import { useCallback, useMemo } from "react";
 import { native } from "@/modules/ai/lib/native";
 import type { SidebarViewId } from "@/modules/sidebar";
 import type { Tab } from "@/modules/tabs";
+import {
+  activeRepositoryContextPath,
+  gitGraphRepositoryPath,
+  sourceControlRepositoryPath,
+  type SourceControlRepositoryTarget,
+} from "./repositoryTarget";
 import { useSourceControl } from "./useSourceControl";
-
-function dirname(path: string | null): string | null {
-  if (!path) return null;
-  const normalized = path.replace(/\\/g, "/");
-  const idx = normalized.lastIndexOf("/");
-  if (idx <= 0) return normalized;
-  return normalized.slice(0, idx);
-}
 
 type Params = {
   activeTab: Tab | undefined;
@@ -21,6 +19,7 @@ type Params = {
   launchCwdResolved: boolean;
   home: string | null;
   sidebarView: SidebarViewId;
+  repositoryTarget: SourceControlRepositoryTarget;
   cycleSidebarView: (view: SidebarViewId) => void;
   openCommitHistoryTab: (args: {
     repoRoot: string;
@@ -42,22 +41,19 @@ export function useSourceControlContext({
   launchCwdResolved,
   home,
   sidebarView,
+  repositoryTarget,
   cycleSidebarView,
   openCommitHistoryTab,
 }: Params) {
   const workspaceFallbackPath = launchCwdResolved
     ? (launchCwd ?? home ?? null)
     : null;
-  const sourceControlContextPath = (() => {
-    if (activeTab?.kind === "terminal") {
-      return activeTerminalLeafCwd ?? explorerRoot ?? workspaceFallbackPath;
-    }
-    if (activeTab?.kind === "editor") return dirname(activeTab.path);
-    if (activeTab?.kind === "git-diff") return activeTab.repoRoot;
-    if (activeTab?.kind === "git-commit-file") return activeTab.repoRoot;
-    if (activeTab?.kind === "git-history") return activeTab.repoRoot;
-    return explorerRoot ?? workspaceFallbackPath;
-  })();
+  const sourceControlContextPath = activeRepositoryContextPath({
+    activeTab,
+    activeTerminalLeafCwd,
+    explorerRoot,
+    workspaceFallbackPath,
+  });
   const hasOpenGitTab = useMemo(
     () =>
       tabs.some(
@@ -68,14 +64,22 @@ export function useSourceControlContext({
       ),
     [tabs],
   );
-  const sourceControlActive = hasOpenGitTab || sidebarView === "source-control";
   // Ambient path tracks the explorer root so the rail badge and explorer git
   // decorations reflect the repo you are actually looking at. cd-within-repo
   // churn is absorbed by the status TTL + reusable-root path in useSourceControl.
   const badgeContextPath = explorerRoot ?? workspaceFallbackPath;
-  const sourceControlPath = sourceControlActive
-    ? sourceControlContextPath
-    : badgeContextPath;
+  const sourceControlPath = sourceControlRepositoryPath({
+    contextPath: sourceControlContextPath,
+    badgeContextPath,
+    sidebarView,
+    hasOpenGitTab,
+    target: repositoryTarget,
+  });
+  const graphContextPath = gitGraphRepositoryPath({
+    contextPath: sourceControlContextPath,
+    sidebarView,
+    target: repositoryTarget,
+  });
   const sourceControl = useSourceControl(sourceControlPath, true);
 
   const toggleSourceControl = useCallback(() => {
@@ -84,16 +88,20 @@ export function useSourceControlContext({
 
   const openGitGraphFromContext = useCallback(async () => {
     const known = sourceControl.hasRepo ? sourceControl.repo : null;
-    if (known) {
+    const fixedTargetIsLoaded =
+      sidebarView !== "source-control" ||
+      repositoryTarget.mode !== "fixed" ||
+      known?.repoRoot === repositoryTarget.repoRoot;
+    if (known && fixedTargetIsLoaded) {
       openCommitHistoryTab({
         repoRoot: known.repoRoot,
         branch: sourceControl.status?.branch ?? null,
       });
       return;
     }
-    if (!sourceControlContextPath) return;
+    if (!graphContextPath) return;
     try {
-      const repo = await native.gitResolveRepo(sourceControlContextPath);
+      const repo = await native.gitResolveRepo(graphContextPath);
       if (!repo) return;
       openCommitHistoryTab({ repoRoot: repo.repoRoot, branch: repo.branch });
     } catch {
@@ -104,7 +112,9 @@ export function useSourceControlContext({
     sourceControl.hasRepo,
     sourceControl.repo,
     sourceControl.status?.branch,
-    sourceControlContextPath,
+    graphContextPath,
+    repositoryTarget,
+    sidebarView,
   ]);
 
   return { sourceControl, toggleSourceControl, openGitGraphFromContext };

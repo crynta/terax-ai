@@ -19,7 +19,13 @@ import {
   swapLeafInDirection,
 } from "@/modules/terminal/lib/panes";
 import { disposeSession } from "@/modules/terminal/lib/useTerminalSession";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 // Matches the renderer slot pool size — over this we'd evict an active leaf.
 export const MAX_PANES_PER_TAB = 4;
@@ -148,6 +154,133 @@ export type GitDiffOpenInput = {
   title?: string;
 };
 
+export type OpenFileTabOptions = {
+  spaceId?: string;
+  activate?: boolean;
+};
+
+export type CloseTabsPlan = {
+  closeIds: number[];
+  nextActiveId: number;
+};
+
+type CloseTabsPlanResult = {
+  tabs: Tab[];
+  closeIds: number[];
+  disposeLeafIds: number[];
+  nextActiveId: number;
+};
+
+export function planMarkdownTabOpen(
+  tabs: Tab[],
+  path: string,
+  spaceId: string,
+  allocId: () => number,
+): { tabs: Tab[]; tabId: number } {
+  const pathKey = path.replace(/\\/g, "/");
+  const existing = tabs.find(
+    (tab) =>
+      tab.kind === "markdown" &&
+      tab.spaceId === spaceId &&
+      tab.path.replace(/\\/g, "/") === pathKey,
+  );
+  if (existing) return { tabs, tabId: existing.id };
+
+  const tabId = allocId();
+  return {
+    tabs: [
+      ...tabs,
+      {
+        id: tabId,
+        kind: "markdown",
+        spaceId,
+        title: basename(path),
+        path,
+      },
+    ],
+    tabId,
+  };
+}
+
+export function planFileTabOpen(
+  tabs: Tab[],
+  path: string,
+  pin: boolean,
+  spaceId: string,
+  allocId: () => number,
+): { tabs: Tab[]; tabId: number } {
+  if (pin) {
+    const existing = tabs.find(
+      (tab) =>
+        tab.kind === "editor" && tab.spaceId === spaceId && tab.path === path,
+    );
+    if (existing?.kind === "editor") {
+      return {
+        tabs: existing.preview
+          ? tabs.map((tab) =>
+              tab.id === existing.id ? { ...tab, preview: false } : tab,
+            )
+          : tabs,
+        tabId: existing.id,
+      };
+    }
+
+    const tabId = allocId();
+    return {
+      tabs: [
+        ...tabs,
+        {
+          id: tabId,
+          kind: "editor",
+          spaceId,
+          title: basename(path),
+          path,
+          dirty: false,
+          preview: false,
+        },
+      ],
+      tabId,
+    };
+  }
+
+  const persistent = tabs.find(
+    (tab) =>
+      tab.kind === "editor" &&
+      tab.spaceId === spaceId &&
+      tab.path === path &&
+      !tab.preview,
+  );
+  if (persistent) return { tabs, tabId: persistent.id };
+
+  const existingPreview = tabs.find(
+    (tab) =>
+      tab.kind === "editor" &&
+      tab.spaceId === spaceId &&
+      tab.path === path &&
+      tab.preview,
+  );
+  if (existingPreview) return { tabs, tabId: existingPreview.id };
+
+  const previewIndex = tabs.findIndex(
+    (tab) => tab.kind === "editor" && tab.spaceId === spaceId && tab.preview,
+  );
+  const tabId = allocId();
+  const tab: EditorTab = {
+    id: tabId,
+    kind: "editor",
+    spaceId,
+    title: basename(path),
+    path,
+    dirty: false,
+    preview: true,
+  };
+  if (previewIndex === -1) return { tabs: [...tabs, tab], tabId };
+
+  const next = [...tabs];
+  next[previewIndex] = tab;
+  return { tabs: next, tabId };
+}
+
 function basename(path: string): string {
   const parts = path.split(/[\\/]/).filter(Boolean);
   return parts.length ? parts[parts.length - 1] : path;
@@ -210,6 +343,79 @@ export function reorderTabsByGap(
   return next;
 }
 
+/**
+ * Plans a Chrome-style "close tabs to the right" within the anchor's space.
+ * Returns the ids strictly to the right of the anchor plus the id to keep
+ * active: the anchor when the active tab is being closed, unchanged otherwise.
+ */
+export function planCloseTabsToRight(
+  tabs: Tab[],
+  anchorId: number,
+  activeId: number,
+): CloseTabsPlan {
+  const anchor = tabs.find((t) => t.id === anchorId);
+  if (!anchor) return { closeIds: [], nextActiveId: activeId };
+  const sameSpace = tabs.filter((t) => t.spaceId === anchor.spaceId);
+  const idx = sameSpace.findIndex((t) => t.id === anchorId);
+  const closeIds = sameSpace.slice(idx + 1).map((t) => t.id);
+  if (closeIds.length === 0) return { closeIds, nextActiveId: activeId };
+  return {
+    closeIds,
+    nextActiveId: closeIds.includes(activeId) ? anchorId : activeId,
+  };
+}
+
+/**
+ * Plans a Chrome-style "close other tabs" within the anchor's space.
+ * Returns every other tab's id in the anchor's space plus the id to keep
+ * active: the anchor when the active tab is being closed, unchanged otherwise.
+ */
+export function planCloseOtherTabs(
+  tabs: Tab[],
+  anchorId: number,
+  activeId: number,
+): CloseTabsPlan {
+  const anchor = tabs.find((t) => t.id === anchorId);
+  if (!anchor) return { closeIds: [], nextActiveId: activeId };
+  const sameSpace = tabs.filter((t) => t.spaceId === anchor.spaceId);
+  const closeIds = sameSpace.filter((t) => t.id !== anchorId).map((t) => t.id);
+  if (closeIds.length === 0) return { closeIds, nextActiveId: activeId };
+  return {
+    closeIds,
+    nextActiveId: closeIds.includes(activeId) ? anchorId : activeId,
+  };
+}
+
+export function applyCloseTabsPlan(
+  tabs: Tab[],
+  anchorId: number,
+  plan: CloseTabsPlan,
+): CloseTabsPlanResult | null {
+  const anchor = tabs.find((tab) => tab.id === anchorId);
+  if (!anchor) return null;
+
+  const requested = new Set(plan.closeIds);
+  const closing = tabs.filter(
+    (tab) =>
+      tab.id !== anchorId &&
+      tab.spaceId === anchor.spaceId &&
+      requested.has(tab.id),
+  );
+  if (closing.length === 0) return null;
+
+  const closeIds = closing.map((tab) => tab.id);
+  const close = new Set(closeIds);
+  const next = tabs.filter((tab) => !close.has(tab.id));
+  const nextActiveId = next.some((tab) => tab.id === plan.nextActiveId)
+    ? plan.nextActiveId
+    : anchorId;
+  const disposeLeafIds = closing
+    .filter((tab) => tab.kind === "terminal")
+    .flatMap((tab) => leafIds(tab.paneTree));
+
+  return { tabs: next, closeIds, disposeLeafIds, nextActiveId };
+}
+
 export function planGitDiffOpen(
   tabs: Tab[],
   input: GitDiffOpenInput,
@@ -226,8 +432,7 @@ export function planGitDiffOpen(
     tab.path === input.path &&
     tab.mode === input.mode;
   const matchingTabs = tabs.filter(matches);
-  const existing =
-    matchingTabs.find((tab) => !tab.preview) ?? matchingTabs[0];
+  const existing = matchingTabs.find((tab) => !tab.preview) ?? matchingTabs[0];
 
   if (existing) {
     const preview = pin ? false : existing.preview;
@@ -276,6 +481,45 @@ export function planGitDiffOpen(
   return { tabs: next, targetId: id };
 }
 
+export function planCommitHistoryOpen(
+  tabs: Tab[],
+  input: { repoRoot: string; branch?: string | null },
+  spaceId: string,
+  allocId: () => number,
+): { tabs: Tab[]; targetId: number } {
+  const existing = tabs.find(
+    (tab) =>
+      tab.kind === "git-history" &&
+      tab.spaceId === spaceId &&
+      tab.repoRoot === input.repoRoot,
+  );
+  const title = input.branch ? `History · ${input.branch}` : "Git History";
+  if (existing) {
+    if (existing.title === title) return { tabs, targetId: existing.id };
+    return {
+      tabs: tabs.map((tab) =>
+        tab.id === existing.id ? { ...existing, title } : tab,
+      ),
+      targetId: existing.id,
+    };
+  }
+
+  const id = allocId();
+  return {
+    tabs: [
+      ...tabs,
+      {
+        id,
+        kind: "git-history",
+        spaceId,
+        title,
+        repoRoot: input.repoRoot,
+      } satisfies GitHistoryTab,
+    ],
+    targetId: id,
+  };
+}
+
 function coldTerminalTab(
   tabId: number,
   leafId: number,
@@ -314,7 +558,10 @@ export function planSpaceRemoval(
   let activeId = currentActiveId;
   if (!next.some((t) => t.spaceId === fallbackSpaceId)) {
     const tabId = allocId();
-    next = [...next, coldTerminalTab(tabId, allocId(), fallbackSpaceId, fallbackCwd)];
+    next = [
+      ...next,
+      coldTerminalTab(tabId, allocId(), fallbackSpaceId, fallbackCwd),
+    ];
     activeId = tabId;
   } else if (!next.some((t) => t.id === currentActiveId)) {
     const inFallback = next.filter((t) => t.spaceId === fallbackSpaceId);
@@ -348,11 +595,11 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   const tabsRef = useRef(tabs);
   const activeIdRef = useRef(activeId);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     tabsRef.current = tabs;
   }, [tabs]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     activeIdRef.current = activeId;
   }, [activeId]);
 
@@ -376,6 +623,8 @@ export function useTabs(initial?: Partial<TerminalTab>) {
 
   const replaceTabs = useCallback((next: Tab[], nextActiveId: number) => {
     if (next.length === 0) return;
+    tabsRef.current = next;
+    activeIdRef.current = nextActiveId;
     setTabs(next);
     setActiveId(nextActiveId);
   }, []);
@@ -590,80 +839,24 @@ export function useTabs(initial?: Partial<TerminalTab>) {
    *   reused: if a persistent tab for the path already exists it is activated;
    *   otherwise the current preview slot is replaced with the new path.
    */
-  const openFileTab = useCallback((path: string, pin = true) => {
-    let targetId: number | null = null;
-    setTabs((curr) => {
-      if (pin) {
-        // Persistent open: find any existing editor tab, pin it if needed.
-        const existing = curr.find(
-          (t) => t.kind === "editor" && t.path === path,
-        );
-        if (existing) {
-          targetId = existing.id;
-          if ((existing as EditorTab).preview) {
-            return curr.map((t) =>
-              t.id === existing.id ? { ...t, preview: false } : t,
-            );
-          }
-          return curr;
-        }
-        const id = nextIdRef.current++;
-        targetId = id;
-        return [
-          ...curr,
-          {
-            id,
-            kind: "editor",
-            spaceId: activeSpaceIdRef.current,
-            title: basename(path),
-            path,
-            dirty: false,
-            preview: false,
-          } satisfies EditorTab,
-        ];
-      } else {
-        // Preview open: persistent tab for this path takes priority.
-        const persistent = curr.find(
-          (t) =>
-            t.kind === "editor" && t.path === path && !(t as EditorTab).preview,
-        );
-        if (persistent) {
-          targetId = persistent.id;
-          return curr;
-        }
-        // Reuse the slot if it already shows the same path.
-        const existingPreview = curr.find(
-          (t) =>
-            t.kind === "editor" && t.path === path && (t as EditorTab).preview,
-        );
-        if (existingPreview) {
-          targetId = existingPreview.id;
-          return curr;
-        }
-        // Replace the current preview slot, or append a new one.
-        const previewIdx = curr.findIndex(
-          (t) => t.kind === "editor" && (t as EditorTab).preview,
-        );
-        const id = nextIdRef.current++;
-        targetId = id;
-        const tab: EditorTab = {
-          id,
-          kind: "editor",
-          spaceId: activeSpaceIdRef.current,
-          title: basename(path),
-          path,
-          dirty: false,
-          preview: true,
-        };
-        if (previewIdx === -1) return [...curr, tab];
-        const next = [...curr];
-        next[previewIdx] = tab;
-        return next;
-      }
-    });
-    if (targetId !== null) setActiveId(targetId);
-    return targetId as number | null;
-  }, []);
+  const openFileTab = useCallback(
+    (path: string, pin = true, options: OpenFileTabOptions = {}) => {
+      const targetSpaceId = options.spaceId ?? activeSpaceIdRef.current;
+      const activate = options.activate ?? true;
+      const plan = planFileTabOpen(
+        tabsRef.current,
+        path,
+        pin,
+        targetSpaceId,
+        () => nextIdRef.current++,
+      );
+      tabsRef.current = plan.tabs;
+      setTabs(plan.tabs);
+      if (activate) setActiveId(plan.tabId);
+      return plan.tabId;
+    },
+    [],
+  );
 
   /**
    * Promotes a preview tab to a persistent one. Called on double-click of the
@@ -772,31 +965,24 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     return id;
   }, []);
 
+  // Mirrors tabsRef like openFileTab instead of using a functional update: a
+  // batch that opens a markdown file before a regular one (multi-file "Open
+  // With") would otherwise have the queued markdown update clobbered by
+  // openFileTab's setTabs(plan.tabs), which is built from the stale ref.
   const newMarkdownTab = useCallback((path: string) => {
-    let targetId: number | null = null;
-    setTabs((curr) => {
-      const existing = curr.find(
-        (t) => t.kind === "markdown" && t.path === path,
-      );
-      if (existing) {
-        targetId = existing.id;
-        return curr;
-      }
-      const id = nextIdRef.current++;
-      targetId = id;
-      return [
-        ...curr,
-        {
-          id,
-          kind: "markdown",
-          spaceId: activeSpaceIdRef.current,
-          title: basename(path),
-          path,
-        },
-      ];
-    });
-    if (targetId !== null) setActiveId(targetId);
-    return targetId;
+    const curr = tabsRef.current;
+    const plan = planMarkdownTabOpen(
+      curr,
+      path,
+      activeSpaceIdRef.current,
+      () => nextIdRef.current++,
+    );
+    if (plan.tabs !== curr) {
+      tabsRef.current = plan.tabs;
+      setTabs(plan.tabs);
+    }
+    setActiveId(plan.tabId);
+    return plan.tabId;
   }, []);
 
   const setOverrideLanguage = useCallback((id: number, lang: string | null) => {
@@ -850,14 +1036,30 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     [],
   );
 
-  const openGitDiffTab = useCallback(
-    (input: GitDiffOpenInput, pin = false) => {
+  const openGitDiffTab = useCallback((input: GitDiffOpenInput, pin = false) => {
+    const curr = tabsRef.current;
+    const plan = planGitDiffOpen(
+      curr,
+      input,
+      activeSpaceIdRef.current,
+      pin,
+      () => nextIdRef.current++,
+    );
+    if (plan.tabs !== curr) {
+      tabsRef.current = plan.tabs;
+      setTabs(plan.tabs);
+    }
+    setActiveId(plan.targetId);
+    return plan.targetId;
+  }, []);
+
+  const openCommitHistoryTab = useCallback(
+    (input: { repoRoot: string; branch?: string | null }) => {
       const curr = tabsRef.current;
-      const plan = planGitDiffOpen(
+      const plan = planCommitHistoryOpen(
         curr,
         input,
         activeSpaceIdRef.current,
-        pin,
         () => nextIdRef.current++,
       );
       if (plan.tabs !== curr) {
@@ -866,41 +1068,6 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       }
       setActiveId(plan.targetId);
       return plan.targetId;
-    },
-    [],
-  );
-
-  const openCommitHistoryTab = useCallback(
-    (input: { repoRoot: string; branch?: string | null }) => {
-      const curr = tabsRef.current;
-      const existing = curr.find(
-        (t) => t.kind === "git-history" && t.repoRoot === input.repoRoot,
-      );
-      const title = input.branch ? `History · ${input.branch}` : "Git History";
-      if (existing) {
-        const nextTabs = curr.map((t) =>
-          t.id === existing.id ? { ...t, title } : t,
-        );
-        tabsRef.current = nextTabs;
-        setTabs(nextTabs);
-        setActiveId(existing.id);
-        return existing.id;
-      }
-      const id = nextIdRef.current++;
-      const nextTabs = [
-        ...curr,
-        {
-          id,
-          kind: "git-history",
-          spaceId: activeSpaceIdRef.current,
-          title,
-          repoRoot: input.repoRoot,
-        } satisfies GitHistoryTab,
-      ];
-      tabsRef.current = nextTabs;
-      setTabs(nextTabs);
-      setActiveId(id);
-      return id;
     },
     [],
   );
@@ -979,6 +1146,20 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     for (const lid of toDispose) disposeSession(lid);
   }, []);
 
+  const closeTabs = useCallback(
+    (anchorId: number, plan: CloseTabsPlan): number[] => {
+      const result = applyCloseTabsPlan(tabsRef.current, anchorId, plan);
+      if (!result) return [];
+      tabsRef.current = result.tabs;
+      activeIdRef.current = result.nextActiveId;
+      setTabs(result.tabs);
+      setActiveId(result.nextActiveId);
+      for (const leafId of result.disposeLeafIds) disposeSession(leafId);
+      return result.closeIds;
+    },
+    [],
+  );
+
   const updateTab = useCallback((id: number, patch: TabPatch) => {
     setTabs((t) =>
       t.map((x) => {
@@ -1008,6 +1189,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
           return {
             ...x,
             ...(patch.title !== undefined && { title: patch.title }),
+            ...(patch.path !== undefined && { path: patch.path }),
           };
         }
         // editor tab: auto-promote from preview the moment the file becomes dirty.
@@ -1031,9 +1213,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
 
   const selectByIndex = useCallback(
     (idx: number, spaceId?: string) => {
-      const t = spaceId
-        ? pickTabBySpaceIndex(tabs, idx, spaceId)
-        : tabs[idx];
+      const t = spaceId ? pickTabBySpaceIndex(tabs, idx, spaceId) : tabs[idx];
       if (t) setActiveId(t.id);
     },
     [tabs],
@@ -1229,6 +1409,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     activeId,
     setActiveId,
     allocId,
+    booted,
     replaceTabs,
     moveTabToSpace,
     reorderTab,
@@ -1255,6 +1436,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     setAiDiffStatus,
     closeAiDiffTab,
     closeTab,
+    closeTabs,
     updateTab,
     selectByIndex,
     setLeafCwd,

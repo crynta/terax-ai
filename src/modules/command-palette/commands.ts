@@ -18,6 +18,7 @@ import {
   SourceCodeIcon,
   SparklesIcon,
   TerminalIcon,
+  ViewIcon,
 } from "@hugeicons/core-free-icons";
 import type { PaletteItem } from "./types";
 
@@ -51,6 +52,7 @@ export type CommandPaletteActionContext = {
   focusSearch: () => void;
   focusExplorerSearch: () => void;
   toggleSidebar: () => void;
+  toggleHiddenFiles: () => void;
   toggleAi: () => void;
   askAiSelection: () => void;
   openSettings: () => void;
@@ -272,6 +274,15 @@ export function createCommandItems(
       icon: SidebarLeftIcon,
       shortcutId: "sidebar.toggle",
       run: ctx.toggleSidebar,
+    },
+    {
+      id: "explorer.toggleHidden",
+      title: "Toggle hidden files",
+      group: "View",
+      keywords: ["dotfiles", "hidden", "explorer", "gitignore", "env"],
+      icon: ViewIcon,
+      shortcutId: "explorer.toggleHidden",
+      run: ctx.toggleHiddenFiles,
     },
     {
       id: "ai.toggle",

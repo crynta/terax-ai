@@ -545,4 +545,77 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn special_ipv4_ranges_do_not_classify_as_public() {
+        assert_eq!(
+            ip_kind(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
+            IpKind::Loopback
+        );
+        assert_eq!(
+            ip_kind(IpAddr::V4(Ipv4Addr::BROADCAST)),
+            IpKind::Loopback
+        );
+        assert_eq!(
+            ip_kind(IpAddr::V4(Ipv4Addr::new(224, 0, 0, 1))),
+            IpKind::Loopback
+        );
+    }
+
+    #[test]
+    fn private_range_boundaries_hold_on_ipv4() {
+        assert_eq!(
+            ip_kind(IpAddr::V4(Ipv4Addr::new(172, 31, 255, 255))),
+            IpKind::Private
+        );
+        assert_eq!(
+            ip_kind(IpAddr::V4(Ipv4Addr::new(172, 32, 0, 1))),
+            IpKind::Public
+        );
+        assert_eq!(
+            ip_kind(IpAddr::V4(Ipv4Addr::new(100, 127, 255, 255))),
+            IpKind::Private
+        );
+        assert_eq!(
+            ip_kind(IpAddr::V4(Ipv4Addr::new(100, 128, 0, 1))),
+            IpKind::Public
+        );
+        assert_eq!(
+            ip_kind(IpAddr::V4(Ipv4Addr::new(198, 18, 0, 1))),
+            IpKind::Private
+        );
+        assert_eq!(
+            ip_kind(IpAddr::V4(Ipv4Addr::new(198, 19, 255, 255))),
+            IpKind::Private
+        );
+        assert_eq!(
+            ip_kind(IpAddr::V4(Ipv4Addr::new(198, 20, 0, 1))),
+            IpKind::Public
+        );
+    }
+
+    #[test]
+    fn ipv6_unique_local_and_multicast_are_not_public() {
+        assert_eq!(ip_kind("fd12:3456::1".parse().unwrap()), IpKind::Private);
+        assert_eq!(ip_kind("fc00::1".parse().unwrap()), IpKind::Private);
+        assert_eq!(ip_kind("ff02::1".parse().unwrap()), IpKind::Loopback);
+        assert_eq!(ip_kind("::".parse().unwrap()), IpKind::Loopback);
+        assert_eq!(
+            ip_kind("2606:4700::1111".parse().unwrap()),
+            IpKind::Public
+        );
+    }
+
+    #[test]
+    fn blocked_host_name_match_is_case_insensitive_and_exact() {
+        assert!(is_blocked_host_name("METADATA.google.internal"));
+        assert!(!is_blocked_host_name("metadata.evil.internal"));
+        assert!(!is_blocked_host_name("my-metadata"));
+    }
+
+    #[test]
+    fn validate_url_requires_a_host() {
+        // A URL that parses but carries no host must not slip through.
+        assert!(validate_url("http://", true).is_err());
+    }
 }

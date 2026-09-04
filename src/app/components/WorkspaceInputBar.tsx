@@ -127,7 +127,7 @@ export function WorkspaceInputBar({
     !hasComposer && !isBlockTab ? (
       <AiInputBarConnect onAdd={onConnect} />
     ) : (
-      <div className="shrink-0 border-t border-border/60 bg-card/40 px-3 py-2">
+      <div className="shrink-0 border-t border-border/60 bg-foreground/[0.02] px-3 py-2">
         <div className="flex flex-col gap-2 rounded-lg px-1 py-1">
           <ChipsRow
             leading={terminalChips}
