@@ -48,4 +48,18 @@ describe("scheduleFocusNewTerminalTab", () => {
     vi.advanceTimersByTime(FOCUS_NEW_TERMINAL_DELAY_MS);
     // Should not throw.
   });
+
+  it("no-ops when isActive becomes false before the delay fires", () => {
+    vi.useFakeTimers();
+    const focus = vi.fn();
+    let active = true;
+    scheduleFocusNewTerminalTab(7, {
+      getTab: () => ({ kind: "terminal", activeLeafId: 42 }),
+      getHandle: () => ({ focus }),
+      isActive: () => active,
+    });
+    active = false;
+    vi.advanceTimersByTime(FOCUS_NEW_TERMINAL_DELAY_MS);
+    expect(focus).not.toHaveBeenCalled();
+  });
 });
