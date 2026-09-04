@@ -162,6 +162,7 @@ export type Preferences = {
   voiceHoldUseFn: boolean;
   voiceHoldMods: VoiceHoldMods;
   voiceCleanupEnabled: boolean;
+  voiceCleanupModelId: string;
   favoriteModelIds: string[];
   recentModelIds: string[];
   vimMode: boolean;
@@ -260,6 +261,7 @@ const KEY_VOICE_HOLD_ENABLED = "voiceHoldEnabled";
 const KEY_VOICE_HOLD_USE_FN = "voiceHoldUseFn";
 const KEY_VOICE_HOLD_MODS = "voiceHoldMods";
 const KEY_VOICE_CLEANUP_ENABLED = "voiceCleanupEnabled";
+const KEY_VOICE_CLEANUP_MODEL = "voiceCleanupModelId";
 const KEY_FAVORITE_MODELS = "favoriteModelIds";
 const KEY_RECENT_MODELS = "recentModelIds";
 const KEY_VIM_MODE = "vimMode";
@@ -356,6 +358,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   voiceHoldUseFn: IS_MAC,
   voiceHoldMods: { ctrl: true, alt: true },
   voiceCleanupEnabled: false,
+  voiceCleanupModelId: DEFAULT_MODEL_ID,
   favoriteModelIds: [],
   recentModelIds: [],
   vimMode: false,
@@ -525,6 +528,9 @@ export async function loadPreferences(): Promise<Preferences> {
     voiceCleanupEnabled:
       get<boolean>(KEY_VOICE_CLEANUP_ENABLED) ??
       DEFAULT_PREFERENCES.voiceCleanupEnabled,
+    voiceCleanupModelId:
+      get<string>(KEY_VOICE_CLEANUP_MODEL) ??
+      DEFAULT_PREFERENCES.voiceCleanupModelId,
     favoriteModelIds: (
       get<string[]>(KEY_FAVORITE_MODELS) ?? DEFAULT_PREFERENCES.favoriteModelIds
     ).filter(isKnownModelId),
@@ -816,6 +822,10 @@ export async function setVoiceCleanupEnabled(value: boolean): Promise<void> {
   await writePref(KEY_VOICE_CLEANUP_ENABLED, value);
 }
 
+export async function setVoiceCleanupModel(value: string): Promise<void> {
+  await writePref(KEY_VOICE_CLEANUP_MODEL, value);
+}
+
 export async function setFavoriteModelIds(value: string[]): Promise<void> {
   await writePref(KEY_FAVORITE_MODELS, value);
 }
@@ -1049,6 +1059,7 @@ export async function onPreferencesChange(
     [KEY_VOICE_HOLD_USE_FN]: "voiceHoldUseFn",
     [KEY_VOICE_HOLD_MODS]: "voiceHoldMods",
     [KEY_VOICE_CLEANUP_ENABLED]: "voiceCleanupEnabled",
+    [KEY_VOICE_CLEANUP_MODEL]: "voiceCleanupModelId",
     [KEY_FAVORITE_MODELS]: "favoriteModelIds",
     [KEY_RECENT_MODELS]: "recentModelIds",
     [KEY_VIM_MODE]: "vimMode",

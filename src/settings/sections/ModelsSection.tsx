@@ -79,6 +79,7 @@ import {
   setVoiceHoldUseFn,
   setVoiceHoldMods,
   setVoiceCleanupEnabled,
+  setVoiceCleanupModel,
   type VoiceHoldMods,
 } from "@/modules/settings/store";
 import { IS_MAC } from "@/lib/platform";
@@ -373,7 +374,7 @@ export function ModelsSection() {
         customEndpoints={customEndpoints}
       />
 
-      <VoiceBlock />
+      <VoiceBlock configuredIds={configuredIds} />
 
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
@@ -548,9 +549,10 @@ function DefaultsBlock({
       <Label>Defaults</Label>
       <div className="flex flex-col gap-2.5 rounded-lg border border-border/60 bg-card/60 px-3 py-2.5">
         <FieldRow label="Chat model">
-          <DefaultModelPicker
-            defaultModel={defaultModel}
+          <ModelPicker
+            value={defaultModel}
             configuredIds={configuredIds}
+            onSelect={(id) => void setDefaultModel(id)}
           />
         </FieldRow>
         <AutocompleteRow
@@ -563,14 +565,16 @@ function DefaultsBlock({
   );
 }
 
-function DefaultModelPicker({
-  defaultModel,
+function ModelPicker({
+  value,
   configuredIds,
+  onSelect,
 }: {
-  defaultModel: ModelId;
+  value: ModelId;
   configuredIds: Set<ProviderId>;
+  onSelect: (id: ModelId) => void;
 }) {
-  const m = getModel(defaultModel);
+  const m = getModel(value);
   const hasAny = configuredIds.size > 0;
 
   return (
@@ -614,10 +618,10 @@ function DefaultModelPicker({
                 {models.map((mod) => (
                   <DropdownMenuItem
                     key={mod.id}
-                    onSelect={() => void setDefaultModel(mod.id as ModelId)}
+                    onSelect={() => onSelect(mod.id as ModelId)}
                     className={cn(
                       "flex items-start gap-2 text-[12px]",
-                      mod.id === defaultModel && "bg-accent/50",
+                      mod.id === value && "bg-accent/50",
                     )}
                   >
                     <span className="flex flex-1 flex-col">
@@ -1344,7 +1348,7 @@ function modsLabel(m: VoiceHoldMods): string {
   return parts.length ? parts.join(" + ") : "None";
 }
 
-function VoiceBlock() {
+function VoiceBlock({ configuredIds }: { configuredIds: Set<ProviderId> }) {
   const sttProvider = usePreferencesStore((s) => s.sttProvider);
   const groqSttModel = usePreferencesStore((s) => s.groqSttModel);
   const whispercppBaseURL = usePreferencesStore((s) => s.whispercppBaseURL);
@@ -1352,6 +1356,7 @@ function VoiceBlock() {
   const holdUseFn = usePreferencesStore((s) => s.voiceHoldUseFn);
   const holdMods = usePreferencesStore((s) => s.voiceHoldMods);
   const cleanupEnabled = usePreferencesStore((s) => s.voiceCleanupEnabled);
+  const cleanupModel = usePreferencesStore((s) => s.voiceCleanupModelId);
   const [urlDraft, setUrlDraft] = useState(whispercppBaseURL);
   const [groqModelDraft, setGroqModelDraft] = useState(groqSttModel);
 
@@ -1510,8 +1515,8 @@ function VoiceBlock() {
             <div className="flex flex-col">
               <span className="text-[11.5px]">Auto-edit with AI</span>
               <span className="text-[10.5px] leading-relaxed text-muted-foreground">
-                Clean up filler words and punctuation with your default model
-                before inserting.
+                Clean up filler words and punctuation before inserting. Long
+                dictations are inserted as transcribed.
               </span>
             </div>
             <Switch
@@ -1519,6 +1524,16 @@ function VoiceBlock() {
               onCheckedChange={(v) => void setVoiceCleanupEnabled(v)}
             />
           </div>
+
+          {cleanupEnabled && (
+            <FieldRow label="Cleanup model">
+              <ModelPicker
+                value={cleanupModel as ModelId}
+                configuredIds={configuredIds}
+                onSelect={(id) => void setVoiceCleanupModel(id)}
+              />
+            </FieldRow>
+          )}
         </div>
       )}
     </div>
