@@ -107,7 +107,7 @@ describe("denyPendingToolApprovals", () => {
           toolCallId: "c-x",
           state: "approval-requested",
           input: {},
-        } as UIMessage["parts"][number],
+        } as unknown as UIMessage["parts"][number],
       ]),
     ];
     expect(denyPendingToolApprovals(messages)).toBe(0);
