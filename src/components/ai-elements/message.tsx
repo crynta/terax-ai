@@ -23,6 +23,7 @@ import {
   useState,
 } from "react";
 import { Streamdown } from "streamdown";
+import { MarkdownLink } from "@/modules/markdown/MarkdownLink";
 import { ChatStreamingProvider } from "./chat-code";
 import { MarkdownCode } from "./markdown-code";
 
@@ -321,7 +322,8 @@ export type MessageResponseProps = ComponentProps<typeof Streamdown> & {
   streaming?: boolean;
 };
 
-const streamdownComponents = { code: MarkdownCode };
+// Same as MarkdownPreviewPane: native opener, not webview navigation (#773).
+const streamdownComponents = { a: MarkdownLink, code: MarkdownCode };
 
 export const MessageResponse = memo(
   ({ className, streaming = false, ...props }: MessageResponseProps) => (
