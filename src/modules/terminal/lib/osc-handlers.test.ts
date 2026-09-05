@@ -13,6 +13,18 @@ import {
 // git-bash path mapping is Windows-only; exercise that branch.
 vi.mock("@/lib/platform", () => ({ IS_WINDOWS: true }));
 
+vi.mock("@/styles/tokens", () => ({
+  readTerminalTokens: () => ({
+    background: "rgb(0, 0, 0)",
+    foreground: "rgb(255, 255, 255)",
+  }),
+}));
+
+vi.mock("./rendererPool", () => ({
+  poolSlotStats: () => [],
+  getLiveSlotForLeaf: () => null,
+}));
+
 /**
  * Minimal in-memory fake of the xterm `Terminal` surface we touch — just
  * enough to register OSC handlers and invoke them with crafted payloads.
@@ -299,5 +311,15 @@ describe("OSC 10/11 color query handlers", () => {
     expect(handlers.get(11)?.("rgb:0000/0000/0000")).toBe(true);
     expect(handlers.get(10)?.("rgb:FFFF/FFFF/FFFF")).toBe(true);
     expect(writePty).not.toHaveBeenCalled();
+  });
+});
+
+describe("registerOsc52 also wires OSC 10/11", () => {
+  it("registers color query handlers alongside clipboard", () => {
+    const { term, handlers } = makeFakeTerm();
+    registerOsc52ClipboardHandler(term, vi.fn());
+    expect(handlers.has(52)).toBe(true);
+    expect(handlers.has(10)).toBe(true);
+    expect(handlers.has(11)).toBe(true);
   });
 });
