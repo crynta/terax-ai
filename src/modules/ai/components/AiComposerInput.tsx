@@ -1,5 +1,6 @@
 import { Popover, PopoverAnchor } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
+import { isImeComposing } from "@/lib/ime";
 import { cn } from "@/lib/utils";
 import { usePresence } from "@/lib/usePresence";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -218,6 +219,11 @@ export function AiComposerInput() {
               onClick={updateTrigger}
               onSelect={updateTrigger}
               onKeyDown={(e) => {
+                // While an IME is composing (e.g. Chinese pinyin) Enter commits
+                // the candidate into the textarea — it must not pick a picker
+                // item or submit the message. Let the IME own every keystroke
+                // until composition ends. (#873)
+                if (isImeComposing(e.nativeEvent)) return;
                 if (pickerOpen) {
                   const items = fileTrigger ? filteredFiles : filteredItems;
                   if (e.key === "ArrowDown") {
