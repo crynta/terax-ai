@@ -3,8 +3,12 @@
 # boundaries. C comes from a PSConsoleHostReadLine wrapper (PowerShell has no
 # preexec hook).
 
-if ($global:__TERAX_HOOKS_LOADED) { return }
+# StrictMode treats a missing $global: as an error (#930). Probe the
+# variable drive instead of reading an unset value.
+if (Test-Path Variable:global:__TERAX_HOOKS_LOADED) { return }
 $global:__TERAX_HOOKS_LOADED = $true
+$global:__terax_readline_done = $false
+$global:__terax_block_seen = $false
 
 if ($env:TERAX_CLI -and (Test-Path -LiteralPath $env:TERAX_CLI -PathType Leaf)) {
     function global:terax {
@@ -75,7 +79,7 @@ function global:__terax_install_readline {
 
 function global:prompt {
     __terax_install_readline
-    $lec = $LASTEXITCODE
+    $lec = if (Test-Path Variable:LASTEXITCODE) { $LASTEXITCODE } else { $null }
     if ($null -eq $lec) { $lec = if ($?) { 0 } else { 1 } }
     $esc = [char]27
 
