@@ -6,7 +6,6 @@ export {
 } from "./lib/useTabSwitcher";
 export { labelFor } from "./lib/tabLabel";
 export {
-  MAX_PANES_PER_TAB,
   DEFAULT_SPACE_ID,
   useTabs,
   nextActiveInSpace,
