@@ -3,7 +3,7 @@ pub mod modules;
 #[cfg(target_os = "macos")]
 use modules::app_menu;
 use modules::{
-    agent, control, fs, git, history, lsp, net, pty, secrets, shell, vibrancy, workspace,
+    agent, control, fs, git, history, lsp, net, pty, secrets, shell, vibrancy, voice, workspace,
 };
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -323,6 +323,7 @@ pub fn run() {
             open_settings_window,
             agent::agent_enable_hooks,
             agent::agent_hooks_status,
+            voice::voice_set_fn_monitor,
             secrets::secrets_get,
             secrets::secrets_set,
             secrets::secrets_delete,

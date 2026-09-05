@@ -12,4 +12,5 @@ pub mod pty;
 pub mod secrets;
 pub mod shell;
 pub mod vibrancy;
+pub mod voice;
 pub mod workspace;
