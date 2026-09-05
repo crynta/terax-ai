@@ -116,6 +116,8 @@ function parseOsc7(data: string): string | null {
     const drive = path.match(/^\/([A-Za-z])(\/.*)?$/);
     if (drive) path = `${drive[1].toUpperCase()}:${drive[2] ?? "/"}`;
   }
+  // cmd.exe $P is backslash-separated; match PowerShell's forward-slash form.
+  if (IS_WINDOWS) path = path.replace(/\\/g, "/");
   return path;
 }
 
