@@ -1152,4 +1152,21 @@ mod tests {
             Some(std::path::PathBuf::from("/app/bin"))
         );
     }
+
+    #[test]
+    fn powershell_profile_guard_is_strictmode_safe() {
+        const PROFILE: &str = include_str!("scripts/profile.ps1");
+        assert!(
+            PROFILE.contains("Test-Path Variable:global:__TERAX_HOOKS_LOADED"),
+            "must probe the variable drive; reading an unset $global: throws under StrictMode (#930)"
+        );
+        assert!(
+            !PROFILE.contains("if ($global:__TERAX_HOOKS_LOADED)"),
+            "bare $global:__TERAX_HOOKS_LOADED boolean test is the #930 crash"
+        );
+        assert!(
+            PROFILE.contains("Test-Path Variable:LASTEXITCODE"),
+            "prompt must not read an unset $LASTEXITCODE under StrictMode"
+        );
+    }
 }
