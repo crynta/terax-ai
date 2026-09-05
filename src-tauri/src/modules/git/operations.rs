@@ -470,7 +470,7 @@ pub fn push(
     })
 }
 
-const LOG_FORMAT: &str = "%H%x1f%an%x1f%ae%x1f%at%x1f%P%x1f%s";
+const LOG_FORMAT: &str = "%H%x1f%an%x1f%ae%x1f%at%x1f%P%x1f%D%x1f%s";
 const MAX_LOG_LIMIT: u32 = 200;
 
 pub fn log(
@@ -497,6 +497,7 @@ pub fn log(
     let mut args: Vec<&OsStr> = vec![
         OsStr::new("log"),
         OsStr::new("--no-color"),
+        OsStr::new("--decorate=full"),
         OsStr::new("--shortstat"),
         OsStr::new(&count_arg),
         OsStr::new(&format_arg),
@@ -527,7 +528,7 @@ pub fn log(
     let stdout = std::str::from_utf8(&output.stdout).unwrap_or("");
     let mut entries: Vec<GitLogEntry> = Vec::with_capacity(bounded as usize);
     // Lines we get back interleave:
-    //   <sha>\x1f<author>\x1f<email>\x1f<ts>\x1f<parents>\x1f<subject>
+    //   <sha>\x1f<author>\x1f<email>\x1f<ts>\x1f<parents>\x1f<refs>\x1f<subject>
     //   <blank>
     //    5 files changed, 12 insertions(+), 3 deletions(-)
     // Commits without diffstats (root commits, merges with no changes) just
@@ -539,7 +540,7 @@ pub fn log(
             continue;
         }
         if line.contains('\x1f') {
-            let mut fields = line.splitn(6, '\x1f');
+            let mut fields = line.splitn(7, '\x1f');
             let sha = fields.next().unwrap_or("").to_string();
             if !sha_is_safe(&sha) {
                 continue;
@@ -552,6 +553,12 @@ pub fn log(
                 .split_ascii_whitespace()
                 .map(|s| s.to_string())
                 .collect();
+            let refs_raw = fields.next().unwrap_or("");
+            let refs: Vec<String> = refs_raw
+                .split(", ")
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
             let subject = fields.next().unwrap_or("").to_string();
             let short_sha = sha.chars().take(7).collect::<String>();
             entries.push(GitLogEntry {
@@ -561,6 +568,7 @@ pub fn log(
                 author_email,
                 timestamp_secs: timestamp,
                 parents,
+                refs,
                 subject,
                 files_changed: 0,
                 insertions: 0,
