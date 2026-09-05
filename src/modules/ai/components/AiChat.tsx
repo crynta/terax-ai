@@ -36,6 +36,7 @@ import {
   TerminalIcon,
 } from "@hugeicons/core-free-icons";
 import { SLASH_COMMANDS, TERAX_CMD_RE } from "../lib/slashCommands";
+import { coalesceReasoningParts } from "../lib/coalesceReasoning";
 import { Spinner } from "@/components/ui/spinner";
 import { useChatStore } from "../store/chatStore";
 import { sendMessage } from "../store/chatRuntime";
@@ -332,20 +333,26 @@ const RenderedMessage = memo(function RenderedMessage({
   onApproval: (id: string, approved: boolean) => void;
   streaming: boolean;
 }) {
-  // Index of the trailing text part — only that one is "live" mid-stream.
+  // Collapse interleaved / trailing reasoning parts (Minimax + other
+  // OpenAI-compatible streams) into one block before the answer (#1012).
+  // Display-only - message.parts stay untouched for provider history.
+  const displayParts = useMemo(
+    () => coalesceReasoningParts(message.parts as AnyPart[]),
+    [message.parts],
+  );
+
+  // Index of the trailing text part - only that one is "live" mid-stream.
   // Earlier text parts (separated by tool calls) are already finalized.
   let lastTextIdx = -1;
-  for (let i = message.parts.length - 1; i >= 0; i -= 1) {
-    if (message.parts[i]?.type === "text") {
+  for (let i = displayParts.length - 1; i >= 0; i -= 1) {
+    if (displayParts[i]?.type === "text") {
       lastTextIdx = i;
       break;
     }
   }
   // Hooks must run unconditionally (Rules of Hooks) even though user messages
   // render without groups; grouping is cheap so this stays out of the way.
-  const groups = useMemo(() => buildPartGroups(message.parts as AnyPart[]), [
-    message.parts,
-  ]);
+  const groups = useMemo(() => buildPartGroups(displayParts), [displayParts]);
 
   if (message.role === "user") {
     const rawText = message.parts
@@ -403,7 +410,12 @@ const RenderedMessage = memo(function RenderedMessage({
                 <RenderedPart
                   part={g.part}
                   onApproval={onApproval}
-                  streaming={streaming && g.idx === lastTextIdx}
+                  streaming={
+                    streaming &&
+                    (g.part.type === "text"
+                      ? g.idx === lastTextIdx
+                      : g.part.type === "reasoning")
+                  }
                 />
               </PartAppear>
             );
@@ -629,7 +641,7 @@ const RenderedPart = memo(function RenderedPart({
 
   if (part.type === "reasoning") {
     return (
-      <Reasoning>
+      <Reasoning isStreaming={streaming}>
         <ReasoningTrigger />
         <ReasoningContent>
           {(part as unknown as { text: string }).text}
