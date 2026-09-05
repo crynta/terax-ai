@@ -2,8 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import type { Terminal } from "@xterm/xterm";
 import {
   createShellIntegrationState,
+  formatOscRgb,
+  parseCssRgb,
   registerCwdHandler,
   registerOsc52ClipboardHandler,
+  registerOscColorQueryHandlers,
   registerPromptTracker,
 } from "./osc-handlers";
 
@@ -216,5 +219,85 @@ describe("OSC 52 clipboard handler", () => {
     await flushClipboardQueue();
 
     expect(writeClipboard).not.toHaveBeenCalled();
+  });
+});
+
+describe("parseCssRgb / formatOscRgb", () => {
+  it("parses rgb / rgba / #hex forms", () => {
+    expect(parseCssRgb("rgb(26, 27, 38)")).toEqual({ r: 26, g: 27, b: 38 });
+    expect(parseCssRgb("rgba(255, 128, 0, 0.5)")).toEqual({
+      r: 255,
+      g: 128,
+      b: 0,
+    });
+    expect(parseCssRgb("#1a1b26")).toEqual({ r: 0x1a, g: 0x1b, b: 0x26 });
+    expect(parseCssRgb("#abc")).toEqual({ r: 0xaa, g: 0xbb, b: 0xcc });
+    expect(parseCssRgb("not-a-color")).toBeNull();
+  });
+
+  it("formats 8-bit RGB as duplicated 16-bit OSC hex", () => {
+    expect(formatOscRgb({ r: 26, g: 27, b: 38 })).toBe(
+      "rgb:1A1A/1B1B/2626",
+    );
+    expect(formatOscRgb({ r: 255, g: 0, b: 128 })).toBe(
+      "rgb:FFFF/0000/8080",
+    );
+  });
+});
+
+describe("OSC 10/11 color query handlers", () => {
+  it("replies to OSC 11 ? with getBg color", () => {
+    const { term, handlers } = makeFakeTerm();
+    const writePty = vi.fn();
+    registerOscColorQueryHandlers(term, {
+      writePty,
+      getFg: () => ({ r: 1, g: 2, b: 3 }),
+      getBg: () => ({ r: 26, g: 27, b: 38 }),
+    });
+
+    const result = handlers.get(11)?.("?");
+    expect(result).toBe(true);
+    expect(writePty).toHaveBeenCalledWith("\x1b]11;rgb:1A1A/1B1B/2626\x07");
+  });
+
+  it("replies to OSC 10 ? with getFg color", () => {
+    const { term, handlers } = makeFakeTerm();
+    const writePty = vi.fn();
+    registerOscColorQueryHandlers(term, {
+      writePty,
+      getFg: () => ({ r: 192, g: 202, b: 245 }),
+      getBg: () => ({ r: 26, g: 27, b: 38 }),
+    });
+
+    const result = handlers.get(10)?.("?");
+    expect(result).toBe(true);
+    expect(writePty).toHaveBeenCalledWith("\x1b]10;rgb:C0C0/CACA/F5F5\x07");
+  });
+
+  it("writes nothing when getBg returns null", () => {
+    const { term, handlers } = makeFakeTerm();
+    const writePty = vi.fn();
+    registerOscColorQueryHandlers(term, {
+      writePty,
+      getFg: () => ({ r: 1, g: 2, b: 3 }),
+      getBg: () => null,
+    });
+
+    expect(handlers.get(11)?.("?")).toBe(true);
+    expect(writePty).not.toHaveBeenCalled();
+  });
+
+  it("consumes non-query payloads without writing", () => {
+    const { term, handlers } = makeFakeTerm();
+    const writePty = vi.fn();
+    registerOscColorQueryHandlers(term, {
+      writePty,
+      getFg: () => ({ r: 1, g: 2, b: 3 }),
+      getBg: () => ({ r: 4, g: 5, b: 6 }),
+    });
+
+    expect(handlers.get(11)?.("rgb:0000/0000/0000")).toBe(true);
+    expect(handlers.get(10)?.("rgb:FFFF/FFFF/FFFF")).toBe(true);
+    expect(writePty).not.toHaveBeenCalled();
   });
 });
