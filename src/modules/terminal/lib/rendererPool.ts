@@ -20,6 +20,7 @@ import {
   resetImeBridge,
   transitionImeBridgeOwner,
 } from "./imeBridge";
+import { attachImeAnchorFreeze } from "./imeAnchorFreeze";
 import { terminalReadlineSequence } from "./keymap";
 import {
   readTerminalClipboard,
@@ -80,6 +81,7 @@ export type Slot = {
   lastH: number;
   lastUsedAt: number;
   imeState: ImeBridgeState;
+  imeAnchorDispose: (() => void) | null;
 };
 
 const slots: Slot[] = [];
@@ -265,7 +267,22 @@ function createSlot(): Slot {
     lastH: 0,
     lastUsedAt: 0,
     imeState: createImeBridgeState(),
+    imeAnchorDispose: null,
   };
+
+  // Freeze the helper textarea position for the life of an IME composition so
+  // streaming TUIs cannot yank the native candidate window around (#1077).
+  {
+    const ta = slot.term.textarea;
+    if (ta) {
+      const compositionView =
+        (slot.host.querySelector(".xterm-composition-view") as HTMLElement | null) ??
+        null;
+      slot.imeAnchorDispose = attachImeAnchorFreeze(ta, {
+        compositionView,
+      }).dispose;
+    }
+  }
 
   // Some WKWebView builds bypass xterm's composition events. The pure bridge
   // repairs that path and stands down when native composition is observed.
@@ -808,6 +825,10 @@ function disposeSlot(slot: Slot): void {
   }
   slot.oscDisposers = [];
   disposeSlotWebgl(slot);
+  try {
+    slot.imeAnchorDispose?.();
+  } catch {}
+  slot.imeAnchorDispose = null;
   try {
     slot.term.dispose();
   } catch (e) {
