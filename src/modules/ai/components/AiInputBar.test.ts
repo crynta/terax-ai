@@ -28,4 +28,10 @@ describe("AiInputBarConnect dismiss (#304)", () => {
     expect(src).toMatch(/e\.key !== "Escape"/);
     expect(src).toMatch(/window\.addEventListener\("keydown"/);
   });
+
+  it("gates the Escape listener on open so a closed bar does not steal Esc", () => {
+    expect(src).toMatch(/open: boolean/);
+    expect(src).toMatch(/if \(!onClose \|\| !open\) return/);
+    expect(src).toMatch(/\[onClose, open\]/);
+  });
 });

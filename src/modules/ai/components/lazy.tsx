@@ -38,13 +38,15 @@ export function AiMiniWindow({ state }: { state: PresenceState }) {
 export function AiInputBarConnect({
   onAdd,
   onClose,
+  open,
 }: {
   onAdd: () => void;
   onClose?: () => void;
+  open: boolean;
 }) {
   return (
     <Suspense fallback={null}>
-      <AiInputBarConnectInner onAdd={onAdd} onClose={onClose} />
+      <AiInputBarConnectInner onAdd={onAdd} onClose={onClose} open={open} />
     </Suspense>
   );
 }

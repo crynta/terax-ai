@@ -6,15 +6,19 @@ import { useEffect } from "react";
 export function AiInputBarConnect({
   onAdd,
   onClose,
+  open,
 }: {
   onAdd: () => void;
   onClose?: () => void;
+  open: boolean;
 }) {
   // Esc dismisses the stuck connect-provider banner (#304). Without this
   // (and the dismiss button), panelOpen + !hasComposer left no way to hide it -
   // StatusBar only shows panel-close controls when hasComposer is true.
+  // Gate on open: the bar stays mounted when closed (keysLoaded), so an ungated
+  // Escape listener would steal Esc from unrelated UI.
   useEffect(() => {
-    if (!onClose) return;
+    if (!onClose || !open) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       e.preventDefault();
@@ -22,7 +26,7 @@ export function AiInputBarConnect({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, [onClose, open]);
 
   return (
     <div className="shrink-0 border-t border-border/60 bg-foreground/[0.02] px-3 py-2">
