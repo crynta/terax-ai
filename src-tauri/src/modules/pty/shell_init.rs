@@ -813,11 +813,16 @@ mod windows {
         Ok(root)
     }
 
+    fn normalize_cmd_script(content: &str) -> String {
+        // cmd.exe can misparse LF-only batch files; always write CRLF.
+        content.replace("\r\n", "\n").replace('\n', "\r\n")
+    }
+
     fn prepare_cmd_profile() -> Result<PathBuf, String> {
         let dir = integration_root()?.join("cmd");
         fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
         let file = dir.join("profile.cmd");
-        write_if_changed(&file, PROFILE_CMD)?;
+        write_if_changed(&file, &normalize_cmd_script(PROFILE_CMD))?;
         Ok(file)
     }
 
@@ -1086,6 +1091,21 @@ mod windows {
         }
 
         #[test]
+        fn cmd_profile_is_written_with_crlf() {
+            let profile = prepare_cmd_profile().unwrap();
+            let bytes = fs::read(&profile).unwrap();
+            assert!(
+                bytes.windows(2).any(|w| w == b"\r\n"),
+                "generated profile.cmd must use CRLF line endings"
+            );
+            let stripped = String::from_utf8_lossy(&bytes).replace("\r\n", "");
+            assert!(
+                !stripped.contains('\n'),
+                "generated profile.cmd must not contain lone LF"
+            );
+        }
+
+        #[test]
         fn command_prompt_is_marked_integrated() {
             let cmd = list_shells()
                 .into_iter()
@@ -1097,10 +1117,17 @@ mod windows {
 
         #[test]
         fn cmd_profile_sets_prompt_with_osc7() {
+            use std::os::windows::process::CommandExt;
             let profile = prepare_cmd_profile().unwrap();
-            let script = format!("call {} & echo PROMPT=!PROMPT!", profile.display());
+            // raw_arg: std Command escapes quotes as \", which cmd.exe rejects.
+            let script = format!(
+                "/c call \"{}\" & echo PROMPT=!PROMPT!",
+                profile.display()
+            );
             let output = std::process::Command::new("cmd.exe")
-                .args(["/d", "/v:on", "/c", &script])
+                .raw_arg("/d")
+                .raw_arg("/v:on")
+                .raw_arg(&script)
                 .output()
                 .unwrap();
             let stdout = String::from_utf8_lossy(&output.stdout);
@@ -1116,13 +1143,16 @@ mod windows {
 
         #[test]
         fn cmd_profile_is_idempotent() {
+            use std::os::windows::process::CommandExt;
             let profile = prepare_cmd_profile().unwrap();
             let script = format!(
-                "call {0} & call {0} & echo PROMPT=!PROMPT!",
+                "/c call \"{0}\" & call \"{0}\" & echo PROMPT=!PROMPT!",
                 profile.display()
             );
             let output = std::process::Command::new("cmd.exe")
-                .args(["/d", "/v:on", "/c", &script])
+                .raw_arg("/d")
+                .raw_arg("/v:on")
+                .raw_arg(&script)
                 .output()
                 .unwrap();
             let stdout = String::from_utf8_lossy(&output.stdout);
