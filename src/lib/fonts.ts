@@ -51,7 +51,7 @@ export function resolveFontFamily(userInput: string): string {
 /**
  * WKWebView's `document.fonts.check()` returns false for OS-installed fonts that
  * are not `@font-face`-registered (#820). Canvas `measureText` still sees them:
- * compare `"Family", monospace` vs bare `monospace` — a real install shifts width.
+ * compare `"Family", monospace` vs bare `monospace` ;  a real install shifts width.
  */
 function canvasFontInstalled(family: string): boolean {
   if (typeof document === "undefined") return false;
