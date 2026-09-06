@@ -15,7 +15,7 @@ export type ComposerEnterEvent = {
    * each newline; those must not submit the composer.
    */
   isPasting?: boolean;
-  /** Ctrl/Meta/Alt held — e.g. Ctrl still down during Ctrl+V paste synth. */
+  /** Ctrl/Meta/Alt held  -  e.g. Ctrl still down during Ctrl+V paste synth. */
   ctrlKey?: boolean;
   metaKey?: boolean;
   altKey?: boolean;
