@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MOD_PROP } from "@/lib/platform";
 import {
   getBindingTokens,
   type KeyBinding,
@@ -139,7 +140,7 @@ describe("SHORTCUTS registry", () => {
     expect(save).toBeDefined();
     expect(save!.defaultBindings).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ key: "s", ctrl: true }),
+        expect.objectContaining({ key: "s", [MOD_PROP]: true }),
       ]),
     );
   });
