@@ -5,7 +5,8 @@
 
 # StrictMode treats a missing $global: as an error (#930). Probe the
 # variable drive instead of reading an unset value.
-if (Test-Path Variable:global:__TERAX_HOOKS_LOADED) { return }
+if ((Test-Path Variable:global:__TERAX_HOOKS_LOADED) -and
+    $global:__TERAX_HOOKS_LOADED) { return }
 $global:__TERAX_HOOKS_LOADED = $true
 $global:__terax_readline_done = $false
 $global:__terax_block_seen = $false
@@ -78,9 +79,10 @@ function global:__terax_install_readline {
 }
 
 function global:prompt {
+    $promptStatus = $?
     __terax_install_readline
     $lec = if (Test-Path Variable:LASTEXITCODE) { $LASTEXITCODE } else { $null }
-    if ($null -eq $lec) { $lec = if ($?) { 0 } else { 1 } }
+    if ($null -eq $lec) { $lec = if ($promptStatus) { 0 } else { 1 } }
     $esc = [char]27
 
     $oscD = "$esc]133;D;$lec$esc\"

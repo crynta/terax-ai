@@ -1165,8 +1165,20 @@ mod tests {
             "bare $global:__TERAX_HOOKS_LOADED boolean test is the #930 crash"
         );
         assert!(
+            PROFILE.contains("$global:__TERAX_HOOKS_LOADED) { return }"),
+            "re-entry guard must still require a truthy marker value"
+        );
+        assert!(
             PROFILE.contains("Test-Path Variable:LASTEXITCODE"),
             "prompt must not read an unset $LASTEXITCODE under StrictMode"
+        );
+        assert!(
+            PROFILE.contains("$promptStatus = $?"),
+            "prompt must capture $? before probing LASTEXITCODE / installing readline"
+        );
+        assert!(
+            PROFILE.contains("if ($promptStatus) { 0 } else { 1 }"),
+            "fallback exit code must use the captured $? value"
         );
     }
 }
