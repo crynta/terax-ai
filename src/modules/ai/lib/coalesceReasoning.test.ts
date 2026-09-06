@@ -18,6 +18,16 @@ describe("coalesceReasoningParts", () => {
     expect(coalesceReasoningParts(parts)).toBe(parts);
   });
 
+  it("drops a single leading empty non-streaming reasoning part", () => {
+    const parts = [
+      { type: "reasoning", text: "", state: "done" },
+      { type: "text", text: "answer" },
+    ];
+    expect(coalesceReasoningParts(parts)).toEqual([
+      { type: "text", text: "answer" },
+    ]);
+  });
+
   it("merges interleaved reasoning into one block before content", () => {
     const parts = [
       { type: "reasoning", text: "step 1", state: "done" },

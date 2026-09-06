@@ -25,9 +25,15 @@ export function coalesceReasoningParts<T extends CoalesceablePart>(
   }
   if (reasoningIdxs.length === 0) return parts as T[];
 
-  // Already a single leading reasoning part  -  nothing to fix.
+  // Already a single leading non-empty/streaming reasoning part - nothing to fix.
   if (reasoningIdxs.length === 1 && reasoningIdxs[0] === 0) {
-    return parts as T[];
+    const first = parts[0]!;
+    if (
+      first.state === "streaming" ||
+      (typeof first.text === "string" && first.text.length > 0)
+    ) {
+      return parts as T[];
+    }
   }
 
   const texts: string[] = [];

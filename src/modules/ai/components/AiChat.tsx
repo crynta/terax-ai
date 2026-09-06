@@ -414,7 +414,8 @@ const RenderedMessage = memo(function RenderedMessage({
                     streaming &&
                     (g.part.type === "text"
                       ? g.idx === lastTextIdx
-                      : g.part.type === "reasoning")
+                      : g.part.type === "reasoning" &&
+                        (g.part as { state?: string }).state === "streaming")
                   }
                 />
               </PartAppear>
