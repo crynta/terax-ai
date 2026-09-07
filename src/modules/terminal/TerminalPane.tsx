@@ -14,6 +14,8 @@ import {
   submitToLeaf,
   useTerminalSession,
 } from "./lib/useTerminalSession";
+import { shouldSuppressTerminalContextMenu } from "./lib/mouseTracking";
+import { getSlotForLeaf } from "./lib/rendererPool";
 
 export type TerminalPaneHandle = {
   write: (data: string) => void;
@@ -72,6 +74,17 @@ export const TerminalPane = memo(
       const id = requestAnimationFrame(() => session.applyTheme());
       return () => cancelAnimationFrame(id);
     }, [resolvedMode, activeTheme, session]);
+
+    useEffect(() => {
+      const node = containerRef.current;
+      if (!node) return;
+      const handleContextMenu = (event: MouseEvent) => {
+        const mode = getSlotForLeaf(leafId)?.term.modes.mouseTrackingMode;
+        if (shouldSuppressTerminalContextMenu(mode)) event.preventDefault();
+      };
+      node.addEventListener("contextmenu", handleContextMenu);
+      return () => node.removeEventListener("contextmenu", handleContextMenu);
+    }, [leafId]);
 
     useImperativeHandle(
       ref,
