@@ -863,6 +863,8 @@ export function useTerminalSession({
         onExit: (c) => cbRef.current.onExit?.(c),
         onCwd: (c) => cbRef.current.onCwd?.(c),
       });
+      // Slot exists after attach when visible; focus now (not before bind).
+      // Blocks skip — shell-input registers its own focus path (#411).
       if (s.visibleNow && s.focusedNow && !s.blocks) focusSlot(leafId);
     });
     return () => {
@@ -958,7 +960,16 @@ export function useTerminalSession({
     [leafId],
   );
 
-  const focus = useCallback(() => focusSlot(leafId), [leafId]);
+  const focus = useCallback(() => {
+    const s = sessions.get(leafId);
+    // Blocks at the prompt: shell-input owns keyboard focus — never steal it
+    // via xterm (#411).
+    if (s?.blocks && s.blockMode === "prompt") {
+      s.inputFocus?.();
+      return;
+    }
+    focusSlot(leafId);
+  }, [leafId]);
 
   const getBuffer = useCallback(
     (maxLines = 200): string | null => {

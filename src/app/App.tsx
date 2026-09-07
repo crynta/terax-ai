@@ -6,6 +6,7 @@ import {
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { consumeLaunchFiles, getLaunchDir } from "@/lib/launchDir";
+import { scheduleFocusNewTerminalTab } from "@/app/lib/focusNewTerminalTab";
 import { quoteShellArg } from "@/lib/shellQuote";
 import { usePresence } from "@/lib/usePresence";
 import { useZoom } from "@/lib/useZoom";
@@ -585,17 +586,27 @@ export default function App() {
   });
   const askPresence = usePresence(Boolean(askPopup), 120);
 
+  const focusAfterNewTerminalTab = useCallback((tabId: number) => {
+    // Same 80ms defer as cdInNewTab: slot bind + anti-flash unhide need a beat
+    // before focus sticks (#411).
+    scheduleFocusNewTerminalTab(tabId, {
+      getTab: (id) => tabsRef.current.find((x) => x.id === id),
+      getHandle: (leafId) => terminalRefs.current.get(leafId),
+      isActive: () => activeIdRef.current === tabId,
+    });
+  }, []);
+
   const openNewTab = useCallback(() => {
-    newTab(inheritedCwdForNewTab());
-  }, [newTab, inheritedCwdForNewTab]);
+    focusAfterNewTerminalTab(newTab(inheritedCwdForNewTab()));
+  }, [newTab, inheritedCwdForNewTab, focusAfterNewTerminalTab]);
 
   const openNewPrivateTab = useCallback(() => {
-    newPrivateTab(inheritedCwdForNewTab());
-  }, [newPrivateTab, inheritedCwdForNewTab]);
+    focusAfterNewTerminalTab(newPrivateTab(inheritedCwdForNewTab()));
+  }, [newPrivateTab, inheritedCwdForNewTab, focusAfterNewTerminalTab]);
 
   const openNewBlockTab = useCallback(() => {
-    newBlockTab(inheritedCwdForNewTab());
-  }, [newBlockTab, inheritedCwdForNewTab]);
+    focusAfterNewTerminalTab(newBlockTab(inheritedCwdForNewTab()));
+  }, [newBlockTab, inheritedCwdForNewTab, focusAfterNewTerminalTab]);
 
   const launchAgentGroup = useCallback(
     (request: AgentLaunchRequest) => {
