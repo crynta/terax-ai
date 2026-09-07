@@ -1,5 +1,5 @@
 import type { SearchTarget } from "@/modules/header";
-import { MAX_PANES_PER_TAB, type Tab } from "@/modules/tabs";
+import type { Tab } from "@/modules/tabs";
 import { leafIds } from "@/modules/terminal";
 import {
   Cancel01Icon,
@@ -39,6 +39,7 @@ export type CommandPaletteActionContext = {
   searchTarget: SearchTarget;
   explorerRoot: string | null;
   home: string | null;
+  terminalPaneLimit: number;
   openNewTab: () => void;
   openNewBlock: () => void;
   openNewPrivate: () => void;
@@ -78,7 +79,7 @@ export function createCommandItems(
   const noWorkspaceRoot = !ctx.explorerRoot && !ctx.home;
   const splitDisabled = !activeTerminalTab
     ? "No terminal tab"
-    : activePaneCount >= MAX_PANES_PER_TAB
+    : activePaneCount >= ctx.terminalPaneLimit
       ? "Pane limit"
       : undefined;
   const closeDisabled =

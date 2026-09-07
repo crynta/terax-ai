@@ -166,6 +166,7 @@ export type Preferences = {
   terminalLetterSpacing: number;
   terminalFontSize: number;
   terminalScrollback: number;
+  terminalPaneLimit: number;
   confirmCloseRunningTerminal: boolean;
   lastWslDistro: string | null;
   zoomLevel: number;
@@ -261,6 +262,7 @@ const KEY_TERMINAL_SHELL = "terminalShell";
 const KEY_TERMINAL_LETTER_SPACING = "terminalLetterSpacing";
 const KEY_TERMINAL_FONT_SIZE = "terminalFontSize";
 const KEY_TERMINAL_SCROLLBACK = "terminalScrollback";
+const KEY_TERMINAL_PANE_LIMIT = "terminalPaneLimit";
 const KEY_CONFIRM_CLOSE_RUNNING_TERMINAL = "confirmCloseRunningTerminal";
 const KEY_LAST_WSL_DISTRO = "lastWslDistro";
 const KEY_ZOOM_LEVEL = "zoomLevel";
@@ -303,6 +305,10 @@ export const TERMINAL_SCROLLBACK_MAX = 50_000;
 export const TERMINAL_SCROLLBACK_PRESETS = [
   500, 1000, 2000, 5000, 10_000, 25_000,
 ] as const;
+export const TERMINAL_PANE_LIMIT_DEFAULT = 8;
+export const TERMINAL_PANE_LIMIT_MIN = 1;
+export const TERMINAL_PANE_LIMIT_MAX = 8;
+export const TERMINAL_PANE_LIMIT_PRESETS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
 
 export const DEFAULT_PREFERENCES: Preferences = {
   theme: "system",
@@ -352,6 +358,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   terminalLetterSpacing: 0,
   terminalFontSize: TERMINAL_FONT_SIZE_DEFAULT,
   terminalScrollback: TERMINAL_SCROLLBACK_DEFAULT,
+  terminalPaneLimit: TERMINAL_PANE_LIMIT_DEFAULT,
   confirmCloseRunningTerminal: true,
   lastWslDistro: null,
   zoomLevel: 1.0,
@@ -526,6 +533,10 @@ export async function loadPreferences(): Promise<Preferences> {
     terminalScrollback: clampScrollback(
       get<number>(KEY_TERMINAL_SCROLLBACK) ??
         DEFAULT_PREFERENCES.terminalScrollback,
+    ),
+    terminalPaneLimit: clampTerminalPaneLimit(
+      get<number>(KEY_TERMINAL_PANE_LIMIT) ??
+        DEFAULT_PREFERENCES.terminalPaneLimit,
     ),
     confirmCloseRunningTerminal:
       get<boolean>(KEY_CONFIRM_CLOSE_RUNNING_TERMINAL) ??
@@ -847,6 +858,18 @@ export async function setTerminalFontSize(value: number): Promise<void> {
   await writePref(KEY_TERMINAL_FONT_SIZE, clamped);
 }
 
+export function clampTerminalPaneLimit(value: number): number {
+  if (!Number.isFinite(value)) return TERMINAL_PANE_LIMIT_DEFAULT;
+  return Math.min(
+    TERMINAL_PANE_LIMIT_MAX,
+    Math.max(TERMINAL_PANE_LIMIT_MIN, Math.round(value)),
+  );
+}
+
+export async function setTerminalPaneLimit(value: number): Promise<void> {
+  await writePref(KEY_TERMINAL_PANE_LIMIT, clampTerminalPaneLimit(value));
+}
+
 function clampScrollback(value: number): number {
   if (!Number.isFinite(value)) return TERMINAL_SCROLLBACK_DEFAULT;
   return Math.min(
@@ -999,6 +1022,7 @@ export async function onPreferencesChange(
     [KEY_TERMINAL_LETTER_SPACING]: "terminalLetterSpacing",
     [KEY_TERMINAL_FONT_SIZE]: "terminalFontSize",
     [KEY_TERMINAL_SCROLLBACK]: "terminalScrollback",
+    [KEY_TERMINAL_PANE_LIMIT]: "terminalPaneLimit",
     [KEY_CONFIRM_CLOSE_RUNNING_TERMINAL]: "confirmCloseRunningTerminal",
     [KEY_LAST_WSL_DISTRO]: "lastWslDistro",
     [KEY_ZOOM_LEVEL]: "zoomLevel",
