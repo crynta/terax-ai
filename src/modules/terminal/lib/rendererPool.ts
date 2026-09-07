@@ -27,6 +27,7 @@ import {
 } from "./terminalClipboard";
 import { createTerminalLinkHandler } from "./terminalLinks";
 import { pasteIntoTerminal } from "./terminalPaste";
+import { repaintTerminalSlot } from "./webglRepaint";
 
 export const POOL_MAX_SIZE = 5;
 const FIT_DEBOUNCE_MS = 8;
@@ -576,9 +577,7 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
   if (fast) {
     if (stale) {
       if (!slot.webglAddon) attachWebgl(slot);
-      try {
-        slot.term.refresh(0, slot.term.rows - 1);
-      } catch {}
+      repaintTerminalSlot(slot);
     }
     if (adapter?.isLeafFocused(p.leafId)) slot.term.focus();
   } else {
@@ -595,9 +594,7 @@ function scheduleUnhide(slot: Slot, stale: boolean): void {
       slot.host.style.visibility = "";
       if (stale) {
         if (!slot.webglAddon) attachWebgl(slot);
-        try {
-          slot.term.refresh(0, slot.term.rows - 1);
-        } catch {}
+        repaintTerminalSlot(slot);
       }
       const leafId = slot.currentLeafId;
       if (leafId !== null && adapter?.isLeafFocused(leafId)) {
@@ -853,9 +850,7 @@ function attachWebgl(slot: Slot): void {
         if (!usePreferencesStore.getState().terminalWebglEnabled) return;
         attachWebgl(slot);
         if (slot.webglAddon) {
-          try {
-            slot.term.refresh(0, slot.term.rows - 1);
-          } catch {}
+          repaintTerminalSlot(slot);
         }
       }, WEBGL_RECOVERY_DELAY_MS);
     });
@@ -928,9 +923,7 @@ export function applyWebglPreference(enabled: boolean): void {
       if (slot.currentLeafId !== null && !slot.parked && !slot.webglAddon) {
         attachWebgl(slot);
         if (slot.webglAddon) {
-          try {
-            slot.term.refresh(0, slot.term.rows - 1);
-          } catch {}
+          repaintTerminalSlot(slot);
         }
       }
     } else if (slot.webglAddon) {
@@ -1076,9 +1069,7 @@ export function refreshLeafSlot(leafId: number): void {
       adapter?.resolveLeaf(leafId)?.resizePty(slot.lastCols, slot.lastRows);
     }
   }
-  try {
-    slot.term.refresh(0, slot.term.rows - 1);
-  } catch {}
+  repaintTerminalSlot(slot);
 }
 
 export function disposeLeafSlot(leafId: number): void {
