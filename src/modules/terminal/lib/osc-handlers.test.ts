@@ -116,6 +116,15 @@ describe("OSC 7 cwd handler — gated by OSC 133 in-command state", () => {
     handlers.get(7)?.("file:///C:/Users/me/project");
     expect(onCwd).toHaveBeenCalledWith("C:/Users/me/project");
   });
+
+  it("normalizes cmd.exe backslash OSC 7 paths", () => {
+    const { term, handlers } = makeFakeTerm();
+    const onCwd = vi.fn();
+    registerCwdHandler(term, onCwd);
+
+    handlers.get(7)?.(String.raw`file://HOST/C:\Users\me\project`);
+    expect(onCwd).toHaveBeenCalledWith("C:/Users/me/project");
+  });
 });
 
 describe("OSC 133 command-state tracking", () => {

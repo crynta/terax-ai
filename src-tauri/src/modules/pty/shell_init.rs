@@ -498,6 +498,7 @@ mod windows {
     use portable_pty::CommandBuilder;
 
     const PROFILE_PS1: &str = include_str!("scripts/profile.ps1");
+    const PROFILE_CMD: &str = include_str!("scripts/profile.cmd");
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum ShellKind {
@@ -560,6 +561,7 @@ mod windows {
             .unwrap_or_default();
         let is_powershell = shell_name == "pwsh.exe" || shell_name == "powershell.exe";
         let is_bash = shell_name == "bash.exe";
+        let is_cmd = shell_name == "cmd.exe";
 
         let mut cmd = CommandBuilder::new(&shell_path);
         super::apply_common(&mut cmd, cwd, blocks, control.as_ref());
@@ -592,6 +594,16 @@ mod windows {
                 }
                 Err(e) => {
                     log::warn!("bash shell integration disabled: {e}");
+                }
+            }
+        } else if is_cmd {
+            match prepare_cmd_profile() {
+                Ok(profile) => {
+                    cmd.arg("/k");
+                    cmd.arg(profile);
+                }
+                Err(e) => {
+                    log::warn!("cmd shell integration disabled: {e}");
                 }
             }
         } else {
@@ -801,6 +813,19 @@ mod windows {
         Ok(root)
     }
 
+    fn normalize_cmd_script(content: &str) -> String {
+        // cmd.exe can misparse LF-only batch files; always write CRLF.
+        content.replace("\r\n", "\n").replace('\n', "\r\n")
+    }
+
+    fn prepare_cmd_profile() -> Result<PathBuf, String> {
+        let dir = integration_root()?.join("cmd");
+        fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+        let file = dir.join("profile.cmd");
+        write_if_changed(&file, &normalize_cmd_script(PROFILE_CMD))?;
+        Ok(file)
+    }
+
     fn prepare_ps_profile() -> Result<PathBuf, String> {
         let dir = integration_root()?.join("powershell");
         fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
@@ -852,7 +877,7 @@ mod windows {
                 .join("powershell.exe"),
             true,
         );
-        add(&mut out, "Command Prompt", system32.join("cmd.exe"), false);
+        add(&mut out, "Command Prompt", system32.join("cmd.exe"), true);
         if let Some(p) = git_bash_path() {
             add(&mut out, "Git Bash", p, true);
         }
@@ -1052,6 +1077,89 @@ mod windows {
                     "--exec".to_string(),
                     "/usr/bin/nu".to_string(),
                 ]
+            );
+        }
+
+        #[test]
+        fn cmd_profile_emits_osc7_and_prompt_markers() {
+            assert!(PROFILE_CMD.contains("]7;file://"));
+            assert!(PROFILE_CMD.contains("]133;A"));
+            assert!(PROFILE_CMD.contains("]133;B"));
+            assert!(PROFILE_CMD.contains("]133;D"));
+            assert!(PROFILE_CMD.contains("__TERAX_HOOKS_LOADED"));
+            assert!(!PROFILE_CMD.contains("setlocal"));
+        }
+
+        #[test]
+        fn cmd_profile_is_written_with_crlf() {
+            let profile = prepare_cmd_profile().unwrap();
+            let bytes = fs::read(&profile).unwrap();
+            assert!(
+                bytes.windows(2).any(|w| w == b"\r\n"),
+                "generated profile.cmd must use CRLF line endings"
+            );
+            let stripped = String::from_utf8_lossy(&bytes).replace("\r\n", "");
+            assert!(
+                !stripped.contains('\n'),
+                "generated profile.cmd must not contain lone LF"
+            );
+        }
+
+        #[test]
+        fn command_prompt_is_marked_integrated() {
+            let cmd = list_shells()
+                .into_iter()
+                .find(|s| s.name == "Command Prompt")
+                .expect("cmd.exe should be enumerated on Windows");
+            assert!(cmd.integrated);
+            assert!(cmd.path.to_ascii_lowercase().ends_with("cmd.exe"));
+        }
+
+        #[test]
+        fn cmd_profile_sets_prompt_with_osc7() {
+            use std::os::windows::process::CommandExt;
+            let profile = prepare_cmd_profile().unwrap();
+            // raw_arg: std Command escapes quotes as \", which cmd.exe rejects.
+            let script = format!(
+                "/c call \"{}\" & echo PROMPT=!PROMPT!",
+                profile.display()
+            );
+            let output = std::process::Command::new("cmd.exe")
+                .raw_arg("/d")
+                .raw_arg("/v:on")
+                .raw_arg(&script)
+                .output()
+                .unwrap();
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(
+                stdout.contains("]7;file://"),
+                "expected OSC 7 in PROMPT, got {stdout:?}"
+            );
+            assert!(
+                stdout.contains("]133;A"),
+                "expected OSC 133 A in PROMPT, got {stdout:?}"
+            );
+        }
+
+        #[test]
+        fn cmd_profile_is_idempotent() {
+            use std::os::windows::process::CommandExt;
+            let profile = prepare_cmd_profile().unwrap();
+            let script = format!(
+                "/c call \"{0}\" & call \"{0}\" & echo PROMPT=!PROMPT!",
+                profile.display()
+            );
+            let output = std::process::Command::new("cmd.exe")
+                .raw_arg("/d")
+                .raw_arg("/v:on")
+                .raw_arg(&script)
+                .output()
+                .unwrap();
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert_eq!(
+                stdout.matches("]133;A").count(),
+                1,
+                "double-sourcing should not wrap PROMPT twice: {stdout:?}"
             );
         }
     }

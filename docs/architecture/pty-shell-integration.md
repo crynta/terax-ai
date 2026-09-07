@@ -49,7 +49,7 @@ On Windows the shell priority is:
 
 1. `pwsh.exe` (PowerShell 7+)
 2. `powershell.exe` (Windows PowerShell 5.1)
-3. `cmd.exe` (no integration)
+3. `cmd.exe`
 
 PowerShell loads `profile.ps1` via:
 
@@ -58,6 +58,14 @@ pwsh -NoLogo -NoExit -ExecutionPolicy Bypass -File <profile.ps1>
 ```
 
 The profile wraps the user's existing `prompt` function to emit OSC 7 + OSC 133 A/B/D after `$PROFILE` runs. The cwd is normalized to backslashes before being passed to ConPTY because `CreateProcessW` misbehaves with forward slashes.
+
+Command Prompt loads `profile.cmd` via:
+
+```text
+cmd /k <profile.cmd>
+```
+
+The script wraps the existing `PROMPT` (including AutoRun) to emit OSC 7 + OSC 133 A/B/D. cmd has no preexec hook, so OSC 133 C is omitted.
 
 ### Fish 4.0+
 
