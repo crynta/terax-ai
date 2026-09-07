@@ -55,3 +55,38 @@ export function terminalReadlineSequence(
     terminalDeleteSequence(event, opts)
   );
 }
+
+export type ImeGuardEvent = Pick<
+  KeyboardEvent,
+  "isComposing" | "keyCode" | "key"
+>;
+
+/** Keys that can never carry IME composition input.
+ *
+ * macOS treats Option as a dead-key modifier, so WKWebView stamps keyCode 229
+ * on every Option+key event even with no IME session active. On these keys 229
+ * is therefore always that artifact and never a composition signal; bailing on
+ * it outright is what killed Option+Arrow and Option+Backspace. A composition
+ * is only ever started or refined by a character key.
+ */
+const NON_COMPOSING_KEYS = new Set([
+  "ArrowLeft",
+  "ArrowRight",
+  "ArrowUp",
+  "ArrowDown",
+  "Backspace",
+  "Delete",
+  "Home",
+  "End",
+  "PageUp",
+  "PageDown",
+]);
+
+/** True when the event belongs to an IME session and must not reach the PTY.
+ * `isComposing` is authoritative; the keyCode 229 fallback covers the first
+ * keystroke of a session, before the browser sets `isComposing`. */
+export function isImeCompositionKey(event: ImeGuardEvent): boolean {
+  if (event.isComposing) return true;
+  if (event.keyCode !== 229) return false;
+  return !NON_COMPOSING_KEYS.has(event.key);
+}
