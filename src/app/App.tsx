@@ -1522,6 +1522,7 @@ export default function App() {
                       panelOpen={panelOpen}
                       keysLoaded={keysLoaded}
                       onConnect={() => void openSettingsWindow("models")}
+                      onCloseConnect={() => useChatStore.getState().closePanel()}
                     />
                   </div>
                 </div>

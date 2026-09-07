@@ -35,10 +35,18 @@ export function AiMiniWindow({ state }: { state: PresenceState }) {
   );
 }
 
-export function AiInputBarConnect({ onAdd }: { onAdd: () => void }) {
+export function AiInputBarConnect({
+  onAdd,
+  onClose,
+  open,
+}: {
+  onAdd: () => void;
+  onClose?: () => void;
+  open: boolean;
+}) {
   return (
     <Suspense fallback={null}>
-      <AiInputBarConnectInner onAdd={onAdd} />
+      <AiInputBarConnectInner onAdd={onAdd} onClose={onClose} open={open} />
     </Suspense>
   );
 }
@@ -50,3 +58,4 @@ export function SelectionAskAi(props: SelectionAskAiProps) {
     </Suspense>
   );
 }
+
