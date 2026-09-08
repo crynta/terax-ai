@@ -13,6 +13,7 @@ export const wrapCompartment = new Compartment();
 export const vimCompartment = new Compartment();
 export const lspCompartment = new Compartment();
 export const indentCompartment = new Compartment();
+export const blameCompartment = new Compartment();
 
 export function indentExtension(unit: string): Extension {
   return [
