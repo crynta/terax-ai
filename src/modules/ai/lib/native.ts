@@ -104,6 +104,15 @@ export type GitLogEntry = {
   deletions: number;
 };
 
+export type GitBlameLine = {
+  sha: string;
+  shortSha: string;
+  author: string;
+  timestampSecs: number;
+  summary: string;
+  uncommitted: boolean;
+};
+
 export type GitCommitFileChange = {
   path: string;
   originalPath: string | null;
@@ -337,6 +346,12 @@ export const native = {
       repoRoot,
       limit: options?.limit ?? null,
       beforeSha: options?.beforeSha ?? null,
+      workspace: currentWorkspaceEnv(),
+    }),
+  gitBlame: (repoRoot: string, path: string) =>
+    invoke<GitBlameLine[]>("git_blame", {
+      repoRoot,
+      path,
       workspace: currentWorkspaceEnv(),
     }),
   gitShowCommit: (repoRoot: string, sha: string) =>
