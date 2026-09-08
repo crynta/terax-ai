@@ -29,6 +29,7 @@ import {
   setEditorFormatOnSave,
   setEditorFormatter,
   setEditorFormatterByLang,
+  setEditorInlineBlame,
   setEditorWordWrap,
   setEditorWordWrapColumn,
   setVimMode,
@@ -46,6 +47,7 @@ export function EditorSection() {
   const editorFontSize = usePreferencesStore((s) => s.editorFontSize);
   const vimMode = usePreferencesStore((s) => s.vimMode);
   const editorWordWrap = usePreferencesStore((s) => s.editorWordWrap);
+  const editorInlineBlame = usePreferencesStore((s) => s.editorInlineBlame);
   const editorWordWrapColumn = usePreferencesStore(
     (s) => s.editorWordWrapColumn,
   );
@@ -118,6 +120,15 @@ export function EditorSection() {
             onChange={(v) => void setEditorWordWrapColumn(v)}
           />
         )}
+        <SettingRow
+          title="Inline git blame"
+          description="Show the author, age and message of the last commit that touched the current line."
+        >
+          <Switch
+            checked={editorInlineBlame}
+            onCheckedChange={(v) => void setEditorInlineBlame(v)}
+          />
+        </SettingRow>
       </div>
 
       <div className="flex flex-col gap-2">
