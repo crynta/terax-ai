@@ -1,6 +1,6 @@
 [package]
 name = "terax"
-version = "0.8.6"
+version = "0.9.0-beta"
 description = "Terax — an open-source AI-native terminal emulator"
 authors = ["crynta"]
 license = "Apache-2.0"
@@ -13,7 +13,7 @@ default-members = [".", "crates/terax-cli", "crates/terax-control-protocol"]
 resolver = "2"
 
 [workspace.package]
-version = "0.8.6"
+version = "0.9.0-beta"
 edition = "2021"
 license = "Apache-2.0"
 
@@ -34,6 +34,7 @@ serde_json = "1"
 # macos-private-api backs the transparent window NSVisualEffectView needs.
 tauri = { version = "2", features = ["macos-private-api", "protocol-asset"] }
 tauri-plugin-opener = "2"
+tauri-plugin-clipboard-manager = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 getrandom = "0.3"
@@ -67,6 +68,7 @@ which = "8.0.4"
 [dev-dependencies]
 proptest = "1"
 tempfile = "3"
+wasmparser = { version = "=0.244.0", default-features = false, features = ["std", "validate", "features", "simd"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -76,14 +78,12 @@ keyring = { version = "3.6", default-features = false, features = [
 	"apple-native",
 ] }
 objc2 = "0.6"
+block2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWindow", "NSWorkspace"] }
 objc2-foundation = { version = "0.3", features = ["NSString", "NSUserDefaults"] }
 objc2-app-kit = { version = "0.3", features = ["NSEvent", "NSResponder"] }
 block2 = "0.6"
 window-vibrancy = "0.8"
-
-# WebKitGTK can't read external clipboard copies; mac/win webviews can.
-[target.'cfg(target_os = "linux")'.dependencies]
-tauri-plugin-clipboard-manager = "2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3.6", default-features = false, features = [

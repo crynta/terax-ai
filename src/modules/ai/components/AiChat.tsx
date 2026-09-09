@@ -341,6 +341,12 @@ const RenderedMessage = memo(function RenderedMessage({
       break;
     }
   }
+  // Hooks must run unconditionally (Rules of Hooks) even though user messages
+  // render without groups; grouping is cheap so this stays out of the way.
+  const groups = useMemo(() => buildPartGroups(message.parts as AnyPart[]), [
+    message.parts,
+  ]);
+
   if (message.role === "user") {
     const rawText = message.parts
       .filter((p): p is { type: "text"; text: string } => p.type === "text")
@@ -368,10 +374,6 @@ const RenderedMessage = memo(function RenderedMessage({
       </Message>
     );
   }
-
-  const groups = useMemo(() => buildPartGroups(message.parts as AnyPart[]), [
-    message.parts,
-  ]);
 
   return (
     <Message from={message.role}>

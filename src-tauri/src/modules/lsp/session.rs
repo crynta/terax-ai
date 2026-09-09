@@ -225,7 +225,7 @@ pub fn spawn(
                     if exited_m.load(Ordering::Acquire) {
                         return;
                     }
-                    if let Some(rss) = super::rss::rss_bytes(pid) {
+                    if let Some(rss) = crate::modules::proc::rss::rss_bytes(pid) {
                         let rss_mb = rss / (1024 * 1024);
                         if rss_mb > cap_mb {
                             log::warn!(

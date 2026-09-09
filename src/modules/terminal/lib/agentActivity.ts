@@ -61,8 +61,12 @@ function clearFinishedTimer(id: number): void {
   }
 }
 
-let onExited: ((ptyId: number) => void) | null = null;
-let bound = false;
+let listenerReady: Promise<void> | null = null;
+
+export function clearAgentActivity(id: number): void {
+  clearFinishedTimer(id);
+  useAgentActivityStore.getState().clear(id);
+}
 
 /** Maps a raw detector signal to the phase it drives, `"exited"` to drop the
  * pty, or `null` to ignore. Pure so the mapping stays unit-testable. */
@@ -86,13 +90,9 @@ export function phaseForSignal(
 
 // The Rust detector arms via the Claude Code / Codex / Gemini OSC 777 marker and
 // reports per-pty lifecycle: started, working, attention, finished, exited.
-export function ensureAgentActivityListener(
-  exited: (ptyId: number) => void,
-): void {
-  onExited = exited;
-  if (bound || typeof window === "undefined") return;
-  bound = true;
-  void listen<AgentSignal>("terax:agent-signal", (e) => {
+export function ensureAgentActivityListener(): Promise<void> {
+  if (listenerReady) return listenerReady;
+  listenerReady = listen<AgentSignal>("terax:agent-signal", (e) => {
     const { id, agent } = e.payload;
     const action = phaseForSignal(e.payload.kind);
     if (action === null) return;
@@ -100,7 +100,6 @@ export function ensureAgentActivityListener(
     const store = useAgentActivityStore.getState();
     if (action === "exited") {
       store.clear(id);
-      onExited?.(id);
       return;
     }
     // The agent name only rides the `started` signal (incl. self-arm).
@@ -116,7 +115,14 @@ export function ensureAgentActivityListener(
         }, FINISHED_TTL_MS),
       );
     }
-  });
+  }).then(
+    () => {},
+    (error: unknown) => {
+      listenerReady = null;
+      throw error;
+    },
+  );
+  return listenerReady;
 }
 
 export function isAgentActivePty(ptyId: number): boolean {

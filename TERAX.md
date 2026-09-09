@@ -4,7 +4,7 @@ Terax loads `TERAX.md` from the workspace root as agent memory (similar to AGENT
 
 ## Project
 
-**Terax**: open-source AI-native terminal emulator. Tauri 2 + Rust (`portable-pty`) backend, React 19 + TypeScript + xterm.js (webgl) client, BYOK AI via Vercel AI SDK v6.
+**Terax**: open-source AI-native terminal emulator. Tauri 2 + Rust (`portable-pty`) backend, React 19 + TypeScript + libghostty-vt WASM client (WebGPU, Terax WebGL fallback), BYOK AI via Vercel AI SDK v6.
 
 - Bundle id: `app.crynta.terax`
 - Package manager: **pnpm**
@@ -29,6 +29,120 @@ Verify before claiming done:
 
 A change to a core subsystem (terminal/shell spawn, workspace auth, git, fs, IPC or AI tool surface) needs a test that locks the invariant.
 
+## Terminal migration status
+
+libghostty-vt is the only terminal model. WebGPU is the default renderer and
+Terax WebGL is the compatibility fallback. Each leaf owns one persistent model;
+presentation resources are shared, bounded, and released for hidden leaves.
+Native cell, grapheme and hyperlink presentation buffers allocate on first use
+and return to the WASM allocator when presentation is reclaimed. Hidden parsing
+does not rebuild them. Short visibility pauses retain uploaded cell data.
+Unchanged frames do not acquire presentation textures or draw; cursor-only
+updates retain cell buffers. WebGL background and decoration geometry uses
+row range uploads while rectangle counts are stable; structural changes rebuild
+the compact stream. Scrollbar synchronization reads no DOM on unchanged frames.
+Blink timers stop in unfocused windows, and native
+cursor hiding stops cursor timers. Selection damages only its old and new rows;
+streaming search invalidations coalesce instead of rebuilding per output chunk.
+WebGL surface and renderer code load only when selected, needed for fallback,
+or explicitly requested by diagnostics. Delayed imports cannot install into a
+closed, restarted, or replaced session.
+xterm, its addons, CSS, snapshots, session pool, and dormant byte ring are removed.
+Unsupported graphics produce a visible error with retry instead of changing models.
+
+Command blocks use parser-time Ghostty tracked pins, including endpoint columns,
+so command ranges survive reflow and exclude following prompts and commands.
+The native marker ring is capped at 2,048 pins; JavaScript history is capped at
+1,000 blocks and 512 KiB of estimated UTF-16 command/cwd text. Block implementation
+and UI load only for block sessions, and hidden/occluded block presentation stops.
+Block search yields after 128 rows or four milliseconds, retains at most 500
+matches, and cancels obsolete queries. Block copy, search, sticky headers, navigation, Ask AI, rerun, shared shell input,
+and selection all use the same persistent Ghostty model.
+Block chrome commits with its matching renderer frame; command-editor focus does
+not lower active-pane cadence. Divider padding is presentation-only and does not
+change copied command boundaries. Scrollbars preserve native fractional positions
+and ignore delayed programmatic scroll events. Hidden output does no surface DOM
+or search-mask work until presentation resumes.
+
+Terminal clipboard shortcuts use the native text clipboard plugin on all desktop
+platforms. Context clicks expose the selected text through the input element to
+restore the webview's native text menu; no persistent DOM scrollback is maintained.
+Unclaimed macOS Command shortcuts reach the native menu after explicit clipboard,
+block-editor, and readline bindings, including when Kitty keyboard mode is active.
+The block prompt retains an enabled terminal input proxy for native menus and
+routes editing keys, composed text and paste back to its command editor.
+Character drags retain a native selection pin from pointerdown, including before
+the first pointermove. Unmoved clicks and lost captures discard provisional pins.
+Key encoding supplies the base character required by Kitty keyboard mode; plain
+keys and key releases also use Ghostty encoding when the application requests it.
+Terminal text uses the configured font, an installed Nerd Font when detected,
+or bundled JetBrains Mono. Private-use prompt symbols require an installed font
+that supplies them; Terax does not ship a separate symbol font. Native color
+emoji remain on the system fallback path. Rerun requires the complete command
+submitted through Terax; truncated shell labels are never executed.
+Primary-screen full erase, scrollback erase, and terminal reset invalidate block
+pins at parse time and clear block chrome, selection, and search. Commands after
+an erase in the same output chunk retain their new pins. Alternate-screen erases
+preserve primary block history. Block scrollbar status dots are removed along
+with their timers and history scans.
+
+The shared command bar activates after shell integration confirms prompt input.
+Bare shells keep direct terminal input. Bash before 4.4 reports
+`OSC 133;B;terax_blocks=0` and keeps its native prompt because it lacks PS0.
+
+Settings offer Automatic or WebGL for new terminals, plus opt-in screen reader
+output. Accessible text is limited to 256 rows / 64 KiB and refreshes at most four
+times per second while visible. Ordinary URL detection runs on pointer demand;
+OSC 8 links take precedence. OSC 52 side effects retain one in-flight write and
+only the latest pending value across the window.
+
+The adapted Ghostty revision is pinned in `packages/ghostty-core/adapted/UPSTREAM.md`.
+Both SIMD and scalar artifacts are shipped; the loader fetches only the variant
+the webview supports. Scalar validation explicitly disables SIMD instructions
+and types. This avoids changing OS minimums solely for the WASM SIMD requirement;
+actual older WKWebView and WebKitGTK compatibility still needs platform tests.
+
+PTY output retains a 2 MiB pending plus in-flight byte limit and two-message
+window. Acknowledgments are cumulative parsed-byte offsets validated against
+native chunk boundaries, so duplicates and retries cannot grant extra credit.
+Parser failures stop delivery visibly without acknowledging unconsumed bytes.
+Exit waits for the reader drain and final parsing acknowledgments. Unix readers
+sleep on PTY readiness plus an explicit shutdown signal without a polling timer.
+After shell exit they consume ready output, bounded to 2 MiB / 30 seconds, rather
+than wait indefinitely for an inherited slave descriptor to close. Exceeding this
+drain bound reports a reader failure and exit status -1. After shell exit,
+30 seconds without acknowledgment progress closes a stalled queue with a logged
+delivery failure and exit status -1. The deadline is armed before ConPTY close
+and thread joins; it does not run during live-shell backpressure. Close wakes blocked
+queue workers and the Unix reader; Windows keeps draining the pipe while ConPTY closes.
+
+Enable release diagnostics with `localStorage.setItem("terax:terminal-diagnostics", "1")`
+and reload. `window.__teraxTerm()` reads frontend counters;
+`await window.__teraxTermSnapshot()` adds native queue counters and explicitly
+labeled host RSS. Host RSS
+excludes WebContent and GPU processes and is not total application memory.
+
+Ghostty presentation uses shared native macOS occlusion/sleep and DOM visibility
+tracking. It pauses immediately, retains presentation for two seconds during
+short desktop transitions, and then reclaims hidden-window GPU resources.
+Sleep requests immediate reclamation; hidden tabs still release their leases
+immediately. Per-pane pacing prevents focused output from raising background
+pane cadence. WebGPU permits at most two outstanding frame submissions.
+User wheel, drag, and keyboard interaction gives only its pane 150 ms of focused
+cadence, including in an unfocused visible window. It starts no idle timer or
+frame loop. Reclaimed WebGPU canvases shrink to 1x1 while retaining their target
+geometry for the next presentation transaction.
+`window.__teraxTermTrace()` explicitly starts a bounded ten-minute resource trace;
+it is never started automatically. `pnpm soak:ghostty` exercises real WASM models
+without launching the application. `pnpm profile:ghostty` compares allocation
+and parsing workloads in a fresh process per artifact and optional baseline.
+Resource evidence and limitations live in
+`docs/architecture/ghostty-resource-efficiency.md`.
+
+The release gates and current verification evidence are in
+`docs/architecture/ghostty-release-readiness.md`. Automated checks alone do not
+establish production readiness, platform parity, or multi-day resource stability.
+
 ## Conventions
 
 - **Comments**: default to none, the code should explain itself. If genuinely needed, 1-2 lines on *why*, never *what*. No AI-generic filler.
@@ -43,7 +157,7 @@ A change to a core subsystem (terminal/shell spawn, workspace auth, git, fs, IPC
 
 **Rust (`src-tauri/`)** owns all OS access. The webview never touches the FS, processes, or shells directly - everything goes through `invoke()` calls to commands registered in `src-tauri/src/lib.rs`:
 
-- `pty::pty_*` - long-lived interactive PTY sessions (xterm ↔ portable-pty), managed by `PtyState` (`RwLock<HashMap<id, Session>>`). Output streams via a Tauri `Channel<PtyEvent>`.
+- `pty::pty_*` - long-lived interactive PTY sessions (portable-pty ↔ Ghostty), managed by `PtyState` (`RwLock<HashMap<id, Session>>`). Output streams via a Tauri `Channel<PtyEvent>`.
 - `fs::tree::*` (`fs_read_dir`, `list_subdirs`), `fs::file::*` (`fs_read_file`, `fs_write_file`, `fs_stat`, `fs_canonicalize`), `fs::mutate::*` (`fs_create_file`, `fs_create_dir`, `fs_rename`, `fs_move`, `fs_delete`, `fs_delete_batch`): file explorer + editor IO.
 - `fs::search::*` (`fs_search`, `fs_list_files`), `fs::grep::*` (`fs_grep`, `fs_glob`): fuzzy file finder + content search (powered by `ignore` + `grep-*` crates).
 - `git::commands::*`: full source-control surface (`git_status`, `git_diff`, `git_diff_content`, `git_stage`, `git_unstage`, `git_discard`, `git_commit`, `git_fetch`, `git_pull_ff_only`, `git_push`, `git_log`, `git_show_commit`, `git_commit_files`, `git_commit_file_diff`, `git_panel_snapshot`, `git_resolve_repo`, `git_remote_url`). All gated through the workspace authorization registry.
@@ -65,7 +179,7 @@ PTY shells are bootstrapped via injected init scripts in `src-tauri/src/modules/
 
 `pty/shell_init.rs` is split into `#[cfg(unix)]` / `#[cfg(windows)]` modules - keep new platform-specific code in the right cfg arm.
 
-ConPTY on Windows requires `SPAWN_LOCK` (Mutex) around `openpty + spawn_command` in `session.rs`. Concurrent spawns leave one of the resulting PTYs with a stalled output pipe. Don't remove the lock without verifying first-tab stability under fast tab spam.
+ConPTY on Windows requires `CONPTY_LIFECYCLE_LOCK` (Mutex) around `openpty + spawn_command` in `session.rs`. Concurrent spawns leave one of the resulting PTYs with a stalled output pipe. Don't remove the lock without verifying first-tab stability under fast tab spam.
 
 Each ConPTY child is also assigned to a per-session **Job Object** with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` (`pty/job.rs`). When the Job HANDLE drops - clean shutdown, panic, or even SIGKILL'd Terax process - the kernel kills every descendant of the shell (e.g. `npm run dev` spawned from inside pwsh). Without this Windows orphans the entire process subtree because `TerminateProcess` only kills the immediate child. macOS/Linux rely on `Drop for Session → killer.kill()`; on dev-`Ctrl-C` of `cargo run` destructors don't fire and orphans are possible there too - acceptable for now since dev only.
 
@@ -81,7 +195,7 @@ Single-window React app. Path alias `@/*` → `src/*`. Tabs are a tagged union (
 
 Each module is self-contained, exports a thin barrel via `index.ts`, and owns its hooks under `lib/`.
 
-- **terminal/** - `TerminalStack` keeps one mounted xterm per tab via `useTerminalSession` + `pty-bridge`. `osc-handlers.ts` parses OSC 7 (with Windows drive-letter normalization: `/C:/Users/foo` → `C:/Users/foo`) and OSC 133 markers. The xterm color palette is driven by the central theme engine (`modules/theme`), not a local table. Renderer slots are pooled (`rendererPool.ts`, max 5): a hidden leaf with a foreground job (OSC 133 C..D, agent signal, or `pty_has_foreground_job`) keeps its live grid parked with rendering paused via `display:none`; an idle hidden leaf releases its slot but the buffer is retained and serialized lazily only when another leaf steals it. The `DormantRing` (1 MiB, no terminal reset on overflow) buffers bytes only for leaves whose slot was stolen or never bound. Never serialize a leaf that is mid-command: replaying incremental TUI repaints over a snapshot is what used to wipe Claude Code.
+- **terminal/** - `TerminalStack` keeps live leaves mounted. `useGhosttyTerminalSession` owns one persistent model and PTY per leaf; GPU/WebGL surfaces lease shared presentation resources independently. `terminalSessionApi.ts` exposes renderer-neutral product actions. OSC 7 paths and OSC 52 payloads are validated by pure parsers; Ghostty supplies OSC 133 events and native command anchors to the lazy block controller. WebGPU can fail over to WebGL without replacing the model, PTY, selection, search, or block history. Hidden models keep parsing through bounded PTY transport while presentation is released. There is no snapshot replay or second terminal parser. Theme colors come from the central theme engine.
 - **editor/** - CodeMirror 6 stack (`EditorStack` mirrors `TerminalStack`). `extensions.ts` configures language modes; supports vim mode. Buffers live in LF space and the original EOL (`lib/eol.ts`, majority-vote detection) is restored on save; indent unit/tab size are detected per file (`lib/indent.ts`) via a per-pane compartment. Saves are conflict-checked against the disk mtime returned by `fs_read_file`/`fs_write_file` (mismatch → warning toast with explicit Overwrite, never silent last-writer-wins); external format-on-save only applies the disk read-back if the doc is unchanged since the save snapshot. Files over 10 MB offer "Open anyway" (hard cap 50 MB, `force` arg); above 4 MB syntax highlighting and LSP stay off. Cmd-F routes to CodeMirror's own search panel (find/replace/regex) when an editor tab is active, Ctrl-G opens go-to-line; both panels styled in `chromeTheme.ts`. Format-on-save formatters live in `lib/externalFormat.ts` (`FORMATTERS` registry: biome, prettier, ruff, rustfmt, gofmt, clang-format, shfmt, zig fmt, plus a custom `{file}` command template); `resolveFormatter` applies per-language overrides (`editorFormatterByLang`) over the global default, and a global external default only runs on languages its tool understands. Diff panes resolve the language before mounting CodeMirror: a late compartment reconfigure leaves the merge view's deleted-chunk widgets unhighlighted. AI inline completion (`lib/autocomplete/`) sends the buffer's indent unit with the request and normalizes unambiguous tab/space mismatches in responses (`normalizeIndent.ts`); triggering is `autocompleteTrigger` auto or manual, with `editor.aiComplete` / `editor.codeComplete` registry shortcuts (guarded to editor tabs so the keys fall through to terminals), and Tab accepts an open completion popup before the ghost. Multi-line ghosts render first-line-inline plus a block widget below the line (never inline `<br>`s); a closers-only line-suffix (cursor inside `fn(|)`) is hidden and re-appended after the block so the preview equals the accept result, and a line-suffix with real code caps the ghost to one line (`capToLineSuffix`). Suggestions echoing the recent prefix are dropped, multi-line suggestions and closing brackets never start on a line that ends with `;`, and closer-only lines are reindented from the previous line (`trimSuggestion`/`reindentClosers`, all tested). Markdown editing is GFM (`markdownLanguage` base) with fenced-code highlighting resolved through the shared lazy language registry, Cmd/Ctrl+Click URLs, and clickable task checkboxes (`markdownExtras.ts`, all inside the lazy markdown chunk; the eager-budget test enforces this). Dotenv files (`.env`, `.env.*`, and `*.env`) use the lazy shell grammar. Editor theme is decoupled from the app theme: the `editorTheme` pref is `"auto" | EditorThemeId` (default `"auto"`), resolved at render time by `useEditorThemeExt` via `resolveEditorThemeId`. In `auto` the editor follows the active app theme's `editorTheme[mode]` pairing (live, never stale); an explicit pick overrides. Theme ids + labels live in `settings/store.ts` (`EDITOR_THEMES`/`EDITOR_THEME_LABELS`); the matching extensions in `editor/lib/themes.ts` (`EDITOR_THEME_EXT`). Prebuilt `@uiw` themes plus locally-built ones in `editor/lib/cmThemes.ts` (Kanagawa wave/lotus/dragon, Everforest, Dracula, Solarized, Catppuccin, Rosé Pine) via `createTheme` (no extra deps). The three CM surfaces (`EditorPane`, `AiDiffPane`, `GitDiffPane`) all read the theme through `useEditorThemeExt`.
   Editor code size is stored separately as `editorFontSize` and does not affect `terminalFontSize`.
 - **explorer/** - file tree with Material/Catppuccin icons (`iconResolver.ts`), fuzzy search, keyboard nav, inline rename, context actions. Backslash-aware `basename`.
@@ -125,8 +239,8 @@ BYOK. Cloud providers via `@ai-sdk/*`: **OpenAI, Anthropic, Google, xAI, Cerebra
 - **AI Elements** (Vercel) live in `src/components/ai-elements/` from the `@ai-elements` registry in `components.json`. Same rule: regenerate, don't hand-patch - composition wrappers belong in `modules/ai/components/`.
 - **Tailwind v4** - no `tailwind.config.*`, config is in `src/App.css` via `@theme`. Use `cn()` from `@/lib/utils`.
 - Animation: `motion` (Framer Motion successor). Resizable layout: `react-resizable-panels`.
-- **Window vibrancy**: the `windowVibrancy` pref drives `WindowVibrancyBridge` (main window only - `window_set_backdrop` targets its caller). `html[data-vibrancy="on"]` makes `<html>`/`<body>` transparent and redefines `--frame` with alpha, so only the chrome frosts; panes keep `--background` so terminal text stays on a solid surface and the xterm canvas still matches its container. The opaque colour the pre-paint script parks on `<html>` would cover the backdrop, so `applyVibrancy` clears it while the effect is on; there is deliberately no localStorage fast path, since pre-declaring the effect would show a see-through window on any launch where the native call has not landed yet. Repeat applications are deduped, and only Mica is rebuilt on a light/dark flip (NSVisualEffectView adapts on its own).
-- **Floating panes**: header and status bar are window chrome painted on `--frame` (derived from `--card`, so no theme declares it); the sidebar and the tab surface are `.terax-pane` cards on `--background` - same tone as the xterm canvas. Panes meet the chrome flush and are inset only horizontally, because the header centers its content and any vertical gutter would stack onto that padding and read as asymmetric. `.terax-pane` carries no drop shadow: `react-resizable-panels` clips panel content at the panel box, so a shadow would only render on the gutter sides.
+- **Window vibrancy**: the `windowVibrancy` pref drives `WindowVibrancyBridge` (main window only - `window_set_backdrop` targets its caller). `html[data-vibrancy="on"]` makes `<html>`/`<body>` transparent and redefines `--frame` with alpha, so only the chrome frosts; panes keep `--background` so terminal text stays on a solid surface and the terminal canvas still matches its container. The opaque colour the pre-paint script parks on `<html>` would cover the backdrop, so `applyVibrancy` clears it while the effect is on; there is deliberately no localStorage fast path, since pre-declaring the effect would show a see-through window on any launch where the native call has not landed yet. Repeat applications are deduped, and only Mica is rebuilt on a light/dark flip (NSVisualEffectView adapts on its own).
+- **Floating panes**: header and status bar are window chrome painted on `--frame` (derived from `--card`, so no theme declares it); the sidebar and the tab surface are `.terax-pane` cards on `--background` - same tone as the terminal canvas. Panes meet the chrome flush and are inset only horizontally, because the header centers its content and any vertical gutter would stack onto that padding and read as asymmetric. `.terax-pane` carries no drop shadow: `react-resizable-panels` clips panel content at the panel box, so a shadow would only render on the gutter sides.
 - Path imports: always `@/…`, never relative across modules.
 - Cross-platform paths: anywhere a path may originate from OSC 7, the explorer, or the OS, normalize separators with `.split(/[\\/]/)` rather than `.split("/")`.
 - Canonical path form on the frontend is **forward-slash**. `homeDir()` returns backslashes on Windows; convert at the boundary (App.tsx setHome). OSC 7 already arrives as forward-slash. Equal canonical strings keep `useFileTree` from wiping its tree and flashing the explorer when `tab.cwd` first arrives.
@@ -153,14 +267,15 @@ BYOK. Cloud providers via `@ai-sdk/*`: **OpenAI, Anthropic, Google, xAI, Cerebra
 ### Bundle config
 
 - `bundle.targets: "all"` plus per-platform sections in `tauri.conf.json`:
-  - **macOS**: `minimumSystemVersion: 10.15`.
+  - **macOS**: `minimumSystemVersion: 13.0`.
   - **Linux**: deb depends `libwebkit2gtk-4.1-0`, `libgtk-3-0`; rpm `webkit2gtk4.1`, `gtk3`; AppImage bundles its media framework.
-  - **Windows**: NSIS installer in `currentUser` mode (no admin required), WebView2 via `embedBootstrapper` (offline install).
+  - **Windows**: NSIS installer in `currentUser` mode (no admin required), WebView2 via `downloadBootstrapper`. Installing a missing WebView2 runtime requires internet access; there is no bundled offline runtime. Packaged and offline-install validation remains in the release-readiness gates.
 - Auto-updater configured with a public minisign key; release artifacts at `https://github.com/crynta/terax-ai/releases/latest/download/latest.json`.
+- `bundle.resources` includes the upstream Ghostty, Restty, ghostty-web, and xterm.js license notices under `licenses/terminal/`. Repository documentation and test-only reference WASM cores are not packaged; the frontend includes only the adapted SIMD and scalar cores.
 
 ### Known gotchas
 
-- **React 19 strict mode** double-mounts `useEffect` in dev → terminals spawn twice on first render. The first PTY is cleaned up almost immediately. The `SPAWN_LOCK` mutex serializes this; don't be alarmed by `pty opened id=1` followed by `pty closed id=1` in dev logs.
+- **React 19 strict mode** double-mounts `useEffect` in dev → terminals spawn twice on first render. The first PTY is cleaned up almost immediately. The `CONPTY_LIFECYCLE_LOCK` mutex serializes this; don't be alarmed by `pty opened id=1` followed by `pty closed id=1` in dev logs.
 - **Windows PowerShell process lifecycle**: `killer.kill()` from `portable-pty` only kills the immediate child. Descendants (e.g. `npm run dev` started inside pwsh) survive unless something else takes them down. The Job Object in `pty/job.rs` handles this for the Terax-process-death case; an explicit `pty_close` from JS also kills only the immediate child + relies on the Job to take the rest. Don't disable the Job without a replacement.
 - **Tab `cwd` storage**: comes from OSC 7 with forward slashes (after `parseOsc7` strips `/C:` → `C:`). Anything that consumes `tab.cwd` and passes it to a Rust fs command on Windows must normalize separators or accept both forms - `apply_common` in `pty::shell_init` handles this for PTY spawn; other call sites must do their own.
 
@@ -173,5 +288,5 @@ Long-form contributor guides live under `docs/`. These guides elaborate on `TERA
 - `docs/architecture/pty-shell-integration.md` - PTY, shell init scripts, OSC, ConPTY, Job Object
 - `docs/architecture/security-model.md` - consolidated security model and boundaries
 - `docs/architecture/ai-subsystem.md` - AI stack, sessions, tools, adding a provider
-- `docs/architecture/terminal-renderer-pool.md` - renderer pool and DormantRing invariants
+- `docs/architecture/terminal-renderer-pool.md` - model ownership and presentation pool invariants
 - `docs/contributing/testing.md` - testing contract and core-subsystem invariants

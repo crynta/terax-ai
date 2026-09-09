@@ -1,0 +1,118 @@
+{
+  "scope": "Isolated WASM core; excludes IPC, webview, GPU, and application memory or energy",
+  "recordedAt": "2026-09-07T14:45:16.984Z",
+  "node": "v26.5.0",
+  "platform": "darwin",
+  "arch": "arm64",
+  "iterationsPerSample": 10000,
+  "warmupSamples": 1,
+  "results": [
+    {
+      "directory": "packages/ghostty-core/adapted",
+      "artifact": "ghostty-vt.wasm",
+      "sha256": "b2305e15dcf4bac59eef3e25687444b9678b79b23cf90d5d62718acab61966e7",
+      "allocations": [
+        {
+          "models": 0,
+          "wasmBytes": 1245184
+        },
+        {
+          "models": 1,
+          "wasmBytes": 2031616
+        },
+        {
+          "models": 5,
+          "wasmBytes": 3866624
+        },
+        {
+          "models": 10,
+          "wasmBytes": 6225920
+        },
+        {
+          "models": 20,
+          "wasmBytes": 10878976
+        }
+      ],
+      "timings": {
+        "row": [
+          16.47529200000001,
+          13.617458,
+          12.858416000000005,
+          12.599582999999996,
+          13.577500000000015,
+          13.35020800000001
+        ],
+        "scrolling": [
+          260.27775,
+          301.863875,
+          313.7600000000001,
+          294.131791,
+          297.9385420000001,
+          283.9478340000003
+        ],
+        "semantic": [
+          9.239500000000135,
+          8.311249999999745,
+          8.15604200000007,
+          8.204291999999896,
+          9.52441699999963,
+          8.575624999999945
+        ]
+      }
+    },
+    {
+      "directory": "packages/ghostty-core/adapted",
+      "artifact": "ghostty-vt-scalar.wasm",
+      "sha256": "8e9d194130ee714c6ced2ab1ccaff751cad28eea9bb2355dd9844034abe67775",
+      "allocations": [
+        {
+          "models": 0,
+          "wasmBytes": 1245184
+        },
+        {
+          "models": 1,
+          "wasmBytes": 2031616
+        },
+        {
+          "models": 5,
+          "wasmBytes": 3866624
+        },
+        {
+          "models": 10,
+          "wasmBytes": 6225920
+        },
+        {
+          "models": 20,
+          "wasmBytes": 10878976
+        }
+      ],
+      "timings": {
+        "row": [
+          14.83912500000001,
+          13.924375000000012,
+          12.318041000000022,
+          13.845082999999988,
+          12.054458000000011,
+          12.404499999999985
+        ],
+        "scrolling": [
+          283.31658300000004,
+          264.24904200000003,
+          256.0187920000001,
+          253.8176249999999,
+          245.41066699999988,
+          243.80562499999996
+        ],
+        "semantic": [
+          7.835374999999885,
+          7.961958999999979,
+          7.60674999999992,
+          7.563916000000063,
+          7.805082999999968,
+          8.309833000000026
+        ]
+      }
+    }
+  ],
+  "isolation": "Fresh Node process per artifact and revision"
+}

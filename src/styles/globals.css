@@ -193,7 +193,7 @@
 }
 
 /* Floating-pane chrome. `--frame` is the canvas the panes sit on (header,
- * status bar, gutters); a pane keeps `--background` so the xterm canvas and the
+ * status bar, gutters); a pane keeps `--background` so the terminal canvas and the
  * pane surface stay the same color. Both are derived from tokens every theme
  * already declares, so built-in and user themes get the separation for free. */
 :root {
@@ -219,7 +219,7 @@
 
 /* Window vibrancy (macOS NSVisualEffectView / Windows Mica). Only the frame
  * goes translucent: panes keep `--background` so terminal and editor text
- * stays on a solid, readable surface and the xterm canvas still matches its
+ * stays on a solid, readable surface and the terminal canvas still matches its
  * container. Redefining `--frame` rather than layering an overlay means
  * `bg-frame` and the borderless-chrome `#root` both follow automatically. */
 html[data-vibrancy="on"],
@@ -259,40 +259,7 @@ html[data-chrome="borderless"] #root {
   background: var(--frame);
 }
 
-/*
- * xterm.js overrides — kept outside @layer so they win against the addon's
- * own stylesheet (which is not in any layer and would otherwise override).
- *
- * Newer xterm renders scrollbars as real <div class="scrollbar vertical|horizontal">
- * children rather than relying on native overflow scrollbars. Both code paths exist
- * across versions, so we hide both.
- */
-.xterm .scrollbar,
-.xterm .scrollbar.vertical,
-.xterm .scrollbar.horizontal {
-  display: none !important;
-  visibility: hidden !important;
-  width: 0 !important;
-  height: 0 !important;
-  pointer-events: none !important;
-}
-.xterm .xterm-viewport,
-.xterm-viewport {
-  scrollbar-width: none !important;
-  -ms-overflow-style: none !important;
-}
-.xterm .xterm-viewport::-webkit-scrollbar,
-.xterm-viewport::-webkit-scrollbar {
-  width: 0 !important;
-  height: 0 !important;
-  display: none !important;
-}
-.xterm,
-.xterm-screen,
-.xterm:focus,
-.xterm.focus {
-  outline: none !important;
-}
+
 
 .cm-editor,
 .cm-scroller {

@@ -9,6 +9,7 @@
     "includes": [
       "src/**/*.ts",
       "src/**/*.tsx",
+      "packages/ghostty-core/lib/official/**/*.ts",
       "!src/components/ui/**",
       "!src/components/ai-elements/**"
     ]

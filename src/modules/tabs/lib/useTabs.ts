@@ -1,7 +1,7 @@
 import { isMarkdownPath } from "@/lib/utils";
 import {
-  createAgentPanePlan,
   type AgentInstanceCount,
+  createAgentPanePlan,
 } from "@/modules/agents/lib/launcher";
 import {
   findLeafCwd,
@@ -18,7 +18,7 @@ import {
   splitLeaf,
   swapLeafInDirection,
 } from "@/modules/terminal/lib/panes";
-import { disposeSession } from "@/modules/terminal/lib/useTerminalSession";
+import { disposeSession } from "@/modules/terminal/lib/terminalSessionApi";
 import {
   useCallback,
   useEffect,

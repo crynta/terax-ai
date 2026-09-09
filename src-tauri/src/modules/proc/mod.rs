@@ -1,3 +1,5 @@
+pub mod rss;
+
 #[cfg(windows)]
 pub mod job;
 

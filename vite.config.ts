@@ -78,6 +78,8 @@ export default defineConfig(async ({ mode }): Promise<UserConfig> => ({
           if (id.includes("vite/preload-helper") || id.includes("/vite/dist/"))
             return "react";
 
+          if (id.includes("/packages/ghostty-core/")) return "ghostty-vt";
+
           if (!id.includes("node_modules")) return null;
 
           // Ubiquitous styling utils used by `cn()` on nearly every eager
@@ -103,7 +105,6 @@ export default defineConfig(async ({ mode }): Promise<UserConfig> => ({
           if (id.includes("@ai-sdk/xai")) return "ai-xai";
           if (id.includes("@ai-sdk/")) return "ai-sdk-shared";
 
-          if (id.includes("/xterm/") || id.includes("@xterm/")) return "xterm";
           // Lang packs and legacy modes are dynamically imported by
           // languageResolver; give each its own named chunk so they load on
           // demand instead of being glued into the codemirror core chunk.

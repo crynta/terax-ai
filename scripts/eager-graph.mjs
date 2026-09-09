@@ -61,7 +61,7 @@ function pkgOf(spec, watch) {
   return watch.find((w) => spec === w || spec.startsWith(w + "/"));
 }
 
-/** @returns {{ moduleCount: number, hits: Map<string, {spec:string, file:string}> }} */
+/** @returns {{ moduleCount: number, files: Set<string>, hits: Map<string, {spec:string, file:string}> }} */
 export function traceEager(entry, watch = DEFAULT_WATCH) {
   const entryFile = resolve(root, entry);
   const seen = new Set();
@@ -89,7 +89,7 @@ export function traceEager(entry, watch = DEFAULT_WATCH) {
       }
     }
   }
-  return { moduleCount: seen.size, hits };
+  return { moduleCount: seen.size, files: seen, hits };
 }
 
 const isCli = process.argv[1] === fileURLToPath(import.meta.url);

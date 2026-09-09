@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Terax",
-  "version": "0.8.6",
+  "version": "0.9.0-beta",
   "identifier": "app.crynta.terax",
   "build": {
     "beforeDevCommand": "pnpm build:cli:dev && pnpm dev",
@@ -39,6 +39,12 @@
     "externalBin": [
       "binaries/terax-cli"
     ],
+    "resources": {
+      "../packages/ghostty-core/LICENSE": "licenses/terminal/ghostty-web.txt",
+      "../packages/ghostty-core/adapted/LICENSE.ghostty": "licenses/terminal/ghostty.txt",
+      "../packages/ghostty-core/adapted/LICENSE.restty": "licenses/terminal/restty.txt",
+      "../src/modules/terminal/ghostty/webgl/LICENSE.xterm-js": "licenses/terminal/xterm-js.txt"
+    },
     "targets": "all",
     "createUpdaterArtifacts": true,
     "copyright": "Copyright 2026 Crynta",

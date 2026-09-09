@@ -4,7 +4,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   blockWatermarkState,
   type WatermarkState,
-} from "../lib/useTerminalSession";
+} from "../lib/terminalSessionApi";
 
 type Props = {
   leafId: number;

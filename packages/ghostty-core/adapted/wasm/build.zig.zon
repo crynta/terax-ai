@@ -1,0 +1,13 @@
+.{
+    .name = .restty_wasm,
+    .version = "0.0.0",
+    .fingerprint = 0x1d960b595966b365,
+    .minimum_zig_version = "0.16.0",
+    .paths = .{""},
+    .dependencies = .{
+        .ghostty = .{
+            .url = "https://github.com/ghostty-org/ghostty/archive/f426f6f181ba95f45d33f683fb754b6359d9e04f.tar.gz",
+            .hash = "ghostty-1.3.2-dev-5UdBC4i9bwV84Nac8vu_NQ7Skyouuz5dgRW0OfTrOcG5",
+        },
+    },
+}

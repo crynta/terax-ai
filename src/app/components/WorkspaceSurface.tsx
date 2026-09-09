@@ -42,7 +42,7 @@ const LAYER = "absolute inset-0";
  * buffers, editor scroll, ...) when switching tabs.
  *
  * Layers sit flush inside the workspace pane; only the terminal layer is inset,
- * because xterm draws glyphs right up to its container edge.
+ * because the terminal draws glyphs right up to its container edge.
  */
 export function WorkspaceSurface({
   tabs,
