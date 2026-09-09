@@ -53,6 +53,12 @@ describe("keepsFullTranscript", () => {
     expect(keepsFullTranscript(original, atLimit)).toBe(true);
     expect(keepsFullTranscript(original, atLimit.slice(1))).toBe(false);
   });
+
+  it("honours an explicit retention override", () => {
+    const original = "x".repeat(100);
+    expect(keepsFullTranscript(original, "y".repeat(30), 0.2)).toBe(true);
+    expect(keepsFullTranscript(original, "y".repeat(10), 0.2)).toBe(false);
+  });
 });
 
 describe("shouldSkipCleanup", () => {

@@ -25,12 +25,16 @@ export function cleanupOutputTokens(text: string): number {
   return Math.min(CLEANUP_OUTPUT_TOKEN_CAP, Math.ceil(text.length / 3) + 256);
 }
 
-export function keepsFullTranscript(original: string, cleaned: string): boolean {
+export function keepsFullTranscript(
+  original: string,
+  cleaned: string,
+  minRetention: number = CLEANUP_MIN_RETENTION,
+): boolean {
   const kept = cleaned.trim();
   if (!kept) return false;
   const source = original.trim();
   if (!source) return false;
-  return kept.length >= Math.floor(source.length * CLEANUP_MIN_RETENTION);
+  return kept.length >= Math.floor(source.length * minRetention);
 }
 
 type Prefs = ReturnType<typeof usePreferencesStore.getState>;
