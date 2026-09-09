@@ -3,6 +3,7 @@ import {
   holdTimeoutMs,
   initialHoldState,
   reduceHold,
+  type HoldEffect,
   type HoldEvent,
   type HoldState,
 } from "./holdIntent";
@@ -17,20 +18,16 @@ type VoiceImpl = {
   hasKey: boolean;
 };
 
-const NOOP_IMPL: VoiceImpl = {
-  start: () => {},
-  stop: () => {},
-  cancel: () => {},
-  supported: false,
-  hasKey: false,
-};
+type PendingEffect = Exclude<HoldEffect, "none">;
 
 type VoiceStore = {
   status: VoiceStatus;
   supported: boolean;
   hasKey: boolean;
+  armed: boolean;
   hold: HoldState;
-  impl: VoiceImpl;
+  impl: VoiceImpl | null;
+  pending: PendingEffect | null;
   dispatchHold: (event: HoldEvent) => void;
   toggle: () => void;
   requestStop: () => void;
@@ -47,23 +44,33 @@ function clearSafetyTimer() {
   safetyTimer = null;
 }
 
+function applyEffect(impl: VoiceImpl, effect: PendingEffect) {
+  if (effect === "start") impl.start();
+  else if (effect === "stop") impl.stop();
+  else impl.cancel();
+}
+
 export const useVoiceStore = create<VoiceStore>((set, get) => ({
   status: "idle",
   supported: false,
   hasKey: false,
+  armed: false,
   hold: initialHoldState,
-  impl: NOOP_IMPL,
+  impl: null,
+  pending: null,
 
   dispatchHold: (event) => {
-    const { hold, impl } = get();
+    const { hold, impl, armed, pending } = get();
     const { state, effect } = reduceHold(hold, event);
-    if (effect === "start" && (!impl.supported || !impl.hasKey)) return;
+    if (effect === "start" && impl && (!impl.supported || !impl.hasKey)) return;
 
-    if (state !== hold) set({ hold: state });
+    const nextArmed = armed || effect === "start";
+    const nextPending = impl || effect === "none" ? pending : effect;
+    if (state !== hold || nextArmed !== armed || nextPending !== pending) {
+      set({ hold: state, armed: nextArmed, pending: nextPending });
+    }
 
-    if (effect === "start") impl.start();
-    else if (effect === "stop") impl.stop();
-    else if (effect === "cancel") impl.cancel();
+    if (impl && effect !== "none") applyEffect(impl, effect);
 
     clearSafetyTimer();
     const limit = holdTimeoutMs(state.phase);
@@ -78,11 +85,25 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
   requestStop: () => get().dispatchHold({ type: "stop" }),
   requestCancel: () => get().dispatchHold({ type: "cancel" }),
 
-  bindImpl: (impl) =>
-    set({ impl, supported: impl.supported, hasKey: impl.hasKey }),
+  bindImpl: (impl) => {
+    const { pending } = get();
+    set({
+      impl,
+      supported: impl.supported,
+      hasKey: impl.hasKey,
+      pending: null,
+    });
+    if (!pending) return;
+    if (pending === "start" && (!impl.supported || !impl.hasKey)) {
+      clearSafetyTimer();
+      set({ hold: initialHoldState });
+      return;
+    }
+    applyEffect(impl, pending);
+  },
 
   setStatus: (status) => {
-    if (status === "idle") {
+    if (status === "idle" && !get().pending) {
       clearSafetyTimer();
       set({ status, hold: initialHoldState });
       return;
