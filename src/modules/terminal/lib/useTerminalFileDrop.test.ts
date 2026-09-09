@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/platform", () => ({ IS_WINDOWS: false }));
+vi.mock("@/lib/platform", () => ({ IS_WINDOWS: false, IS_MAC: false }));
 
 import { createTerminalPathDropTarget } from "./useTerminalFileDrop";
 

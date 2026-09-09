@@ -44,6 +44,8 @@ function baseContext(
     toggleHiddenFiles: noop,
     toggleAi: noop,
     askAiSelection: noop,
+    toggleVoice: noop,
+    cancelVoice: noop,
     openSettings: noop,
     openKeyboardShortcuts: noop,
     openSpacesOverview: noop,

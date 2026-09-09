@@ -55,6 +55,18 @@ describe("startup bundle budget", () => {
     expect(lock).not.toMatch(/(?:@xterm\/|xterm-addon-|\bxterm@)/);
   });
 
+  it("keeps the dictation runtime out of the main window eager graph", () => {
+    const { files } = traceEager("src/main.tsx");
+    const eager = [...files].map((file) => file.replace(/\\/g, "/"));
+    expect(
+      eager.filter((file) =>
+        /src\/modules\/voice\/(VoiceRuntime|VoiceHud|useVoiceController|cleanup)\.tsx?$/.test(
+          file,
+        ),
+      ),
+    ).toEqual([]);
+  });
+
   it("main window does not eagerly pull editor/AI/markdown stacks", () => {
     expect(heavyEagerHits("src/main.tsx")).toEqual([]);
   });

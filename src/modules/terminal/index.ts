@@ -19,6 +19,7 @@ export {
   leafHasForegroundProcess,
   leafIdForPty,
   navigateFocusedBlocks,
+  pasteIntoSession,
   ptyIdForLeaf,
   respawnSession,
   whenSessionReady,
