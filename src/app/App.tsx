@@ -106,12 +106,7 @@ import {
   WindowVibrancyBridge,
 } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
-import {
-  usePushToTalk,
-  useVoiceController,
-  useVoiceStore,
-  VoiceHud,
-} from "@/modules/voice";
+import { usePushToTalk, useVoiceStore, VoiceRuntime } from "@/modules/voice";
 import {
   useWorkspaceEnvStore,
   type WorkspaceEnv,
@@ -398,7 +393,6 @@ export default function App() {
     focusInput,
   ]);
 
-  useVoiceController({ resolveTarget: resolveVoiceTarget });
   usePushToTalk();
 
   const { explorerRoot, inheritedCwdForNewTab } = useWorkspaceCwd(
@@ -1673,7 +1667,7 @@ export default function App() {
   return (
     <AiComposerProvider>
       {shell}
-      <VoiceHud />
+      <VoiceRuntime resolveTarget={resolveVoiceTarget} />
     </AiComposerProvider>
   );
 }
