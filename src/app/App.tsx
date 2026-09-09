@@ -96,6 +96,7 @@ import {
   useAgentActivityStore,
   useTerminalFileDrop,
   whenSessionReady,
+  pasteIntoSession,
   writeToSession,
 } from "@/modules/terminal";
 import type { TerminalSearchController } from "@/modules/terminal/search/TerminalSearchController";
@@ -374,7 +375,7 @@ export default function App() {
     }
     if (!aiFocused && isTerminalTab && activeLeafId !== null) {
       const leafId = activeLeafId;
-      return (text) => writeToSession(leafId, text);
+      return (text) => void pasteIntoSession(leafId, text);
     }
     if (hasComposer) {
       return (text) => {
