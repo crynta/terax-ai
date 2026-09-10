@@ -8,6 +8,12 @@ describe("isOpencodeBaseURL", () => {
     expect(isOpencodeBaseURL("HTTPS://OPENCODE.AI/zen/v1/")).toBe(true);
   });
 
+  it("requires https so the session key never travels in clear text", () => {
+    expect(isOpencodeBaseURL("http://opencode.ai/v1")).toBe(false);
+    expect(isOpencodeBaseURL("http://go.opencode.ai/v1")).toBe(false);
+    expect(opencodeSessionHeaders("http://opencode.ai/v1")).toBeUndefined();
+  });
+
   it("ignores other hosts and look-alikes", () => {
     expect(isOpencodeBaseURL("https://api.openai.com/v1")).toBe(false);
     expect(isOpencodeBaseURL("https://notopencode.ai/v1")).toBe(false);

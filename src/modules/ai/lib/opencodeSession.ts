@@ -16,12 +16,16 @@ const processSessionKey: string =
     : `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
 
 export function isOpencodeBaseURL(baseURL: string): boolean {
-  let host: string;
+  let url: URL;
   try {
-    host = new URL(baseURL).hostname.toLowerCase().replace(/\.$/, "");
+    url = new URL(baseURL);
   } catch {
     return false;
   }
+  // The session key is a routing credential for the gateway; it is only
+  // attached over TLS, so a plain-http look-alike never receives it.
+  if (url.protocol !== "https:") return false;
+  const host = url.hostname.toLowerCase().replace(/\.$/, "");
   return host === OPENCODE_HOST || host.endsWith(`.${OPENCODE_HOST}`);
 }
 
