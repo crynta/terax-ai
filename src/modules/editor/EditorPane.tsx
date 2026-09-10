@@ -120,7 +120,7 @@ export const EditorPane = memo(
       onClose,
     } = props;
 
-    const { doc, onChange, save, reload, adoptDiskText, openAnyway } =
+    const { doc, dirty, onChange, save, reload, adoptDiskText, openAnyway } =
       useDocument({
         path,
         onDirtyChange,
@@ -447,7 +447,9 @@ export const EditorPane = memo(
       path,
       // Hidden tabs stay mounted; blaming them would spawn a git process per
       // background editor for annotations nobody can see.
-      inlineBlameEnabled && visible && doc.status === "ready",
+      // A dirty buffer no longer matches the lines git blames on disk, so
+      // annotations stay off until the save refetches them.
+      inlineBlameEnabled && visible && !dirty && doc.status === "ready",
       getView,
       blameRevision,
     );

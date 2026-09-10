@@ -1,7 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { native } from "@/modules/ai/lib/native";
 import type { EditorView } from "@codemirror/view";
+import { listenFsChanged } from "@/modules/explorer/lib/watch";
 import { setBlame } from "./blame";
+
+const FS_REFETCH_DEBOUNCE_MS = 500;
 
 /**
  * Directory holding `path`. Root-level files keep their filesystem root
@@ -26,6 +29,32 @@ export function useInlineBlame(
   getView: () => EditorView | null | undefined,
   revision: number,
 ): void {
+  // The editor already watches this file, so a commit, checkout or external
+  // edit refetches without a poll. One coalesced reload per burst.
+  const [externalRevision, setExternalRevision] = useState(0);
+  useEffect(() => {
+    if (!enabled) return;
+    let timer = 0;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void listenFsChanged((paths) => {
+      if (!paths.includes(path)) return;
+      if (timer) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        timer = 0;
+        setExternalRevision((n) => n + 1);
+      }, FS_REFETCH_DEBOUNCE_MS);
+    }).then((un) => {
+      if (disposed) un();
+      else unlisten = un;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [path, enabled]);
+
   useEffect(() => {
     const view = getView();
     if (!enabled) {
@@ -55,5 +84,5 @@ export function useInlineBlame(
     return () => {
       cancelled = true;
     };
-  }, [path, enabled, revision, getView]);
+  }, [path, enabled, revision, externalRevision, getView]);
 }
