@@ -1281,6 +1281,46 @@ mod tests {
         assert!(lines[2].uncommitted);
     }
 
+    fn blame_tempdir(label: &str) -> std::path::PathBuf {
+        let mut p = std::env::temp_dir();
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        p.push(format!("terax-blame-{label}-{nanos}-{}", std::process::id()));
+        std::fs::create_dir_all(&p).expect("create tempdir");
+        std::fs::canonicalize(&p).expect("canonicalize tempdir")
+    }
+
+    #[test]
+    fn blame_rejects_a_repo_root_outside_the_workspace() {
+        let dir = blame_tempdir("unauthorized");
+        let registry = WorkspaceRegistry::default();
+        let err = blame(
+            &registry,
+            &dir.to_string_lossy(),
+            "src/main.rs",
+            &WorkspaceEnv::Local,
+        )
+        .expect_err("an unauthorized repository root must be refused");
+        assert!(matches!(err, GitError::PathOutsideWorkspace(_)));
+    }
+
+    #[test]
+    fn blame_rejects_a_path_escaping_the_repository() {
+        let dir = blame_tempdir("escape");
+        let registry = WorkspaceRegistry::default();
+        registry.authorize(&dir).expect("authorize root");
+        let err = blame(
+            &registry,
+            &dir.to_string_lossy(),
+            "../outside.txt",
+            &WorkspaceEnv::Local,
+        )
+        .expect_err("a path leaving the repository must be refused");
+        assert!(matches!(err, GitError::InvalidPath(_)));
+    }
+
     #[test]
     fn parse_blame_porcelain_stops_at_the_line_cap() {
         let sha = "c".repeat(40);
