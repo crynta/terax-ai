@@ -1282,6 +1282,21 @@ mod tests {
     }
 
     #[test]
+    fn parse_blame_porcelain_stops_at_the_line_cap() {
+        let sha = "c".repeat(40);
+        let mut stdout = format!(
+            "{sha} 1 1 1\n\
+             author Ada\n\
+             author-time 1700000000\n\
+             summary big file\n"
+        );
+        for _ in 0..(MAX_BLAME_LINES + 10) {
+            stdout.push_str("\tline\n");
+        }
+        assert_eq!(parse_blame_porcelain(&stdout).len(), MAX_BLAME_LINES);
+    }
+
+    #[test]
     fn parse_blame_porcelain_accepts_sha256_object_ids() {
         let sha = "b".repeat(64);
         let stdout = format!(
