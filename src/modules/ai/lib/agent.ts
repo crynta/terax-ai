@@ -27,6 +27,7 @@ import { compactModelMessagesDetailed } from "./compact";
 import type { ProviderKeys, CustomEndpointKeys } from "./keyring";
 import { prepareAgentPrompt } from "./prompt";
 import { createProxyFetch } from "./proxyFetch";
+import { opencodeSessionHeaders } from "./opencodeSession";
 
 const localProxyFetch = createProxyFetch({ allowPrivateNetwork: true });
 
@@ -173,6 +174,8 @@ export async function buildLanguageModel(
         name: "openai-compatible",
         baseURL: compatURL,
         apiKey: epKey || key || undefined,
+        // OpenCode Go/Zen refuses requests without a session header.
+        headers: opencodeSessionHeaders(compatURL),
         fetch: localProxyFetch,
       })(resolvedModelId);
       break;
