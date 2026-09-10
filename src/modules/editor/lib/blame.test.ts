@@ -1,6 +1,13 @@
+import { EditorState } from "@codemirror/state";
 import { describe, expect, it } from "vitest";
 import type { GitBlameLine } from "@/modules/ai/lib/native";
-import { blameLabel, relativeTime } from "./blame";
+import {
+  blameField,
+  blameLabel,
+  inlineBlame,
+  relativeTime,
+  setBlame,
+} from "./blame";
 
 const NOW = 1_700_000_000_000;
 
@@ -46,5 +53,31 @@ describe("blameLabel", () => {
     expect(blameLabel(line({ author: "", summary: "" }), NOW)).toBe(
       "Unknown, 2h ago",
     );
+  });
+});
+
+describe("blame state", () => {
+  const withBlame = () => {
+    const state = EditorState.create({
+      doc: "one\ntwo\n",
+      extensions: [inlineBlame()],
+    });
+    return state.update({ effects: setBlame.of([line(), line()]) }).state;
+  };
+
+  it("holds the annotations it was given", () => {
+    expect(withBlame().field(blameField)).toHaveLength(2);
+  });
+
+  it("clears annotations on a local edit, before any save", () => {
+    const edited = withBlame().update({
+      changes: { from: 0, insert: "x" },
+    }).state;
+    expect(edited.field(blameField)).toBeNull();
+  });
+
+  it("keeps annotations across a selection-only change", () => {
+    const moved = withBlame().update({ selection: { anchor: 2 } }).state;
+    expect(moved.field(blameField)).toHaveLength(2);
   });
 });

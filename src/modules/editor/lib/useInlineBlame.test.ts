@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parentDir } from "./useInlineBlame";
+import { parentDir, samePath } from "./useInlineBlame";
 
 describe("parentDir", () => {
   it("returns the containing directory", () => {
@@ -14,5 +14,16 @@ describe("parentDir", () => {
 
   it("passes through a bare filename", () => {
     expect(parentDir("main.rs")).toBe("main.rs");
+  });
+});
+
+describe("samePath", () => {
+  it("matches across slash styles", () => {
+    expect(samePath("C:\\repo\\file.ts", "C:/repo/file.ts")).toBe(true);
+    expect(samePath("/repo/file.ts", "/repo/file.ts")).toBe(true);
+  });
+
+  it("does not match different files", () => {
+    expect(samePath("/repo/a.ts", "/repo/b.ts")).toBe(false);
   });
 });

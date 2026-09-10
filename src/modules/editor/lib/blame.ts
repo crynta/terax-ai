@@ -15,7 +15,7 @@ export const setBlame = StateEffect.define<GitBlameLine[] | null>();
 
 // Blame is line-indexed against the saved file, so any local edit invalidates
 // it until the next save refetches. Showing stale authors is worse than none.
-const blameField = StateField.define<GitBlameLine[] | null>({
+export const blameField = StateField.define<GitBlameLine[] | null>({
   create: () => null,
   update(value, tr) {
     for (const effect of tr.effects) {

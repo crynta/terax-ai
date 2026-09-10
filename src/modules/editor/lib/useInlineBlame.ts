@@ -6,6 +6,11 @@ import { setBlame } from "./blame";
 
 const FS_REFETCH_DEBOUNCE_MS = 500;
 
+/** Watcher events and editor tabs can disagree on slash style on Windows. */
+export function samePath(a: string, b: string): boolean {
+  return a.replace(/\\/g, "/") === b.replace(/\\/g, "/");
+}
+
 /**
  * Directory holding `path`. Root-level files keep their filesystem root
  * (`/`, `C:\`) so repo resolution starts somewhere real.
@@ -38,7 +43,7 @@ export function useInlineBlame(
     let disposed = false;
     let unlisten: (() => void) | undefined;
     void listenFsChanged((paths) => {
-      if (!paths.includes(path)) return;
+      if (!paths.some((changed) => samePath(changed, path))) return;
       if (timer) window.clearTimeout(timer);
       timer = window.setTimeout(() => {
         timer = 0;
