@@ -89,6 +89,8 @@ export type EditorPaneHandle = {
 
 type Props = {
   path: string;
+  /** False for tabs kept mounted behind the active one. */
+  visible?: boolean;
   overrideLanguage?: string | null;
   onDirtyChange?: (dirty: boolean) => void;
   onSaved?: () => void;
@@ -109,7 +111,14 @@ function formatBytes(n: number): string {
 // skip re-rendering entirely when App re-renders (terminal events, tab churn).
 export const EditorPane = memo(
   forwardRef<EditorPaneHandle, Props>(function EditorPane(props, ref) {
-    const { path, overrideLanguage, onDirtyChange, onSaved, onClose } = props;
+    const {
+      path,
+      visible = true,
+      overrideLanguage,
+      onDirtyChange,
+      onSaved,
+      onClose,
+    } = props;
 
     const { doc, onChange, save, reload, adoptDiskText, openAnyway } =
       useDocument({
@@ -436,7 +445,9 @@ export const EditorPane = memo(
     }, [inlineBlameEnabled, doc.status]);
     useInlineBlame(
       path,
-      inlineBlameEnabled && doc.status === "ready",
+      // Hidden tabs stay mounted; blaming them would spawn a git process per
+      // background editor for annotations nobody can see.
+      inlineBlameEnabled && visible && doc.status === "ready",
       getView,
       blameRevision,
     );

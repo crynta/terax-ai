@@ -125,6 +125,7 @@ export function EditorSection() {
           description="Show the author, age and message of the last commit that touched the current line."
         >
           <Switch
+            aria-label="Inline git blame"
             checked={editorInlineBlame}
             onCheckedChange={(v) => void setEditorInlineBlame(v)}
           />
