@@ -606,12 +606,17 @@ pub fn blame(
         .map(|p| p.to_string_lossy().replace('\\', "/"))
         .unwrap_or_else(|_| path.replace('\\', "/"));
 
+    // -L bounds the work git itself does; MAX_BLAME_LINES only bounds what we
+    // keep. Ranges past the end of the file are clamped by git.
+    let range = format!("1,{MAX_BLAME_LINES}");
     let output = run_git(
         &repo_root.workspace,
         Some(&repo_root.git_path),
         [
             OsStr::new("blame"),
             OsStr::new("--porcelain"),
+            OsStr::new("-L"),
+            OsStr::new(&range),
             OsStr::new("--"),
             OsStr::new(&rel),
         ],
@@ -652,7 +657,10 @@ fn parse_blame_porcelain(stdout: &str) -> Vec<GitBlameLine> {
             continue;
         }
         if let Some((head, _)) = line.split_once(' ') {
-            if head.len() == 40 && head.bytes().all(|b| b.is_ascii_hexdigit()) {
+            // 40 hex for SHA-1 repos, 64 for SHA-256 ones.
+            if (head.len() == 40 || head.len() == 64)
+                && head.bytes().all(|b| b.is_ascii_hexdigit())
+            {
                 current = head.to_string();
                 commits.entry(current.clone()).or_default();
                 continue;
@@ -1271,6 +1279,22 @@ mod tests {
         assert_eq!(lines[1].summary, "first commit");
         assert!(!lines[1].uncommitted);
         assert!(lines[2].uncommitted);
+    }
+
+    #[test]
+    fn parse_blame_porcelain_accepts_sha256_object_ids() {
+        let sha = "b".repeat(64);
+        let stdout = format!(
+            "{sha} 1 1 1\n\
+             author Grace\n\
+             author-time 1700000000\n\
+             summary sha256 repo\n\
+             \tone\n"
+        );
+        let lines = parse_blame_porcelain(&stdout);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].author, "Grace");
+        assert_eq!(lines[0].sha, sha);
     }
 
     #[test]
