@@ -1,6 +1,6 @@
 {
   "name": "terax",
-  "private": true,
+  "private": false,
   "version": "0.7.2",
   "license": "Apache-2.0",
   "type": "module",
