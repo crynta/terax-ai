@@ -3,6 +3,7 @@ const LABELS: Record<string, string> = {
   codex: "Codex",
   gemini: "Gemini",
   pi: "Pi",
+  gjc: "GJC",
   opencode: "OpenCode",
   grok: "Grok",
   terax: "Terax",
