@@ -321,13 +321,13 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
           break;
         }
         case "Delete":
-        case "Backspace": {
+        case "Backspace":
+          if (e.repeat) break;
           if (selectedPath) {
             e.preventDefault();
             tree.deletePath(selectedPath);
           }
           break;
-        }
         case "F2": {
           if (selectedPath) {
             e.preventDefault();
