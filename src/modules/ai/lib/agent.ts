@@ -161,6 +161,20 @@ export async function buildLanguageModel(
       })(resolvedModelId);
       break;
     }
+    case "requesty": {
+      const { createOpenAICompatible } =
+        await import("@ai-sdk/openai-compatible");
+      built = createOpenAICompatible({
+        name: "requesty",
+        baseURL: "https://router.requesty.ai/v1",
+        apiKey: key,
+        headers: {
+          "HTTP-Referer": "https://terax.ai",
+          "X-Title": "Terax",
+        },
+      })(resolvedModelId);
+      break;
+    }
     case "openai-compatible": {
       if (!compatURL) {
         throw new Error(
