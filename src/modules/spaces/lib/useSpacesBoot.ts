@@ -2,10 +2,14 @@ import { native } from "@/modules/ai/lib/native";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { Tab } from "@/modules/tabs";
 import { DEFAULT_SPACE_ID } from "@/modules/tabs/lib/useTabs";
-import { isLeaf, type PaneNode } from "@/modules/terminal/lib/panes";
 import { parseWorkspaceScopeKey, type WorkspaceEnv } from "@/modules/workspace";
 import { useEffect, useRef } from "react";
 import { activeSpaceEnv, freshTabCwd } from "./activeSpace";
+import {
+  fixBrokenCwds,
+  fixBrokenSpaceRoots,
+  uniqueCwds,
+} from "./cwdRecovery";
 import { freshTerminalTab, hydrateTabs } from "./serialize";
 import { loadAll, type SpaceMeta, saveActiveId, saveSpacesList } from "./store";
 import { useSpaces } from "./useSpaces";
@@ -20,19 +24,6 @@ type Params = {
   setActiveSpaceForNewTabs: (id: string) => void;
   adoptWorkspaceEnv: (env: WorkspaceEnv) => Promise<string | null>;
 };
-
-function uniqueCwds(tabs: Tab[]): string[] {
-  const set = new Set<string>();
-  const walk = (n: PaneNode) => {
-    if (isLeaf(n)) {
-      if (n.cwd) set.add(n.cwd);
-      return;
-    }
-    for (const c of n.children) walk(c);
-  };
-  for (const t of tabs) if (t.kind === "terminal") walk(t.paneTree);
-  return [...set];
-}
 
 export function useSpacesBoot({
   ready,
@@ -53,9 +44,10 @@ export function useSpacesBoot({
     void (async () => {
       try {
         const { spaces, activeId, states } = await loadAll();
+        const fallback = launchCwd ?? home ?? null;
 
         if (spaces.length === 0) {
-          const root = launchCwd ?? home ?? null;
+          const root = fallback;
           // Hydrate prefs before reading the saved workspace env.
           await usePreferencesStore
             .getState()
@@ -102,14 +94,47 @@ export function useSpacesBoot({
           restored.push(freshTerminalTab(active, cwd, allocId));
         }
 
-        await Promise.allSettled(
-          uniqueCwds(restored).map((cwd) => native.workspaceAuthorize(cwd)),
+        // Authorize terminal cwds and space roots. Deleted folders used to
+        // stick in persisted state (#816); sanitize before hydrate.
+        const rootPaths = spaces
+          .map((s) => s.root)
+          .filter((r): r is string => !!r);
+        const cwds = uniqueCwds(restored);
+        const toAuthorize = [...new Set([...cwds, ...rootPaths])];
+        const authResults = await Promise.allSettled(
+          toAuthorize.map((cwd) => native.workspaceAuthorize(cwd)),
         );
+        const failed = new Set<string>();
+        authResults.forEach((result, index) => {
+          if (result.status === "rejected") failed.add(toAuthorize[index]);
+        });
+        let spacesForHydrate = spaces;
+        if (failed.size > 0) {
+          // Prefer a fallback that actually authorizes; never persist a dead launch cwd.
+          let safeFallback: string | null = null;
+          for (const candidate of [launchCwd, restoredHome, home]) {
+            if (!candidate || failed.has(candidate)) continue;
+            try {
+              await native.workspaceAuthorize(candidate);
+              safeFallback = candidate;
+              break;
+            } catch {
+              failed.add(candidate);
+            }
+          }
+          fixBrokenCwds(restored, failed, safeFallback);
+          spacesForHydrate = fixBrokenSpaceRoots(spaces, failed, safeFallback);
+          if (spacesForHydrate !== spaces) {
+            await saveSpacesList(spacesForHydrate);
+          }
+        }
 
         const initialActiveIndex: Record<string, number> = {};
         for (const [id, st] of states)
           initialActiveIndex[id] = st.activeTabIndex;
-        useSpaces.getState().hydrate(spaces, active, initialActiveIndex);
+        useSpaces
+          .getState()
+          .hydrate(spacesForHydrate, active, initialActiveIndex);
 
         const inActive = restored.filter((t) => t.spaceId === active);
         const idx = states.get(active)?.activeTabIndex ?? 0;
