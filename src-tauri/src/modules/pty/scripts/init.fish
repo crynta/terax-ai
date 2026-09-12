@@ -7,10 +7,10 @@
 # Installed into conf.d, which every fish session sources; only Terax-spawned
 # shells (TERAX_TERMINAL=1) may get their prompt wrapped.
 if not set -q TERAX_TERMINAL
-    exit 0
+    return
 end
 if set -q __TERAX_HOOKS_LOADED
-    exit 0
+    return
 end
 set -g __TERAX_HOOKS_LOADED 1
 
