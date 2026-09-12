@@ -6,6 +6,7 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { useShortcutLabel } from "@/modules/shortcuts";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import { labelFor, type Tab, TabIcon } from "@/modules/tabs";
 import {
   ArrowDown01Icon,
@@ -84,6 +85,7 @@ export function SpaceSwitcher({
   onReorderTab,
   onReorderSpaces,
 }: Props) {
+  const terminalShell = usePreferencesStore((s) => s.terminalShell);
   const spaces = useSpaces((s) => s.spaces);
   const activeId = useSpaces((s) => s.activeId);
   const setActive = useSpaces((s) => s.setActive);
@@ -189,13 +191,15 @@ export function SpaceSwitcher({
       return;
     }
     const rect = hit.getBoundingClientRect();
-    const edge: Edge = e.clientY < rect.top + rect.height / 2 ? "top" : "bottom";
+    const edge: Edge =
+      e.clientY < rect.top + rect.height / 2 ? "top" : "bottom";
     const kind = hit.getAttribute("data-drop");
     let next: DropTarget | null = null;
     if (st.kind === "space") {
       if (kind === "space") {
         const spaceId = hit.getAttribute("data-space-id");
-        if (spaceId && spaceId !== st.id) next = { kind: "space", spaceId, edge };
+        if (spaceId && spaceId !== st.id)
+          next = { kind: "space", spaceId, edge };
       }
     } else if (kind === "tab") {
       const tabId = Number(hit.getAttribute("data-tab-id"));
@@ -322,7 +326,10 @@ export function SpaceSwitcher({
                 label={draggedSpace.name}
               />
             ) : draggedTab ? (
-              <OverlayChip tab={draggedTab} label={labelFor(draggedTab)} />
+              <OverlayChip
+                tab={draggedTab}
+                label={labelFor(draggedTab, terminalShell)}
+              />
             ) : null}
           </div>,
           document.body,
@@ -396,7 +403,9 @@ function SpaceRow({
         data-space-id={space.id}
         role="button"
         tabIndex={editing ? -1 : 0}
-        onPointerDown={editing ? undefined : (e) => onPointerDown(e, "space", space.id)}
+        onPointerDown={
+          editing ? undefined : (e) => onPointerDown(e, "space", space.id)
+        }
         onPointerMove={onPointerMove}
         onPointerUp={editing ? undefined : (e) => onPointerUp(e, onSwitch)}
         onPointerCancel={(e) => onPointerUp(e)}
@@ -459,7 +468,11 @@ function SpaceRow({
                 label="Rename space"
                 onClick={onStartRename}
               />
-              <RowAction icon={PlusSignIcon} label="New tab" onClick={onNewTab} />
+              <RowAction
+                icon={PlusSignIcon}
+                label="New tab"
+                onClick={onNewTab}
+              />
               {canDelete && (
                 <RowAction
                   icon={Delete02Icon}
@@ -522,6 +535,7 @@ function TabRow({
   onJump: () => void;
   onClose: () => void;
 }) {
+  const terminalShell = usePreferencesStore((s) => s.terminalShell);
   const subtitle = subtitleFor(tab);
   const isDragging = dragging?.kind === "tab" && dragging.id === tab.id;
   const reorderEdge =
@@ -554,7 +568,7 @@ function TabRow({
         <TabIcon tab={tab} />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-[11.5px] leading-tight">
-            {labelFor(tab)}
+            {labelFor(tab, terminalShell)}
           </span>
           {subtitle && (
             <span className="truncate text-[9.5px] leading-tight text-muted-foreground/55">
