@@ -670,7 +670,7 @@ export function getModel(id: ModelId): ModelInfo {
 }
 
 export function isKnownModelId(id: string): id is ModelId {
-  return MODELS.some((x) => x.id === id);
+  return isCompatModelId(id) || MODELS.some((x) => x.id === id);
 }
 
 const FREEFORM_PROVIDERS: ReadonlySet<ProviderId> = new Set([
