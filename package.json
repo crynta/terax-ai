@@ -110,7 +110,7 @@
   "devDependencies": {
     "@babel/core": "^7.29.7",
     "@biomejs/biome": "^2.5.12",
-    "@rolldown/plugin-babel": "^0.2.3",
+    "@rolldown/plugin-babel": "^0.2.4",
     "@size-limit/file": "^12.1.0",
     "@tailwindcss/vite": "^4.3.3",
     "@tauri-apps/cli": "^2.11.4",
@@ -120,7 +120,7 @@
     "@vitejs/plugin-react": "^6.1.1",
     "@webgpu/types": "^0.1.71",
     "babel-plugin-react-compiler": "^1.0.0",
-    "knip": "^6.34.0",
+    "knip": "^6.35.1",
     "react-compiler-healthcheck": "^1.0.0",
     "react-scan": "^0.5.7",
     "rollup-plugin-visualizer": "^7.1.1",
