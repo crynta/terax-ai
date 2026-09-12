@@ -10,7 +10,7 @@ name = "terax-cli"
 path = "src/main.rs"
 
 [dependencies]
-dirs = "6"
+dirs = "7"
 serde_json = "1"
 terax-control-protocol = { path = "../terax-control-protocol" }
 
