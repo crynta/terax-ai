@@ -5395,7 +5395,7 @@ dependencies = [
  "tempfile",
  "terax-control-protocol",
  "tokio",
- "wasmparser",
+ "wasmparser 0.258.0",
  "which",
  "window-vibrancy 0.8.0",
  "windows-sys 0.61.2",
@@ -6097,7 +6097,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "990065f2fe63003fe337b932cfb5e3b80e0b4d0f5ff650e6985b1048f62c8319"
 dependencies = [
  "leb128fmt",
- "wasmparser",
+ "wasmparser 0.244.0",
 ]
 
 [[package]]
@@ -6109,7 +6109,7 @@ dependencies = [
  "anyhow",
  "indexmap 2.14.0",
  "wasm-encoder",
- "wasmparser",
+ "wasmparser 0.244.0",
 ]
 
 [[package]]
@@ -6148,6 +6148,16 @@ dependencies = [
  "hashbrown 0.15.5",
  "indexmap 2.14.0",
  "semver",
+]
+
+[[package]]
+name = "wasmparser"
+version = "0.258.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d9a61719f93a87b16d325921e251800c4833f8fab50fa21c7de73aed50086313"
+dependencies = [
+ "bitflags 2.11.1",
+ "indexmap 2.14.0",
 ]
 
 [[package]]
@@ -6944,7 +6954,7 @@ dependencies = [
  "serde_json",
  "wasm-encoder",
  "wasm-metadata",
- "wasmparser",
+ "wasmparser 0.244.0",
  "wit-parser",
 ]
 
@@ -6963,7 +6973,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "unicode-xid",
- "wasmparser",
+ "wasmparser 0.244.0",
 ]
 
 [[package]]

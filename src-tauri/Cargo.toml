@@ -68,7 +68,7 @@ which = "8.0.4"
 [dev-dependencies]
 proptest = "1"
 tempfile = "3"
-wasmparser = { version = "=0.244.0", default-features = false, features = ["std", "validate", "features", "simd"] }
+wasmparser = { version = "=0.258.0", default-features = false, features = ["std", "validate", "features", "simd"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
