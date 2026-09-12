@@ -114,7 +114,7 @@ Penginstal terbaru tersedia di halaman [Releases](https://github.com/crynta/tera
 **Prasyarat**
 
 - Rust (stable), https://rustup.rs
-- Node 20+ dan [pnpm](https://pnpm.io)
+- Node 22+ dan [pnpm](https://pnpm.io)
 - Prasyarat Tauri untuk platform Anda, https://tauri.app/start/prerequisites/
 
 **Jalankan**

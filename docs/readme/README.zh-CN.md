@@ -140,7 +140,7 @@ Terax 是一个轻量、开源、终端优先的 AI 原生开发环境（ADE）�
 **前置要求**
 
 - Rust（stable），https://rustup.rs
-- Node 20+ 和 [pnpm](https://pnpm.io)
+- Node 22+ 和 [pnpm](https://pnpm.io)
 - 适用于你平台的 Tauri 前置要求，https://tauri.app/start/prerequisites/
 
 **运行**

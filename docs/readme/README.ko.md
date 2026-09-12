@@ -114,7 +114,7 @@ Terax는 Tauri 2 + Rust와 React 19로 만든 가볍고 오픈 소스이며 터�
 **필수 항목**
 
 - Rust(stable), https://rustup.rs
-- Node 20+와 [pnpm](https://pnpm.io)
+- Node 22+와 [pnpm](https://pnpm.io)
 - 플랫폼별 Tauri 필수 항목, https://tauri.app/start/prerequisites/
 
 **실행**

@@ -138,7 +138,7 @@ Latest installers are on the [Releases](https://github.com/crynta/terax-ai/relea
 
 **Prerequisites**
 - Rust (stable), https://rustup.rs
-- Node 20+ and [pnpm](https://pnpm.io)
+- Node 22+ and [pnpm](https://pnpm.io)
 - Tauri prerequisites for your platform, https://tauri.app/start/prerequisites/
 
 **Run**

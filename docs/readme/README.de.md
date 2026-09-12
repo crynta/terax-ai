@@ -138,7 +138,7 @@ Die neuesten Installationspakete stehen auf der Seite [Releases](https://github.
 **Voraussetzungen**
 
 - Rust (stable), https://rustup.rs
-- Node 20+ und [pnpm](https://pnpm.io)
+- Node 22+ und [pnpm](https://pnpm.io)
 - Tauri-Voraussetzungen für deine Plattform, https://tauri.app/start/prerequisites/
 
 **Ausführen**

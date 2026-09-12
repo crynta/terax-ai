@@ -114,7 +114,7 @@ Terax представляет собой легковесную среду ра
 **Требования**
 
 - Rust (stable), https://rustup.rs
-- Node 20+ и [pnpm](https://pnpm.io)
+- Node 22+ и [pnpm](https://pnpm.io)
 - Требования Tauri для вашей платформы, https://tauri.app/start/prerequisites/
 
 **Запуск**
