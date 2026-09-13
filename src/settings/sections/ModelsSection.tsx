@@ -18,10 +18,6 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
-  getBindingTokens,
-  SHORTCUTS,
-} from "@/modules/shortcuts/shortcuts";
-import {
   type CustomEndpoint,
   compatModelIdForEndpoint,
   DEFAULT_MODEL_ID,
@@ -49,6 +45,13 @@ import {
   setCustomEndpointKey,
   setKey,
 } from "@/modules/ai/lib/keyring";
+import { isProviderUsable } from "@/modules/ai/lib/usableModels";
+import {
+  clearXaiOAuthSession,
+  completeXaiOAuthLogin,
+  isXaiApiKey,
+  readXaiOAuthSession,
+} from "@/modules/ai/lib/xaiOAuth";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
@@ -76,6 +79,7 @@ import {
   setSttProvider,
   setWhispercppBaseURL,
 } from "@/modules/settings/store";
+import { getBindingTokens, SHORTCUTS } from "@/modules/shortcuts/shortcuts";
 import {
   Add01Icon,
   ArrowDown01Icon,
@@ -89,6 +93,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useMemo, useState } from "react";
+import { OAuthProviderCard } from "../components/OAuthProviderCard";
 import { ProviderIcon } from "../components/ProviderIcon";
 import { ProviderKeyCard } from "../components/ProviderKeyCard";
 import { SectionHeader } from "../components/SectionHeader";
@@ -185,6 +190,11 @@ export function ModelsSection() {
   const onClearKey = async (provider: ProviderId) => {
     await clearKey(provider);
     setKeys((prev) => (prev ? { ...prev, [provider]: null } : prev));
+    await emitKeysChanged();
+  };
+
+  const reloadKeys = async () => {
+    setKeys(await getAllKeys());
     await emitKeysChanged();
   };
 
@@ -303,13 +313,16 @@ export function ModelsSection() {
   };
 
   const isConfigured = (id: ProviderId): boolean => {
-    if (id === "openrouter") return !!keys?.[id] && !!openrouterModelId.trim();
-    if (!isLocalProvider(id)) return !!keys?.[id];
-    const cfg = localConfig(id);
-    if (!cfg) return false;
-    if (id === "openai-compatible")
-      return !!cfg.baseURL.trim() && !!cfg.modelId.trim();
-    return !!cfg.modelId.trim();
+    if (!keys) return false;
+    return isProviderUsable(id, {
+      keys,
+      openrouterModelId,
+      lmstudioModelId,
+      mlxModelId,
+      ollamaModelId,
+      openaiCompatibleBaseURL: compatBaseURL,
+      openaiCompatibleModelId: compatModelId,
+    });
   };
 
   if (!keys) {
@@ -339,6 +352,8 @@ export function ModelsSection() {
         if (id === "openai-compatible") void cfg.setBaseURL("");
       }
       if (id === "openai-compatible") void onClearKey(id);
+    } else if (id === "xai") {
+      void clearXaiOAuthSession().then(() => onClearKey(id));
     } else {
       void onClearKey(id);
     }
@@ -413,6 +428,24 @@ export function ModelsSection() {
                   onSaveKey={(v) => onSaveKey(p.id, v)}
                   onClearKey={() => onClearKey(p.id)}
                   onRemove={() => removeProvider(p.id)}
+                />
+              ) : p.id === "xai" ? (
+                <OAuthProviderCard
+                  key={p.id}
+                  provider={p}
+                  currentKey={keys[p.id]}
+                  onSave={(v) => onSaveKey(p.id, v)}
+                  onClear={() => onClearKey(p.id)}
+                  onRemove={() => removeProvider(p.id)}
+                  onAuthChange={reloadKeys}
+                  isApiKey={isXaiApiKey}
+                  readSession={readXaiOAuthSession}
+                  completeLogin={completeXaiOAuthLogin}
+                  clearSession={clearXaiOAuthSession}
+                  blurb="Sign in with SuperGrok or X Premium+ to use subscription quota. A console API key is optional."
+                  signInLabel="Sign in with SuperGrok / X Premium+"
+                  identityFallback="SuperGrok"
+                  deviceHelpText="Confirm the code on the xAI page. Waiting for authorization…"
                 />
               ) : (
                 <ProviderKeyCard

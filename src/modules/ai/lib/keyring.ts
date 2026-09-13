@@ -1,11 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
+  type CustomEndpoint,
   getProvider,
   KEYRING_SERVICE,
   PROVIDERS,
-  providerSupportsKey,
-  type CustomEndpoint,
   type ProviderId,
+  providerSupportsKey,
 } from "../config";
 
 export type ProviderKeys = Record<ProviderId, string | null>;
@@ -27,8 +27,17 @@ export const EMPTY_PROVIDER_KEYS: ProviderKeys = {
   ollama: null,
 };
 
+async function resolveXaiOverlay(): Promise<string | null> {
+  const { resolveXaiOAuthAccessToken } = await import("./xaiOAuth");
+  return resolveXaiOAuthAccessToken();
+}
+
 export async function getKey(provider: ProviderId): Promise<string | null> {
   if (!providerSupportsKey(provider)) return null;
+  if (provider === "xai") {
+    const oauth = await resolveXaiOverlay();
+    if (oauth) return oauth;
+  }
   try {
     const v = await invoke<string | null>("secrets_get", {
       service: KEYRING_SERVICE,
@@ -77,14 +86,19 @@ export async function getAllKeys(): Promise<ProviderKeys> {
       const v = results[i];
       out[p.id] = v && v.length > 0 ? v : null;
     });
-    return out;
   } catch {
     const entries = await Promise.all(
       need.map(async (p) => [p.id, await getKey(p.id)] as const),
     );
     for (const [id, v] of entries) out[id] = v;
-    return out;
   }
+  try {
+    const oauth = await resolveXaiOverlay();
+    if (oauth) out.xai = oauth;
+  } catch {
+    // keep the console API key if refresh fails
+  }
+  return out;
 }
 
 export function hasAnyKey(keys: ProviderKeys): boolean {

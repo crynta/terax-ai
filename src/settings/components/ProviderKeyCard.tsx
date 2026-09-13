@@ -23,6 +23,7 @@ type Props = {
   onSave: (key: string) => Promise<void>;
   onClear: () => Promise<void>;
   onRemove?: () => void;
+  embedded?: boolean;
 };
 
 function maskKey(key: string): string {
@@ -36,6 +37,7 @@ export function ProviderKeyCard({
   onSave,
   onClear,
   onRemove,
+  embedded = false,
 }: Props) {
   const [editing, setEditing] = useState(!currentKey);
   const [value, setValue] = useState("");
@@ -71,47 +73,55 @@ export function ProviderKeyCard({
   };
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-card/60 px-3 py-2.5">
-      <div className="flex items-center gap-2">
-        <ProviderIcon provider={provider.id} size={15} />
-        <span className="text-[12.5px] font-medium">{provider.label}</span>
-        {currentKey ? (
-          <Badge
-            variant="outline"
-            className="ml-1 h-4 gap-1 border-border/60 bg-muted/40 px-1.5 text-[10px] font-normal text-muted-foreground"
+    <div
+      className={
+        embedded
+          ? "flex flex-col gap-1.5"
+          : "flex flex-col gap-2 rounded-lg border border-border/60 bg-card/60 px-3 py-2.5"
+      }
+    >
+      {embedded ? null : (
+        <div className="flex items-center gap-2">
+          <ProviderIcon provider={provider.id} size={15} />
+          <span className="text-[12.5px] font-medium">{provider.label}</span>
+          {currentKey ? (
+            <Badge
+              variant="outline"
+              className="ml-1 h-4 gap-1 border-border/60 bg-muted/40 px-1.5 text-[10px] font-normal text-muted-foreground"
+            >
+              <HugeiconsIcon
+                icon={CheckmarkCircle02Icon}
+                size={9}
+                strokeWidth={2}
+              />
+              Connected
+            </Badge>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => void openUrl(provider.consoleUrl)}
+            className="ml-auto inline-flex items-center gap-0.5 text-[10.5px] text-muted-foreground transition-colors hover:text-foreground"
           >
+            Get key
             <HugeiconsIcon
-              icon={CheckmarkCircle02Icon}
-              size={9}
-              strokeWidth={2}
+              icon={ArrowUpRight01Icon}
+              size={11}
+              strokeWidth={1.75}
             />
-            Connected
-          </Badge>
-        ) : null}
-        <button
-          type="button"
-          onClick={() => void openUrl(provider.consoleUrl)}
-          className="ml-auto inline-flex items-center gap-0.5 text-[10.5px] text-muted-foreground transition-colors hover:text-foreground"
-        >
-          Get key
-          <HugeiconsIcon
-            icon={ArrowUpRight01Icon}
-            size={11}
-            strokeWidth={1.75}
-          />
-        </button>
-        {onRemove ? (
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={onRemove}
-            title="Remove provider"
-            className="size-7 text-muted-foreground hover:text-destructive"
-          >
-            <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={1.75} />
-          </Button>
-        ) : null}
-      </div>
+          </button>
+          {onRemove ? (
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={onRemove}
+              title="Remove provider"
+              className="size-7 text-muted-foreground hover:text-destructive"
+            >
+              <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={1.75} />
+            </Button>
+          ) : null}
+        </div>
+      )}
 
       {editing ? (
         <div className="flex flex-col gap-1.5">
