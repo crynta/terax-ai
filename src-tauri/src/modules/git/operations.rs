@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::path::Path;
 
@@ -10,7 +11,7 @@ use crate::modules::git::process::{
 use crate::modules::git::types::{
     DiscardEntry, GitBranchEntry, GitBranchListResult, GitCommitFileChange, GitCommitResult,
     GitDiffContentResult, GitDiffResult, GitLogEntry, GitOutput, GitPanelSnapshot,
-    GitPushResult, GitRepoInfo, GitStatusSnapshot, TextSource, DEFAULT_TIMEOUT_SECS,
+    GitBlameLine, GitPushResult, GitRepoInfo, GitStatusSnapshot, TextSource, DEFAULT_TIMEOUT_SECS,
     NETWORK_TIMEOUT_SECS,
 };
 use crate::modules::git::utils::{
@@ -578,6 +579,105 @@ pub fn log(
         }
     }
     Ok(entries)
+}
+
+// Blame output is capped so a generated or vendored megafile cannot pin the
+// UI thread with hundreds of thousands of annotations.
+const MAX_BLAME_LINES: usize = 20_000;
+
+#[derive(Default, Clone)]
+struct BlameCommit {
+    author: String,
+    timestamp_secs: i64,
+    summary: String,
+}
+
+pub fn blame(
+    registry: &WorkspaceRegistry,
+    repo_root: &str,
+    path: &str,
+    workspace: &WorkspaceEnv,
+) -> Result<Vec<GitBlameLine>> {
+    let repo_root = authorized_repo_root(registry, repo_root, workspace)?;
+    ensure_git_available(&repo_root.workspace)?;
+    let resolved = resolve_within_repo(&repo_root.local_path, path)?;
+    let rel = resolved
+        .strip_prefix(&repo_root.local_path)
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_else(|_| path.replace('\\', "/"));
+
+    // -L bounds the work git itself does; MAX_BLAME_LINES only bounds what we
+    // keep. Ranges past the end of the file are clamped by git.
+    let range = format!("1,{MAX_BLAME_LINES}");
+    let output = run_git(
+        &repo_root.workspace,
+        Some(&repo_root.git_path),
+        [
+            OsStr::new("blame"),
+            OsStr::new("--porcelain"),
+            OsStr::new("-L"),
+            OsStr::new(&range),
+            OsStr::new("--"),
+            OsStr::new(&rel),
+        ],
+        DEFAULT_TIMEOUT_SECS,
+    )?;
+    if output.timed_out {
+        return Err(GitError::TimedOut("git blame"));
+    }
+    if output.exit_code != Some(0) {
+        // Untracked, ignored or deleted paths simply have no blame.
+        return Ok(Vec::new());
+    }
+    Ok(parse_blame_porcelain(
+        &String::from_utf8_lossy(&output.stdout),
+    ))
+}
+
+fn parse_blame_porcelain(stdout: &str) -> Vec<GitBlameLine> {
+    let mut commits: HashMap<String, BlameCommit> = HashMap::new();
+    let mut lines: Vec<GitBlameLine> = Vec::new();
+    let mut current = String::new();
+    for raw in stdout.lines() {
+        let line = raw.trim_end_matches('\r');
+        if line.starts_with('\t') {
+            let meta = commits.get(&current).cloned().unwrap_or_default();
+            let uncommitted = current.bytes().all(|b| b == b'0');
+            lines.push(GitBlameLine {
+                short_sha: current.chars().take(7).collect(),
+                sha: current.clone(),
+                author: meta.author,
+                timestamp_secs: meta.timestamp_secs,
+                summary: meta.summary,
+                uncommitted,
+            });
+            if lines.len() >= MAX_BLAME_LINES {
+                break;
+            }
+            continue;
+        }
+        if let Some((head, _)) = line.split_once(' ') {
+            // 40 hex for SHA-1 repos, 64 for SHA-256 ones.
+            if (head.len() == 40 || head.len() == 64)
+                && head.bytes().all(|b| b.is_ascii_hexdigit())
+            {
+                current = head.to_string();
+                commits.entry(current.clone()).or_default();
+                continue;
+            }
+        }
+        let Some(entry) = commits.get_mut(&current) else {
+            continue;
+        };
+        if let Some(v) = line.strip_prefix("author ") {
+            entry.author = v.to_string();
+        } else if let Some(v) = line.strip_prefix("author-time ") {
+            entry.timestamp_secs = v.trim().parse().unwrap_or(0);
+        } else if let Some(v) = line.strip_prefix("summary ") {
+            entry.summary = v.to_string();
+        }
+    }
+    lines
 }
 
 pub fn show_commit_diff(
@@ -1150,6 +1250,107 @@ pub fn checkout_branch(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_blame_porcelain_reuses_commit_metadata() {
+        let sha = "a".repeat(40);
+        let zero = "0".repeat(40);
+        let stdout = format!(
+            "{sha} 1 1 2\n\
+             author Ada\n\
+             author-time 1700000000\n\
+             summary first commit\n\
+             \tone\n\
+             {sha} 2 2\n\
+             \ttwo\n\
+             {zero} 3 3 1\n\
+             author Not Committed Yet\n\
+             author-time 1700000100\n\
+             summary Uncommitted\n\
+             \tthree\n"
+        );
+        let lines = parse_blame_porcelain(&stdout);
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[0].author, "Ada");
+        assert_eq!(lines[0].short_sha, "aaaaaaa");
+        assert_eq!(lines[0].timestamp_secs, 1_700_000_000);
+        // Second line only carries the header, metadata comes from the map.
+        assert_eq!(lines[1].author, "Ada");
+        assert_eq!(lines[1].summary, "first commit");
+        assert!(!lines[1].uncommitted);
+        assert!(lines[2].uncommitted);
+    }
+
+    fn blame_tempdir(label: &str) -> std::path::PathBuf {
+        let mut p = std::env::temp_dir();
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        p.push(format!("terax-blame-{label}-{nanos}-{}", std::process::id()));
+        std::fs::create_dir_all(&p).expect("create tempdir");
+        std::fs::canonicalize(&p).expect("canonicalize tempdir")
+    }
+
+    #[test]
+    fn blame_rejects_a_repo_root_outside_the_workspace() {
+        let dir = blame_tempdir("unauthorized");
+        let registry = WorkspaceRegistry::default();
+        let err = blame(
+            &registry,
+            &dir.to_string_lossy(),
+            "src/main.rs",
+            &WorkspaceEnv::Local,
+        )
+        .expect_err("an unauthorized repository root must be refused");
+        assert!(matches!(err, GitError::PathOutsideWorkspace(_)));
+    }
+
+    #[test]
+    fn blame_rejects_a_path_escaping_the_repository() {
+        let dir = blame_tempdir("escape");
+        let registry = WorkspaceRegistry::default();
+        registry.authorize(&dir).expect("authorize root");
+        let err = blame(
+            &registry,
+            &dir.to_string_lossy(),
+            "../outside.txt",
+            &WorkspaceEnv::Local,
+        )
+        .expect_err("a path leaving the repository must be refused");
+        assert!(matches!(err, GitError::InvalidPath(_)));
+    }
+
+    #[test]
+    fn parse_blame_porcelain_stops_at_the_line_cap() {
+        let sha = "c".repeat(40);
+        let mut stdout = format!(
+            "{sha} 1 1 1\n\
+             author Ada\n\
+             author-time 1700000000\n\
+             summary big file\n"
+        );
+        for _ in 0..(MAX_BLAME_LINES + 10) {
+            stdout.push_str("\tline\n");
+        }
+        assert_eq!(parse_blame_porcelain(&stdout).len(), MAX_BLAME_LINES);
+    }
+
+    #[test]
+    fn parse_blame_porcelain_accepts_sha256_object_ids() {
+        let sha = "b".repeat(64);
+        let stdout = format!(
+            "{sha} 1 1 1\n\
+             author Grace\n\
+             author-time 1700000000\n\
+             summary sha256 repo\n\
+             \tone\n"
+        );
+        let lines = parse_blame_porcelain(&stdout);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].author, "Grace");
+        assert_eq!(lines[0].sha, sha);
+    }
 
     #[test]
     fn sha_is_safe_accepts_hex() {

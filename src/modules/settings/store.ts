@@ -154,6 +154,7 @@ export type Preferences = {
   recentModelIds: string[];
   vimMode: boolean;
   editorWordWrap: boolean;
+  editorInlineBlame: boolean;
   editorWordWrapColumn: number;
   showHidden: boolean;
   explorerGitDecorations: boolean;
@@ -249,6 +250,7 @@ const KEY_FAVORITE_MODELS = "favoriteModelIds";
 const KEY_RECENT_MODELS = "recentModelIds";
 const KEY_VIM_MODE = "vimMode";
 const KEY_EDITOR_WORD_WRAP = "editorWordWrap";
+const KEY_EDITOR_INLINE_BLAME = "editorInlineBlame";
 const KEY_EDITOR_WORD_WRAP_COLUMN = "editorWordWrapColumn";
 const KEY_SHOW_HIDDEN = "showHidden";
 const LEGACY_KEY_SHOW_HIDDEN_DIRS = "showHiddenDirectories";
@@ -342,6 +344,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   recentModelIds: [],
   vimMode: false,
   editorWordWrap: false,
+  editorInlineBlame: false,
   editorWordWrapColumn: EDITOR_WORD_WRAP_COLUMN_DEFAULT,
   showHidden: false,
   explorerGitDecorations: true,
@@ -491,6 +494,9 @@ export async function loadPreferences(): Promise<Preferences> {
     vimMode: get<boolean>(KEY_VIM_MODE) ?? DEFAULT_PREFERENCES.vimMode,
     editorWordWrap:
       get<boolean>(KEY_EDITOR_WORD_WRAP) ?? DEFAULT_PREFERENCES.editorWordWrap,
+    editorInlineBlame:
+      get<boolean>(KEY_EDITOR_INLINE_BLAME) ??
+      DEFAULT_PREFERENCES.editorInlineBlame,
     editorWordWrapColumn: clampEditorWordWrapColumn(
       get<number>(KEY_EDITOR_WORD_WRAP_COLUMN) ??
         DEFAULT_PREFERENCES.editorWordWrapColumn,
@@ -773,6 +779,10 @@ export async function setEditorWordWrap(value: boolean): Promise<void> {
   await writePref(KEY_EDITOR_WORD_WRAP, value);
 }
 
+export async function setEditorInlineBlame(value: boolean): Promise<void> {
+  await writePref(KEY_EDITOR_INLINE_BLAME, value);
+}
+
 export function clampEditorWordWrapColumn(value: number): number {
   if (!Number.isFinite(value)) return EDITOR_WORD_WRAP_COLUMN_DEFAULT;
   return Math.min(
@@ -996,6 +1006,7 @@ export async function onPreferencesChange(
     [KEY_RECENT_MODELS]: "recentModelIds",
     [KEY_VIM_MODE]: "vimMode",
     [KEY_EDITOR_WORD_WRAP]: "editorWordWrap",
+    [KEY_EDITOR_INLINE_BLAME]: "editorInlineBlame",
     [KEY_EDITOR_WORD_WRAP_COLUMN]: "editorWordWrapColumn",
     [KEY_SHOW_HIDDEN]: "showHidden",
     [KEY_EXPLORER_GIT_DECORATIONS]: "explorerGitDecorations",

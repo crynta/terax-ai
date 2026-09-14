@@ -36,7 +36,9 @@ import {
 } from "./lib/autocomplete/inlineExtension";
 import { diagnosticsReporter } from "./lib/diagnosticsReporter";
 import { useDiagnosticsStore } from "./lib/diagnosticsStore";
+import { inlineBlame } from "./lib/blame";
 import {
+  blameCompartment,
   buildSharedExtensions,
   DEFAULT_INDENT,
   indentCompartment,
@@ -54,6 +56,7 @@ import {
   runExternalFormatter,
 } from "./lib/externalFormat";
 import { detectIndentUnit } from "./lib/indent";
+import { useInlineBlame } from "./lib/useInlineBlame";
 import { type LanguageResult, resolveLanguage } from "./lib/languageResolver";
 import { FORCE_READ_LIMIT, useDocument } from "./lib/useDocument";
 import { useEditorThemeExt } from "./lib/useEditorThemeExt";
@@ -86,6 +89,8 @@ export type EditorPaneHandle = {
 
 type Props = {
   path: string;
+  /** False for tabs kept mounted behind the active one. */
+  visible?: boolean;
   overrideLanguage?: string | null;
   onDirtyChange?: (dirty: boolean) => void;
   onSaved?: () => void;
@@ -106,9 +111,16 @@ function formatBytes(n: number): string {
 // skip re-rendering entirely when App re-renders (terminal events, tab churn).
 export const EditorPane = memo(
   forwardRef<EditorPaneHandle, Props>(function EditorPane(props, ref) {
-    const { path, overrideLanguage, onDirtyChange, onSaved, onClose } = props;
+    const {
+      path,
+      visible = true,
+      overrideLanguage,
+      onDirtyChange,
+      onSaved,
+      onClose,
+    } = props;
 
-    const { doc, onChange, save, reload, adoptDiskText, openAnyway } =
+    const { doc, dirty, onChange, save, reload, adoptDiskText, openAnyway } =
       useDocument({
         path,
         onDirtyChange,
@@ -126,6 +138,9 @@ export const EditorPane = memo(
     const languageRef = useRef<string | null>(null);
     const [langId, setLangId] = useState<string | null>(null);
     const apiKeyRef = useRef<string | null>(null);
+    const inlineBlameEnabled = usePreferencesStore((s) => s.editorInlineBlame);
+    // Bumped on every successful save so blame refetches against the new file.
+    const [blameRevision, setBlameRevision] = useState(0);
 
     useEffect(() => {
       let cancelled = false;
@@ -236,6 +251,7 @@ export const EditorPane = memo(
         }
       }
       onSavedRef.current?.();
+      setBlameRevision((n) => n + 1);
     }, []);
     const performSaveRef = useRef(performSave);
     performSaveRef.current = performSave;
@@ -331,6 +347,7 @@ export const EditorPane = memo(
         indentCompartment.of(DEFAULT_INDENT),
         languageCompartment.of([]),
         lspCompartment.of([]),
+        blameCompartment.of([]),
         diagnosticsReporter(() => pathRef.current),
         // Before inlineCompletion so an open popup wins Tab over the ghost.
         Prec.highest(keymap.of([{ key: "Tab", run: acceptCompletion }])),
@@ -415,6 +432,27 @@ export const EditorPane = memo(
         ),
       });
     }, [doc]);
+
+    const getView = useCallback(() => cmRef.current?.view ?? null, []);
+    useEffect(() => {
+      const view = cmRef.current?.view;
+      if (!view) return;
+      view.dispatch({
+        effects: blameCompartment.reconfigure(
+          inlineBlameEnabled ? inlineBlame() : [],
+        ),
+      });
+    }, [inlineBlameEnabled, doc.status]);
+    useInlineBlame(
+      path,
+      // Hidden tabs stay mounted; blaming them would spawn a git process per
+      // background editor for annotations nobody can see.
+      // A dirty buffer no longer matches the lines git blames on disk, so
+      // annotations stay off until the save refetches them.
+      inlineBlameEnabled && visible && !dirty && doc.status === "ready",
+      getView,
+      blameRevision,
+    );
 
     const lspExt = useLspExtension(path, langId, doc.status === "ready");
     useEffect(() => {
@@ -624,7 +662,8 @@ export const EditorPane = memo(
         );
       }
 
-      const canForce = doc.status === "toolarge" && doc.size <= FORCE_READ_LIMIT;
+      const canForce =
+        doc.status === "toolarge" && doc.size <= FORCE_READ_LIMIT;
       return (
         <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
           <div className="text-sm text-foreground">

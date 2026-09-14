@@ -154,6 +154,17 @@ impl TextSource {
     }
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitBlameLine {
+    pub sha: String,
+    pub short_sha: String,
+    pub author: String,
+    pub timestamp_secs: i64,
+    pub summary: String,
+    pub uncommitted: bool,
+}
+
 #[cfg(test)]
 mod serde_shape_tests {
     use super::*;
