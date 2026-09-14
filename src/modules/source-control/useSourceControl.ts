@@ -3,12 +3,18 @@ import {
   type GitRepoInfo,
   type GitStatusSnapshot,
 } from "@/modules/ai/lib/native";
+import { listenFsChanged } from "@/modules/explorer/lib/watch";
 import { useWorkspaceEnvStore, workspaceScopeKey } from "@/modules/workspace";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const AUTO_FETCH_THROTTLE_MS = 5 * 60_000;
 const AUTO_FETCH_LRU_LIMIT = 16;
 const FOCUS_REFRESH_MIN_INTERVAL_MS = 1500;
+// Filesystem bursts (a build, a checkout, a formatter) arrive as batches from
+// the Rust watcher; collapse them into one status read and never run them
+// closer together than this.
+const FS_REFRESH_DEBOUNCE_MS = 500;
+const FS_REFRESH_MIN_INTERVAL_MS = 1500;
 // Skip the context-change refetch when the data is this fresh and the new path
 // is still inside the loaded repo (cd-within-repo produces identical status).
 const SC_STATUS_TTL_MS = 2000;
@@ -117,6 +123,27 @@ export function repositoryContainsContext(
   }
   const prefix = root.endsWith("/") ? root : `${root}/`;
   return context === root || context.startsWith(prefix);
+}
+
+/**
+ * Whether a batch of changed paths is worth a status read. Paths inside `.git`
+ * are ignored: git's own bookkeeping (index.lock, refs, objects) churns on
+ * every command we run and would refresh us in a loop.
+ */
+export function shouldRefreshForPaths(
+  repoRoot: string | null,
+  paths: readonly string[],
+): boolean {
+  if (!repoRoot) return false;
+  return paths.some((path) => {
+    if (!repositoryContainsContext(repoRoot, path)) return false;
+    let normalized = path.replace(/\\/g, "/");
+    // Windows paths are case-insensitive, so ".GIT" is the same directory.
+    if (/^[A-Za-z]:\//.test(normalized) || normalized.startsWith("//")) {
+      normalized = normalized.toLowerCase();
+    }
+    return !normalized.includes("/.git/") && !normalized.endsWith("/.git");
+  });
 }
 
 export function beginSourceControlRefresh<
@@ -567,6 +594,42 @@ export function useSourceControl(
     window.addEventListener("focus", onFocus);
     return () => {
       window.removeEventListener("focus", onFocus);
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [refresh, enabled]);
+
+  // Decorations follow edits without polling: the explorer and editor already
+  // watch the paths the user has open, so we reuse that event stream. Work is
+  // skipped while the window is hidden - the focus handler above catches up.
+  useEffect(() => {
+    if (!enabled) return;
+    let timer = 0;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    const run = () => {
+      timer = 0;
+      if (document.hidden) return;
+      const elapsed = Date.now() - lastRefreshAtRef.current;
+      if (elapsed < FS_REFRESH_MIN_INTERVAL_MS) {
+        // Too soon after the last read: wait out the remainder instead of
+        // dropping the change, or the status would stay stale.
+        timer = window.setTimeout(run, FS_REFRESH_MIN_INTERVAL_MS - elapsed);
+        return;
+      }
+      void refresh({ remote: "never" });
+    };
+    void listenFsChanged((paths) => {
+      const root = stateRef.current.repo?.repoRoot ?? null;
+      if (!shouldRefreshForPaths(root, paths)) return;
+      if (timer) window.clearTimeout(timer);
+      timer = window.setTimeout(run, FS_REFRESH_DEBOUNCE_MS);
+    }).then((un) => {
+      if (disposed) un();
+      else unlisten = un;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
       if (timer) window.clearTimeout(timer);
     };
   }, [refresh, enabled]);

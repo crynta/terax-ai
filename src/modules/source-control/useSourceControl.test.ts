@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   beginSourceControlRefresh,
   repositoryContainsContext,
+  shouldRefreshForPaths,
 } from "./useSourceControl";
 
 describe("repositoryContainsContext", () => {
@@ -86,5 +87,54 @@ describe("beginSourceControlRefresh", () => {
       isLoading: true,
       localError: null,
     });
+  });
+});
+
+describe("shouldRefreshForPaths", () => {
+  const root = "/home/ada/repo";
+
+  it("refreshes for a tracked path inside the repository", () => {
+    expect(shouldRefreshForPaths(root, ["/home/ada/repo/src/main.rs"])).toBe(
+      true,
+    );
+  });
+
+  it("ignores paths outside the repository", () => {
+    expect(shouldRefreshForPaths(root, ["/home/ada/other/main.rs"])).toBe(
+      false,
+    );
+  });
+
+  it("ignores git's own bookkeeping", () => {
+    expect(
+      shouldRefreshForPaths(root, [
+        "/home/ada/repo/.git/index.lock",
+        "/home/ada/repo/.git",
+      ]),
+    ).toBe(false);
+  });
+
+  it("refreshes when a batch mixes git internals with real changes", () => {
+    expect(
+      shouldRefreshForPaths(root, [
+        "/home/ada/repo/.git/index",
+        "/home/ada/repo/src/main.rs",
+      ]),
+    ).toBe(true);
+  });
+
+  it("ignores git's bookkeeping under a case-insensitive Windows path", () => {
+    expect(shouldRefreshForPaths("C:\\Repo", ["C:\\Repo\\.GIT\\index"])).toBe(
+      false,
+    );
+    expect(shouldRefreshForPaths("C:\\Repo", ["C:\\Repo\\src\\main.rs"])).toBe(
+      true,
+    );
+  });
+
+  it("needs a repository", () => {
+    expect(shouldRefreshForPaths(null, ["/home/ada/repo/src/main.rs"])).toBe(
+      false,
+    );
   });
 });
