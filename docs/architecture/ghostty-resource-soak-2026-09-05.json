@@ -1,0 +1,733 @@
+{
+  "scope": "Node WASM core only; excludes Tauri IPC, WebKit, GPU, and application energy",
+  "recordedAt": "2026-09-04T23:33:49.247Z",
+  "node": "v26.5.0",
+  "platform": "darwin",
+  "arch": "arm64",
+  "reports": [
+    {
+      "artifact": "ghostty-vt.wasm",
+      "models": 5,
+      "updates": 655360,
+      "inputBytes": 62069760,
+      "elapsedMs": 12961.220874999999,
+      "cpuMicroseconds": {
+        "user": 12980636,
+        "system": 69495
+      },
+      "finalWasmBytes": 70778880,
+      "plateauGrowthBytes": 0,
+      "resources": [
+        {
+          "cellCapacity": 5632,
+          "rowCapacity": 48,
+          "renderStateResets": 1
+        },
+        {
+          "cellCapacity": 5632,
+          "rowCapacity": 48,
+          "renderStateResets": 64
+        },
+        {
+          "cellCapacity": 5632,
+          "rowCapacity": 48,
+          "renderStateResets": 1
+        },
+        {
+          "cellCapacity": 5632,
+          "rowCapacity": 48,
+          "renderStateResets": 64
+        },
+        {
+          "cellCapacity": 8192,
+          "rowCapacity": 64,
+          "renderStateResets": 64
+        }
+      ],
+      "samples": [
+        {
+          "epoch": 0,
+          "wasmBytes": 36175872,
+          "nodeRssBytes": 126189568
+        },
+        {
+          "epoch": 1,
+          "wasmBytes": 63438848,
+          "nodeRssBytes": 150749184
+        },
+        {
+          "epoch": 2,
+          "wasmBytes": 68681728,
+          "nodeRssBytes": 156598272
+        },
+        {
+          "epoch": 3,
+          "wasmBytes": 68681728,
+          "nodeRssBytes": 160514048
+        },
+        {
+          "epoch": 4,
+          "wasmBytes": 69730304,
+          "nodeRssBytes": 162136064
+        },
+        {
+          "epoch": 5,
+          "wasmBytes": 69730304,
+          "nodeRssBytes": 162152448
+        },
+        {
+          "epoch": 6,
+          "wasmBytes": 69730304,
+          "nodeRssBytes": 162152448
+        },
+        {
+          "epoch": 7,
+          "wasmBytes": 69730304,
+          "nodeRssBytes": 162283520
+        },
+        {
+          "epoch": 8,
+          "wasmBytes": 69730304,
+          "nodeRssBytes": 162414592
+        },
+        {
+          "epoch": 9,
+          "wasmBytes": 69730304,
+          "nodeRssBytes": 162414592
+        },
+        {
+          "epoch": 10,
+          "wasmBytes": 69730304,
+          "nodeRssBytes": 162430976
+        },
+        {
+          "epoch": 11,
+          "wasmBytes": 69730304,
+          "nodeRssBytes": 162430976
+        },
+        {
+          "epoch": 12,
+          "wasmBytes": 69730304,
+          "nodeRssBytes": 162496512
+        },
+        {
+          "epoch": 13,
+          "wasmBytes": 69730304,
+          "nodeRssBytes": 162693120
+        },
+        {
+          "epoch": 14,
+          "wasmBytes": 69730304,
+          "nodeRssBytes": 162824192
+        },
+        {
+          "epoch": 15,
+          "wasmBytes": 69730304,
+          "nodeRssBytes": 162824192
+        },
+        {
+          "epoch": 16,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 163610624
+        },
+        {
+          "epoch": 17,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 163627008
+        },
+        {
+          "epoch": 18,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 163627008
+        },
+        {
+          "epoch": 19,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 163627008
+        },
+        {
+          "epoch": 20,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 163627008
+        },
+        {
+          "epoch": 21,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 163627008
+        },
+        {
+          "epoch": 22,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 163627008
+        },
+        {
+          "epoch": 23,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 163627008
+        },
+        {
+          "epoch": 24,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 163627008
+        },
+        {
+          "epoch": 25,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 163692544
+        },
+        {
+          "epoch": 26,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 163823616
+        },
+        {
+          "epoch": 27,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 163823616
+        },
+        {
+          "epoch": 28,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 163823616
+        },
+        {
+          "epoch": 29,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 164020224
+        },
+        {
+          "epoch": 30,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 164020224
+        },
+        {
+          "epoch": 31,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 164020224
+        },
+        {
+          "epoch": 32,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 164020224
+        },
+        {
+          "epoch": 33,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 164020224
+        },
+        {
+          "epoch": 34,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 164020224
+        },
+        {
+          "epoch": 35,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 164216832
+        },
+        {
+          "epoch": 36,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 164347904
+        },
+        {
+          "epoch": 37,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 164347904
+        },
+        {
+          "epoch": 38,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 164347904
+        },
+        {
+          "epoch": 39,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 164347904
+        },
+        {
+          "epoch": 40,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 164347904
+        },
+        {
+          "epoch": 41,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 164347904
+        },
+        {
+          "epoch": 42,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 164347904
+        },
+        {
+          "epoch": 43,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 164347904
+        },
+        {
+          "epoch": 44,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 164347904
+        },
+        {
+          "epoch": 45,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 164347904
+        },
+        {
+          "epoch": 46,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 164347904
+        },
+        {
+          "epoch": 47,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 164478976
+        },
+        {
+          "epoch": 48,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 164610048
+        },
+        {
+          "epoch": 49,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 164610048
+        },
+        {
+          "epoch": 50,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 164610048
+        },
+        {
+          "epoch": 51,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 164741120
+        },
+        {
+          "epoch": 52,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 164872192
+        },
+        {
+          "epoch": 53,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 164872192
+        },
+        {
+          "epoch": 54,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 164872192
+        },
+        {
+          "epoch": 55,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 164872192
+        },
+        {
+          "epoch": 56,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 164872192
+        },
+        {
+          "epoch": 57,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 165068800
+        },
+        {
+          "epoch": 58,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 165199872
+        },
+        {
+          "epoch": 59,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 165199872
+        },
+        {
+          "epoch": 60,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 165199872
+        },
+        {
+          "epoch": 61,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 165199872
+        },
+        {
+          "epoch": 62,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 165199872
+        },
+        {
+          "epoch": 63,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 165199872
+        }
+      ]
+    },
+    {
+      "artifact": "ghostty-vt-scalar.wasm",
+      "models": 5,
+      "updates": 655360,
+      "inputBytes": 62069760,
+      "elapsedMs": 14318.795792,
+      "cpuMicroseconds": {
+        "user": 14339353,
+        "system": 70883
+      },
+      "finalWasmBytes": 70778880,
+      "plateauGrowthBytes": 0,
+      "resources": [
+        {
+          "cellCapacity": 5632,
+          "rowCapacity": 48,
+          "renderStateResets": 1
+        },
+        {
+          "cellCapacity": 5632,
+          "rowCapacity": 48,
+          "renderStateResets": 64
+        },
+        {
+          "cellCapacity": 5632,
+          "rowCapacity": 48,
+          "renderStateResets": 1
+        },
+        {
+          "cellCapacity": 5632,
+          "rowCapacity": 48,
+          "renderStateResets": 64
+        },
+        {
+          "cellCapacity": 8192,
+          "rowCapacity": 64,
+          "renderStateResets": 64
+        }
+      ],
+      "samples": [
+        {
+          "epoch": 0,
+          "wasmBytes": 36175872,
+          "nodeRssBytes": 196624384
+        },
+        {
+          "epoch": 1,
+          "wasmBytes": 63438848,
+          "nodeRssBytes": 216940544
+        },
+        {
+          "epoch": 2,
+          "wasmBytes": 68681728,
+          "nodeRssBytes": 222576640
+        },
+        {
+          "epoch": 3,
+          "wasmBytes": 68681728,
+          "nodeRssBytes": 222756864
+        },
+        {
+          "epoch": 4,
+          "wasmBytes": 69730304,
+          "nodeRssBytes": 223543296
+        },
+        {
+          "epoch": 5,
+          "wasmBytes": 69730304,
+          "nodeRssBytes": 223559680
+        },
+        {
+          "epoch": 6,
+          "wasmBytes": 69730304,
+          "nodeRssBytes": 223559680
+        },
+        {
+          "epoch": 7,
+          "wasmBytes": 69730304,
+          "nodeRssBytes": 223690752
+        },
+        {
+          "epoch": 8,
+          "wasmBytes": 69730304,
+          "nodeRssBytes": 223838208
+        },
+        {
+          "epoch": 9,
+          "wasmBytes": 69730304,
+          "nodeRssBytes": 223838208
+        },
+        {
+          "epoch": 10,
+          "wasmBytes": 69730304,
+          "nodeRssBytes": 223838208
+        },
+        {
+          "epoch": 11,
+          "wasmBytes": 69730304,
+          "nodeRssBytes": 223838208
+        },
+        {
+          "epoch": 12,
+          "wasmBytes": 69730304,
+          "nodeRssBytes": 223838208
+        },
+        {
+          "epoch": 13,
+          "wasmBytes": 69730304,
+          "nodeRssBytes": 224034816
+        },
+        {
+          "epoch": 14,
+          "wasmBytes": 69730304,
+          "nodeRssBytes": 224165888
+        },
+        {
+          "epoch": 15,
+          "wasmBytes": 69730304,
+          "nodeRssBytes": 224165888
+        },
+        {
+          "epoch": 16,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 224952320
+        },
+        {
+          "epoch": 17,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 224968704
+        },
+        {
+          "epoch": 18,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 224968704
+        },
+        {
+          "epoch": 19,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 224968704
+        },
+        {
+          "epoch": 20,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 224968704
+        },
+        {
+          "epoch": 21,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 224968704
+        },
+        {
+          "epoch": 22,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 224968704
+        },
+        {
+          "epoch": 23,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 224968704
+        },
+        {
+          "epoch": 24,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 224968704
+        },
+        {
+          "epoch": 25,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 225034240
+        },
+        {
+          "epoch": 26,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 225165312
+        },
+        {
+          "epoch": 27,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 225165312
+        },
+        {
+          "epoch": 28,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 225181696
+        },
+        {
+          "epoch": 29,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 225378304
+        },
+        {
+          "epoch": 30,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 225378304
+        },
+        {
+          "epoch": 31,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 225378304
+        },
+        {
+          "epoch": 32,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 225378304
+        },
+        {
+          "epoch": 33,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 225378304
+        },
+        {
+          "epoch": 34,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 225378304
+        },
+        {
+          "epoch": 35,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 225574912
+        },
+        {
+          "epoch": 36,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 225705984
+        },
+        {
+          "epoch": 37,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 225705984
+        },
+        {
+          "epoch": 38,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 225705984
+        },
+        {
+          "epoch": 39,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 225705984
+        },
+        {
+          "epoch": 40,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 225705984
+        },
+        {
+          "epoch": 41,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 225705984
+        },
+        {
+          "epoch": 42,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 225705984
+        },
+        {
+          "epoch": 43,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 225705984
+        },
+        {
+          "epoch": 44,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 225705984
+        },
+        {
+          "epoch": 45,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 225705984
+        },
+        {
+          "epoch": 46,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 225705984
+        },
+        {
+          "epoch": 47,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 225837056
+        },
+        {
+          "epoch": 48,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 225968128
+        },
+        {
+          "epoch": 49,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 225968128
+        },
+        {
+          "epoch": 50,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 225968128
+        },
+        {
+          "epoch": 51,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 226099200
+        },
+        {
+          "epoch": 52,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 226230272
+        },
+        {
+          "epoch": 53,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 226230272
+        },
+        {
+          "epoch": 54,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 226230272
+        },
+        {
+          "epoch": 55,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 226230272
+        },
+        {
+          "epoch": 56,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 226230272
+        },
+        {
+          "epoch": 57,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 226426880
+        },
+        {
+          "epoch": 58,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 226557952
+        },
+        {
+          "epoch": 59,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 226557952
+        },
+        {
+          "epoch": 60,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 226557952
+        },
+        {
+          "epoch": 61,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 226557952
+        },
+        {
+          "epoch": 62,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 226557952
+        },
+        {
+          "epoch": 63,
+          "wasmBytes": 70778880,
+          "nodeRssBytes": 226557952
+        }
+      ]
+    }
+  ]
+}

@@ -1,4 +1,36 @@
-import type { CloseTabsPlan } from "@/modules/tabs";
+import type { CloseTabsPlan, Tab } from "@/modules/tabs";
+
+function normalizePath(path: string): string {
+  return path.replace(/\\/g, "/");
+}
+
+export function pathAtOrUnder(path: string, root: string): boolean {
+  const normalizedPath = normalizePath(path);
+  const normalizedRoot = normalizePath(root);
+  return (
+    normalizedPath === normalizedRoot ||
+    normalizedPath.startsWith(`${normalizedRoot}/`)
+  );
+}
+
+export function renamedPath(
+  path: string,
+  from: string,
+  to: string,
+): string | null {
+  const normalizedPath = normalizePath(path);
+  const normalizedFrom = normalizePath(from);
+  if (!pathAtOrUnder(normalizedPath, normalizedFrom)) return null;
+  return `${normalizePath(to)}${normalizedPath.slice(normalizedFrom.length)}`;
+}
+
+export function hasOpenPathTab(tabs: readonly Tab[], path: string): boolean {
+  return tabs.some(
+    (tab) =>
+      (tab.kind === "editor" || tab.kind === "markdown") &&
+      pathAtOrUnder(tab.path, path),
+  );
+}
 
 export type CloseManyKind = "right" | "other";
 
@@ -31,6 +63,34 @@ export type CloseHazardSnapshot = {
   dirtyIds: number[];
   leafIds: number[];
 };
+
+export function deletedPathTabs(
+  tabs: readonly Tab[],
+  paths: readonly string[],
+): { dirtyIds: number[]; cleanIds: number[] } {
+  const dirtyIds: number[] = [];
+  const cleanIds: number[] = [];
+  for (const tab of tabs) {
+    if (tab.kind !== "editor" && tab.kind !== "markdown") continue;
+    if (!paths.some((path) => pathAtOrUnder(tab.path, path))) continue;
+    (tab.kind === "editor" && tab.dirty ? dirtyIds : cleanIds).push(tab.id);
+  }
+  return { dirtyIds, cleanIds };
+}
+
+export function spacesEmptiedByTabs(
+  tabs: readonly Tab[],
+  closeIds: readonly number[],
+): string[] {
+  const closing = new Set(closeIds);
+  const spaces = new Set(
+    tabs.filter((tab) => closing.has(tab.id)).map((tab) => tab.spaceId),
+  );
+  return [...spaces].filter(
+    (spaceId) =>
+      !tabs.some((tab) => tab.spaceId === spaceId && !closing.has(tab.id)),
+  );
+}
 
 const MAX_HAZARD_PASSES = 3;
 

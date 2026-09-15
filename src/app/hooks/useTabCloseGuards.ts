@@ -2,6 +2,7 @@ import {
   type CloseManyHazards,
   type CloseManyKind,
   type CloseManyPending,
+  deletedPathTabs,
   evaluateCloseHazards,
   hasCloseManyHazards,
   hasNewCloseManyHazards,
@@ -25,6 +26,7 @@ type Params = {
   tabs: Tab[];
   activeId: number;
   disposeTab: (id: number) => void;
+  disposeDeletedTabs: (ids: number[]) => void;
   disposeTabs: (anchorId: number, plan: CloseTabsPlan) => void;
 };
 
@@ -37,6 +39,7 @@ export function useTabCloseGuards({
   tabs,
   activeId,
   disposeTab,
+  disposeDeletedTabs,
   disposeTabs,
 }: Params) {
   const tabsRef = useRef(tabs);
@@ -196,30 +199,26 @@ export function useTabCloseGuards({
 
   const confirmDeleteClose = useCallback(() => {
     if (pendingDeleteTabs !== null) {
-      for (const id of pendingDeleteTabs) disposeTab(id);
+      disposeDeletedTabs(pendingDeleteTabs);
       setPendingDeleteTabs(null);
     }
-  }, [pendingDeleteTabs, disposeTab]);
+  }, [pendingDeleteTabs, disposeDeletedTabs]);
 
   const cancelDeleteClose = useCallback(() => {
     setPendingDeleteTabs(null);
   }, []);
 
-  const handlePathDeleted = useCallback(
-    (path: string) => {
-      const dirty: number[] = [];
-      for (const t of tabs) {
-        if (t.kind !== "editor") continue;
-        if (t.path !== path && !t.path.startsWith(`${path}/`)) continue;
-        if (t.dirty) {
-          dirty.push(t.id);
-        } else {
-          disposeTab(t.id);
-        }
+  const handlePathsDeleted = useCallback(
+    (paths: string[]) => {
+      const affected = deletedPathTabs(tabsRef.current, paths);
+      disposeDeletedTabs(affected.cleanIds);
+      if (affected.dirtyIds.length > 0) {
+        setPendingDeleteTabs((current) => [
+          ...new Set([...(current ?? []), ...affected.dirtyIds]),
+        ]);
       }
-      if (dirty.length > 0) setPendingDeleteTabs(dirty);
     },
-    [tabs, disposeTab],
+    [disposeDeletedTabs],
   );
 
   return {
@@ -239,6 +238,6 @@ export function useTabCloseGuards({
     cancelDeleteClose,
     confirmCloseMany,
     cancelCloseMany,
-    handlePathDeleted,
+    handlePathsDeleted,
   };
 }

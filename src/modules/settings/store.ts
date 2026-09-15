@@ -125,6 +125,7 @@ export type Preferences = {
   backgroundImageId: string | null;
   backgroundOpacity: number;
   backgroundBlur: number;
+  windowVibrancy: boolean;
   defaultModelId: ModelId;
   editorTheme: EditorThemePref;
   editorFontSize: number;
@@ -156,7 +157,8 @@ export type Preferences = {
   editorWordWrapColumn: number;
   showHidden: boolean;
   explorerGitDecorations: boolean;
-  terminalWebglEnabled: boolean;
+  terminalRenderer: "auto" | "webgl";
+  terminalScreenReader: boolean;
   terminalCursorBlink: boolean;
   terminalCursorStyle: TerminalCursorStyle;
   terminalFontFamily: string;
@@ -169,6 +171,7 @@ export type Preferences = {
   lastWslDistro: string | null;
   zoomLevel: number;
   agentNotifications: boolean;
+  agentNotificationSound: boolean;
   agentLaunchCommands: AgentLaunchCommands;
   defaultWorkspaceEnv: string;
   shortcuts: Record<ShortcutId, KeyBinding[]>;
@@ -215,6 +218,7 @@ const KEY_BG_KIND = "backgroundKind";
 const KEY_BG_IMAGE_ID = "backgroundImageId";
 const KEY_BG_OPACITY = "backgroundOpacity";
 const KEY_BG_BLUR = "backgroundBlur";
+const KEY_WINDOW_VIBRANCY = "windowVibrancy";
 const KEY_DEFAULT_MODEL = "defaultModelId";
 const KEY_EDITOR_THEME = "editorTheme";
 const KEY_EDITOR_FONT_SIZE = "editorFontSize";
@@ -249,7 +253,8 @@ const KEY_EDITOR_WORD_WRAP_COLUMN = "editorWordWrapColumn";
 const KEY_SHOW_HIDDEN = "showHidden";
 const LEGACY_KEY_SHOW_HIDDEN_DIRS = "showHiddenDirectories";
 const KEY_EXPLORER_GIT_DECORATIONS = "explorerGitDecorations";
-const KEY_TERMINAL_WEBGL_ENABLED = "terminalWebglEnabled";
+const KEY_TERMINAL_RENDERER = "terminalRenderer";
+const KEY_TERMINAL_SCREEN_READER = "terminalScreenReader";
 const KEY_TERMINAL_CURSOR_BLINK = "terminalCursorBlink";
 const KEY_TERMINAL_CURSOR_STYLE = "terminalCursorStyle";
 const KEY_TERMINAL_FONT_FAMILY = "terminalFontFamily";
@@ -262,6 +267,7 @@ const KEY_CONFIRM_CLOSE_RUNNING_TERMINAL = "confirmCloseRunningTerminal";
 const KEY_LAST_WSL_DISTRO = "lastWslDistro";
 const KEY_ZOOM_LEVEL = "zoomLevel";
 const KEY_AGENT_NOTIFICATIONS = "agentNotifications";
+const KEY_AGENT_NOTIFICATION_SOUND = "agentNotificationSound";
 const KEY_AGENT_LAUNCH_COMMANDS = "agentLaunchCommands";
 const KEY_DEFAULT_WORKSPACE_ENV = "defaultWorkspaceEnv";
 const KEY_SHORTCUTS = "shortcuts";
@@ -312,6 +318,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   editorFontSize: EDITOR_FONT_SIZE_DEFAULT,
   customInstructions: "",
   autostart: false,
+  windowVibrancy: true,
   restoreWindowState: true,
   autocompleteEnabled: false,
   autocompleteTrigger: "auto",
@@ -338,7 +345,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   editorWordWrapColumn: EDITOR_WORD_WRAP_COLUMN_DEFAULT,
   showHidden: false,
   explorerGitDecorations: true,
-  terminalWebglEnabled: true,
+  terminalRenderer: "auto",
+  terminalScreenReader: false,
   terminalCursorBlink: false,
   terminalCursorStyle: "bar",
   terminalFontFamily: "",
@@ -351,6 +359,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   lastWslDistro: null,
   zoomLevel: 1.0,
   agentNotifications: true,
+  agentNotificationSound: true,
   agentLaunchCommands: DEFAULT_AGENT_LAUNCH_COMMANDS,
   defaultWorkspaceEnv: "local",
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
@@ -420,6 +429,8 @@ export async function loadPreferences(): Promise<Preferences> {
     restoreWindowState:
       get<boolean>(KEY_RESTORE_WINDOW) ??
       DEFAULT_PREFERENCES.restoreWindowState,
+    windowVibrancy:
+      get<boolean>(KEY_WINDOW_VIBRANCY) ?? DEFAULT_PREFERENCES.windowVibrancy,
     autocompleteEnabled:
       get<boolean>(KEY_AUTOCOMPLETE_ENABLED) ??
       DEFAULT_PREFERENCES.autocompleteEnabled,
@@ -491,9 +502,9 @@ export async function loadPreferences(): Promise<Preferences> {
     explorerGitDecorations:
       get<boolean>(KEY_EXPLORER_GIT_DECORATIONS) ??
       DEFAULT_PREFERENCES.explorerGitDecorations,
-    terminalWebglEnabled:
-      get<boolean>(KEY_TERMINAL_WEBGL_ENABLED) ??
-      DEFAULT_PREFERENCES.terminalWebglEnabled,
+    terminalRenderer:
+      get<string>(KEY_TERMINAL_RENDERER) === "webgl" ? "webgl" : "auto",
+    terminalScreenReader: get<boolean>(KEY_TERMINAL_SCREEN_READER) === true,
     terminalCursorBlink:
       get<boolean>(KEY_TERMINAL_CURSOR_BLINK) ??
       DEFAULT_PREFERENCES.terminalCursorBlink,
@@ -529,6 +540,9 @@ export async function loadPreferences(): Promise<Preferences> {
     agentNotifications:
       get<boolean>(KEY_AGENT_NOTIFICATIONS) ??
       DEFAULT_PREFERENCES.agentNotifications,
+    agentNotificationSound:
+      get<boolean>(KEY_AGENT_NOTIFICATION_SOUND) ??
+      DEFAULT_PREFERENCES.agentNotificationSound,
     agentLaunchCommands: normalizeAgentLaunchCommands(
       get<unknown>(KEY_AGENT_LAUNCH_COMMANDS),
     ),
@@ -656,6 +670,10 @@ export async function setRestoreWindowState(value: boolean): Promise<void> {
   await writePref(KEY_RESTORE_WINDOW, value);
 }
 
+export async function setWindowVibrancy(value: boolean): Promise<void> {
+  await writePref(KEY_WINDOW_VIBRANCY, value);
+}
+
 export async function setAutocompleteTrigger(
   value: AutocompleteTrigger,
 ): Promise<void> {
@@ -778,8 +796,14 @@ export async function setExplorerGitDecorations(value: boolean): Promise<void> {
   await writePref(KEY_EXPLORER_GIT_DECORATIONS, value);
 }
 
-export async function setTerminalWebglEnabled(value: boolean): Promise<void> {
-  await writePref(KEY_TERMINAL_WEBGL_ENABLED, value);
+export async function setTerminalRenderer(
+  value: "auto" | "webgl",
+): Promise<void> {
+  await writePref(KEY_TERMINAL_RENDERER, value === "webgl" ? "webgl" : "auto");
+}
+
+export async function setTerminalScreenReader(value: boolean): Promise<void> {
+  await writePref(KEY_TERMINAL_SCREEN_READER, value);
 }
 
 export async function setTerminalCursorBlink(value: boolean): Promise<void> {
@@ -903,6 +927,10 @@ export async function setAgentNotifications(value: boolean): Promise<void> {
   await writePref(KEY_AGENT_NOTIFICATIONS, value);
 }
 
+export async function setAgentNotificationSound(value: boolean): Promise<void> {
+  await writePref(KEY_AGENT_NOTIFICATION_SOUND, value);
+}
+
 export async function setAgentLaunchCommands(
   value: AgentLaunchCommands,
 ): Promise<void> {
@@ -939,6 +967,7 @@ export async function onPreferencesChange(
     [KEY_BG_IMAGE_ID]: "backgroundImageId",
     [KEY_BG_OPACITY]: "backgroundOpacity",
     [KEY_BG_BLUR]: "backgroundBlur",
+    [KEY_WINDOW_VIBRANCY]: "windowVibrancy",
     [KEY_DEFAULT_MODEL]: "defaultModelId",
     [KEY_EDITOR_THEME]: "editorTheme",
     [KEY_EDITOR_FONT_SIZE]: "editorFontSize",
@@ -970,7 +999,8 @@ export async function onPreferencesChange(
     [KEY_EDITOR_WORD_WRAP_COLUMN]: "editorWordWrapColumn",
     [KEY_SHOW_HIDDEN]: "showHidden",
     [KEY_EXPLORER_GIT_DECORATIONS]: "explorerGitDecorations",
-    [KEY_TERMINAL_WEBGL_ENABLED]: "terminalWebglEnabled",
+    [KEY_TERMINAL_RENDERER]: "terminalRenderer",
+    [KEY_TERMINAL_SCREEN_READER]: "terminalScreenReader",
     [KEY_TERMINAL_CURSOR_BLINK]: "terminalCursorBlink",
     [KEY_TERMINAL_CURSOR_STYLE]: "terminalCursorStyle",
     [KEY_TERMINAL_FONT_FAMILY]: "terminalFontFamily",
@@ -983,6 +1013,7 @@ export async function onPreferencesChange(
     [KEY_LAST_WSL_DISTRO]: "lastWslDistro",
     [KEY_ZOOM_LEVEL]: "zoomLevel",
     [KEY_AGENT_NOTIFICATIONS]: "agentNotifications",
+    [KEY_AGENT_NOTIFICATION_SOUND]: "agentNotificationSound",
     [KEY_AGENT_LAUNCH_COMMANDS]: "agentLaunchCommands",
     [KEY_DEFAULT_WORKSPACE_ENV]: "defaultWorkspaceEnv",
     [KEY_SHORTCUTS]: "shortcuts",

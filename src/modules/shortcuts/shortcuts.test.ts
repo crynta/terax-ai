@@ -93,6 +93,31 @@ describe("matchBinding", () => {
     ).toBe(false);
   });
 
+  it("falls back to the physical code for shift combinations", () => {
+    // Shift turns Period into ">"; ⌘⇧. still matches the "." binding.
+    expect(
+      matchBinding(
+        event({ key: ">", code: "Period", shiftKey: true, metaKey: true }),
+        { key: ".", shift: true, meta: true },
+      ),
+    ).toBe(true);
+    expect(
+      matchBinding(
+        event({ key: ">", code: "Comma", shiftKey: true, metaKey: true }),
+        { key: ".", shift: true, meta: true },
+      ),
+    ).toBe(false);
+  });
+
+  it("does not fall back to the physical code without alt or shift", () => {
+    expect(
+      matchBinding(event({ key: "ç", code: "KeyC", metaKey: true }), {
+        key: "c",
+        meta: true,
+      }),
+    ).toBe(false);
+  });
+
   it("only accepts digit keys for the jump-to-tab shortcut", () => {
     expect(
       matchBinding(event({ key: "3" }), { key: "1" }, "tab.selectByIndex"),

@@ -6,7 +6,7 @@
 // the eager graph and the first local file that pulls each.
 //
 // CLI:  node scripts/eager-graph.mjs [entry] [comma,separated,watchlist]
-// Used as a library by scripts/eager-graph.test.ts to lock the startup budget.
+// Used as a library by src/app/eager-budget.test.ts to lock the startup budget.
 import { readFileSync, existsSync, statSync } from "node:fs";
 import { dirname, resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -61,7 +61,7 @@ function pkgOf(spec, watch) {
   return watch.find((w) => spec === w || spec.startsWith(w + "/"));
 }
 
-/** @returns {{ moduleCount: number, hits: Map<string, {spec:string, file:string}> }} */
+/** @returns {{ moduleCount: number, files: Set<string>, hits: Map<string, {spec:string, file:string}> }} */
 export function traceEager(entry, watch = DEFAULT_WATCH) {
   const entryFile = resolve(root, entry);
   const seen = new Set();
@@ -89,7 +89,7 @@ export function traceEager(entry, watch = DEFAULT_WATCH) {
       }
     }
   }
-  return { moduleCount: seen.size, hits };
+  return { moduleCount: seen.size, files: seen, hits };
 }
 
 const isCli = process.argv[1] === fileURLToPath(import.meta.url);

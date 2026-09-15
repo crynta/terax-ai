@@ -1,3 +1,7 @@
+import { homeRelativePath } from "@/lib/homeRelativePath";
+import "@/modules/terminal/block/block.css";
+
+import { writeTerminalClipboard } from "@/modules/terminal/lib/terminalClipboard";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,18 +26,19 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { homeDir } from "@tauri-apps/api/path";
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { toast } from "sonner";
 import type {
   BlockMatch,
   PositionedBlock,
   VisibleBlocks,
-} from "./lib/blockDecorations";
+} from "./lib/blockTypes";
 import { capAttachOutput } from "./lib/outputCap";
 
 let cachedHome: string | null = null;
 void homeDir()
   .then((h) => {
-    cachedHome = h.replace(/\/+$/, "");
+    cachedHome = h.replace(/\\/g, "/").replace(/\/+$/, "");
   })
   .catch(() => {});
 
@@ -41,7 +46,11 @@ type Props = {
   subscribe: (cb: () => void) => () => void;
   getVisible: () => VisibleBlocks;
   readOutput: (id: string) => string | null;
-  searchBlock: (id: string, query: string) => BlockMatch[];
+  searchBlock: (
+    id: string,
+    query: string,
+    signal: AbortSignal,
+  ) => Promise<BlockMatch[]>;
   revealMatch: (m: BlockMatch) => void;
   clearSearch: () => void;
   promptReady: boolean;
@@ -49,7 +58,7 @@ type Props = {
   onRestoreFocus: () => void;
 };
 
-const EMPTY: VisibleBlocks = { blocks: [], sticky: null };
+const EMPTY: VisibleBlocks = { blocks: [], sticky: null, generation: 0 };
 
 function fmtDuration(ms: number): string | null {
   if (!Number.isFinite(ms) || ms <= 0) return null;
@@ -72,46 +81,75 @@ function fmtTime(ms: number): string {
   return `${h}:${m}`;
 }
 
-function relPath(p: string): string {
-  if (cachedHome && (p === cachedHome || p.startsWith(`${cachedHome}/`))) {
-    return `~${p.slice(cachedHome.length)}`;
-  }
-  return p;
-}
-
 function copy(text: string, message: string) {
-  void navigator.clipboard
-    .writeText(text)
+  void writeTerminalClipboard(text)
     .then(() => toast.success(message))
     .catch(() => {});
 }
 
-function signature(v: VisibleBlocks): string {
-  let s = v.sticky?.id ?? "";
-  for (const b of v.blocks) {
-    s += `|${b.id}:${Math.round(b.top)}:${Math.round(b.bottom)}:${b.running}`;
+function sameBlock(
+  a: PositionedBlock | null,
+  b: PositionedBlock | null,
+): boolean {
+  if (a === b) return true;
+  return (
+    !!a &&
+    !!b &&
+    a.id === b.id &&
+    a.command === b.command &&
+    a.canRerun === b.canRerun &&
+    a.cwd === b.cwd &&
+    a.exitCode === b.exitCode &&
+    a.running === b.running &&
+    a.ok === b.ok &&
+    a.startedAt === b.startedAt &&
+    a.finishedAt === b.finishedAt &&
+    a.top === b.top &&
+    a.bottom === b.bottom &&
+    a.headerTop === b.headerTop
+  );
+}
+
+function sameVisibleBlocks(a: VisibleBlocks, b: VisibleBlocks): boolean {
+  if (
+    a.generation !== b.generation ||
+    !sameBlock(a.sticky, b.sticky) ||
+    a.blocks.length !== b.blocks.length
+  )
+    return false;
+  for (let index = 0; index < a.blocks.length; index++) {
+    if (!sameBlock(a.blocks[index], b.blocks[index])) return false;
   }
-  return s;
+  return true;
 }
 
 export function BlockOverlay(props: Props) {
   const { subscribe, getVisible } = props;
   const [vis, setVis] = useState<VisibleBlocks>(EMPTY);
   const [searchId, setSearchId] = useState<string | null>(null);
-  const lastSig = useRef("");
+  const lastVisible = useRef(EMPTY);
 
   useEffect(() => {
-    const update = () => {
+    const update = (synchronous = false) => {
       const v = getVisible();
-      const sig = signature(v);
-      if (sig === lastSig.current) return;
-      lastSig.current = sig;
-      setVis(v);
+      if (sameVisibleBlocks(v, lastVisible.current)) return;
+      const cleared = v.generation !== lastVisible.current.generation;
+      lastVisible.current = v;
+      const commit = () => {
+        if (cleared) setSearchId(null);
+        setVis(v);
+      };
+      if (synchronous) flushSync(commit);
+      else commit();
     };
     update();
-    return subscribe(update);
+    return subscribe(() => update(true));
   }, [subscribe, getVisible]);
 
+  const openSearch = (id: string) => {
+    props.clearSearch();
+    setSearchId(id);
+  };
   const closeSearch = () => {
     props.clearSearch();
     setSearchId(null);
@@ -120,13 +158,15 @@ export function BlockOverlay(props: Props) {
   return (
     <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden">
       {vis.blocks.map((b) => (
-        <BlockChrome key={b.id} block={b} all={props} onSearch={setSearchId} />
+        <BlockChrome key={b.id} block={b} all={props} onSearch={openSearch} />
       ))}
       {vis.sticky && (
-        <StickyHeader block={vis.sticky} all={props} onSearch={setSearchId} />
+        <StickyHeader block={vis.sticky} all={props} onSearch={openSearch} />
       )}
       {searchId && (
         <SearchBar
+          key={searchId}
+          clearSearch={props.clearSearch}
           blockId={searchId}
           searchBlock={props.searchBlock}
           revealMatch={props.revealMatch}
@@ -164,7 +204,11 @@ function BlockChrome({ block, all, onSearch }: ChromeProps) {
 function Meta({ block }: { block: PositionedBlock }) {
   return (
     <span className="bt-head-meta">
-      {block.cwd && <span className="bt-cwd">{relPath(block.cwd)}</span>}
+      {block.cwd && (
+        <span className="bt-cwd">
+          {homeRelativePath(block.cwd, cachedHome)}
+        </span>
+      )}
       <span className="bt-clock">
         <HugeiconsIcon icon={Clock01Icon} size={11} strokeWidth={1.75} />
         {fmtTime(block.startedAt)}
@@ -197,7 +241,7 @@ function Toolbar({ block, all, onSearch }: ChromeProps) {
     <div className="bt-tools">
       {failed && <span className="bt-exit">exit {block.exitCode}</span>}
       {duration && <span className="bt-dur">{duration}</span>}
-      {!block.running && !!block.command && (
+      {!block.running && block.canRerun && (
         <button
           type="button"
           title="Run again"
@@ -242,7 +286,7 @@ function BlockMenu({ block, all, onSearch }: ChromeProps) {
         <MenuItem
           icon={Refresh01Icon}
           label="Run again"
-          disabled={block.running || !all.promptReady || !block.command}
+          disabled={block.running || !all.promptReady || !block.canRerun}
           onClick={() => all.onRunAgain(block.command)}
         />
         <MenuItem
@@ -308,13 +352,19 @@ function MenuItem({
 // One fixed search bar pinned to the top of the terminal so it stays put while
 // navigating matches (the grid scrolls underneath).
 function SearchBar({
+  clearSearch,
   blockId,
   searchBlock,
   revealMatch,
   onClose,
 }: {
+  clearSearch: () => void;
   blockId: string;
-  searchBlock: (id: string, query: string) => BlockMatch[];
+  searchBlock: (
+    id: string,
+    query: string,
+    signal: AbortSignal,
+  ) => Promise<BlockMatch[]>;
   revealMatch: (m: BlockMatch) => void;
   onClose: () => void;
 }) {
@@ -326,11 +376,30 @@ function SearchBar({
     inputRef.current?.focus();
   }, []);
 
+  const searchRef = useRef<AbortController | null>(null);
+  const [pending, setPending] = useState(false);
+  useEffect(() => () => searchRef.current?.abort(), []);
   const run = (query: string) => {
-    const m = searchBlock(blockId, query);
-    setMatches(m);
+    searchRef.current?.abort();
+    clearSearch();
+    const controller = new AbortController();
+    searchRef.current = controller;
+    setMatches([]);
     setIdx(0);
-    if (m.length) revealMatch(m[0]);
+    setPending(!!query);
+    void searchBlock(blockId, query, controller.signal).then(
+      (m) => {
+        if (controller.signal.aborted) return;
+        setPending(false);
+        setMatches(m);
+        if (m.length) revealMatch(m[0]);
+      },
+      () => {
+        if (controller.signal.aborted) return;
+        setPending(false);
+        toast.error("Could not search this block");
+      },
+    );
   };
   const nav = (dir: number) => {
     if (!matches.length) return;
@@ -358,7 +427,11 @@ function SearchBar({
         }}
       />
       <span className="bt-search-count">
-        {matches.length ? `${idx + 1}/${matches.length}` : "0"}
+        {pending
+          ? "Searching"
+          : matches.length
+            ? `${idx + 1}/${matches.length}`
+            : "0"}
       </span>
       <SearchBtn
         title="Previous"

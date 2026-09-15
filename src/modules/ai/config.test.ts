@@ -1,13 +1,16 @@
-import { describe, expect, it } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 import {
   compatModelIdForEndpoint,
   endpointIdFromCompatModel,
+  estimateCost,
   getModelContextLimit,
   isCompatModelId,
   migrateLegacyCompatEndpoint,
   modelKeepsReasoning,
   modelSupportsTemperature,
   modelUsesReasoningTokens,
+  MODELS,
+  MODEL_CONTEXT_LIMITS,
   MODEL_PRICING,
   resolveModel,
   type CustomEndpoint,
@@ -170,5 +173,56 @@ describe("migrateLegacyCompatEndpoint", () => {
   it("skips migration when base URL or model id is missing", () => {
     expect(migrateLegacyCompatEndpoint("", "m", 1, "x")).toEqual([]);
     expect(migrateLegacyCompatEndpoint("u", "  ", 1, "x")).toEqual([]);
+  });
+});
+
+describe("model catalog invariants", () => {
+  const allIds: string[] = MODELS.map((m) => m.id);
+
+  it("keeps the context-limit table free of stale catalog ids", () => {
+    const stale = Object.keys(MODEL_CONTEXT_LIMITS).filter(
+      (id) => !allIds.includes(id),
+    );
+    expect(stale).toEqual([]);
+  });
+
+  it("keeps the pricing table free of stale catalog ids", () => {
+    const stale = Object.keys(MODEL_PRICING).filter(
+      (id) => !allIds.includes(id),
+    );
+    expect(stale).toEqual([]);
+  });
+});
+
+describe("estimateCost", () => {
+  const usage = {
+    inputTokens: 2_000_000,
+    outputTokens: 1_000_000,
+    cachedInputTokens: 500_000,
+  };
+
+  it("returns null without a model id or a priced model", () => {
+    expect(estimateCost(undefined, usage)).toBeNull();
+    expect(
+      estimateCost("unknown-model", {
+        inputTokens: 1,
+        outputTokens: 1,
+        cachedInputTokens: 0,
+      }),
+    ).toBeNull();
+  });
+
+  it("charges fresh tokens at input price and cached tokens at cache price", () => {
+    expect(estimateCost("gpt-5.6", usage)).toBeCloseTo(37.75, 6);
+  });
+
+  it("falls back to the input price when a model has no cache-read rate", () => {
+    const grok = { inputTokens: 1_000_000, outputTokens: 0, cachedInputTokens: 400_000 };
+    expect(estimateCost("grok-4.20-reasoning", grok)).toBeCloseTo(3, 6);
+  });
+
+  it("never charges negative fresh tokens when cache exceeds input", () => {
+    const over = { inputTokens: 100, outputTokens: 0, cachedInputTokens: 900 };
+    expect(estimateCost("gpt-5.6", over)).toBeGreaterThanOrEqual(0);
   });
 });

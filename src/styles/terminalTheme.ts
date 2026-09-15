@@ -1,7 +1,6 @@
 import { readTerminalTokens } from "@/styles/tokens";
-import type { ITheme } from "@xterm/xterm";
 
-export function buildTerminalTheme(): ITheme {
+export function buildTerminalTheme() {
   const t = readTerminalTokens();
   return {
     background: t.background,

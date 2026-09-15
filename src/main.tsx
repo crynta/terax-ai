@@ -1,4 +1,3 @@
-import "@xterm/xterm/css/xterm.css";
 import "./styles/globals.css";
 
 import { invoke } from "@tauri-apps/api/core";
@@ -7,6 +6,7 @@ import ReactDOM from "react-dom/client";
 import App from "./app/App";
 import { initLaunchDir } from "./lib/launchDir";
 import { USE_CUSTOM_WINDOW_CONTROLS } from "./lib/platform";
+import { terminalDiagnosticsEnabled } from "@/modules/terminal/lib/terminalDiagnosticsEnabled";
 
 if (USE_CUSTOM_WINDOW_CONTROLS) {
   document.documentElement.dataset.chrome = "borderless";
@@ -40,3 +40,9 @@ const showWindow = () => {
 setTimeout(showWindow, 50);
 // Safety net: if the first show somehow fails to take effect, force again.
 setTimeout(showWindow, 500);
+
+if (terminalDiagnosticsEnabled()) {
+  void import("@/modules/terminal/lib/terminalDiagnostics").then(
+    (diagnostics) => diagnostics.installTerminalDiagnostics(),
+  );
+}

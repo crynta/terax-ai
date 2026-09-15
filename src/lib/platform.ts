@@ -20,6 +20,14 @@ export const USE_CUSTOM_WINDOW_CONTROLS = !IS_MAC && PLATFORM !== "";
 export const MOD_KEY = IS_MAC ? "⌘" : "Ctrl";
 /** KeyBinding property name for the platform's primary modifier. */
 export const MOD_PROP: "meta" | "ctrl" = IS_MAC ? "meta" : "ctrl";
+/** Cmd on macOS, Ctrl on Windows/Linux: each OS's native file-manager
+ * convention for toggling one item in/out of a multi-selection. */
+export function isPrimaryModifierPressed(e: {
+  metaKey: boolean;
+  ctrlKey: boolean;
+}): boolean {
+  return IS_MAC ? e.metaKey : e.ctrlKey;
+}
 export const CTRL_KEY = IS_MAC ? "⌃" : "Ctrl";
 export const ALT_KEY = IS_MAC ? "⌥" : "Alt";
 export const SHIFT_KEY = IS_MAC ? "⇧" : "Shift";

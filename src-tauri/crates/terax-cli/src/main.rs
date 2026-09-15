@@ -667,6 +667,30 @@ mod tests {
     }
 
     #[test]
+    fn endpoint_validation_rejects_a_protocol_mismatch() {
+        let descriptor = ControlDescriptor {
+            protocol: PROTOCOL_VERSION + 1,
+            address: "127.0.0.1:4312".into(),
+            token: "a".repeat(64),
+            pid: 1,
+            app_version: "test".into(),
+        };
+        let Err(error) = validate_endpoint(descriptor, false) else {
+            panic!("accepted foreign protocol");
+        };
+        assert_eq!(error.code, "unsupported_protocol");
+    }
+
+    #[test]
+    fn loopback_parsing_rejects_hostnames_and_remote_hosts() {
+        let error =
+            parse_loopback_address("localhost:4312").expect_err("reject hostname");
+        assert_eq!(error.code, "invalid_endpoint");
+        let error = parse_loopback_address("127.0.0.1").expect_err("reject missing port");
+        assert_eq!(error.code, "invalid_endpoint");
+    }
+
+    #[test]
     fn protocol_framing_round_trips_one_bounded_json_message() {
         let request = ControlRequest {
             protocol: PROTOCOL_VERSION,

@@ -1,81 +1,60 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  readTerminalClipboard,
+  writeTerminalClipboard,
+} from "./terminalClipboard";
 
 const native = vi.hoisted(() => ({
   readText: vi.fn<() => Promise<string>>(),
-  writeText: vi.fn<(t: string) => Promise<void>>(),
+  writeText: vi.fn<(text: string) => Promise<void>>(),
 }));
 vi.mock("@tauri-apps/plugin-clipboard-manager", () => native);
+const web = { readText: vi.fn(), writeText: vi.fn() };
 
-const web = {
-  readText: vi.fn<() => Promise<string>>(),
-  writeText: vi.fn<(t: string) => Promise<void>>(),
-};
+beforeEach(() => {
+  vi.resetAllMocks();
+  vi.stubGlobal("isTauri", true);
+  vi.stubGlobal("navigator", { clipboard: web });
+});
+afterEach(() => vi.unstubAllGlobals());
 
-const original = globalThis.navigator;
-const LINUX = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15";
-const MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15";
+describe("terminal clipboard", () => {
+  it.each(["Macintosh", "Windows NT", "X11; Linux"])(
+    "uses native copy and paste in the %s application without WebKit prompts",
+    async (userAgent) => {
+      vi.stubGlobal("navigator", { userAgent, clipboard: web });
+      native.readText.mockResolvedValue("external copy");
+      await expect(readTerminalClipboard()).resolves.toBe("external copy");
+      await writeTerminalClipboard("terminal selection");
+      expect(native.writeText).toHaveBeenCalledWith("terminal selection");
+      expect(web.readText).not.toHaveBeenCalled();
+      expect(web.writeText).not.toHaveBeenCalled();
+    },
+  );
 
-function platform(userAgent: string) {
-  Object.defineProperty(globalThis, "navigator", {
-    configurable: true,
-    value: { userAgent, clipboard: web },
-  });
-}
-
-async function load() {
-  vi.resetModules();
-  return import("./terminalClipboard");
-}
-
-describe("terminalClipboard", () => {
-  beforeEach(() => {
-    native.readText.mockReset();
-    native.writeText.mockReset();
-    web.readText.mockReset();
-    web.writeText.mockReset();
-  });
-
-  afterEach(() => {
-    Object.defineProperty(globalThis, "navigator", {
-      configurable: true,
-      value: original,
-    });
-  });
-
-  it("reads the native clipboard first on Linux", async () => {
-    platform(LINUX);
-    native.readText.mockResolvedValue("native");
-    web.readText.mockResolvedValue("web");
-    const { readTerminalClipboard } = await load();
-    await expect(readTerminalClipboard()).resolves.toBe("native");
+  it("does not fall back to permission-gated web reads after an IPC failure", async () => {
+    native.readText.mockRejectedValue(new Error("clipboard busy"));
+    await expect(readTerminalClipboard()).resolves.toBe("");
     expect(web.readText).not.toHaveBeenCalled();
+    native.readText.mockResolvedValue("retry");
+    await expect(readTerminalClipboard()).resolves.toBe("retry");
   });
 
-  it("falls back to the web clipboard when the native read fails", async () => {
-    platform(LINUX);
-    native.readText.mockRejectedValue(new Error("no ipc"));
-    web.readText.mockResolvedValue("web");
-    const { readTerminalClipboard } = await load();
-    await expect(readTerminalClipboard()).resolves.toBe("web");
+  it("reports failed copies instead of signaling success", async () => {
+    native.writeText.mockRejectedValue(new Error("clipboard busy"));
+    await expect(writeTerminalClipboard("text")).rejects.toThrow(
+      "clipboard busy",
+    );
+    expect(web.writeText).not.toHaveBeenCalled();
   });
 
-  it("never touches the native clipboard off Linux", async () => {
-    platform(MAC);
+  it("uses browser clipboard APIs in a browser preview", async () => {
+    vi.stubGlobal("isTauri", false);
     web.readText.mockResolvedValue("web");
-    const { readTerminalClipboard, writeTerminalClipboard } = await load();
     await expect(readTerminalClipboard()).resolves.toBe("web");
-    await writeTerminalClipboard("x");
+    await writeTerminalClipboard("preview");
+    expect(web.writeText).toHaveBeenCalledWith("preview");
     expect(native.readText).not.toHaveBeenCalled();
     expect(native.writeText).not.toHaveBeenCalled();
-    expect(web.writeText).toHaveBeenCalledWith("x");
-  });
-
-  it("writes the native clipboard first on Linux", async () => {
-    platform(LINUX);
-    native.writeText.mockResolvedValue();
-    const { writeTerminalClipboard } = await load();
-    await writeTerminalClipboard("copied");
-    expect(native.writeText).toHaveBeenCalledWith("copied");
-    expect(web.writeText).not.toHaveBeenCalled();
   });
 });

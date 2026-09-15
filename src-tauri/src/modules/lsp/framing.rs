@@ -240,4 +240,48 @@ mod tests {
             vec![r#"{"first":1}"#.to_string(), r#"{"second":2}"#.to_string()]
         );
     }
+
+    #[test]
+    fn encode_frame_emits_exact_wire_bytes() {
+        let payload = r#"{"jsonrpc":"2.0"}"#;
+        assert_eq!(
+            encode_frame(payload),
+            format!("Content-Length: {}\r\n\r\n{}", payload.len(), payload).into_bytes()
+        );
+    }
+
+    #[test]
+    fn lf_only_headers_do_not_terminate_a_frame() {
+        let mut d = FrameDecoder::default();
+        let raw = b"Content-Length: 2\n\n{\"a\":1}".to_vec();
+        assert!(d.push(&raw).unwrap().is_empty());
+    }
+
+    #[test]
+    fn short_body_waits_silently_for_the_announced_length() {
+        let mut d = FrameDecoder::default();
+        let full = frame(r#"{"abc":1}"#);
+        let cut = full.len() - 3;
+        assert!(d.push(&full[..cut]).unwrap().is_empty());
+        assert_eq!(
+            d.push(&full[cut..]).unwrap(),
+            vec![r#"{"abc":1}"#.to_string()]
+        );
+    }
+
+    #[test]
+    fn decoder_stays_erroring_after_a_malformed_header_block() {
+        let mut d = FrameDecoder::default();
+        let bad = b"Content-Length: notanumber\r\n\r\n{}".to_vec();
+        assert_eq!(
+            d.push(&bad),
+            Err(FramingError::InvalidContentLength("notanumber".into()))
+        );
+        // The same bytes fed again (e.g. after a reconnect reusing the struct)
+        // must fail the same way rather than panic or half-parse.
+        assert_eq!(
+            d.push(&bad),
+            Err(FramingError::InvalidContentLength("notanumber".into()))
+        );
+    }
 }

@@ -1,3 +1,6 @@
+packages:
+  - packages/*
+
 minimumReleaseAge: 4320
 minimumReleaseAgeStrict: true
 allowBuilds:

@@ -1,10 +1,11 @@
+import { homeRelativePath } from "@/lib/homeRelativePath";
 import { cn } from "@/lib/utils";
 import { AiInputBarConnect } from "@/modules/ai";
 import { Chip } from "@/modules/ai/components/Chip";
 import { ChipsRow } from "@/modules/ai/components/ChipsRow";
 import { useComposer } from "@/modules/ai/lib/composer";
 import { useBlockController } from "@/modules/terminal/lib/blockController";
-import { focusLeafInput } from "@/modules/terminal/lib/useTerminalSession";
+import { focusLeafInput } from "@/modules/terminal/lib/terminalSessionApi";
 import {
   AiContentGenerator02Icon,
   CommandLineIcon,
@@ -107,7 +108,7 @@ export function WorkspaceInputBar({
       {os && <Chip tone="neutral" iconNode={<OsIcon os={os} />} title={os} />}
       {cwd && (
         <Chip tone="blue" icon={Folder01Icon} title={cwd}>
-          {relPath(cwd, home)}
+          {homeRelativePath(cwd, home)}
         </Chip>
       )}
       {branch && (
@@ -127,7 +128,7 @@ export function WorkspaceInputBar({
     !hasComposer && !isBlockTab ? (
       <AiInputBarConnect onAdd={onConnect} />
     ) : (
-      <div className="shrink-0 border-t border-border/60 bg-card/40 px-3 py-2">
+      <div className="shrink-0 border-t border-border/60 bg-foreground/[0.02] px-3 py-2">
         <div className="flex flex-col gap-2 rounded-lg px-1 py-1">
           <ChipsRow
             leading={terminalChips}
@@ -149,16 +150,26 @@ export function WorkspaceInputBar({
             <div className="relative min-w-0 flex-1">
               {isBlockTab && controller && activeLeafId != null && (
                 <div className={cn(effectiveMode !== "shell" && "hidden")}>
-                  <Suspense fallback={null}>
-                    <ShellInput
-                      leafId={activeLeafId}
-                      mode={blockMode}
-                      focused={effectiveMode === "shell"}
-                      onSubmit={controller.submitCommand}
-                      onInterrupt={controller.interrupt}
-                      getCwd={controller.getCwd}
-                    />
-                  </Suspense>
+                  {blockMode === "plain" ? (
+                    <button
+                      type="button"
+                      className="text-sm text-muted-foreground hover:text-foreground"
+                      onClick={() => focusLeafInput(activeLeafId)}
+                    >
+                      Type directly in the terminal
+                    </button>
+                  ) : (
+                    <Suspense fallback={null}>
+                      <ShellInput
+                        leafId={activeLeafId}
+                        mode={blockMode}
+                        focused={effectiveMode === "shell"}
+                        onSubmit={controller.submitCommand}
+                        onInterrupt={controller.interrupt}
+                        getCwd={controller.getCwd}
+                      />
+                    </Suspense>
+                  )}
                 </div>
               )}
               {renderAi && (
@@ -249,11 +260,4 @@ function SegButton({
       {label}
     </button>
   );
-}
-
-function relPath(p: string, home: string | null): string {
-  if (!home) return p;
-  const h = home.replace(/\/+$/, "");
-  if (p === h || p.startsWith(`${h}/`)) return `~${p.slice(h.length)}`;
-  return p;
 }

@@ -24,6 +24,13 @@ if [ -z "$__TERAX_HOOKS_LOADED" ]; then
   # on reload, guard with a flag.
   [ -f "$HOME/.bashrc" ] && source "$HOME/.bashrc"
 
+  _terax_prompt_end='\[\e]133;B\e\\\]'
+  if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ] \
+     || { [ "${BASH_VERSINFO[0]:-0}" -eq 4 ] && [ "${BASH_VERSINFO[1]:-0}" -lt 4 ]; }; then
+    unset TERAX_BLOCKS
+    _terax_prompt_end='\[\e]133;B;terax_blocks=0\e\\\]'
+  fi
+
   if [ -n "$TERAX_CLI" ] && [ -x "$TERAX_CLI" ]; then
     terax() {
       command "$TERAX_CLI" "$@"
@@ -54,7 +61,7 @@ if [ -z "$__TERAX_HOOKS_LOADED" ]; then
         PS1='\n\[\e]133;B\e\\\]'
       fi
     elif [ -z "$__TERAX_PS1_INJECTED" ]; then
-      PS1='\[\e]133;B\e\\\]'"$PS1"
+      PS1="${_terax_prompt_end}${PS1}"
       __TERAX_PS1_INJECTED=1
     fi
     printf '\e]133;A\e\\'

@@ -1,3 +1,5 @@
+import "@/modules/terminal/block/block.css";
+
 import { buildTerminalTheme } from "@/styles/terminalTheme";
 import {
   acceptCompletion,
@@ -368,6 +370,7 @@ export function createShellEditor(opts: ShellEditorOptions): ShellEditorHandle {
         key: "Enter",
         run: (view) => {
           // Enter always runs the line (Tab is accept). Predictable shell UX.
+          if (view.state.readOnly) return false;
           const text = view.state.doc.toString();
           if (!text.trim()) return true;
           opts.onSubmit(text);
@@ -440,7 +443,10 @@ export function createShellEditor(opts: ShellEditorOptions): ShellEditorHandle {
             ),
           ]
         : []),
-      editableComp.of(EditorView.editable.of(true)),
+      editableComp.of([
+        EditorView.editable.of(true),
+        EditorState.readOnly.of(false),
+      ]),
       themeComp.of(baseTheme(opts.fontFamily, opts.fontSize, opts.fontWeight)),
     ],
   });
@@ -459,7 +465,10 @@ export function createShellEditor(opts: ShellEditorOptions): ShellEditorHandle {
     clear: () => clear(view),
     setEditable: (editable) =>
       view.dispatch({
-        effects: editableComp.reconfigure(EditorView.editable.of(editable)),
+        effects: editableComp.reconfigure([
+          EditorView.editable.of(editable),
+          EditorState.readOnly.of(!editable),
+        ]),
       }),
     retheme: (fontFamily, fontSize, fontWeight) =>
       view.dispatch({

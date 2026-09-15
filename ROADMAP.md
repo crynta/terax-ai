@@ -144,7 +144,7 @@ Categories that will not be built into Terax. Individual feature requests in the
 - **Heavyweight IDE infrastructure.** Integrated debugger and profiler suites, unbounded background indexing, and always-resident extension hosts are out of scope. Focused LSP, autocomplete, formatting, and editor workflows remain in scope when they are opt-in, lazy, and resource-bounded.
 - **Notebook and document workspaces.** Anything that turns Terax into a document host rather than a terminal.
 - **Package manager and toolchain UIs.** Use `npm`, `pip`, `cargo` and friends in the terminal directly.
-- **Full web browser features.** Preview pane stays scoped to local dev servers and lightweight doc viewing. No navigation history, no bookmarks, no dev tools.
+- **Full web browser features.** Preview pane stays scoped to local dev servers and lightweight doc viewing. No navigation history, no bookmarks, no dev tools. Sandbox and WebView cookie policies can prevent cookie-based sign-in, so preview offers an external browser fallback instead of relaxing its security boundary.
 - **Telemetry, analytics, accounts.** Terax stays BYOK and offline-respectful.
 - **Extension marketplaces at IDE scale.** Narrowly-scoped AI tool / skill bundles may happen eventually. Arbitrary UI or behavior extensions will not.
 - **Third-party subscription session bridges.** Forwarding cloud subscription auth (provider-managed login sessions) through Terax is not technically feasible for third-party clients.

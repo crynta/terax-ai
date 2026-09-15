@@ -40,7 +40,7 @@ describe("resolveEditorThemeId", () => {
 
   it("auto with an unknown app theme uses the default theme pairing", () => {
     expect(resolveEditorThemeId("auto", "does-not-exist", [], "dark")).toBe(
-      "atomone",
+      "github-dark",
     );
   });
 

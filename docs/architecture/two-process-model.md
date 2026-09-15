@@ -55,7 +55,7 @@ Output streams from `pty_open` via a Tauri `Channel<PtyEvent>`.
 #### Mutate
 
 - `fs_create_file` / `fs_create_dir`
-- `fs_rename` / `fs_delete` / `fs_copy`
+- `fs_rename` / `fs_move` / `fs_delete` / `fs_delete_batch` / `fs_copy`
 
 #### Watch
 
@@ -119,6 +119,7 @@ Three distinct surfaces:
 ### Settings window
 
 - `get_launch_dir` - CLI launch directory, drained on first read
+- get_launch_files - files opened at launch (CLI args or OS Open With), drained on first read
 - `open_settings_window` - open the separate settings webview (optional `tab` deep-link)
 
 ### CLI control plane

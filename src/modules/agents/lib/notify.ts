@@ -33,11 +33,13 @@ export async function osNotify(
   }
 }
 
-export async function testAgentOsNotification(): Promise<OsNotificationResult> {
+export async function testAgentOsNotification(
+  withSound = true,
+): Promise<OsNotificationResult> {
   const result = await osNotify(
     "Terax notifications are working",
     "You will be notified when an agent needs your attention.",
   );
-  if (result === "requested") playAgentNotificationSound();
+  if (result === "requested" && withSound) playAgentNotificationSound();
   return result;
 }

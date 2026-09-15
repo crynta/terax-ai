@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { coerceTerminalCursorStyle } from "./store";
 
 describe("coerceTerminalCursorStyle", () => {
-  it("keeps xterm cursor styles", () => {
+  it("keeps terminal cursor styles", () => {
     for (const style of ["bar", "block", "underline"]) {
       expect(coerceTerminalCursorStyle(style)).toBe(style);
     }

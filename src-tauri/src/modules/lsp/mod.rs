@@ -1,6 +1,5 @@
 mod env;
 mod framing;
-mod rss;
 mod session;
 
 use std::collections::HashMap;

@@ -11,7 +11,7 @@ describe("resolveExplorerMoveTarget", () => {
   it("moves onto a hovered directory", () => {
     expect(
       resolveExplorerMoveTarget(
-        "/repo/file.ts",
+        ["/repo/file.ts"],
         "/repo",
         "/repo/src",
         true,
@@ -23,7 +23,7 @@ describe("resolveExplorerMoveTarget", () => {
   it("uses the parent when hovering a file", () => {
     expect(
       resolveExplorerMoveTarget(
-        "/repo/file.ts",
+        ["/repo/file.ts"],
         "/repo",
         "/repo/src/index.ts",
         true,
@@ -35,7 +35,7 @@ describe("resolveExplorerMoveTarget", () => {
   it("uses the root only over empty explorer space", () => {
     expect(
       resolveExplorerMoveTarget(
-        "/repo/src/file.ts",
+        ["/repo/src/file.ts"],
         "/repo",
         null,
         true,
@@ -47,7 +47,7 @@ describe("resolveExplorerMoveTarget", () => {
   it("does not turn a terminal hover into a root move", () => {
     expect(
       resolveExplorerMoveTarget(
-        "/repo/src/file.ts",
+        ["/repo/src/file.ts"],
         "/repo",
         null,
         false,
@@ -59,7 +59,7 @@ describe("resolveExplorerMoveTarget", () => {
   it("rejects no-op and recursive directory moves", () => {
     expect(
       resolveExplorerMoveTarget(
-        "/repo/src/file.ts",
+        ["/repo/src/file.ts"],
         "/repo",
         "/repo/src",
         true,
@@ -68,7 +68,55 @@ describe("resolveExplorerMoveTarget", () => {
     ).toBeNull();
     expect(
       resolveExplorerMoveTarget(
+        ["/repo/src"],
+        "/repo",
+        "/repo/src/components",
+        true,
+        isDir,
+      ),
+    ).toBeNull();
+  });
+
+  it("moves a multi-item selection at mixed depths onto a shared target", () => {
+    expect(
+      resolveExplorerMoveTarget(
+        ["/repo/file.ts", "/repo/src/index.ts"],
+        "/repo",
+        "/repo/src/components",
+        true,
+        isDir,
+      ),
+    ).toBe("/repo/src/components");
+  });
+
+  it("rejects the whole batch when every item is already directly in the target", () => {
+    expect(
+      resolveExplorerMoveTarget(
+        ["/repo/src/file.ts", "/repo/src/other.ts"],
+        "/repo",
         "/repo/src",
+        true,
+        isDir,
+      ),
+    ).toBeNull();
+  });
+
+  it("allows a mixed batch where only some items already sit in the target", () => {
+    expect(
+      resolveExplorerMoveTarget(
+        ["/repo/src/file.ts", "/repo/other.ts"],
+        "/repo",
+        "/repo/src",
+        true,
+        isDir,
+      ),
+    ).toBe("/repo/src");
+  });
+
+  it("rejects a target nested inside one of the sources", () => {
+    expect(
+      resolveExplorerMoveTarget(
+        ["/repo/file.ts", "/repo/src"],
         "/repo",
         "/repo/src/components",
         true,
@@ -89,7 +137,7 @@ describe("finishExplorerDrag", () => {
 
     finishExplorerDrag(
       true,
-      "/repo/file.ts",
+      ["/repo/file.ts"],
       100,
       200,
       null,
@@ -98,11 +146,25 @@ describe("finishExplorerDrag", () => {
     );
 
     expect(pathDropTarget.dropPath).toHaveBeenCalledWith(
-      "/repo/file.ts",
+      ["/repo/file.ts"],
       100,
       200,
     );
     expect(pathDropTarget.clearTarget).toHaveBeenCalledOnce();
     expect(onMove).not.toHaveBeenCalled();
+  });
+
+  it("passes the full source set to onMove on a plain explorer drop", () => {
+    const onMove = vi.fn();
+    finishExplorerDrag(
+      true,
+      ["/repo/a.ts", "/repo/b.ts"],
+      100,
+      200,
+      "/repo/dest",
+      undefined,
+      onMove,
+    );
+    expect(onMove).toHaveBeenCalledWith(["/repo/a.ts", "/repo/b.ts"], "/repo/dest");
   });
 });
