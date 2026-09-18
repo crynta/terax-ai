@@ -3,8 +3,10 @@ import {
   type GitRepoInfo,
   type GitStatusSnapshot,
 } from "@/modules/ai/lib/native";
+import { listenFsChanged } from "@/modules/explorer/lib/watch";
 import { useWorkspaceEnvStore, workspaceScopeKey } from "@/modules/workspace";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createFsRefreshScheduler } from "./fsRefreshScheduler";
 
 const AUTO_FETCH_THROTTLE_MS = 5 * 60_000;
 const AUTO_FETCH_LRU_LIMIT = 16;
@@ -117,6 +119,27 @@ export function repositoryContainsContext(
   }
   const prefix = root.endsWith("/") ? root : `${root}/`;
   return context === root || context.startsWith(prefix);
+}
+
+/**
+ * Whether a batch of changed paths is worth a status read. Paths inside `.git`
+ * are ignored: git's own bookkeeping (index.lock, refs, objects) churns on
+ * every command we run and would refresh us in a loop.
+ */
+export function shouldRefreshForPaths(
+  repoRoot: string | null,
+  paths: readonly string[],
+): boolean {
+  if (!repoRoot) return false;
+  return paths.some((path) => {
+    if (!repositoryContainsContext(repoRoot, path)) return false;
+    let normalized = path.replace(/\\/g, "/");
+    // Windows paths are case-insensitive, so ".GIT" is the same directory.
+    if (/^[A-Za-z]:\//.test(normalized) || normalized.startsWith("//")) {
+      normalized = normalized.toLowerCase();
+    }
+    return !normalized.includes("/.git/") && !normalized.endsWith("/.git");
+  });
 }
 
 export function beginSourceControlRefresh<
@@ -568,6 +591,44 @@ export function useSourceControl(
     return () => {
       window.removeEventListener("focus", onFocus);
       if (timer) window.clearTimeout(timer);
+    };
+  }, [refresh, enabled]);
+
+  // Decorations follow edits without polling: the explorer and editor already
+  // watch the paths the user has open, so we reuse that event stream.
+  useEffect(() => {
+    if (!enabled) return;
+    const scheduler = createFsRefreshScheduler({
+      refresh: () => refresh({ remote: "never" }),
+      isRefreshing: () => inflightRef.current !== null,
+      lastRefreshAt: () => lastRefreshAtRef.current,
+      isHidden: () => document.hidden,
+    });
+    const onVisible = () => {
+      if (!document.hidden) scheduler.resume();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void listenFsChanged((paths) => {
+      const root = stateRef.current.repo?.repoRoot ?? null;
+      if (shouldRefreshForPaths(root, paths)) scheduler.notify();
+    })
+      .then((un) => {
+        if (disposed) un();
+        else unlisten = un;
+      })
+      .catch((err) => {
+        // Status still follows focus and git actions without the watcher.
+        if (!disposed) console.error("[terax] fs change listen failed:", err);
+      });
+    return () => {
+      disposed = true;
+      unlisten?.();
+      scheduler.dispose();
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
     };
   }, [refresh, enabled]);
 
