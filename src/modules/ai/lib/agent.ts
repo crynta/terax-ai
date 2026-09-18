@@ -161,6 +161,16 @@ export async function buildLanguageModel(
       })(resolvedModelId);
       break;
     }
+    case "edenai": {
+      const { createOpenAICompatible } =
+        await import("@ai-sdk/openai-compatible");
+      built = createOpenAICompatible({
+        name: "edenai",
+        baseURL: "https://api.edenai.run/v3",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
     case "openai-compatible": {
       if (!compatURL) {
         throw new Error(
