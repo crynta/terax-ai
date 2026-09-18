@@ -49,10 +49,15 @@ export function useInlineBlame(
         timer = 0;
         setExternalRevision((n) => n + 1);
       }, FS_REFETCH_DEBOUNCE_MS);
-    }).then((un) => {
-      if (disposed) un();
-      else unlisten = un;
-    });
+    })
+      .then((un) => {
+        if (disposed) un();
+        else unlisten = un;
+      })
+      .catch((err) => {
+        // Blame still refetches on save without the watcher.
+        if (!disposed) console.error("[terax] fs change listen failed:", err);
+      });
     return () => {
       disposed = true;
       unlisten?.();
@@ -60,6 +65,8 @@ export function useInlineBlame(
     };
   }, [path, enabled]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies(revision): a save is a manual refetch trigger
+  // biome-ignore lint/correctness/useExhaustiveDependencies(externalRevision): so is a change on disk
   useEffect(() => {
     const view = getView();
     if (!enabled) {
