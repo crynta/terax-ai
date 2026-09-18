@@ -3,6 +3,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { usePresence } from "@/lib/usePresence";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { shouldSubmitComposerEnter } from "../lib/composerEnter";
 import { useWorkspaceFiles } from "../hooks/useWorkspaceFiles";
 import { useComposer } from "../lib/composer";
 import { SLASH_COMMANDS } from "../lib/slashCommands";
@@ -196,6 +197,28 @@ export function AiComposerInput() {
     if (it) onPickItem(it);
   };
 
+  const pastingRef = useRef(false);
+  const pasteClearTimerRef = useRef<number | null>(null);
+  const markPasting = () => {
+    pastingRef.current = true;
+    if (pasteClearTimerRef.current != null) {
+      window.clearTimeout(pasteClearTimerRef.current);
+    }
+    // Cover sync + microtask Enter synth from Windows multiline paste.
+    pasteClearTimerRef.current = window.setTimeout(() => {
+      pastingRef.current = false;
+      pasteClearTimerRef.current = null;
+    }, 50);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (pasteClearTimerRef.current != null) {
+        window.clearTimeout(pasteClearTimerRef.current);
+      }
+    };
+  }, []);
+
   const voiceLabel = c.voice.recording
     ? "Listening…"
     : c.voice.transcribing
@@ -217,6 +240,10 @@ export function AiComposerInput() {
               onKeyUp={updateTrigger}
               onClick={updateTrigger}
               onSelect={updateTrigger}
+              onPaste={markPasting}
+              onBeforeInput={(e) => {
+                if (e.nativeEvent.inputType === "insertFromPaste") markPasting();
+              }}
               onKeyDown={(e) => {
                 if (pickerOpen) {
                   const items = fileTrigger ? filteredFiles : filteredItems;
@@ -232,12 +259,32 @@ export function AiComposerInput() {
                     setActiveIndex((i) => Math.max(0, i - 1));
                     return;
                   }
-                  if (e.key === "Tab" || e.key === "Enter") {
+                  if (e.key === "Tab") {
                     if (items.length > 0) {
                       e.preventDefault();
                       pickActive();
                       return;
                     }
+                  }
+                  if (e.key === "Enter") {
+                    if (
+                      items.length > 0 &&
+                      shouldSubmitComposerEnter({
+                        key: e.key,
+                        shiftKey: e.shiftKey,
+                        isComposing: e.nativeEvent.isComposing,
+                        keyCode: e.keyCode,
+                        isPasting: pastingRef.current,
+                        ctrlKey: e.ctrlKey,
+                        metaKey: e.metaKey,
+                        altKey: e.altKey,
+                      })
+                    ) {
+                      e.preventDefault();
+                      pickActive();
+                      return;
+                    }
+                    // Fall through: paste/IME Enter must not submit either.
                   }
                   if (e.key === "Escape") {
                     e.preventDefault();
@@ -252,7 +299,18 @@ export function AiComposerInput() {
                     return;
                   }
                 }
-                if (e.key === "Enter" && !e.shiftKey) {
+                if (
+                  shouldSubmitComposerEnter({
+                    key: e.key,
+                    shiftKey: e.shiftKey,
+                    isComposing: e.nativeEvent.isComposing,
+                    keyCode: e.keyCode,
+                    isPasting: pastingRef.current,
+                    ctrlKey: e.ctrlKey,
+                    metaKey: e.metaKey,
+                    altKey: e.altKey,
+                  })
+                ) {
                   e.preventDefault();
                   c.submit();
                 }
