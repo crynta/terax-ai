@@ -301,7 +301,7 @@ pub(crate) fn build_oneshot_command(
     {
         let mut cmd = Command::new("/bin/sh");
         cmd.arg("-c").arg(command);
-        for (key, value) in crate::modules::workspace::appimage_env_overrides() {
+        for (key, value) in crate::modules::workspace::child_env_overrides() {
             match value {
                 Some(v) => {
                     cmd.env(key, v);
