@@ -629,9 +629,22 @@ pub fn blame(
         // Untracked, ignored or deleted paths simply have no blame.
         return Ok(Vec::new());
     }
-    Ok(parse_blame_porcelain(
-        &String::from_utf8_lossy(&output.stdout),
-    ))
+    Ok(parse_blame_output(&output.stdout, output.truncated))
+}
+
+/// Output past `MAX_OUTPUT_BYTES` is cut at an arbitrary byte. Porcelain runs
+/// in order from line 1, so everything before the cut is still correct: drop
+/// the unfinished last line and leave the tail of the file unannotated.
+fn parse_blame_output(stdout: &[u8], truncated: bool) -> Vec<GitBlameLine> {
+    let complete = if truncated {
+        stdout
+            .iter()
+            .rposition(|&b| b == b'\n')
+            .map_or(&stdout[..0], |end| &stdout[..=end])
+    } else {
+        stdout
+    };
+    parse_blame_porcelain(&String::from_utf8_lossy(complete))
 }
 
 fn parse_blame_porcelain(stdout: &str) -> Vec<GitBlameLine> {
@@ -1319,6 +1332,29 @@ mod tests {
         )
         .expect_err("a path leaving the repository must be refused");
         assert!(matches!(err, GitError::InvalidPath(_)));
+    }
+
+    #[test]
+    fn parse_blame_output_keeps_the_complete_prefix_of_truncated_output() {
+        let sha = "d".repeat(40);
+        let full = format!(
+            "{sha} 1 1 3\n\
+             author Ada\n\
+             author-time 1700000000\n\
+             summary cut\n\
+             \tone\n\
+             {sha} 2 2\n\
+             \ttwo\n\
+             {sha} 3 3\n\
+             \tthree\n"
+        );
+        // Cut in the middle of the third content line.
+        let cut = &full.as_bytes()[..full.len() - 3];
+        let lines = parse_blame_output(cut, true);
+        assert_eq!(lines.len(), 2);
+        assert!(lines.iter().all(|l| l.author == "Ada"));
+        // Untruncated output is parsed in full.
+        assert_eq!(parse_blame_output(full.as_bytes(), false).len(), 3);
     }
 
     #[test]
