@@ -6,15 +6,11 @@ import {
 import { listenFsChanged } from "@/modules/explorer/lib/watch";
 import { useWorkspaceEnvStore, workspaceScopeKey } from "@/modules/workspace";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createFsRefreshScheduler } from "./fsRefreshScheduler";
 
 const AUTO_FETCH_THROTTLE_MS = 5 * 60_000;
 const AUTO_FETCH_LRU_LIMIT = 16;
 const FOCUS_REFRESH_MIN_INTERVAL_MS = 1500;
-// Filesystem bursts (a build, a checkout, a formatter) arrive as batches from
-// the Rust watcher; collapse them into one status read and never run them
-// closer together than this.
-const FS_REFRESH_DEBOUNCE_MS = 500;
-const FS_REFRESH_MIN_INTERVAL_MS = 1500;
 // Skip the context-change refetch when the data is this fresh and the new path
 // is still inside the loaded repo (cd-within-repo produces identical status).
 const SC_STATUS_TTL_MS = 2000;
@@ -599,30 +595,25 @@ export function useSourceControl(
   }, [refresh, enabled]);
 
   // Decorations follow edits without polling: the explorer and editor already
-  // watch the paths the user has open, so we reuse that event stream. Work is
-  // skipped while the window is hidden - the focus handler above catches up.
+  // watch the paths the user has open, so we reuse that event stream.
   useEffect(() => {
     if (!enabled) return;
-    let timer = 0;
+    const scheduler = createFsRefreshScheduler({
+      refresh: () => refresh({ remote: "never" }),
+      isRefreshing: () => inflightRef.current !== null,
+      lastRefreshAt: () => lastRefreshAtRef.current,
+      isHidden: () => document.hidden,
+    });
+    const onVisible = () => {
+      if (!document.hidden) scheduler.resume();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
     let disposed = false;
     let unlisten: (() => void) | undefined;
-    const run = () => {
-      timer = 0;
-      if (document.hidden) return;
-      const elapsed = Date.now() - lastRefreshAtRef.current;
-      if (elapsed < FS_REFRESH_MIN_INTERVAL_MS) {
-        // Too soon after the last read: wait out the remainder instead of
-        // dropping the change, or the status would stay stale.
-        timer = window.setTimeout(run, FS_REFRESH_MIN_INTERVAL_MS - elapsed);
-        return;
-      }
-      void refresh({ remote: "never" });
-    };
     void listenFsChanged((paths) => {
       const root = stateRef.current.repo?.repoRoot ?? null;
-      if (!shouldRefreshForPaths(root, paths)) return;
-      if (timer) window.clearTimeout(timer);
-      timer = window.setTimeout(run, FS_REFRESH_DEBOUNCE_MS);
+      if (shouldRefreshForPaths(root, paths)) scheduler.notify();
     }).then((un) => {
       if (disposed) un();
       else unlisten = un;
@@ -630,7 +621,9 @@ export function useSourceControl(
     return () => {
       disposed = true;
       unlisten?.();
-      if (timer) window.clearTimeout(timer);
+      scheduler.dispose();
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
     };
   }, [refresh, enabled]);
 
