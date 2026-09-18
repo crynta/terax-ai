@@ -70,6 +70,7 @@ const PROVIDER_ICON = {
   groq: FlashIcon,
   deepseek: DeepseekIcon,
   mistral: MistralIcon,
+  "opencode-go": GlobeIcon,
   openrouter: GlobeIcon,
   "openai-compatible": PlugIcon,
   lmstudio: ComputerIcon,
