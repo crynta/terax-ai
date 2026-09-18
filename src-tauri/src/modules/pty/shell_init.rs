@@ -1121,6 +1121,28 @@ mod tests {
     }
 
     #[test]
+    fn common_env_sets_terminal_basics_without_control_context() {
+        let mut command = CommandBuilder::new("shell");
+        apply_common(&mut command, None, false, None);
+
+        assert_eq!(command.get_env("TERM"), Some(OsStr::new("xterm-256color")));
+        assert_eq!(command.get_env("COLORTERM"), Some(OsStr::new("truecolor")));
+        assert_eq!(command.get_env("TERAX_TERMINAL"), Some(OsStr::new("1")));
+        assert_eq!(command.get_env("TERAX_BLOCKS"), None);
+        assert_eq!(command.get_env("TERAX_CONTROL_ADDR"), None);
+        assert_eq!(command.get_env("TERAX_CONTROL_TOKEN"), None);
+        assert_eq!(command.get_env("TERAX_PANE_ID"), None);
+    }
+
+    #[test]
+    fn blocks_mode_is_opt_in() {
+        let mut command = CommandBuilder::new("shell");
+        apply_common(&mut command, None, true, None);
+
+        assert_eq!(command.get_env("TERAX_BLOCKS"), Some(OsStr::new("1")));
+    }
+
+    #[test]
     fn common_env_includes_authenticated_caller_context() {
         let mut command = CommandBuilder::new("shell");
         let control = ShellControlEnv {
