@@ -614,10 +614,15 @@ export function useSourceControl(
     void listenFsChanged((paths) => {
       const root = stateRef.current.repo?.repoRoot ?? null;
       if (shouldRefreshForPaths(root, paths)) scheduler.notify();
-    }).then((un) => {
-      if (disposed) un();
-      else unlisten = un;
-    });
+    })
+      .then((un) => {
+        if (disposed) un();
+        else unlisten = un;
+      })
+      .catch((err) => {
+        // Status still follows focus and git actions without the watcher.
+        if (!disposed) console.error("[terax] fs change listen failed:", err);
+      });
     return () => {
       disposed = true;
       unlisten?.();
