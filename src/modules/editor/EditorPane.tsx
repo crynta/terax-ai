@@ -55,6 +55,7 @@ import {
 } from "./lib/externalFormat";
 import { detectIndentUnit } from "./lib/indent";
 import { type LanguageResult, resolveLanguage } from "./lib/languageResolver";
+import { editorSearchMatchStatus } from "./lib/searchMatchStatus";
 import { FORCE_READ_LIMIT, useDocument } from "./lib/useDocument";
 import { useEditorThemeExt } from "./lib/useEditorThemeExt";
 import { initVimGlobals, vimHandlersExtension } from "./lib/vim";
@@ -66,6 +67,11 @@ export type EditorPaneHandle = {
   findNext: () => void;
   findPrevious: () => void;
   clearQuery: () => void;
+  matchStatus: () => {
+    current: number;
+    total: number;
+    complete: boolean;
+  };
   /** Open CodeMirror's find/replace panel. */
   openSearch: () => void;
   focus: () => void;
@@ -501,6 +507,11 @@ export const EditorPane = memo(
             effects: setSearchQuery.of(new SearchQuery({ search: "" })),
           });
         },
+        matchStatus: () => {
+          const view = cmRef.current?.view;
+          if (!view) return { current: 0, total: 0, complete: true };
+          return editorSearchMatchStatus(view.state);
+        },
         openSearch: () => {
           const view = cmRef.current?.view;
           if (view) openSearchPanel(view);
@@ -624,7 +635,8 @@ export const EditorPane = memo(
         );
       }
 
-      const canForce = doc.status === "toolarge" && doc.size <= FORCE_READ_LIMIT;
+      const canForce =
+        doc.status === "toolarge" && doc.size <= FORCE_READ_LIMIT;
       return (
         <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
           <div className="text-sm text-foreground">

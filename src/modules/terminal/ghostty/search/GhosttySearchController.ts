@@ -1,4 +1,7 @@
-import type { TerminalSearchController } from "@/modules/terminal/search/TerminalSearchController";
+import type {
+  SearchMatchStatus,
+  TerminalSearchController,
+} from "@/modules/terminal/search/TerminalSearchController";
 import type {
   GhosttySearchStatus,
   GhosttyTerminalModelApi,
@@ -26,6 +29,7 @@ export class GhosttySearchController implements TerminalSearchController {
   private scheduledStep: number | null = null;
   private disposed = false;
   private suspended = false;
+  private readonly listeners = new Set<() => void>();
 
   constructor(
     private readonly model: GhosttyTerminalModelApi,
@@ -63,6 +67,22 @@ export class GhosttySearchController implements TerminalSearchController {
     this.refresh();
   }
 
+  matchStatus(): SearchMatchStatus {
+    const { totalMatches, selectedIndex, complete } = this.status;
+    return {
+      current: selectedIndex >= 0 ? selectedIndex + 1 : 0,
+      total: totalMatches,
+      complete,
+    };
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
   clearDecorations(): void {
     if (this.disposed) return;
     this.cancelStep();
@@ -71,7 +91,7 @@ export class GhosttySearchController implements TerminalSearchController {
     this.model.clearSearch();
     this.status = emptyStatus();
     this.viewportMask.fill(0);
-    this.onChange();
+    this.notify();
   }
 
   refreshOverlay(): void {
@@ -140,9 +160,14 @@ export class GhosttySearchController implements TerminalSearchController {
       this.status = this.model.selectSearchMatch(direction);
     }
     this.rebuildViewportMask();
-    this.onChange();
+    this.notify();
     if (!this.status.complete) this.scheduleStep();
     else this.cancelStep();
+  }
+
+  private notify(): void {
+    this.onChange();
+    for (const listener of this.listeners) listener();
   }
 
   private rebuildViewportMask(): void {
