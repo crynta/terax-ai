@@ -202,7 +202,7 @@ jobs:
       # it takes to review and approve the request during a release.
       - name: Submit Windows installers to SignPath
         if: matrix.platform == 'windows-latest' && startsWith(github.ref, 'refs/tags/')
-        uses: signpath/github-action-submit-signing-request@v2
+        uses: signpath/github-action-submit-signing-request@v3
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: 'df665bf4-9b76-41ae-9596-1ba3a23010aa'
