@@ -142,6 +142,16 @@ export async function buildLanguageModel(
       })(resolvedModelId);
       break;
     }
+    case "opencode-go": {
+      const { createOpenAICompatible } =
+        await import("@ai-sdk/openai-compatible");
+      built = createOpenAICompatible({
+        name: "opencode-go",
+        baseURL: "https://opencode.ai/zen/go/v1",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
     case "groq": {
       const { createGroq } = await import("@ai-sdk/groq");
       built = createGroq({ apiKey: key })(resolvedModelId);
