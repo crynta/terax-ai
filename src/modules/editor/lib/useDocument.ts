@@ -4,6 +4,7 @@ import { currentWorkspaceEnv } from "@/modules/workspace";
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { takeForceReload } from "./editorForceReload";
 import { detectEol, type Eol, normalizeToLf, restoreEol } from "./eol";
 
 type ReadResult =
@@ -22,6 +23,19 @@ export type DocumentState =
   | { status: "binary"; size: number }
   | { status: "toolarge"; size: number; limit: number }
   | { status: "error"; message: string };
+
+export type ReloadOptions = {
+  /** When true, re-read from disk even if the buffer is dirty and clear dirty. */
+  force?: boolean;
+};
+
+/** Pure gate used by reload() and unit tests (#988). */
+export function shouldProceedReload(
+  dirty: boolean,
+  options?: ReloadOptions,
+): boolean {
+  return options?.force === true || !dirty;
+}
 
 type Options = {
   path: string;
@@ -166,19 +180,43 @@ export function useDocument({ path, onDirtyChange }: Options) {
       .catch((e) => setDoc({ status: "error", message: String(e) }));
   }, [readFromDisk, adoptRead]);
 
-  // Skipped while dirty: never clobber unsaved edits. Re-checked when the
-  // read resolves, since typing can start while it is in flight.
-  const reload = useCallback((): boolean => {
-    if (dirtyRef.current) return false;
-    void readFromDisk(forceRef.current)
-      .then((res) => {
-        if (!dirtyRef.current) adoptRead(res, true);
-      })
-      // Transient failures (e.g. ENOENT mid atomic-rename) must not replace
-      // a healthy buffer with an error screen.
-      .catch((e) => console.warn("[editor] reload failed", path, e));
-    return true;
-  }, [readFromDisk, adoptRead, path]);
+  // Skipped while dirty unless `force`: never clobber unsaved edits on
+  // external fs events. Force is reserved for intentional discard (#988).
+  const reload = useCallback(
+    (options?: ReloadOptions): boolean => {
+      const force =
+        options?.force === true || takeForceReload(path);
+      if (!shouldProceedReload(dirtyRef.current, { force })) return false;
+      if (force) {
+        // Stop pending autosave so it cannot write discarded bufferRef back
+        // after we clear dirty for the force path (#1251 / CodeRabbit).
+        clearAutoSaveTimer();
+        // Drop dirty immediately so in-flight checks and the UI clear; the
+        // disk read then replaces the discarded buffer content.
+        dirtyRef.current = false;
+        setDirty(false);
+      }
+      void readFromDisk(forceRef.current)
+        .then((res) => {
+          if (!force && dirtyRef.current) return;
+          // Force must always adopt: after discard, disk often matches
+          // savedRef while bufferRef still holds the discarded edits.
+          adoptRead(res, !force);
+        })
+        // Transient failures (e.g. ENOENT mid atomic-rename) must not replace
+        // a healthy buffer with an error screen. If force cleared dirty but
+        // the read failed, restore dirty so discarded edits stay warnable.
+        .catch((e) => {
+          console.warn("[editor] reload failed", path, e);
+          if (force && bufferRef.current !== savedRef.current) {
+            dirtyRef.current = true;
+            setDirty(true);
+          }
+        });
+      return true;
+    },
+    [readFromDisk, adoptRead, path, clearAutoSaveTimer],
+  );
 
   const save = useCallback(async (): Promise<boolean> => {
     clearAutoSaveTimer();
