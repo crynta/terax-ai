@@ -94,7 +94,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     id: "requesty",
     label: "Requesty",
     keyringAccount: "requesty-api-key",
-    keyPrefix: "rqsty-sk-",
+    keyPrefix: null,
     consoleUrl: "https://app.requesty.ai/api-keys",
   },
   {
