@@ -169,10 +169,12 @@ export const chats = new Map<string, Chat<UIMessage>>();
 export function touchChat(id: string, c: Chat<UIMessage>) {
   if (chats.has(id)) chats.delete(id);
   chats.set(id, c);
+  const activeId = useChatStore.getState().activeSessionId;
   while (chats.size > CHATS_LRU_CAP) {
-    const oldest = chats.keys().next().value;
-    if (!oldest || oldest === id) break;
-    if (useChatStore.getState().activeSessionId === oldest) break;
+    const oldest = [...chats.keys()].find(
+      (key) => key !== id && key !== activeId,
+    );
+    if (!oldest) break;
     flushPersistEntry(oldest);
     void chats.get(oldest)?.stop();
     chats.delete(oldest);
