@@ -40,13 +40,14 @@ describe("WebGPU packed cell buffers", () => {
       9,
       18,
       0x123456,
+      0.5,
       0xabcdef,
       0x102030,
       CELL_FLAG_STRIKETHROUGH | CELL_FLAG_OVERLINE,
     );
 
     expect(view.getFloat32(0, true)).toBe(10);
-    expect([...new Uint8Array(buffer, 16, 4)]).toEqual([0x12, 0x34, 0x56, 255]);
+    expect([...new Uint8Array(buffer, 16, 4)]).toEqual([0x12, 0x34, 0x56, 128]);
     expect([...new Uint8Array(buffer, 20, 4)]).toEqual([0xab, 0xcd, 0xef, 255]);
     expect(view.getUint32(28, true)).toBe(
       CELL_FLAG_STRIKETHROUGH | CELL_FLAG_OVERLINE,
