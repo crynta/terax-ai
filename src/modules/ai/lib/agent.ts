@@ -230,14 +230,27 @@ export type LocalProviderConfig = {
   customEndpointKeys?: CustomEndpointKeys;
 };
 
-export function buildConfiguredLanguageModel(
+export async function buildConfiguredLanguageModel(
   modelId: string,
   keys: ProviderKeys,
   local: LocalProviderConfig = {},
 ): Promise<LanguageModel> {
   if (isCompatModelId(modelId)) {
     const eid = endpointIdFromCompatModel(modelId);
-    const ep = local.customEndpoints?.find((e) => e.id === eid);
+    let endpoints = local.customEndpoints;
+    let endpointKeys = local.customEndpointKeys;
+    // Call sites like SCM commit-message historically omitted these; chat
+    // already passes them. Fall back to live prefs/keys so compat-* models
+    // resolve (Fixes #1137).
+    if (!endpoints?.find((e) => e.id === eid)) {
+      const { usePreferencesStore } = await import(
+        "@/modules/settings/preferences"
+      );
+      const { useChatStore } = await import("@/modules/ai/store/chatStore");
+      endpoints = usePreferencesStore.getState().customEndpoints;
+      endpointKeys = useChatStore.getState().customEndpointKeys;
+    }
+    const ep = endpoints?.find((e) => e.id === eid);
     if (!ep) throw new Error(`Custom endpoint not found: ${eid}`);
     if (!ep.modelId.trim()) {
       throw new Error(
@@ -249,7 +262,7 @@ export function buildConfiguredLanguageModel(
       keys,
       ep.modelId.trim(),
       { openaiCompatibleBaseURL: ep.baseURL },
-      local.customEndpointKeys?.[eid],
+      endpointKeys?.[eid],
     );
   }
   const m = resolveModel(modelId);
