@@ -1,5 +1,9 @@
-set -gx TERAX_TERMINAL 1
 set -l script_dir (dirname (status filename))
+
+set -l ordinary (env -u TERAX_TERMINAL fish --no-config -c 'source $argv[1]; or exit 1; echo ordinary-shell-survived' -- "$script_dir/init.fish")
+test "$ordinary" = ordinary-shell-survived; or exit 1
+
+set -gx TERAX_TERMINAL 1
 
 function fish_prompt
     printf base
