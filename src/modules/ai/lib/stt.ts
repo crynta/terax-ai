@@ -42,7 +42,7 @@ async function transcribeViaRest(
   form.append("response_format", "text");
 
   const headers: Record<string, string> = {};
-  if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
   const res = await fetchWithTimeout(`${baseURL}/audio/transcriptions`, {
     method: "POST",
