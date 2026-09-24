@@ -26,7 +26,7 @@ export type SerializedTab =
   | { kind: "preview"; url: string }
   | { kind: "markdown"; path: string };
 
-function basename(path: string): string {
+export function basename(path: string): string {
   const parts = path.split(/[\\/]/).filter(Boolean);
   return parts.length ? parts[parts.length - 1] : path;
 }
