@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { native } from "../lib/native";
+import { checkWritableCanonical } from "../lib/security";
 
 export type QueuedEdit = {
   id: string;
@@ -47,20 +48,30 @@ export const usePlanStore = create<PlanState>((set, get) => ({
   clear: () => set({ queue: [] }),
   async applyAll() {
     const items = get().queue;
+    const processed = new Set(items.map((q) => q.id));
     const results: { id: string; ok: boolean; error?: string }[] = [];
     for (const q of items) {
       try {
+        // Re-check the deny-list at the mutation boundary: the queue may hold
+        // edits approved long before the write lands.
+        const safety = await checkWritableCanonical(q.path, native.canonicalize);
+        if (!safety.ok) {
+          results.push({ id: q.id, ok: false, error: safety.reason });
+          continue;
+        }
         if (q.kind === "create_directory") {
-          await native.createDir(q.path);
+          await native.createDir(safety.canonical);
         } else {
-          await native.writeFile(q.path, q.proposedContent);
+          await native.writeFile(safety.canonical, q.proposedContent);
         }
         results.push({ id: q.id, ok: true });
       } catch (e) {
         results.push({ id: q.id, ok: false, error: String(e) });
       }
     }
-    set({ queue: [] });
+    // Only drain what was processed; edits queued while I/O was pending stay
+    // queued for the next application.
+    set({ queue: get().queue.filter((q) => !processed.has(q.id)) });
     return results;
   },
 }));
