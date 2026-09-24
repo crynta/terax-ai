@@ -24,7 +24,8 @@ import {
   type TerminalFitQueueDiagnostics,
 } from "./TerminalFitQueue";
 import {
-  rgbToCss,
+  clampAlpha,
+  rgbaToCss,
   type TerminalFontMetrics,
   type TerminalGpuTheme,
 } from "./terminalVisuals";
@@ -132,6 +133,7 @@ export class WebGpuTerminalSurface
   private theme: TerminalGpuTheme;
   private metrics: TerminalFontMetrics;
   private themeBackground: number;
+  private themeBackgroundAlpha: number;
   private themeCursor: number;
   private selectionColor: number;
   private cellCapacity = 0;
@@ -181,6 +183,7 @@ export class WebGpuTerminalSurface
     this.cursorBlinking = options.cursorBlink;
     this.theme = options.theme;
     this.themeBackground = packRgb(options.theme.background);
+    this.themeBackgroundAlpha = clampAlpha(options.theme.backgroundAlpha);
     this.themeCursor = packRgb(options.theme.cursor);
     this.selectionColor = packRgb(options.theme.selection.color);
     options.model.setCursorOptions(options.cursorStyle, options.cursorBlink);
@@ -362,6 +365,7 @@ export class WebGpuTerminalSurface
     this.theme = theme;
     this.updateRootBackground();
     this.themeBackground = packRgb(theme.background);
+    this.themeBackgroundAlpha = clampAlpha(theme.backgroundAlpha);
     this.themeCursor = packRgb(theme.cursor);
     this.selectionColor = packRgb(theme.selection.color);
     this.forceFullRedraw = true;
@@ -482,7 +486,7 @@ export class WebGpuTerminalSurface
       colorAttachments: [
         {
           view: target,
-          clearValue: rgbClear(this.theme.background),
+          clearValue: rgbClear(this.theme.background, this.themeBackgroundAlpha),
           loadOp: "clear",
           storeOp: "store",
         },
@@ -695,7 +699,7 @@ export class WebGpuTerminalSurface
       this.context.configure({
         device: resources.device,
         format: resources.format,
-        alphaMode: "opaque",
+        alphaMode: "premultiplied",
       });
       this.scale = Math.max(1, window.devicePixelRatio || 1);
       this.atlasLease = this.runtime.acquireGlyphAtlas(
@@ -1048,10 +1052,15 @@ export class WebGpuTerminalSurface
         rowHasBlinkingCell ||= (flags & CellFlags.BLINK) !== 0;
         let foreground = cells.foregroundPacked(index);
         let background = cells.backgroundPacked(index);
+        // Only cells still on the default background follow the theme alpha:
+        // an explicit color, inverse, search or selection stays opaque.
+        let backgroundAlpha =
+          background === this.themeBackground ? this.themeBackgroundAlpha : 1;
         if ((flags & CellFlags.INVERSE) !== 0) {
           const originalForeground = foreground;
           foreground = background;
           background = originalForeground;
+          backgroundAlpha = 1;
         }
         const searchMatch = this.search.matchAt(row, column);
         if (searchMatch !== 0) {
@@ -1059,6 +1068,7 @@ export class WebGpuTerminalSurface
             searchMatch === 2
               ? SEARCH_ACTIVE_MATCH_BACKGROUND
               : SEARCH_MATCH_BACKGROUND;
+          backgroundAlpha = 1;
         }
         if (
           selectionBounds &&
@@ -1073,6 +1083,7 @@ export class WebGpuTerminalSurface
             this.selectionColor,
             this.theme.selection.alpha,
           );
+          backgroundAlpha = 1;
         }
         const originX = column * cellWidth;
         const originY = row * cellHeight;
@@ -1095,6 +1106,7 @@ export class WebGpuTerminalSurface
           spanWidth,
           cellHeight,
           background,
+          backgroundAlpha,
           cells.underlineColorPacked(index),
           foreground,
           cellFlags,
@@ -1278,7 +1290,10 @@ export class WebGpuTerminalSurface
   }
 
   private updateRootBackground(): void {
-    this.root.style.backgroundColor = rgbToCss(this.theme.background);
+    this.root.style.backgroundColor = rgbaToCss(
+      this.theme.background,
+      this.themeBackgroundAlpha,
+    );
   }
 
   private assertLive(): void {
@@ -1322,12 +1337,13 @@ function packRgb(color: Rgb): number {
   return (color[0] << 16) | (color[1] << 8) | color[2];
 }
 
-function rgbClear(color: Rgb): GPUColor {
+function rgbClear(color: Rgb, alpha: number): GPUColor {
+  const a = clampAlpha(alpha);
   return {
-    r: color[0] / 255,
-    g: color[1] / 255,
-    b: color[2] / 255,
-    a: 1,
+    r: (color[0] / 255) * a,
+    g: (color[1] / 255) * a,
+    b: (color[2] / 255) * a,
+    a,
   };
 }
 
