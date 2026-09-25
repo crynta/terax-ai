@@ -184,3 +184,97 @@ pub fn history_record(state: tauri::State<'_, HistoryState>, command: String) {
         sort_recent(&mut idx.entries);
     }
 }
+
+#[cfg(test)]
+mod mod_tests {
+    use super::*;
+
+    #[test]
+    fn zsh_histfile_prefers_an_existing_env_override() {
+        let tmp = tempfile::tempdir().unwrap();
+        let custom = tmp.path().join("custom_zhistory");
+        std::fs::write(&custom, b"").unwrap();
+        std::env::set_var("HISTFILE", &custom);
+
+        let got = zsh_histfile(Some(&tmp.path().join("home")));
+
+        std::env::remove_var("HISTFILE");
+        assert_eq!(got, Some(custom));
+    }
+
+    #[test]
+    fn zsh_histfile_falls_back_to_home_when_the_override_is_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        std::env::set_var("HISTFILE", tmp.path().join("missing"));
+
+        let got = zsh_histfile(Some(&home));
+
+        std::env::remove_var("HISTFILE");
+        assert_eq!(got, Some(home.join(".zsh_history")));
+    }
+
+    #[test]
+    fn fish_histfile_prefers_xdg_then_falls_back_to_default_location() {
+        let tmp = tempfile::tempdir().unwrap();
+        let xdg = tmp.path().join("xdg-data");
+        std::fs::create_dir_all(xdg.join("fish")).unwrap();
+        let fish_file = xdg.join("fish").join("fish_history");
+        std::fs::write(&fish_file, b"").unwrap();
+        let home = tmp.path().join("home");
+
+        std::env::set_var("XDG_DATA_HOME", &xdg);
+        assert_eq!(fish_histfile(Some(&home)), Some(fish_file));
+
+        std::env::set_var("XDG_DATA_HOME", tmp.path().join("empty-xdg"));
+        assert_eq!(
+            fish_histfile(Some(&home)),
+            Some(home.join(".local/share/fish/fish_history"))
+        );
+
+        std::env::remove_var("XDG_DATA_HOME");
+        assert_eq!(
+            fish_histfile(Some(&home)),
+            Some(home.join(".local/share/fish/fish_history"))
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_executable_detection_matches_launcher_extensions_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        for name in [
+            "cargo.exe",
+            "RUN.CMD",
+            "tool.bat",
+            "legacy.com",
+            "script.ps1",
+            "readme.txt",
+            "noext",
+        ] {
+            std::fs::write(tmp.path().join(name), b"").unwrap();
+        }
+
+        let mut found: Vec<(String, bool)> = Vec::new();
+        for entry in std::fs::read_dir(tmp.path()).unwrap().flatten() {
+            found.push((entry.file_name().to_string_lossy().into_owned(), is_executable(&entry)));
+        }
+        found.sort();
+
+        let is_exec = |name: &str| {
+            found
+                .iter()
+                .find(|(n, _)| n.eq_ignore_ascii_case(name))
+                .map(|(_, e)| *e)
+                .unwrap()
+        };
+        assert!(is_exec("cargo.exe"));
+        assert!(is_exec("run.cmd"));
+        assert!(is_exec("tool.bat"));
+        assert!(is_exec("legacy.com"));
+        assert!(is_exec("script.ps1"));
+        assert!(!is_exec("readme.txt"));
+        assert!(!is_exec("noext"));
+    }
+}
