@@ -76,6 +76,18 @@ describe("blame state", () => {
     expect(edited.field(blameField)).toBeNull();
   });
 
+  it("lets an edit win over annotations arriving in the same transaction", () => {
+    const state = EditorState.create({
+      doc: "one\ntwo\n",
+      extensions: [inlineBlame()],
+    });
+    const raced = state.update({
+      changes: { from: 0, insert: "x" },
+      effects: setBlame.of([line(), line()]),
+    }).state;
+    expect(raced.field(blameField)).toBeNull();
+  });
+
   it("keeps annotations across a selection-only change", () => {
     const moved = withBlame().update({ selection: { anchor: 2 } }).state;
     expect(moved.field(blameField)).toHaveLength(2);

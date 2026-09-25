@@ -14,14 +14,16 @@ import type { GitBlameLine } from "@/modules/ai/lib/native";
 export const setBlame = StateEffect.define<GitBlameLine[] | null>();
 
 // Blame is line-indexed against the saved file, so any local edit invalidates
-// it until the next save refetches. Showing stale authors is worse than none.
+// it until the next save refetches. Showing stale authors is worse than none,
+// so an edit wins even over annotations arriving in the same transaction.
 export const blameField = StateField.define<GitBlameLine[] | null>({
   create: () => null,
   update(value, tr) {
+    if (tr.docChanged) return null;
     for (const effect of tr.effects) {
       if (effect.is(setBlame)) return effect.value;
     }
-    return tr.docChanged ? null : value;
+    return value;
   },
 });
 
