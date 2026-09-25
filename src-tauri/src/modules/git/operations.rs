@@ -1309,13 +1309,16 @@ mod tests {
     fn blame_rejects_a_repo_root_outside_the_workspace() {
         let dir = blame_tempdir("unauthorized");
         let registry = WorkspaceRegistry::default();
-        let err = blame(
+        // GitBlameLine has no Debug derive, so unwrap the error by hand.
+        let result = blame(
             &registry,
             &dir.to_string_lossy(),
             "src/main.rs",
             &WorkspaceEnv::Local,
-        )
-        .expect_err("an unauthorized repository root must be refused");
+        );
+        let Err(err) = result else {
+            panic!("an unauthorized repository root must be refused");
+        };
         assert!(matches!(err, GitError::PathOutsideWorkspace(_)));
     }
 
@@ -1324,13 +1327,15 @@ mod tests {
         let dir = blame_tempdir("escape");
         let registry = WorkspaceRegistry::default();
         registry.authorize(&dir).expect("authorize root");
-        let err = blame(
+        let result = blame(
             &registry,
             &dir.to_string_lossy(),
             "../outside.txt",
             &WorkspaceEnv::Local,
-        )
-        .expect_err("a path leaving the repository must be refused");
+        );
+        let Err(err) = result else {
+            panic!("a path leaving the repository must be refused");
+        };
         assert!(matches!(err, GitError::InvalidPath(_)));
     }
 
