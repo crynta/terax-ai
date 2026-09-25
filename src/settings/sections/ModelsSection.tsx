@@ -68,6 +68,7 @@ import {
   setOpenaiCompatibleContextLimit,
   setOpenaiCompatibleModelId,
   setOpenrouterModelId,
+  setRequestyModelId,
   setRecentModelIds,
   setSttProvider,
   setWhispercppBaseURL,
@@ -144,6 +145,16 @@ const LOCAL_META: Partial<Record<ProviderId, LocalMeta>> = {
       </>
     ),
   },
+  requesty: {
+    urlPlaceholder: "",
+    modelPlaceholder: "openai/gpt-4o-mini, anthropic/claude-sonnet-5-5, …",
+    description: "Any model on Requesty: type its full provider/model id.",
+    modelHint: (
+      <>
+        Browse ids at <span className="font-mono">requesty.ai/models</span>.
+      </>
+    ),
+  },
 };
 
 function reportCredentialRemovalError(error: unknown): void {
@@ -174,6 +185,7 @@ export function ModelsSection() {
     (s) => s.openaiCompatibleContextLimit,
   );
   const openrouterModelId = usePreferencesStore((s) => s.openrouterModelId);
+  const requestyModelId = usePreferencesStore((s) => s.requestyModelId);
   const customEndpoints = usePreferencesStore((s) => s.customEndpoints);
 
   useEffect(() => {
@@ -316,6 +328,14 @@ export function ModelsSection() {
           setModelId: setOpenrouterModelId,
           noBaseURL: true,
         };
+      case "requesty":
+        return {
+          baseURL: "",
+          modelId: requestyModelId,
+          setBaseURL: async () => {},
+          setModelId: setRequestyModelId,
+          noBaseURL: true,
+        };
       default:
         return null;
     }
@@ -323,6 +343,7 @@ export function ModelsSection() {
 
   const isConfigured = (id: ProviderId): boolean => {
     if (id === "openrouter") return !!keys?.[id] && !!openrouterModelId.trim();
+    if (id === "requesty") return !!keys?.[id] && !!requestyModelId.trim();
     if (!isLocalProvider(id)) return !!keys?.[id];
     const cfg = localConfig(id);
     if (!cfg) return false;
@@ -352,6 +373,8 @@ export function ModelsSection() {
     try {
       if (id === "openrouter") {
         await setOpenrouterModelId("");
+      } else if (id === "requesty") {
+        await setRequestyModelId("");
       } else if (isLocalProvider(id)) {
         const cfg = localConfig(id);
         if (cfg) {
@@ -411,7 +434,7 @@ export function ModelsSection() {
         ) : (
           <div className="flex flex-col gap-2">
             {visibleProviders.map((p) =>
-              p.id === "openrouter" ? (
+              p.id === "openrouter" || p.id === "requesty" ? (
                 <LocalProviderCard
                   key={p.id}
                   provider={p}
@@ -896,7 +919,9 @@ function LocalProviderCard({
   useEffect(() => setContextDraft(String(contextLimit ?? "")), [contextLimit]);
 
   const supportsKey =
-    provider.id === "openai-compatible" || provider.id === "openrouter";
+    provider.id === "openai-compatible" ||
+    provider.id === "openrouter" ||
+    provider.id === "requesty";
 
   const test = async () => {
     setTestStatus("testing");

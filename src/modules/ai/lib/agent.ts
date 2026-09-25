@@ -240,6 +240,7 @@ export type LocalProviderConfig = {
   openaiCompatibleBaseURL?: string;
   openaiCompatibleModelId?: string;
   openrouterModelId?: string;
+  requestyModelId?: string;
   customEndpoints?: readonly CustomEndpoint[];
   customEndpointKeys?: CustomEndpointKeys;
 };
@@ -303,6 +304,13 @@ export function buildConfiguredLanguageModel(
       );
     }
     resolvedId = local.openrouterModelId.trim();
+  } else if (m.id === "requesty-custom") {
+    if (!local.requestyModelId?.trim()) {
+      throw new Error(
+        "Requesty: no model id set. Open Settings → Models and enter a Requesty model id (e.g. openai/gpt-4o-mini).",
+      );
+    }
+    resolvedId = local.requestyModelId.trim();
   }
   return buildLanguageModel(m.provider, keys, resolvedId, {
     lmstudioBaseURL: local.lmstudioBaseURL,
@@ -366,6 +374,7 @@ export type RunAgentOptions = {
   openaiCompatibleModelId?: string;
   openaiCompatibleContextLimit?: number;
   openrouterModelId?: string;
+  requestyModelId?: string;
   customEndpoints?: readonly CustomEndpoint[];
   customEndpointKeys?: CustomEndpointKeys;
   planMode?: boolean;
@@ -386,6 +395,7 @@ export async function runAgentStream(opts: RunAgentOptions) {
     openaiCompatibleBaseURL: opts.openaiCompatibleBaseURL,
     openaiCompatibleModelId: opts.openaiCompatibleModelId,
     openrouterModelId: opts.openrouterModelId,
+    requestyModelId: opts.requestyModelId,
     customEndpoints: opts.customEndpoints,
     customEndpointKeys: opts.customEndpointKeys,
   });

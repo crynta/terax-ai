@@ -47,6 +47,7 @@ type Deps = {
   getOpenaiCompatibleModelId?: () => string | undefined;
   getOpenaiCompatibleContextLimit?: () => number | undefined;
   getOpenrouterModelId?: () => string | undefined;
+  getRequestyModelId?: () => string | undefined;
   getCustomEndpoints?: () => readonly CustomEndpoint[];
   getCustomEndpointKeys?: () => CustomEndpointKeys;
   onStep?: (step: string | null) => void;
@@ -90,6 +91,7 @@ export function createContextAwareTransport(deps: Deps) {
       openaiCompatibleModelId: deps.getOpenaiCompatibleModelId?.(),
       openaiCompatibleContextLimit: deps.getOpenaiCompatibleContextLimit?.(),
       openrouterModelId: deps.getOpenrouterModelId?.(),
+      requestyModelId: deps.getRequestyModelId?.(),
       customEndpoints: deps.getCustomEndpoints?.(),
       customEndpointKeys: deps.getCustomEndpointKeys?.(),
       planMode: deps.getPlanMode?.(),
