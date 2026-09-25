@@ -108,7 +108,7 @@ function sameIds(a: number[], b: number[]): boolean {
  */
 export async function evaluateCloseHazards(
   capture: () => CloseHazardSnapshot,
-  isBusy: (leafId: number) => Promise<boolean>,
+  isBusy: (leafId: number) => Promise<boolean | "error">,
   confirmRunningTerminal: boolean,
 ): Promise<CloseManyHazards> {
   if (!confirmRunningTerminal) {

@@ -160,7 +160,7 @@ export async function respawnSession(
 
 export async function leafHasForegroundProcess(
   leafId: number,
-): Promise<boolean> {
+): Promise<boolean | "error"> {
   return ghosttyLeafHasForegroundProcess(leafId);
 }
 
