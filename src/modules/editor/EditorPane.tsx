@@ -357,7 +357,9 @@ export const EditorPane = memo(
                       ? (compatEp?.modelId ?? "")
                       : p === "openrouter"
                         ? s.openrouterModelId
-                        : s.autocompleteModelId;
+                        : p === "requesty"
+                          ? s.requestyModelId
+                          : s.autocompleteModelId;
             return {
               enabled: s.autocompleteEnabled,
               trigger: s.autocompleteTrigger,
