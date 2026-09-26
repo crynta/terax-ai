@@ -207,15 +207,14 @@ mod tests {
 
     #[test]
     fn resolve_within_repo_handles_deleted_directory() {
-        let base = std::env::temp_dir().join("terax_git_deleted_dir_test");
-        let _ = std::fs::remove_dir_all(&base);
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
         std::fs::create_dir_all(base.join("envs/__pycache__")).unwrap();
-        let repo_root = std::fs::canonicalize(&base).unwrap();
+        let repo_root = std::fs::canonicalize(base).unwrap();
         std::fs::remove_dir_all(repo_root.join("envs")).unwrap();
         let resolved =
             resolve_within_repo(&repo_root, "envs/__pycache__/g1.pyc").expect("deleted path");
         assert_eq!(resolved, repo_root.join("envs/__pycache__/g1.pyc"));
-        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
