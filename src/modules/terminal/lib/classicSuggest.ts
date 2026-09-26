@@ -18,6 +18,33 @@ const prefs = () => usePreferencesStore.getState();
 
 type Candidate = { text: string; ai: boolean; fix?: boolean };
 
+export type ClassicSuggestKeyEffect =
+  | "accept"
+  | "next"
+  | "prev"
+  | "dismiss"
+  | "ignore";
+
+export type ClassicSuggestKeyEvent = Pick<
+  KeyboardEvent,
+  "type" | "key" | "shiftKey" | "ctrlKey" | "metaKey" | "altKey"
+>;
+
+export function classicSuggestKeyEffect(
+  ev: ClassicSuggestKeyEvent,
+  hasCandidates: boolean,
+): ClassicSuggestKeyEffect {
+  if (!hasCandidates || ev.type !== "keydown") return "ignore";
+  if (ev.ctrlKey || ev.metaKey || ev.altKey) return "ignore";
+  if (ev.key === "Tab") return ev.shiftKey ? "prev" : "accept";
+  if (ev.shiftKey) return "ignore";
+  if (ev.key === "ArrowDown") return "next";
+  if (ev.key === "ArrowUp") return "prev";
+  if (ev.key === "ArrowRight" || ev.key === "End") return "accept";
+  if (ev.key === "Escape") return "dismiss";
+  return "ignore";
+}
+
 // Approximate terminal cell width: CJK and emoji occupy two cells. Close
 // enough for menu anchoring; exact width lives in xterm's internals.
 function isWideCodepoint(cp: number): boolean {
@@ -427,38 +454,25 @@ export function createClassicSuggest(opts: {
       }
     },
     onKey: (ev) => {
-      if (candidates.length === 0 || ev.type !== "keydown") return false;
-      if (ev.ctrlKey || ev.metaKey || ev.altKey) return false;
-      // NvChad-style: Tab cycles the highlight (blocked from the shell
-      // while the menu is open), Shift+Tab cycles backwards.
-      if (ev.key === "Tab") {
-        selected = ev.shiftKey
-          ? (selected - 1 + candidates.length) % candidates.length
-          : (selected + 1) % candidates.length;
-        renderRows();
-        return true;
+      switch (classicSuggestKeyEffect(ev, candidates.length > 0)) {
+        case "accept":
+          accept(selected);
+          return true;
+        case "next":
+          selected = (selected + 1) % candidates.length;
+          renderRows();
+          return true;
+        case "prev":
+          selected = (selected - 1 + candidates.length) % candidates.length;
+          renderRows();
+          return true;
+        case "dismiss":
+          dismissedLine = lastLine;
+          hideMenu();
+          return true;
+        case "ignore":
+          return false;
       }
-      if (ev.shiftKey) return false;
-      if (ev.key === "ArrowDown") {
-        selected = (selected + 1) % candidates.length;
-        renderRows();
-        return true;
-      }
-      if (ev.key === "ArrowUp") {
-        selected = (selected - 1 + candidates.length) % candidates.length;
-        renderRows();
-        return true;
-      }
-      if (ev.key === "ArrowRight" || ev.key === "End") {
-        accept(selected);
-        return true;
-      }
-      if (ev.key === "Escape") {
-        dismissedLine = lastLine;
-        hideMenu();
-        return true;
-      }
-      return false;
     },
     dispose: () => {
       disposed = true;
