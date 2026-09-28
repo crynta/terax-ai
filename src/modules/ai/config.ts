@@ -10,6 +10,7 @@ export type ProviderId =
   | "deepseek"
   | "mistral"
   | "openrouter"
+  | "edenai"
   | "openai-compatible"
   | "lmstudio"
   | "mlx"
@@ -88,6 +89,13 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "openrouter-api-key",
     keyPrefix: "sk-or-",
     consoleUrl: "https://openrouter.ai/keys",
+  },
+  {
+    id: "edenai",
+    label: "Eden AI",
+    keyringAccount: "edenai-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://app.edenai.run/admin/api-settings/features-preferences",
   },
   {
     id: "openai-compatible",
@@ -588,6 +596,16 @@ export const MODELS = [
     label: "OpenRouter",
     hint: "Configurable",
     description: "Any model on OpenRouter by id.",
+    capabilities: { intelligence: 3, speed: 3, cost: 3 },
+  },
+
+  // ── Eden AI (EU gateway; vendor-prefixed model id supplied at runtime) ────
+  {
+    id: "edenai-custom",
+    provider: "edenai",
+    label: "Eden AI",
+    hint: "Configurable",
+    description: "Any Eden AI model by id (e.g. openai/gpt-4o-mini). EU endpoint available.",
     capabilities: { intelligence: 3, speed: 3, cost: 3 },
   },
 
