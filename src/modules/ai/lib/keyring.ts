@@ -21,6 +21,7 @@ export const EMPTY_PROVIDER_KEYS: ProviderKeys = {
   deepseek: null,
   mistral: null,
   openrouter: null,
+  requesty: null,
   "openai-compatible": null,
   lmstudio: null,
   mlx: null,
