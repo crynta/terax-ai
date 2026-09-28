@@ -8,9 +8,10 @@ import { CellFlags } from "@terax/ghostty-core/protocol";
 import type { Rgb, TerminalCellReader } from "../core/packedCells";
 import type { GhosttyTerminalModelApi } from "../GhosttyTerminalModel";
 import { CanvasBackingStore } from "../gpu/CanvasBackingStore";
-import type {
-  TerminalFontMetrics,
-  TerminalGpuTheme,
+import {
+  clampAlpha,
+  type TerminalFontMetrics,
+  type TerminalGpuTheme,
 } from "../gpu/terminalVisuals";
 import {
   selectionBoundsContain,
@@ -156,7 +157,8 @@ export class WebGlCellRenderer {
     this.canvas.className = "block";
     this.canvas.setAttribute("aria-hidden", "true");
     const context = this.canvas.getContext("webgl2", {
-      alpha: false,
+      alpha: true,
+      premultipliedAlpha: true,
       antialias: false,
       depth: false,
       desynchronized: true,
@@ -869,13 +871,16 @@ export class WebGlCellRenderer {
     if (!resources || !profile || !atlas) return;
     const gl = this.gl;
     const background = profile.theme.background;
+    const backgroundAlpha = clampAlpha(profile.theme.backgroundAlpha);
     gl.disable(gl.DEPTH_TEST);
     gl.disable(gl.STENCIL_TEST);
+    // Cells on the default background draw no rectangle, so the clear colour
+    // is what a translucent terminal shows through.
     gl.clearColor(
-      background[0] / 255,
-      background[1] / 255,
-      background[2] / 255,
-      1,
+      (background[0] / 255) * backgroundAlpha,
+      (background[1] / 255) * backgroundAlpha,
+      (background[2] / 255) * backgroundAlpha,
+      backgroundAlpha,
     );
     gl.clear(gl.COLOR_BUFFER_BIT);
 
@@ -892,7 +897,12 @@ export class WebGlCellRenderer {
     );
 
     gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.blendFuncSeparate(
+      gl.SRC_ALPHA,
+      gl.ONE_MINUS_SRC_ALPHA,
+      gl.ONE,
+      gl.ONE_MINUS_SRC_ALPHA,
+    );
     // biome-ignore lint/correctness/useHookAtTopLevel: WebGL method, not a React hook.
     gl.useProgram(resources.glyphProgram.value);
     gl.bindVertexArray(resources.glyphVao);
@@ -1421,7 +1431,7 @@ void main() {
   }
   if (style == 4 && fract(v_unitquad.x * 4.0) > 0.42) discard;
   if (style == 5 && fract(v_unitquad.x * 2.0) > 0.68) discard;
-  outColor = v_color;
+  outColor = vec4(v_color.rgb * v_color.a, v_color.a);
 }`;
 
 const GLYPH_VERTEX_SHADER = `#version 300 es

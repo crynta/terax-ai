@@ -116,10 +116,10 @@ fn fragment_main(input: VertexOutput) -> @location(0) vec4f {
     input.pixel.y >= screen.cursor_origin.y &&
     input.pixel.x < cursor_end.x &&
     input.pixel.y < cursor_end.y;
-  if (in_cursor) {
-    return screen.cursor_color;
-  }
-  return decoration_color(input);
+  let color = select(decoration_color(input), screen.cursor_color, in_cursor);
+  // The surface is configured premultiplied so a translucent terminal
+  // background composites over the window backdrop instead of the canvas.
+  return vec4f(color.rgb * color.a, color.a);
 }
 `;
 

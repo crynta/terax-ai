@@ -388,6 +388,7 @@ const METRICS: TerminalFontMetrics = {
 
 const THEME: TerminalGpuTheme = {
   background: [0, 0, 0],
+  backgroundAlpha: 1,
   foreground: [255, 255, 255],
   cursor: [255, 255, 255],
   selection: { color: [80, 80, 80], alpha: 0.5 },
