@@ -12,6 +12,7 @@ export {
   type PaneId,
   type PaneNode,
   type SplitDir,
+  type SplitPosition,
 } from "./lib/panes";
 export {
   clearFocusedTerminal,

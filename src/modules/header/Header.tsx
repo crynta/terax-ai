@@ -5,6 +5,7 @@ import { NotificationBell } from "@/modules/agents";
 import type { AgentLaunchRequest } from "@/modules/agents/lib/launcher";
 import type { Tab } from "@/modules/tabs";
 import { TabBar } from "@/modules/tabs";
+import type { SplitPosition } from "@/modules/terminal";
 import {
   CommandIcon,
   Settings01Icon,
@@ -46,6 +47,12 @@ type Props = {
   onRename: (id: number, title: string) => void;
   /** Move a dragged tab to a new position (insertion gap index). */
   onReorder: (fromId: number, toGapIndex: number) => void;
+  onMoveToSplit: (
+    sourceId: number,
+    destinationId: number,
+    position: SplitPosition,
+  ) => void;
+  onMovePaneToNewTab: (tabId: number, leafId: number) => void;
   onOverrideLanguage?: (id: number, lang: string | null) => void;
   onToggleSidebar: () => void;
   onOpenCommandPalette: () => void;
@@ -76,6 +83,8 @@ export function Header({
   onPin,
   onRename,
   onReorder,
+  onMoveToSplit,
+  onMovePaneToNewTab,
   onOverrideLanguage,
   onToggleSidebar,
   onOpenCommandPalette,
@@ -185,6 +194,8 @@ export function Header({
           onPin={onPin}
           onRename={onRename}
           onReorder={onReorder}
+          onMoveToSplit={onMoveToSplit}
+          onMovePaneToNewTab={onMovePaneToNewTab}
           onOverrideLanguage={onOverrideLanguage}
           compact={compact}
         />
