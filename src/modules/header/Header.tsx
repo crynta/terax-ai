@@ -119,6 +119,12 @@ export function Header({
       className={`flex h-10 shrink-0 items-center gap-2 select-none ${
         IS_MAC ? "pr-2 pl-20" : "pr-0 pl-2"
       }`}
+      onContextMenu={(e) => {
+        // Empty chrome falls through to WebKit Reload, which reloads the
+        // webview and pty_close_all's every shell (#1242). Per-tab menus
+        // still open: Radix handles the trigger before this bubbles.
+        e.preventDefault();
+      }}
     >
       <div className="flex shrink-0 items-center gap-0.5">
         <Button
@@ -160,12 +166,6 @@ export function Header({
       <div
         className="flex min-w-0 flex-1 items-center gap-2"
         data-tauri-drag-region
-        onContextMenu={(e) => {
-          // Empty chrome falls through to WebKit Reload, which reloads the
-          // webview and pty_close_all's every shell (#1242). Per-tab menus
-          // still open: Radix handles the trigger before this bubbles.
-          e.preventDefault();
-        }}
       >
         {spaceSwitcher}
         <TabBar
