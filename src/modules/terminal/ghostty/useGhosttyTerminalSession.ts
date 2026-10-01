@@ -376,7 +376,7 @@ export function ghosttyLeafIdForPty(ptyId: number): number | null {
 
 export async function ghosttyLeafHasForegroundProcess(
   leafId: number,
-): Promise<boolean> {
+): Promise<boolean | "error"> {
   const session = sessions.get(leafId);
   if (!session?.pty || session.shellExited) return false;
   try {
@@ -389,7 +389,7 @@ export async function ghosttyLeafHasForegroundProcess(
       leafId,
       error,
     );
-    return false;
+    return "error";
   }
 }
 
