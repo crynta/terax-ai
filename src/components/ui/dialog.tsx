@@ -1,10 +1,13 @@
 import * as React from "react"
+import { useEffect } from "react"
 import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { Cancel01Icon } from "@hugeicons/core-free-icons"
+
+let dialogCount = 0
 
 function Dialog({
   ...props
@@ -34,6 +37,14 @@ function DialogOverlay({
   className,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Overlay>) {
+  useEffect(() => {
+    dialogCount++
+    document.body.dataset.dialogOpen = ""
+    return () => {
+      dialogCount--
+      if (dialogCount <= 0) delete document.body.dataset.dialogOpen
+    }
+  }, [])
   return (
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
