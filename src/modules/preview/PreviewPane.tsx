@@ -144,6 +144,7 @@ export const PreviewPane = forwardRef<PreviewPaneHandle, Props>(
           </div>
         ) : null}
         <div
+          data-preview-frame
           className={
             url
               ? "relative min-h-0 flex-1 bg-white"
