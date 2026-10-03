@@ -101,6 +101,7 @@ pub struct GitLogEntry {
     pub author_email: String,
     pub timestamp_secs: i64,
     pub parents: Vec<String>,
+    pub refs: Vec<String>,
     pub subject: String,
     pub files_changed: u32,
     pub insertions: u32,
@@ -301,6 +302,7 @@ mod serde_shape_tests {
             author_email: "a@example.com".into(),
             timestamp_secs: 1_700_000_000,
             parents: vec!["p0".into()],
+            refs: vec!["refs/heads/main".into(), "tag: v1.0".into()],
             subject: "s".into(),
             files_changed: 2,
             insertions: 10,
@@ -314,10 +316,15 @@ mod serde_shape_tests {
             "filesChanged",
             "insertions",
             "deletions",
+            "refs",
         ] {
             assert!(json.get(key).is_some(), "missing key {key}");
         }
         assert_eq!(json["parents"], serde_json::json!(["p0"]));
+        assert_eq!(
+            json["refs"],
+            serde_json::json!(["refs/heads/main", "tag: v1.0"])
+        );
     }
 
     #[test]
