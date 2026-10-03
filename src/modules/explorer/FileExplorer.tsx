@@ -128,7 +128,7 @@ function buildRows(
 
   const walk = (parent: string, depth: number, parentIgnored: boolean) => {
     const node = tree.nodes[parent];
-    if (!node || node.status !== "loaded") return;
+    if (node?.status !== "loaded") return;
     for (const entry of node.entries) {
       const path = tree.joinPath(parent, entry.name);
       const isDir = entry.kind === "dir";
