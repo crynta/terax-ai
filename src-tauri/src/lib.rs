@@ -275,6 +275,7 @@ pub fn run() {
             fs::mutate::fs_delete,
             fs::mutate::fs_delete_batch,
             fs::mutate::fs_copy,
+            fs::clipboard::fs_clipboard_paths,
             fs::watch::fs_watch_add,
             fs::watch::fs_watch_remove,
             lsp::lsp_detect,

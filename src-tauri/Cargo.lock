@@ -4908,6 +4908,7 @@ dependencies = [
  "grep-matcher",
  "grep-regex",
  "grep-searcher",
+ "gtk",
  "ignore",
  "keyring",
  "libc",

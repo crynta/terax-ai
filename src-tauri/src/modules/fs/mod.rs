@@ -1,3 +1,4 @@
+pub mod clipboard;
 pub mod file;
 pub mod grep;
 pub mod mutate;

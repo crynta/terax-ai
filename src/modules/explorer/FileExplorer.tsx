@@ -4,6 +4,7 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import {
@@ -26,6 +27,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { IS_MAC } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { ExplorerSearch, type ExplorerSearchHandle } from "./ExplorerSearch";
 import {
@@ -41,6 +43,11 @@ import {
   relativePath,
   revealInFinder,
 } from "./lib/contextActions";
+import {
+  isPasteShortcut,
+  pasteClipboardFiles,
+  pasteTargetDir,
+} from "./lib/clipboardPaste";
 import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
 import { useExplorerDnd } from "./lib/useExplorerDnd";
@@ -106,6 +113,7 @@ type Row =
     };
 
 const ROW_HEIGHT = 24;
+const PASTE_HINT = IS_MAC ? "⌘V" : "Ctrl+V";
 const OVERSCAN = 8;
 
 function basename(path: string): string {
@@ -372,6 +380,18 @@ export const FileExplorer = memo(
       return () => window.clearTimeout(id);
     }, [dropTargetDir, rootPath, tree.expanded, tree.expand]);
 
+    const pasteInto = useCallback(
+      async (destDir: string) => {
+        const created = await pasteClipboardFiles(destDir);
+        if (created.length === 0) return;
+        if (destDir !== rootPath) tree.expand(destDir);
+        tree.refresh(destDir);
+        setSelectedPaths(new Set(created));
+        setAnchorPath(created[created.length - 1]);
+      },
+      [rootPath, tree.expand, tree.refresh],
+    );
+
     useEffect(() => {
       setSelectedPaths((curr) => {
         let changed = false;
@@ -488,6 +508,13 @@ export const FileExplorer = memo(
         target.isContentEditable
       )
         return;
+
+      if (isPasteShortcut(e, IS_MAC)) {
+        e.preventDefault();
+        void pasteInto(pasteTargetDir(anchorPath, isDirAt, rootPath));
+        return;
+      }
+
       if (entryPaths.length === 0) return;
 
       if (e.key === "Escape" && selectedPaths.size > 1) {
@@ -880,6 +907,19 @@ export const FileExplorer = memo(
                   >
                     New Folder
                   </ContextMenuItem>
+                  <ContextMenuItem
+                    className={COMPACT_ITEM}
+                    onSelect={() =>
+                      void pasteInto(
+                        menuTarget.isDir
+                          ? menuTarget.path
+                          : parentOf(menuTarget.path, rootPath),
+                      )
+                    }
+                  >
+                    Paste
+                    <ContextMenuShortcut>{PASTE_HINT}</ContextMenuShortcut>
+                  </ContextMenuItem>
                   <ContextMenuSeparator />
                   <ContextMenuItem
                     className={COMPACT_ITEM}
@@ -966,6 +1006,13 @@ export const FileExplorer = memo(
                     onSelect={() => tree.beginCreate(rootPath, "dir")}
                   >
                     New Folder
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    className={COMPACT_ITEM}
+                    onSelect={() => void pasteInto(rootPath)}
+                  >
+                    Paste
+                    <ContextMenuShortcut>{PASTE_HINT}</ContextMenuShortcut>
                   </ContextMenuItem>
                   <ContextMenuSeparator />
                   <ContextMenuItem
