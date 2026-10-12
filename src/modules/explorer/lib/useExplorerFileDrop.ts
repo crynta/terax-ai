@@ -3,17 +3,17 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { currentWorkspaceEnv } from "@/modules/workspace";
+import {
+  parentDir,
+  reportCopyFailures,
+  type CopyResult,
+} from "@/modules/explorer/lib/clipboardPaste";
 
 type Options = {
   rootPath: string | null;
   isDir: (path: string) => boolean | undefined;
   onCopied: (destDir: string) => void;
 };
-
-function parentDir(path: string): string {
-  const i = path.lastIndexOf("/");
-  return i > 0 ? path.slice(0, i) : path;
-}
 
 // Tauri reports the drop point in physical pixels on some platforms; scale down
 // only when it overflows the logical viewport (mirrors the terminal drop).
@@ -35,7 +35,7 @@ function dirAt(
   const row = el.closest<HTMLElement>("[data-fs-path]");
   if (row) {
     const p = row.getAttribute("data-fs-path") as string;
-    return isDir(p) ? p : parentDir(p);
+    return isDir(p) ? p : parentDir(p, rootPath ?? p);
   }
   if (el.closest("[data-explorer-drop]")) return rootPath;
   return null;
@@ -68,21 +68,33 @@ export function useExplorerFileDrop({ rootPath, isDir, onCopied }: Options) {
         if (p.type === "drop") {
           const dir = dirAt(p.position.x, p.position.y, rootPath, isDir);
           setTargetDir(null);
-          if (!dir || p.paths.length === 0) return;
-          void invoke("fs_copy", {
+          if (!rootPath || !dir || p.paths.length === 0) return;
+          const workspace = currentWorkspaceEnv();
+          void invoke<CopyResult>("fs_copy", {
             sources: p.paths,
             destDir: dir,
-            workspace: currentWorkspaceEnv(),
+            root: rootPath,
+            workspace,
           })
-            .then(() => onCopied(dir))
-            .catch((err) => toast.error(`Copy failed: ${String(err)}`));
+            .then(reportCopyFailures)
+            .catch((err) => toast.error(`Copy failed: ${String(err)}`))
+            .finally(() => {
+              if (
+                !disposed &&
+                optsRef.current.rootPath === rootPath &&
+                currentWorkspaceEnv() === workspace
+              )
+                onCopied(dir);
+            });
         }
       })
       .then((fn) => {
         if (disposed) fn();
         else unlisten = fn;
       })
-      .catch((err) => console.error("[terax] explorer drop listen failed:", err));
+      .catch((err) =>
+        console.error("[terax] explorer drop listen failed:", err),
+      );
 
     return () => {
       disposed = true;

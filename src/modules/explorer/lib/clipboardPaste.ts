@@ -1,9 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
-import { currentWorkspaceEnv } from "@/modules/workspace";
+import type { WorkspaceEnv } from "@/modules/workspace";
 
-function parentDir(path: string, fallback: string): string {
+export function parentDir(path: string, fallback: string): string {
   const i = path.lastIndexOf("/");
+  if (i === 0) return "/";
+  if (i === 2 && /^[a-z]:\//i.test(path)) return path.slice(0, 3);
   return i > 0 ? path.slice(0, i) : fallback;
 }
 
@@ -26,24 +28,54 @@ export function isPasteShortcut(
   return isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
 }
 
-// Copies the files on the system clipboard (e.g. Cmd-C in Finder) into
-// `destDir`. Name clashes get a Finder-style "copy" suffix rather than failing.
-// Resolves to the created paths; empty when nothing was pasted.
-export async function pasteClipboardFiles(destDir: string): Promise<string[]> {
+export type CopyResult = {
+  created: string[];
+  failed: { source: string; message: string }[];
+};
+
+type PasteOptions = {
+  root: string;
+  workspace: WorkspaceEnv;
+  isCurrent: () => boolean;
+  refresh: (destDir: string) => Promise<boolean>;
+};
+
+export function reportCopyFailures(result: CopyResult): void {
+  if (result.failed.length === 0) return;
+  const first = result.failed[0];
+  const count = result.failed.length;
+  toast.error(`Could not copy ${count} ${count === 1 ? "item" : "items"}`, {
+    description: `${first.source}: ${first.message}`,
+  });
+}
+
+export async function pasteClipboardFiles(
+  destDir: string,
+  { root, workspace, isCurrent, refresh }: PasteOptions,
+): Promise<string[]> {
+  let copyStarted = false;
   try {
     const sources = await invoke<string[]>("fs_clipboard_paths");
+    if (!isCurrent()) return [];
     if (sources.length === 0) {
       toast.message("No files on the clipboard");
       return [];
     }
-    return await invoke<string[]>("fs_copy", {
+    copyStarted = true;
+    const result = await invoke<CopyResult>("fs_copy", {
       sources,
       destDir,
-      workspace: currentWorkspaceEnv(),
+      root,
+      workspace,
       renameOnConflict: true,
     });
+    reportCopyFailures(result);
+    if (!isCurrent()) return [];
+    const refreshed = await refresh(destDir);
+    return refreshed && isCurrent() ? result.created : [];
   } catch (err) {
     toast.error(`Paste failed: ${String(err)}`);
+    if (copyStarted && isCurrent()) await refresh(destDir);
     return [];
   }
 }

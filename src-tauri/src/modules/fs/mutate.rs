@@ -123,7 +123,7 @@ fn c_path(path: &Path) -> io::Result<std::ffi::CString> {
 }
 
 #[cfg(target_os = "macos")]
-fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
+pub(super) fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
     let from = c_path(from)?;
     let to = c_path(to)?;
     let result = unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) };
@@ -135,7 +135,7 @@ fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
 }
 
 #[cfg(target_os = "linux")]
-fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
+pub(super) fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
     let from = c_path(from)?;
     let to = c_path(to)?;
     let result = unsafe {
@@ -178,12 +178,12 @@ fn move_file_windows(from: &Path, to: &Path, replace: bool) -> io::Result<()> {
 }
 
 #[cfg(target_os = "windows")]
-fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
+pub(super) fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
     move_file_windows(from, to, false)
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
+pub(super) fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
     if metadata_if_exists(to)?.is_some() {
         return Err(io::Error::new(
             io::ErrorKind::AlreadyExists,
@@ -391,118 +391,6 @@ fn fs_delete_batch_impl(
     FsDeleteBatchResult { deleted, failed }
 }
 
-fn copy_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
-    if src.is_dir() {
-        std::fs::create_dir(dst)?;
-        for entry in std::fs::read_dir(src)? {
-            let entry = entry?;
-            copy_recursive(&entry.path(), &dst.join(entry.file_name()))?;
-        }
-        Ok(())
-    } else {
-        std::fs::copy(src, dst).map(|_| ())
-    }
-}
-
-/// Finder-style name for the `n`th duplicate: `a copy.txt`, `a copy 2.txt`.
-/// The extension is kept for files only; dotfiles like `.env` have none.
-fn copy_name(name: &std::ffi::OsStr, n: usize, is_dir: bool) -> std::ffi::OsString {
-    let path = Path::new(name);
-    let (stem, ext) = match (is_dir, path.file_stem(), path.extension()) {
-        (false, Some(stem), Some(ext)) => (stem, Some(ext)),
-        _ => (name, None),
-    };
-    let mut out = stem.to_os_string();
-    out.push(if n == 1 {
-        " copy".to_string()
-    } else {
-        format!(" copy {n}")
-    });
-    if let Some(ext) = ext {
-        out.push(".");
-        out.push(ext);
-    }
-    out
-}
-
-const MAX_COPY_SUFFIX: usize = 10_000;
-
-fn copy_target(
-    dest: &Path,
-    name: &std::ffi::OsStr,
-    is_dir: bool,
-    rename_on_conflict: bool,
-) -> Result<std::path::PathBuf, String> {
-    let target = dest.join(name);
-    if metadata_if_exists(&target)
-        .map_err(|e| e.to_string())?
-        .is_none()
-    {
-        return Ok(target);
-    }
-    if !rename_on_conflict {
-        return Err(format!("already exists: {}", target.display()));
-    }
-    for n in 1..=MAX_COPY_SUFFIX {
-        let candidate = dest.join(copy_name(name, n, is_dir));
-        if metadata_if_exists(&candidate)
-            .map_err(|e| e.to_string())?
-            .is_none()
-        {
-            return Ok(candidate);
-        }
-    }
-    Err(format!("no free name for {}", target.display()))
-}
-
-/// Copies external files/dirs into a destination directory, recursively for
-/// dirs. Sources are absolute OS paths (from a drag-drop or a clipboard paste);
-/// only the destination is workspace-resolved. Never overwrites: an existing
-/// entry is an error, or with `rename_on_conflict` gets a Finder-style
-/// `name copy` sibling. Returns the created paths.
-#[tauri::command]
-pub fn fs_copy(
-    sources: Vec<String>,
-    dest_dir: String,
-    workspace: Option<WorkspaceEnv>,
-    rename_on_conflict: Option<bool>,
-) -> Result<Vec<String>, String> {
-    let workspace = WorkspaceEnv::from_option(workspace);
-    let dest = resolve_path(&dest_dir, &workspace);
-    let dest_canonical =
-        std::fs::canonicalize(&dest).map_err(|e| format!("destination is not accessible: {e}"))?;
-    let rename_on_conflict = rename_on_conflict.unwrap_or(false);
-    let mut created = Vec::with_capacity(sources.len());
-    for source in &sources {
-        let src = std::path::PathBuf::from(source);
-        let name = src
-            .file_name()
-            .ok_or_else(|| format!("invalid source: {source}"))?;
-        let is_dir = src.is_dir();
-        // A dir copied into itself would recurse until the disk fills.
-        if is_dir
-            && std::fs::canonicalize(&src)
-                .is_ok_and(|canonical| dest_canonical.starts_with(canonical))
-        {
-            return Err(format!(
-                "cannot copy a folder into itself: {}",
-                src.display()
-            ));
-        }
-        let target = copy_target(&dest, name, is_dir, rename_on_conflict)?;
-        copy_recursive(&src, &target).map_err(|e| {
-            log::warn!(
-                "fs_copy({} -> {}) failed: {e}",
-                src.display(),
-                target.display()
-            );
-            e.to_string()
-        })?;
-        created.push(super::to_canon(&target));
-    }
-    Ok(created)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -701,96 +589,6 @@ mod tests {
         assert!(!conflict(result).0);
         assert_eq!(std::fs::read(from.join("new.txt")).unwrap(), b"new");
         assert_eq!(std::fs::read(to.join("old.txt")).unwrap(), b"old");
-    }
-
-    #[test]
-    fn copy_brings_file_and_dir_in_and_refuses_clobber() {
-        let src = tempfile::tempdir().unwrap();
-        let dest = tempfile::tempdir().unwrap();
-        std::fs::write(src.path().join("a.txt"), b"payload").unwrap();
-        std::fs::create_dir_all(src.path().join("d/inner")).unwrap();
-        std::fs::write(src.path().join("d/inner/y.txt"), b"y").unwrap();
-
-        fs_copy(
-            vec![s(src.path().join("a.txt")), s(src.path().join("d"))],
-            s(dest.path().to_path_buf()),
-            None,
-            None,
-        )
-        .expect("copy");
-
-        assert_eq!(
-            std::fs::read(dest.path().join("a.txt")).unwrap(),
-            b"payload"
-        );
-        assert_eq!(
-            std::fs::read(dest.path().join("d/inner/y.txt")).unwrap(),
-            b"y"
-        );
-        // copy, not move: the source survives.
-        assert!(src.path().join("a.txt").exists());
-
-        let err = fs_copy(
-            vec![s(src.path().join("a.txt"))],
-            s(dest.path().to_path_buf()),
-            None,
-            None,
-        )
-        .unwrap_err();
-        assert!(err.contains("already exists"), "got: {err}");
-    }
-
-    #[test]
-    fn copy_name_follows_finder_convention() {
-        use std::ffi::OsStr;
-        assert_eq!(copy_name(OsStr::new("a.txt"), 1, false), "a copy.txt");
-        assert_eq!(copy_name(OsStr::new("a.txt"), 2, false), "a copy 2.txt");
-        assert_eq!(copy_name(OsStr::new(".env"), 1, false), ".env copy");
-        assert_eq!(
-            copy_name(OsStr::new("Makefile"), 3, false),
-            "Makefile copy 3"
-        );
-        assert_eq!(copy_name(OsStr::new("v1.2"), 1, true), "v1.2 copy");
-    }
-
-    #[test]
-    fn paste_copy_renames_on_conflict_and_never_clobbers() {
-        let src = tempfile::tempdir().unwrap();
-        let dest = tempfile::tempdir().unwrap();
-        std::fs::write(src.path().join("a.txt"), b"new").unwrap();
-        std::fs::write(dest.path().join("a.txt"), b"old").unwrap();
-        std::fs::write(dest.path().join("a copy.txt"), b"older").unwrap();
-
-        let created = fs_copy(
-            vec![s(src.path().join("a.txt"))],
-            s(dest.path().to_path_buf()),
-            None,
-            Some(true),
-        )
-        .expect("copy");
-
-        let expected = dest.path().join("a copy 2.txt");
-        assert_eq!(created, vec![crate::modules::fs::to_canon(&expected)]);
-        assert_eq!(std::fs::read(expected).unwrap(), b"new");
-        assert_eq!(std::fs::read(dest.path().join("a.txt")).unwrap(), b"old");
-        assert_eq!(
-            std::fs::read(dest.path().join("a copy.txt")).unwrap(),
-            b"older"
-        );
-    }
-
-    #[test]
-    fn copy_refuses_to_copy_a_folder_into_itself() {
-        let root = tempfile::tempdir().unwrap();
-        let folder = root.path().join("d");
-        std::fs::create_dir_all(folder.join("inner")).unwrap();
-
-        for dest in [folder.clone(), folder.join("inner")] {
-            let err = fs_copy(vec![s(folder.clone())], s(dest), None, Some(true)).unwrap_err();
-            assert!(err.contains("into itself"), "got: {err}");
-        }
-        assert!(!folder.join("d copy").exists());
-        assert!(!folder.join("inner/d").exists());
     }
 
     #[test]

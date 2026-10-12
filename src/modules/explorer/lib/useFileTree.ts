@@ -120,6 +120,7 @@ export function useFileTree(rootPath: string | null, options?: Options) {
   const optionsRef = useRef(options);
   const scopeKey = `${workspaceKey}\u0000${rootPath ?? ""}`;
   const scopeKeyRef = useRef(scopeKey);
+  const scopeGenerationRef = useRef(0);
   const conflictPromptsRef = useRef<Map<string | number, () => void>>(
     new Map(),
   );
@@ -134,13 +135,17 @@ export function useFileTree(rootPath: string | null, options?: Options) {
   }, [options]);
 
   useLayoutEffect(() => {
-    if (scopeKeyRef.current !== scopeKey) cancelConflictPrompts();
+    if (scopeKeyRef.current !== scopeKey) {
+      cancelConflictPrompts();
+      scopeGenerationRef.current += 1;
+    }
     scopeKeyRef.current = scopeKey;
   }, [scopeKey, cancelConflictPrompts]);
 
   useEffect(
     () => () => {
       scopeKeyRef.current = "";
+      scopeGenerationRef.current += 1;
       cancelConflictPrompts();
     },
     [cancelConflictPrompts],
@@ -173,70 +178,84 @@ export function useFileTree(rootPath: string | null, options?: Options) {
     watchRemove([path]);
   }, []);
 
-  const fetchChildren = useCallback(async (path: string) => {
-    if (nodesRef.current[path]?.status !== "loaded") {
-      setNodes((s) => ({ ...s, [path]: { status: "loading" } }));
-    }
-    try {
-      const entries = await invoke<DirEntry[]>("fs_read_dir", {
-        path,
-        showHidden: showHiddenRef.current,
-        gitDecorations: gitDecorationsRef.current,
-        workspace: currentWorkspaceEnv(),
-      });
-
-      const prev = nodesRef.current[path];
-      if (prev?.status === "loaded" && sameDirListing(prev.entries, entries)) {
-        return;
+  const fetchChildren = useCallback(
+    async (path: string) => {
+      if (scopeKeyRef.current !== scopeKey) return false;
+      const generation = scopeGenerationRef.current;
+      const isCurrent = () => generation === scopeGenerationRef.current;
+      if (nodesRef.current[path]?.status !== "loaded") {
+        setNodes((s) => ({ ...s, [path]: { status: "loading" } }));
       }
-
-      const liveDirs = new Set(
-        entries
-          .filter((e) => e.kind === "dir")
-          .map((e) => joinPath(path, e.name)),
-      );
-      const removedRoots: string[] = [];
-      for (const key of Object.keys(nodesRef.current)) {
-        if (dirname(key) === path && !liveDirs.has(key)) removedRoots.push(key);
-      }
-      const dead = new Set<string>();
-      if (removedRoots.length > 0) {
-        const candidates = new Set<string>([
-          ...Object.keys(nodesRef.current),
-          ...expandedRef.current,
-          ...watchedRef.current,
-        ]);
-        for (const k of candidates) {
-          if (removedRoots.some((r) => isUnder(k, r))) dead.add(k);
-        }
-      }
-
-      setNodes((s) => {
-        const next: TreeState = {};
-        for (const [k, v] of Object.entries(s)) if (!dead.has(k)) next[k] = v;
-        next[path] = { status: "loaded", entries };
-        return next;
-      });
-
-      if (dead.size > 0) {
-        setExpanded((c) => {
-          let changed = false;
-          const n = new Set(c);
-          for (const d of dead) if (n.delete(d)) changed = true;
-          return changed ? n : c;
+      try {
+        const entries = await invoke<DirEntry[]>("fs_read_dir", {
+          path,
+          showHidden: showHiddenRef.current,
+          gitDecorations: gitDecorationsRef.current,
+          workspace,
         });
-        const toUnwatch: string[] = [];
-        for (const d of dead)
-          if (watchedRef.current.delete(d)) toUnwatch.push(d);
-        watchRemove(toUnwatch);
+        if (!isCurrent()) return false;
+
+        const prev = nodesRef.current[path];
+        if (
+          prev?.status === "loaded" &&
+          sameDirListing(prev.entries, entries)
+        ) {
+          return true;
+        }
+
+        const liveDirs = new Set(
+          entries
+            .filter((e) => e.kind === "dir")
+            .map((e) => joinPath(path, e.name)),
+        );
+        const removedRoots: string[] = [];
+        for (const key of Object.keys(nodesRef.current)) {
+          if (dirname(key) === path && !liveDirs.has(key))
+            removedRoots.push(key);
+        }
+        const dead = new Set<string>();
+        if (removedRoots.length > 0) {
+          const candidates = new Set<string>([
+            ...Object.keys(nodesRef.current),
+            ...expandedRef.current,
+            ...watchedRef.current,
+          ]);
+          for (const k of candidates) {
+            if (removedRoots.some((r) => isUnder(k, r))) dead.add(k);
+          }
+        }
+
+        setNodes((s) => {
+          const next: TreeState = {};
+          for (const [k, v] of Object.entries(s)) if (!dead.has(k)) next[k] = v;
+          next[path] = { status: "loaded", entries };
+          return next;
+        });
+
+        if (dead.size > 0) {
+          setExpanded((c) => {
+            let changed = false;
+            const n = new Set(c);
+            for (const d of dead) if (n.delete(d)) changed = true;
+            return changed ? n : c;
+          });
+          const toUnwatch: string[] = [];
+          for (const d of dead)
+            if (watchedRef.current.delete(d)) toUnwatch.push(d);
+          watchRemove(toUnwatch);
+        }
+        return true;
+      } catch (e) {
+        if (!isCurrent()) return false;
+        setNodes((s) => ({
+          ...s,
+          [path]: { status: "error", message: String(e) },
+        }));
+        return false;
       }
-    } catch (e) {
-      setNodes((s) => ({
-        ...s,
-        [path]: { status: "error", message: String(e) },
-      }));
-    }
-  }, []);
+    },
+    [scopeKey, workspace],
+  );
 
   // Root change → restore the cached expansion for this root, re-scope watches,
   // and persist the outgoing root's expansion on the way out.
@@ -347,10 +366,15 @@ export function useFileTree(rootPath: string | null, options?: Options) {
   );
 
   const refresh = useCallback(
-    (path: string) => {
-      void fetchChildren(path);
+    (path: string, reveal = false) => {
+      if (scopeKeyRef.current !== scopeKey) return Promise.resolve(false);
+      if (reveal && path !== rootPath && !expandedRef.current.has(path)) {
+        setExpanded((curr) => new Set(curr).add(path));
+        addWatch(path);
+      }
+      return fetchChildren(path);
     },
-    [fetchChildren],
+    [fetchChildren, addWatch, rootPath, scopeKey],
   );
 
   // --- mutations ---
