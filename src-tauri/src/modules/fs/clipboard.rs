@@ -1,23 +1,31 @@
 use tauri::AppHandle;
 
-/// File paths currently on the system clipboard (e.g. after copying in Finder,
-/// Explorer or a Linux file manager), in clipboard order. Empty when the
-/// clipboard holds no files.
-///
-/// Read on the main thread: GTK's clipboard only works there, and AppKit and
-/// Win32 are happiest there too. Async so the caller never blocks that thread
-/// while waiting on the result.
 #[tauri::command]
 pub async fn fs_clipboard_paths(app: AppHandle) -> Result<Vec<String>, String> {
-    let (tx, rx) = std::sync::mpsc::channel();
-    app.run_on_main_thread(move || {
-        let _ = tx.send(platform::read_file_paths());
-    })
-    .map_err(|e| e.to_string())?;
-    tauri::async_runtime::spawn_blocking(move || rx.recv())
+    #[cfg(windows)]
+    {
+        let _ = app;
+        tauri::async_runtime::spawn_blocking(platform::read_file_paths)
+            .await
+            .map_err(|error| error.to_string())?
+    }
+    #[cfg(not(windows))]
+    {
+        let (tx, rx) = std::sync::mpsc::channel();
+        app.run_on_main_thread(move || {
+            #[cfg(target_os = "linux")]
+            platform::request_file_paths(tx);
+            #[cfg(not(target_os = "linux"))]
+            let _ = tx.send(platform::read_file_paths());
+        })
+        .map_err(|e| e.to_string())?;
+        tauri::async_runtime::spawn_blocking(move || {
+            rx.recv_timeout(std::time::Duration::from_secs(5))
+        })
         .await
         .map_err(|e| e.to_string())?
-        .map_err(|_| "clipboard read was cancelled".to_string())
+        .map_err(|_| "clipboard read timed out or was cancelled".to_string())?
+    }
 }
 
 /// The `file:` URIs in a `text/uri-list` or `x-special/gnome-copied-files`
@@ -35,13 +43,13 @@ mod platform {
     use objc2_app_kit::{NSPasteboard, NSPasteboardTypeFileURL};
     use objc2_foundation::NSURL;
 
-    pub fn read_file_paths() -> Vec<String> {
+    pub fn read_file_paths() -> Result<Vec<String>, String> {
         let pasteboard = NSPasteboard::generalPasteboard();
         let Some(items) = pasteboard.pasteboardItems() else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let file_type = unsafe { NSPasteboardTypeFileURL };
-        items
+        Ok(items
             .iter()
             .filter_map(|item| {
                 let raw = item.stringForType(file_type)?;
@@ -51,7 +59,7 @@ mod platform {
                 let path = url.filePathURL()?.path()?.to_string();
                 (!path.is_empty()).then(|| to_canon(path))
             })
-            .collect()
+            .collect())
     }
 }
 
@@ -77,11 +85,19 @@ mod platform {
         false
     }
 
-    pub fn read_file_paths() -> Vec<String> {
-        if !open_clipboard() {
-            log::warn!("fs_clipboard_paths: clipboard is busy");
-            return Vec::new();
+    struct ClipboardGuard;
+
+    impl Drop for ClipboardGuard {
+        fn drop(&mut self) {
+            unsafe { CloseClipboard() };
         }
+    }
+
+    pub fn read_file_paths() -> Result<Vec<String>, String> {
+        if !open_clipboard() {
+            return Err("clipboard is busy; try pasting again".into());
+        }
+        let _guard = ClipboardGuard;
         let mut paths = Vec::new();
         // The handle is owned by the clipboard; it must not be freed here.
         let hdrop = unsafe { GetClipboardData(u32::from(CF_HDROP)) };
@@ -101,8 +117,7 @@ mod platform {
                 }
             }
         }
-        unsafe { CloseClipboard() };
-        paths
+        Ok(paths)
     }
 }
 
@@ -111,33 +126,64 @@ mod platform {
     use crate::modules::fs::to_canon;
     use gtk::{gdk, glib};
 
-    pub fn read_file_paths() -> Vec<String> {
-        let clipboard = gtk::Clipboard::get(&gdk::SELECTION_CLIPBOARD);
-        // `wait_*` runs a nested main loop until the clipboard owner answers.
-        let mut uris: Vec<String> = clipboard
-            .wait_for_uris()
-            .iter()
-            .map(|uri| uri.to_string())
-            .collect();
-        if uris.is_empty() {
-            // Some file managers only offer GNOME's private target.
-            let target = gdk::Atom::intern("x-special/gnome-copied-files");
-            if let Some(selection) = clipboard.wait_for_contents(&target) {
-                let text = String::from_utf8_lossy(&selection.data()).into_owned();
-                uris = super::file_uri_lines(&text).map(str::to_owned).collect();
-            }
-        }
+    fn local_paths(uris: &[glib::GString]) -> Vec<String> {
         uris.iter()
             .filter_map(|uri| glib::filename_from_uri(uri).ok())
-            .map(|(path, _host)| to_canon(path))
+            .filter(|(_, host)| {
+                host.as_deref()
+                    .is_none_or(|host| host.is_empty() || host.eq_ignore_ascii_case("localhost"))
+            })
+            .map(|(path, _)| to_canon(path))
             .collect()
+    }
+
+    pub fn request_file_paths(tx: std::sync::mpsc::Sender<Result<Vec<String>, String>>) {
+        let clipboard = gtk::Clipboard::get(&gdk::SELECTION_CLIPBOARD);
+        clipboard.request_uris(move |clipboard, uris| {
+            if !uris.is_empty() {
+                let _ = tx.send(Ok(local_paths(uris)));
+                return;
+            }
+            clipboard.request_contents(
+                &gdk::Atom::intern("x-special/gnome-copied-files"),
+                move |_, selection| {
+                    if selection.length() <= 0 {
+                        let _ = tx.send(Ok(Vec::new()));
+                        return;
+                    }
+                    let text = String::from_utf8_lossy(&selection.data()).into_owned();
+                    let uris: Vec<glib::GString> =
+                        super::file_uri_lines(&text).map(Into::into).collect();
+                    let _ = tx.send(Ok(local_paths(&uris)));
+                },
+            );
+        });
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn decodes_local_uris_without_treating_remote_hosts_as_local_paths() {
+            let uris: Vec<glib::GString> = [
+                "file:///tmp/My%20File",
+                "file://localhost/tmp/local",
+                "file://remote-server/tmp/remote",
+                "https://example.com/file",
+            ]
+            .into_iter()
+            .map(Into::into)
+            .collect();
+            assert_eq!(local_paths(&uris), ["/tmp/My File", "/tmp/local"]);
+        }
     }
 }
 
 #[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
 mod platform {
-    pub fn read_file_paths() -> Vec<String> {
-        Vec::new()
+    pub fn read_file_paths() -> Result<Vec<String>, String> {
+        Ok(Vec::new())
     }
 }
 
