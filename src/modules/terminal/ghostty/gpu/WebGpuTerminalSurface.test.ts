@@ -1,7 +1,9 @@
 import { CellFlags } from "@terax/ghostty-core/protocol";
 import type { TerminalDamage } from "@/modules/terminal/backend/contracts";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, type Mock, vi } from "vitest";
 import type { GhosttyTerminalModelApi } from "@/modules/terminal/ghostty/GhosttyTerminalModel";
+import { PACKED_INSTANCE_BYTES } from "@/modules/terminal/ghostty/gpu/WebGpuCellBuffer";
+import type { TerminalGpuTheme } from "@/modules/terminal/ghostty/gpu/terminalVisuals";
 import { WebGpuTerminalSurface } from "@/modules/terminal/ghostty/gpu/WebGpuTerminalSurface";
 
 const bridge = vi.hoisted(() => ({ runtime: {} as unknown, visible: true }));
@@ -199,6 +201,101 @@ describe("WebGPU surface resource lifecycle", () => {
   });
 });
 
+describe("WebGPU surface background alpha", () => {
+  const BACKGROUND_ALPHA_BYTE = 16 + 3;
+  const EXPLICIT_BACKGROUND = 0x336699;
+  const DEFAULT_BACKGROUND = 0x000000;
+
+  function alphaOf(upload: Uint8Array, cell: number): number {
+    return upload[cell * PACKED_INSTANCE_BYTES + BACKGROUND_ALPHA_BYTE];
+  }
+
+  function cellUpload(writeBuffer: Mock): Uint8Array {
+    const call = writeBuffer.mock.calls.find((entry) => entry.length === 5);
+    if (!call) throw new Error("no cell upload was recorded");
+    return new Uint8Array(call[2] as ArrayBuffer);
+  }
+
+  function themeWithAlpha(backgroundAlpha: number): TerminalGpuTheme {
+    return {
+      background: [0, 0, 0],
+      backgroundAlpha,
+      foreground: [255, 255, 255],
+      cursor: [255, 255, 255],
+      selection: { color: [50, 50, 50], alpha: 0.5 },
+      palette: [],
+    };
+  }
+
+  function cellsWith(
+    background: (index: number) => number,
+    flags: (index: number) => number = () => 0,
+  ) {
+    return {
+      length: 120 * 40,
+      width: () => 1,
+      flags,
+      codepoint: () => 0,
+      backgroundPacked: background,
+      foregroundPacked: () => 0xffffff,
+      underlineColorPacked: () => 0,
+      overline: () => false,
+    };
+  }
+
+  // Row 0 carries the harness selection, so assertions use a clean row.
+  const CLEAN_ROW = 5 * 120;
+
+  it("applies the theme alpha to default background cells and leaves explicit colors opaque", async () => {
+    const h = await harness();
+    (h.model.renderCells as unknown as Mock).mockReturnValue(
+      cellsWith((index) =>
+        index % 2 === 0 ? DEFAULT_BACKGROUND : EXPLICIT_BACKGROUND,
+      ),
+    );
+    h.surface.setTheme(themeWithAlpha(0.5));
+    h.writeBuffer.mockClear();
+    expect(h.render()).toBe(true);
+
+    const upload = cellUpload(h.writeBuffer);
+    expect(alphaOf(upload, CLEAN_ROW)).toBe(128);
+    expect(alphaOf(upload, CLEAN_ROW + 1)).toBe(255);
+  });
+
+  it("keeps every cell opaque for a theme without alpha", async () => {
+    const h = await harness();
+    (h.model.renderCells as unknown as Mock).mockReturnValue(
+      cellsWith((index) =>
+        index % 2 === 0 ? DEFAULT_BACKGROUND : EXPLICIT_BACKGROUND,
+      ),
+    );
+    h.surface.setTheme(themeWithAlpha(1));
+    h.writeBuffer.mockClear();
+    expect(h.render()).toBe(true);
+
+    const upload = cellUpload(h.writeBuffer);
+    expect(alphaOf(upload, CLEAN_ROW)).toBe(255);
+    expect(alphaOf(upload, CLEAN_ROW + 1)).toBe(255);
+  });
+
+  it("keeps inverse cells opaque on a translucent theme", async () => {
+    const h = await harness();
+    (h.model.renderCells as unknown as Mock).mockReturnValue(
+      cellsWith(
+        () => DEFAULT_BACKGROUND,
+        (index) => (index % 2 === 0 ? 0 : CellFlags.INVERSE),
+      ),
+    );
+    h.surface.setTheme(themeWithAlpha(0.5));
+    h.writeBuffer.mockClear();
+    expect(h.render()).toBe(true);
+
+    const upload = cellUpload(h.writeBuffer);
+    expect(alphaOf(upload, CLEAN_ROW)).toBe(128);
+    expect(alphaOf(upload, CLEAN_ROW + 1)).toBe(255);
+  });
+});
+
 const METRICS = {
   font: {
     family: "monospace",
@@ -356,6 +453,7 @@ async function harness() {
     metrics: METRICS,
     theme: {
       background: [0, 0, 0],
+      backgroundAlpha: 1,
       foreground: [255, 255, 255],
       cursor: [255, 255, 255],
       selection: { color: [50, 50, 50], alpha: 0.5 },

@@ -84,6 +84,7 @@ const METRICS = {
 };
 const THEME = {
   background: [0, 0, 0],
+  backgroundAlpha: 1,
   foreground: [255, 255, 255],
   cursor: [255, 255, 255],
   selection: { color: [50, 50, 50], alpha: 0.5 },

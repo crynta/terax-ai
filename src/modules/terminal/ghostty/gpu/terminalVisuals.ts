@@ -18,6 +18,7 @@ export type TerminalFontMetrics = {
 
 export type TerminalGpuTheme = {
   readonly background: Rgb;
+  readonly backgroundAlpha: number;
   readonly foreground: Rgb;
   readonly cursor: Rgb;
   readonly selection: {
@@ -68,8 +69,10 @@ export function fontCss(
 export function readTerminalGpuTheme(): TerminalGpuTheme {
   const tokens = readTerminalTokens();
   const selection = cssColorToRgba(tokens.selection);
+  const background = cssColorToRgba(tokens.background);
   return {
-    background: cssColorToRgb(tokens.background),
+    background: [background[0], background[1], background[2]],
+    backgroundAlpha: background[3],
     foreground: cssColorToRgb(tokens.foreground),
     cursor: cssColorToRgb(tokens.cursor),
     selection: {
@@ -103,6 +106,14 @@ export function rgbToInt(color: Rgb): number {
 
 export function rgbToCss(color: Rgb): string {
   return `rgb(${color[0]} ${color[1]} ${color[2]})`;
+}
+
+export function rgbaToCss(color: Rgb, alpha: number): string {
+  return `rgb(${color[0]} ${color[1]} ${color[2]} / ${clampAlpha(alpha)})`;
+}
+
+export function clampAlpha(alpha: number): number {
+  return Number.isFinite(alpha) ? Math.max(0, Math.min(1, alpha)) : 1;
 }
 
 function cssColorToRgb(value: string): Rgb {
