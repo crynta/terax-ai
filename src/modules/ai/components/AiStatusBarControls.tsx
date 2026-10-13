@@ -41,7 +41,7 @@ import {
   Tick01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   compatModelIdForEndpoint,
   getCompatModelInfo,
@@ -71,6 +71,7 @@ const PROVIDER_ICON = {
   deepseek: DeepseekIcon,
   mistral: MistralIcon,
   openrouter: GlobeIcon,
+  atlascloud: GlobeIcon,
   "openai-compatible": PlugIcon,
   lmstudio: ComputerIcon,
   mlx: AppleIcon,
@@ -141,7 +142,7 @@ export function AiStatusBarControls() {
           disabled={c.isBusy || c.voice.transcribing || !c.voice.hasKey}
           className={cn(
             c.voice.recording &&
-            "bg-destructive/10 text-destructive hover:bg-destructive/15",
+              "bg-destructive/10 text-destructive hover:bg-destructive/15",
           )}
         >
           {c.voice.recording ? (
@@ -227,8 +228,10 @@ function ModelDropdown() {
       ? !!apiKeys[current.provider]
       : true;
 
-  const hasKeyFor = (id: ProviderId) =>
-    providerNeedsKey(id) ? !!apiKeys[id] : true;
+  const hasKeyFor = useCallback(
+    (id: ProviderId) => (providerNeedsKey(id) ? !!apiKeys[id] : true),
+    [apiKeys],
+  );
 
   const epModelInfos = useMemo(() => {
     return customEndpoints.map((ep) =>
@@ -244,13 +247,9 @@ function ModelDropdown() {
       (hasKeyFor(p.id) ? configured : unconfigured).push(p);
     }
     return { configured, unconfigured };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiKeys]);
+  }, [hasKeyFor]);
 
-  const allModels = useMemo(
-    () => [...MODELS, ...epModelInfos],
-    [epModelInfos],
-  );
+  const allModels = useMemo(() => [...MODELS, ...epModelInfos], [epModelInfos]);
 
   const COMPAT_PROVIDER_ID = "__compat__";
 
@@ -371,22 +370,21 @@ function ModelDropdown() {
               active={activeProvider === null}
               onClick={() => setActiveProvider(null)}
             />
-            {[...sortedProviders.configured, ...sortedProviders.unconfigured].map(
-              (p) => (
-                <ProviderPill
-                  key={p.id}
-                  icon={PROVIDER_ICON[p.id]}
-                  title={
-                    hasKeyFor(p.id)
-                      ? p.label
-                      : `${p.label} — not configured`
-                  }
-                  active={activeProvider === p.id}
-                  muted={!hasKeyFor(p.id)}
-                  onClick={() => setActiveProvider(p.id)}
-                />
-              ),
-            )}
+            {[
+              ...sortedProviders.configured,
+              ...sortedProviders.unconfigured,
+            ].map((p) => (
+              <ProviderPill
+                key={p.id}
+                icon={PROVIDER_ICON[p.id]}
+                title={
+                  hasKeyFor(p.id) ? p.label : `${p.label} — not configured`
+                }
+                active={activeProvider === p.id}
+                muted={!hasKeyFor(p.id)}
+                onClick={() => setActiveProvider(p.id)}
+              />
+            ))}
             {customEndpoints.length > 0 && (
               <ProviderPill
                 icon={PlugIcon}
@@ -428,10 +426,7 @@ function ModelDropdown() {
                   key={m.id}
                   model={m}
                   selected={m.id === selected}
-                  hasKey={
-                    isCompatModelId(m.id) ||
-                    hasKeyFor(m.provider)
-                  }
+                  hasKey={isCompatModelId(m.id) || hasKeyFor(m.provider)}
                   favorite={favoriteIds.includes(m.id)}
                   showProviderIcon={activeProvider === null}
                   onPick={() => {
@@ -524,11 +519,7 @@ function ProviderHeader({ providerId }: { providerId: ProviderId }) {
   if (!p) return null;
   return (
     <div className="flex items-center gap-1.5 px-3 pt-1 pb-1.5 text-[11px] font-medium tracking-tight text-muted-foreground/90">
-      <HugeiconsIcon
-        icon={PROVIDER_ICON[p.id]}
-        size={13}
-        strokeWidth={1.75}
-      />
+      <HugeiconsIcon icon={PROVIDER_ICON[p.id]} size={13} strokeWidth={1.75} />
       <span>{p.label}</span>
     </div>
   );
@@ -643,11 +634,7 @@ function CapabilityBars({ caps }: { caps: ModelCapabilities }) {
     <div className="ml-auto flex items-center gap-1.5">
       <CapBar icon={BrainIcon} value={caps.intelligence} label="Intelligence" />
       <CapBar icon={FlashIcon} value={caps.speed} label="Speed" />
-      <CapBar
-        icon={CoinsDollarIcon}
-        value={caps.cost}
-        label="Affordability"
-      />
+      <CapBar icon={CoinsDollarIcon} value={caps.cost} label="Affordability" />
     </div>
   );
 }
@@ -662,10 +649,7 @@ function CapBar({
   label: string;
 }) {
   return (
-    <span
-      className="flex items-center gap-0.5"
-      title={`${label}: ${value}/5`}
-    >
+    <span className="flex items-center gap-0.5" title={`${label}: ${value}/5`}>
       <HugeiconsIcon
         icon={icon}
         size={10}
