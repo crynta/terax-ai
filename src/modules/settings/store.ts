@@ -4,10 +4,9 @@ import {
   DEFAULT_AUTOCOMPLETE_MODEL,
   DEFAULT_MODEL_ID,
   DEFAULT_STT_PROVIDER,
-  isKnownModelId,
+  isResolvableModelId,
   LMSTUDIO_DEFAULT_BASE_URL,
   MLX_DEFAULT_BASE_URL,
-  type ModelId,
   migrateLegacyCompatEndpoint,
   OLLAMA_DEFAULT_BASE_URL,
   OPENAI_COMPATIBLE_DEFAULT_BASE_URL,
@@ -126,7 +125,7 @@ export type Preferences = {
   backgroundOpacity: number;
   backgroundBlur: number;
   windowVibrancy: boolean;
-  defaultModelId: ModelId;
+  defaultModelId: string;
   editorTheme: EditorThemePref;
   editorFontSize: number;
   customInstructions: string;
@@ -393,6 +392,19 @@ export async function loadPreferences(): Promise<Preferences> {
   const entries = await store.entries();
   const map = new Map<string, unknown>(entries);
   const get = <T>(k: string): T | undefined => map.get(k) as T | undefined;
+  // Loaded before `defaultModelId` below, which validates against it: a
+  // `compat-` default is only kept when its endpoint is still present and
+  // complete.
+  const customEndpoints = (() => {
+    const stored = get<CustomEndpoint[]>(KEY_CUSTOM_ENDPOINTS);
+    if (stored && stored.length > 0) return stored;
+    return migrateLegacyCompatEndpoint(
+      get<string>(KEY_OPENAI_COMPAT_BASE_URL) ?? "",
+      get<string>(KEY_OPENAI_COMPAT_MODEL_ID) ?? "",
+      get<number>(KEY_OPENAI_COMPAT_CONTEXT_LIMIT) ?? 128_000,
+      crypto.randomUUID().slice(0, 8),
+    );
+  })();
   return {
     theme: get<ThemePref>(KEY_THEME) ?? DEFAULT_PREFERENCES.theme,
     themeId: get<string>(KEY_THEME_ID) ?? DEFAULT_PREFERENCES.themeId,
@@ -407,9 +419,13 @@ export async function loadPreferences(): Promise<Preferences> {
     backgroundBlur: clampBlur(
       get<number>(KEY_BG_BLUR) ?? DEFAULT_PREFERENCES.backgroundBlur,
     ),
-    defaultModelId: ((): ModelId => {
+    // Custom endpoints persist as `compat-<endpointId>` ids, so they are
+    // accepted here. A compat id whose endpoint is gone or still being filled
+    // in falls back, so the default never points at an endpoint the app
+    // refuses to configure — and the picker can never be left disabled by it.
+    defaultModelId: ((): string => {
       const stored = get<string>(KEY_DEFAULT_MODEL);
-      return stored && isKnownModelId(stored)
+      return stored && isResolvableModelId(stored, customEndpoints)
         ? stored
         : DEFAULT_PREFERENCES.defaultModelId;
     })(),
@@ -462,16 +478,7 @@ export async function loadPreferences(): Promise<Preferences> {
     openaiCompatibleContextLimit:
       get<number>(KEY_OPENAI_COMPAT_CONTEXT_LIMIT) ??
       DEFAULT_PREFERENCES.openaiCompatibleContextLimit,
-    customEndpoints: (() => {
-      const stored = get<CustomEndpoint[]>(KEY_CUSTOM_ENDPOINTS);
-      if (stored && stored.length > 0) return stored;
-      return migrateLegacyCompatEndpoint(
-        get<string>(KEY_OPENAI_COMPAT_BASE_URL) ?? "",
-        get<string>(KEY_OPENAI_COMPAT_MODEL_ID) ?? "",
-        get<number>(KEY_OPENAI_COMPAT_CONTEXT_LIMIT) ?? 128_000,
-        crypto.randomUUID().slice(0, 8),
-      );
-    })(),
+    customEndpoints,
     openrouterModelId:
       get<string>(KEY_OPENROUTER_MODEL_ID) ??
       DEFAULT_PREFERENCES.openrouterModelId,
@@ -482,12 +489,16 @@ export async function loadPreferences(): Promise<Preferences> {
     whispercppBaseURL:
       get<string>(KEY_WHISPERCPP_BASE_URL) ??
       DEFAULT_PREFERENCES.whispercppBaseURL,
+    // `compat-` endpoint ids are resolvable too; filtering them out would
+    // silently drop favorites and recents chosen in the composer. An arrow is
+    // required here — `filter` would otherwise pass the array index as the
+    // endpoints argument.
     favoriteModelIds: (
       get<string[]>(KEY_FAVORITE_MODELS) ?? DEFAULT_PREFERENCES.favoriteModelIds
-    ).filter(isKnownModelId),
+    ).filter((id) => isResolvableModelId(id, customEndpoints)),
     recentModelIds: (
       get<string[]>(KEY_RECENT_MODELS) ?? DEFAULT_PREFERENCES.recentModelIds
-    ).filter(isKnownModelId),
+    ).filter((id) => isResolvableModelId(id, customEndpoints)),
     vimMode: get<boolean>(KEY_VIM_MODE) ?? DEFAULT_PREFERENCES.vimMode,
     editorWordWrap:
       get<boolean>(KEY_EDITOR_WORD_WRAP) ?? DEFAULT_PREFERENCES.editorWordWrap,
@@ -638,7 +649,7 @@ export async function setBackgroundBlur(value: number): Promise<void> {
   await writePref(KEY_BG_BLUR, clampBlur(value));
 }
 
-export async function setDefaultModel(value: ModelId): Promise<void> {
+export async function setDefaultModel(value: string): Promise<void> {
   await writePref(KEY_DEFAULT_MODEL, value);
 }
 

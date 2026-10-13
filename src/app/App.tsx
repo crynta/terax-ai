@@ -5,11 +5,16 @@ import {
 } from "@/components/ui/resizable";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { consumeLaunchFiles, getLaunchDir } from "@/lib/launchDir";
+import {
+  consumeLaunchFiles,
+  consumeLaunchOpenDirs,
+  getLaunchDir,
+} from "@/lib/launchDir";
 import { quoteShellArg } from "@/lib/shellQuote";
 import { usePresence } from "@/lib/usePresence";
 import { useZoom } from "@/lib/useZoom";
 import { isMarkdownPath } from "@/lib/utils";
+import { activateMainWindow } from "@/lib/windowActivation";
 import {
   type AgentLaunchRequest,
   AgentNotificationsBridge,
@@ -681,6 +686,11 @@ export default function App() {
     [handleOpenFile],
   );
 
+  // Always a fresh tab, never a reuse: `open -a Terax <dir>` means "drop me a
+  // new shell in here" regardless of what is already open. The backend already
+  // authorized the directory, so no re-authorization is needed before spawn.
+  const openDirInNewTab = useCallback((dir: string) => newTab(dir), [newTab]);
+
   // Warm start: the backend emits once the window already exists. Attach on
   // mount so an "Open With" that lands mid-restore isn't dropped — the backend
   // also seeds the drain-once state, so the boot drain below is the safety net.
@@ -689,6 +699,9 @@ export default function App() {
     let disposed = false;
     (async () => {
       const off = await listen<string[]>("terax:open-file", (e) => {
+        // Warm start: raise the window so the opened file is visible when the
+        // app was minimized or hidden behind other windows.
+        void activateMainWindow();
         openLaunchFiles(e.payload);
       });
       if (disposed) off();
@@ -700,6 +713,24 @@ export default function App() {
     };
   }, [openLaunchFiles]);
 
+  // Warm start: a directory (`open -a Terax <dir>`) opens a new terminal there.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    (async () => {
+      const off = await listen<string>("terax:open-dir", (e) => {
+        void activateMainWindow();
+        openDirInNewTab(e.payload);
+      });
+      if (disposed) off();
+      else unlisten = off;
+    })();
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [openDirInNewTab]);
+
   // Cold start: files arrive as CLI args (Linux/Windows) or the macOS open-files
   // event, and get_launch_files drains them once. Wait for `booted` — the spaces
   // restore ends in replaceTabs(), which overwrites the whole tab list and would
@@ -710,8 +741,24 @@ export default function App() {
     if (!booted) return;
     void (async () => {
       openLaunchFiles(await consumeLaunchFiles());
+      // Drain the whole queue: a directory may arrive twice (argv seed plus
+      // the macOS open-files event) or more than once per launch, and each
+      // distinct directory gets its own tab.
+      const opened = new Set<string>();
+      for (const dir of await consumeLaunchOpenDirs()) {
+        // Skip when a tab already landed here (the seeded default terminal,
+        // an earlier request in this batch) — otherwise a restored session
+        // would otherwise get no terminal at the launched directory.
+        if (
+          opened.has(dir) ||
+          tabsRef.current.some((t) => t.kind === "terminal" && t.cwd === dir)
+        )
+          continue;
+        opened.add(dir);
+        await openDirInNewTab(dir);
+      }
     })();
-  }, [booted, openLaunchFiles]);
+  }, [booted, openLaunchFiles, openDirInNewTab]);
 
   const handleExplorerPathRenamed = useCallback(
     (from: string, to: string) => {

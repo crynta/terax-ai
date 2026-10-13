@@ -27,15 +27,15 @@ import {
   DEFAULT_MODEL_ID,
   getAutocompleteEligibleModels,
   getCompatModelInfo,
-  getModel,
   getProvider,
   isCompatModelId,
   MODELS,
-  type ModelId,
+  type ModelInfo,
   PROVIDERS,
   type ProviderId,
   type ProviderInfo,
   providerNeedsKey,
+  resolveModel,
   STT_PROVIDER_LABELS,
   type SttProvider,
   WHISPERCPP_DEFAULT_BASE_URL,
@@ -231,7 +231,8 @@ export function ModelsSection() {
     // Drop the now-dead model id from favorites/recents before touching the
     // selection, so the recents push from a selection reset can't race it.
     const deadModelId = compatModelIdForEndpoint(id);
-    const { favoriteModelIds, recentModelIds } = usePreferencesStore.getState();
+    const { favoriteModelIds, recentModelIds, defaultModelId } =
+      usePreferencesStore.getState();
     if (favoriteModelIds.includes(deadModelId)) {
       await setFavoriteModelIds(
         favoriteModelIds.filter((m) => m !== deadModelId),
@@ -239,6 +240,9 @@ export function ModelsSection() {
     }
     if (recentModelIds.includes(deadModelId)) {
       await setRecentModelIds(recentModelIds.filter((m) => m !== deadModelId));
+    }
+    if (defaultModelId === deadModelId) {
+      await setDefaultModel(DEFAULT_MODEL_ID);
     }
 
     // If the deleted endpoint was the active model, the selection would dangle
@@ -304,11 +308,13 @@ export function ModelsSection() {
 
   const isConfigured = (id: ProviderId): boolean => {
     if (id === "openrouter") return !!keys?.[id] && !!openrouterModelId.trim();
+    if (id === "openai-compatible")
+      // Endpoints are configured individually, never through this provider's
+      // key card, so the provider itself only counts as configured once one is.
+      return customEndpoints.some((e) => e.baseURL.trim() && e.modelId.trim());
     if (!isLocalProvider(id)) return !!keys?.[id];
     const cfg = localConfig(id);
     if (!cfg) return false;
-    if (id === "openai-compatible")
-      return !!cfg.baseURL.trim() && !!cfg.modelId.trim();
     return !!cfg.modelId.trim();
   };
 
@@ -532,7 +538,7 @@ function DefaultsBlock({
   keys,
   customEndpoints,
 }: {
-  defaultModel: ModelId;
+  defaultModel: string;
   configuredIds: Set<ProviderId>;
   keys: KeysMap;
   customEndpoints: readonly CustomEndpoint[];
@@ -545,6 +551,7 @@ function DefaultsBlock({
           <DefaultModelPicker
             defaultModel={defaultModel}
             configuredIds={configuredIds}
+            customEndpoints={customEndpoints}
           />
         </FieldRow>
         <AutocompleteRow
@@ -560,12 +567,36 @@ function DefaultsBlock({
 function DefaultModelPicker({
   defaultModel,
   configuredIds,
+  customEndpoints,
 }: {
-  defaultModel: ModelId;
+  defaultModel: string;
   configuredIds: Set<ProviderId>;
+  customEndpoints: readonly CustomEndpoint[];
 }) {
-  const m = getModel(defaultModel);
+  // resolveModel rather than getModel: the default may be a `compat-`
+  // endpoint id, which getModel rejects.
+  const m = resolveModel(defaultModel, customEndpoints);
   const hasAny = configuredIds.size > 0;
+  // [provider, models] pairs so the custom OpenAI-compatible endpoints are
+  // listed from live preferences instead of the unreachable static stub.
+  const groups: [ProviderInfo, readonly ModelInfo[]][] = PROVIDERS.filter(
+    (p) => configuredIds.has(p.id),
+  ).flatMap(
+    (p) => {
+      const models =
+        p.id === "openai-compatible"
+          ? customEndpoints
+              .filter((e) => e.baseURL.trim() && e.modelId.trim())
+              .map((e) =>
+                getCompatModelInfo(
+                  compatModelIdForEndpoint(e.id),
+                  customEndpoints,
+                ),
+              )
+          : MODELS.filter((x) => x.provider === p.id);
+      return models.length > 0 ? [[p, models]] : [];
+    },
+  );
 
   return (
     <DropdownMenu>
@@ -596,35 +627,31 @@ function DefaultModelPicker({
         className="min-w-70 p-1"
       >
         <div className="max-h-72 overflow-y-auto overscroll-contain pr-1">
-          {PROVIDERS.filter((p) => configuredIds.has(p.id)).map((p) => {
-            const models = MODELS.filter((x) => x.provider === p.id);
-            if (models.length === 0) return null;
-            return (
-              <div key={p.id} className="px-1 pt-1.5 first:pt-1">
-                <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-                  <ProviderIcon provider={p.id} size={11} />
-                  <span>{p.label}</span>
-                </div>
-                {models.map((mod) => (
-                  <DropdownMenuItem
-                    key={mod.id}
-                    onSelect={() => void setDefaultModel(mod.id as ModelId)}
-                    className={cn(
-                      "flex items-start gap-2 text-[12px]",
-                      mod.id === defaultModel && "bg-accent/50",
-                    )}
-                  >
-                    <span className="flex flex-1 flex-col">
-                      <span>{mod.label}</span>
-                      <span className="text-[10px] text-muted-foreground">
-                        {mod.description}
-                      </span>
-                    </span>
-                  </DropdownMenuItem>
-                ))}
+          {groups.map(([p, models]) => (
+            <div key={p.id} className="px-1 pt-1.5 first:pt-1">
+              <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                <ProviderIcon provider={p.id} size={11} />
+                <span>{p.label}</span>
               </div>
-            );
-          })}
+              {models.map((mod) => (
+                <DropdownMenuItem
+                  key={mod.id}
+                  onSelect={() => void setDefaultModel(mod.id)}
+                  className={cn(
+                    "flex items-start gap-2 text-[12px]",
+                    mod.id === defaultModel && "bg-accent/50",
+                  )}
+                >
+                  <span className="flex flex-1 flex-col">
+                    <span>{mod.label}</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {mod.description}
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </div>
+          ))}
         </div>
       </DropdownMenuContent>
     </DropdownMenu>
