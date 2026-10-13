@@ -9,6 +9,7 @@ export {
   MAX_PANES_PER_TAB,
   DEFAULT_SPACE_ID,
   useTabs,
+  moveToSplitTargets,
   nextActiveInSpace,
   planCloseTabsToRight,
   planCloseOtherTabs,

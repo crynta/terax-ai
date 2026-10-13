@@ -111,6 +111,58 @@ export function splitLeaf(
   };
 }
 
+export type SplitPosition = "left" | "right" | "top" | "bottom";
+
+type LeafNode = Extract<PaneNode, { kind: "leaf" }>;
+
+/**
+ * Insert an existing leaf beside `targetId`, keeping the leaf node intact so
+ * its session survives. Flattens into an enclosing same-direction split like
+ * `splitLeaf`. Returns `tree` unchanged when the target is missing or the leaf
+ * id is already present.
+ */
+export function insertLeafAt(
+  tree: PaneNode,
+  targetId: PaneId,
+  leaf: LeafNode,
+  position: SplitPosition,
+  newSplitId: PaneId,
+): PaneNode {
+  if (!hasLeaf(tree, targetId) || hasLeaf(tree, leaf.id)) return tree;
+  const dir: SplitDir =
+    position === "left" || position === "right" ? "row" : "col";
+  const before = position === "left" || position === "top";
+  const insert = (node: PaneNode): PaneNode => {
+    if (isLeaf(node)) {
+      if (node.id !== targetId) return node;
+      return {
+        kind: "split",
+        id: newSplitId,
+        dir,
+        children: before ? [leaf, node] : [node, leaf],
+      };
+    }
+    if (node.dir === dir) {
+      const idx = node.children.findIndex(
+        (c) => isLeaf(c) && c.id === targetId,
+      );
+      if (idx >= 0) {
+        const at = before ? idx : idx + 1;
+        return {
+          ...node,
+          children: [
+            ...node.children.slice(0, at),
+            leaf,
+            ...node.children.slice(at),
+          ],
+        };
+      }
+    }
+    return { ...node, children: node.children.map(insert) };
+  };
+  return insert(tree);
+}
+
 /**
  * Remove a leaf and collapse single-child splits left in its wake. Returns
  * `null` when the entire subtree is gone.
@@ -231,7 +283,7 @@ function directionalTarget(
   return candidates[0]?.id ?? null;
 }
 
-function findLeaf(node: PaneNode, id: PaneId): Extract<PaneNode, { kind: "leaf" }> | null {
+export function findLeaf(node: PaneNode, id: PaneId): Extract<PaneNode, { kind: "leaf" }> | null {
   if (isLeaf(node)) return node.id === id ? node : null;
   for (const child of node.children) {
     const found = findLeaf(child, id);

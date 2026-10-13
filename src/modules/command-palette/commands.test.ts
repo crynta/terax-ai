@@ -38,6 +38,7 @@ function baseContext(
     closeActiveTabOrPane: noop,
     splitPaneRight: noop,
     splitPaneDown: noop,
+    movePaneToNewTab: noop,
     focusSearch: noop,
     focusExplorerSearch: noop,
     toggleSidebar: noop,
@@ -68,6 +69,33 @@ describe("createCommandItems", () => {
   it("disables split when there is no terminal tab", () => {
     const editorTab = { ...terminalTab(1), kind: "editor" } as unknown as Tab;
     expect(reasonById({ tabs: [editorTab] }, "pane.splitRight")).toBe(
+      "No terminal tab",
+    );
+  });
+
+  it("disables move pane to new tab on a single-pane terminal", () => {
+    expect(reasonById({}, "pane.moveToNewTab")).toBe("Single pane");
+  });
+
+  it("enables move pane to new tab on a split terminal", () => {
+    const split = {
+      ...terminalTab(1),
+      paneTree: {
+        kind: "split",
+        id: 5,
+        dir: "row",
+        children: [
+          { kind: "leaf", id: 10 },
+          { kind: "leaf", id: 11 },
+        ],
+      },
+    } as unknown as Tab;
+    expect(reasonById({ tabs: [split] }, "pane.moveToNewTab")).toBeUndefined();
+  });
+
+  it("disables move pane to new tab without a terminal tab", () => {
+    const editorTab = { ...terminalTab(1), kind: "editor" } as unknown as Tab;
+    expect(reasonById({ tabs: [editorTab] }, "pane.moveToNewTab")).toBe(
       "No terminal tab",
     );
   });

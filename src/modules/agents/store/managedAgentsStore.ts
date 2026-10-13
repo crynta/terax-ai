@@ -32,6 +32,7 @@ type ManagedAgentsState = {
   setPendingReview: (leafId: number, pending: boolean) => void;
   bumpRound: (leafId: number) => void;
   remove: (leafId: number) => void;
+  moveLeafToTab: (leafId: number, tabId: number) => void;
   get: (leafId: number) => ManagedAgent | undefined;
   getBySessionId: (sessionId: string) => ManagedAgent | undefined;
 };
@@ -104,6 +105,13 @@ export const useManagedAgentsStore = create<ManagedAgentsState>((set, get) => ({
       const next = { ...s.agents };
       delete next[leafId];
       return { agents: next };
+    }),
+
+  moveLeafToTab: (leafId, tabId) =>
+    set((s) => {
+      const a = s.agents[leafId];
+      if (!a || a.tabId === tabId) return s;
+      return { agents: { ...s.agents, [leafId]: { ...a, tabId } } };
     }),
 
   get: (leafId) => get().agents[leafId],

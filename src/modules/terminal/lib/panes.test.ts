@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   firstLeafSlotId,
+  insertLeafAt,
   leafIds,
   swapLeafInDirection,
   type PaneNode,
@@ -141,5 +142,111 @@ describe("swapLeafInDirection", () => {
   it("does nothing when the tree contains only one pane", () => {
     const tree: PaneNode = { kind: "leaf", id: 1 };
     expect(swapLeafInDirection(tree, 1, "left")).toBe(tree);
+  });
+});
+
+describe("insertLeafAt", () => {
+  const moved = { kind: "leaf", id: 9, slotId: 7, cwd: "/moved" } as const;
+
+  it("wraps a lone target leaf in a new split for every position", () => {
+    const target: PaneNode = { kind: "leaf", id: 1 };
+    expect(insertLeafAt(target, 1, moved, "left", 50)).toEqual({
+      kind: "split",
+      id: 50,
+      dir: "row",
+      children: [moved, target],
+    });
+    expect(insertLeafAt(target, 1, moved, "right", 50)).toEqual({
+      kind: "split",
+      id: 50,
+      dir: "row",
+      children: [target, moved],
+    });
+    expect(insertLeafAt(target, 1, moved, "top", 50)).toEqual({
+      kind: "split",
+      id: 50,
+      dir: "col",
+      children: [moved, target],
+    });
+    expect(insertLeafAt(target, 1, moved, "bottom", 50)).toEqual({
+      kind: "split",
+      id: 50,
+      dir: "col",
+      children: [target, moved],
+    });
+  });
+
+  it("preserves the inserted leaf node identity", () => {
+    const next = insertLeafAt({ kind: "leaf", id: 1 }, 1, moved, "right", 50);
+    expect(next.kind).toBe("split");
+    if (next.kind === "split") expect(next.children[1]).toBe(moved);
+  });
+
+  it("flattens into an enclosing split running in the same direction", () => {
+    expect(leafIds(insertLeafAt(row(1, 2, 3), 2, moved, "left", 50))).toEqual([
+      1, 9, 2, 3,
+    ]);
+    const right = insertLeafAt(row(1, 2, 3), 2, moved, "right", 50);
+    expect(right.kind === "split" && right.id).toBe(100);
+    expect(leafIds(right)).toEqual([1, 2, 9, 3]);
+    expect(leafIds(insertLeafAt(col(1, 2), 1, moved, "top", 50))).toEqual([
+      9, 1, 2,
+    ]);
+    expect(leafIds(insertLeafAt(col(1, 2), 2, moved, "bottom", 50))).toEqual([
+      1, 2, 9,
+    ]);
+  });
+
+  it("nests a new split when the enclosing split runs the other way", () => {
+    expect(insertLeafAt(row(1, 2), 2, moved, "bottom", 50)).toEqual({
+      kind: "split",
+      id: 100,
+      dir: "row",
+      children: [
+        { kind: "leaf", id: 1 },
+        {
+          kind: "split",
+          id: 50,
+          dir: "col",
+          children: [{ kind: "leaf", id: 2 }, moved],
+        },
+      ],
+    });
+  });
+
+  it("targets a leaf deep inside a nested tree", () => {
+    const tree: PaneNode = {
+      kind: "split",
+      id: 10,
+      dir: "row",
+      children: [
+        { kind: "leaf", id: 1 },
+        {
+          kind: "split",
+          id: 11,
+          dir: "col",
+          children: [
+            { kind: "leaf", id: 2 },
+            { kind: "leaf", id: 3 },
+          ],
+        },
+      ],
+    };
+    const next = insertLeafAt(tree, 3, moved, "top", 50);
+    expect(leafIds(next)).toEqual([1, 2, 9, 3]);
+    expect(next.kind === "split" && next.children[1]).toMatchObject({
+      id: 11,
+      dir: "col",
+    });
+  });
+
+  it("returns the tree unchanged when the target is missing", () => {
+    const tree = row(1, 2);
+    expect(insertLeafAt(tree, 42, moved, "left", 50)).toBe(tree);
+  });
+
+  it("returns the tree unchanged when the leaf is already present", () => {
+    const tree = row(1, 9);
+    expect(insertLeafAt(tree, 1, moved, "left", 50)).toBe(tree);
   });
 });

@@ -13,4 +13,7 @@ export {
   normalizeAgentLaunchCommands,
   validateAgentLaunchCommand,
 } from "./lib/launcher";
-export { nextAttentionTarget } from "./store/agentStore";
+export {
+  moveAgentLeafToTab,
+  nextAttentionTarget,
+} from "./store/agentStore";

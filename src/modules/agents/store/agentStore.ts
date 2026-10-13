@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { useManagedAgentsStore } from "./managedAgentsStore";
 import type {
   AgentNotification,
   AgentSession,
@@ -17,6 +18,7 @@ type AgentStoreState = {
   start: (leafId: number, tabId: number, agent: string) => void;
   setStatus: (leafId: number, status: AgentStatus) => void;
   finish: (leafId: number) => void;
+  moveLeafToTab: (leafId: number, tabId: number) => void;
   setLocalAgent: (state: LocalAgentState) => void;
   pushNotification: (
     n: Omit<AgentNotification, "id" | "at" | "read">,
@@ -75,6 +77,26 @@ export const useAgentStore = create<AgentStoreState>((set) => ({
       return { sessions: next };
     }),
 
+  moveLeafToTab: (leafId, tabId) =>
+    set((s) => {
+      const session = s.sessions[leafId];
+      const moveSession = session !== undefined && session.tabId !== tabId;
+      const moveNotifications = s.notifications.some(
+        (n) => n.leafId === leafId && n.tabId !== tabId,
+      );
+      if (!moveSession && !moveNotifications) return s;
+      return {
+        ...(moveSession && {
+          sessions: { ...s.sessions, [leafId]: { ...session, tabId } },
+        }),
+        ...(moveNotifications && {
+          notifications: s.notifications.map((n) =>
+            n.leafId === leafId ? { ...n, tabId } : n,
+          ),
+        }),
+      };
+    }),
+
   setLocalAgent: (state) =>
     set((s) => {
       const a = s.localAgent;
@@ -110,4 +132,10 @@ export function nextAttentionTarget(): { tabId: number; leafId: number } | null 
     .sort((a, b) => (b.attentionSince ?? 0) - (a.attentionSince ?? 0));
   const t = waiting[0];
   return t ? { tabId: t.tabId, leafId: t.leafId } : null;
+}
+
+/** Points every agent record for `leafId` at the tab now hosting that pane. */
+export function moveAgentLeafToTab(leafId: number, tabId: number): void {
+  useAgentStore.getState().moveLeafToTab(leafId, tabId);
+  useManagedAgentsStore.getState().moveLeafToTab(leafId, tabId);
 }

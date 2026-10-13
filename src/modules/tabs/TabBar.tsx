@@ -3,6 +3,9 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import {
@@ -25,6 +28,7 @@ import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
 import {
   leafIds,
   ptyIdForLeaf,
+  type SplitPosition,
   tabAgentStatus,
   useAgentActivityStore,
 } from "@/modules/terminal";
@@ -38,8 +42,10 @@ import {
   GitCompareIcon,
   Globe02Icon,
   IncognitoIcon,
+  LayoutTwoColumnIcon,
   Message02Icon,
   PencilEdit02Icon,
+  SquareArrowUpRightIcon,
   Tick02Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -51,8 +57,18 @@ import {
   useRef,
   useState,
 } from "react";
-import { labelFor } from "./lib/tabLabel";
-import type { EditorTab, Tab } from "./lib/useTabs";
+import {
+  labelFor,
+  PANE_LABEL_SEPARATOR,
+  paneLabels,
+  splitPaneLabels,
+} from "./lib/tabLabel";
+import {
+  type EditorTab,
+  moveToSplitTargets,
+  type Tab,
+  type TerminalTab,
+} from "./lib/useTabs";
 import { NewTabMenu } from "./NewTabMenu";
 
 type Props = {
@@ -77,9 +93,105 @@ type Props = {
   onRename: (id: number, title: string) => void;
   /** Move a dragged tab to a new position (insertion gap index 0..tabs.length). */
   onReorder: (fromId: number, toGapIndex: number) => void;
+  onMoveToSplit: (
+    sourceId: number,
+    destinationId: number,
+    position: SplitPosition,
+  ) => void;
+  onMovePaneToNewTab: (tabId: number, leafId: number) => void;
   onOverrideLanguage?: (id: number, lang: string | null) => void;
   compact?: boolean;
 };
+
+const SPLIT_POSITIONS: { position: SplitPosition; label: string }[] = [
+  { position: "left", label: "Left" },
+  { position: "right", label: "Right" },
+  { position: "top", label: "Top" },
+  { position: "bottom", label: "Bottom" },
+];
+
+const MENU_ITEM_CLASS = "gap-2 rounded-xl px-2.5 py-1.5 text-[13px]";
+
+function MoveToSplitMenu({
+  tabs,
+  sourceId,
+  onMove,
+}: {
+  tabs: Tab[];
+  sourceId: number;
+  onMove: Props["onMoveToSplit"];
+}) {
+  const targets = moveToSplitTargets(tabs, sourceId);
+  if (targets.length === 0) return null;
+  return (
+    <ContextMenuSub>
+      <ContextMenuSubTrigger className={MENU_ITEM_CLASS}>
+        <HugeiconsIcon
+          icon={LayoutTwoColumnIcon}
+          size={13}
+          strokeWidth={1.75}
+        />
+        <span className="flex-1">Move to split…</span>
+      </ContextMenuSubTrigger>
+      <ContextMenuSubContent className="max-w-64 p-1">
+        {targets.map((target) => (
+          <ContextMenuSub key={target.id}>
+            <ContextMenuSubTrigger className={MENU_ITEM_CLASS}>
+              <span className="flex-1 truncate">{labelFor(target)}</span>
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent className="p-1">
+              {SPLIT_POSITIONS.map(({ position, label }) => (
+                <ContextMenuItem
+                  key={position}
+                  className={MENU_ITEM_CLASS}
+                  onSelect={() => onMove(sourceId, target.id, position)}
+                >
+                  {label}
+                </ContextMenuItem>
+              ))}
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+        ))}
+      </ContextMenuSubContent>
+    </ContextMenuSub>
+  );
+}
+
+function MovePaneToNewTabMenu({
+  tab,
+  onMove,
+}: {
+  tab: TerminalTab;
+  onMove: Props["onMovePaneToNewTab"];
+}) {
+  if (tab.paneTree.kind === "leaf") return null;
+  return (
+    <ContextMenuSub>
+      <ContextMenuSubTrigger className={MENU_ITEM_CLASS}>
+        <HugeiconsIcon
+          icon={SquareArrowUpRightIcon}
+          size={13}
+          strokeWidth={1.75}
+        />
+        <span className="flex-1">Move pane to new tab</span>
+      </ContextMenuSubTrigger>
+      <ContextMenuSubContent className="max-w-64 p-1">
+        {paneLabels(tab).map((pane) => (
+          <ContextMenuItem
+            key={pane.leafId}
+            className={MENU_ITEM_CLASS}
+            onSelect={() => onMove(tab.id, pane.leafId)}
+          >
+            <span className="flex-1 truncate">{pane.name}</span>
+            {pane.active && (
+              <span className="text-[11px] text-muted-foreground">active</span>
+            )}
+          </ContextMenuItem>
+        ))}
+      </ContextMenuSubContent>
+    </ContextMenuSub>
+  );
+}
 
 export function TabBar({
   tabs,
@@ -98,6 +210,8 @@ export function TabBar({
   onPin,
   onRename,
   onReorder,
+  onMoveToSplit,
+  onMovePaneToNewTab,
   onOverrideLanguage,
   compact,
 }: Props) {
@@ -467,9 +581,7 @@ export function TabBar({
                     )}
                     {/* Preview tabs use italic to signal the transient state,
                         matching the visual convention from VSCode. */}
-                    <span className={cn("truncate", isPreview && "italic")}>
-                      {labelFor(t)}
-                    </span>
+                    <TabLabel tab={t} italic={isPreview} />
                     {t.kind === "editor" && t.dirty ? (
                       <span
                         aria-label="Unsaved changes"
@@ -528,6 +640,15 @@ export function TabBar({
                           />
                           <span className="flex-1">Rename</span>
                         </ContextMenuItem>
+                        <MoveToSplitMenu
+                          tabs={tabs}
+                          sourceId={t.id}
+                          onMove={onMoveToSplit}
+                        />
+                        <MovePaneToNewTabMenu
+                          tab={t}
+                          onMove={onMovePaneToNewTab}
+                        />
                         {tabs.length > 1 && (
                           <>
                             <ContextMenuSeparator />
@@ -597,6 +718,29 @@ export function TabBar({
         />
       </div>
     </div>
+  );
+}
+
+function TabLabel({ tab, italic }: { tab: Tab; italic: boolean }) {
+  const panes = splitPaneLabels(tab);
+  if (!panes) {
+    return (
+      <span className={cn("truncate", italic && "italic")}>
+        {labelFor(tab)}
+      </span>
+    );
+  }
+  return (
+    <span className="truncate" title={labelFor(tab)}>
+      {panes.map((pane, i) => (
+        <Fragment key={pane.leafId}>
+          {i > 0 && <span className="opacity-40">{PANE_LABEL_SEPARATOR}</span>}
+          <span className={pane.active ? undefined : "opacity-60"}>
+            {pane.name}
+          </span>
+        </Fragment>
+      ))}
+    </span>
   );
 }
 
