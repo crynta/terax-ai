@@ -4,6 +4,7 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { Toaster } from "@/components/ui/sonner";
+import { toast } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { consumeLaunchFiles, getLaunchDir } from "@/lib/launchDir";
 import { quoteShellArg } from "@/lib/shellQuote";
@@ -89,6 +90,7 @@ import {
   hasLeaf,
   isTerminalSurfaceTarget,
   leafIds,
+  leafHasForegroundProcess,
   navigateFocusedBlocks,
   type PaneBounds,
   ptyIdForLeaf,
@@ -197,6 +199,7 @@ export default function App() {
     useState<TerminalSearchController | null>(null);
   const searchInlineRef = useRef<SearchInlineHandle | null>(null);
   const terminalRefs = useRef<Map<number, TerminalPaneHandle>>(new Map());
+  const cdRequestCounters = useRef<Map<number, number>>(new Map());
   const editorRefs = useRef<Map<number, EditorPaneHandle>>(new Map());
   const previewRefs = useRef<Map<number, PreviewPaneHandle>>(new Map());
   const [activeEditorHandle, setActiveEditorHandle] =
@@ -638,10 +641,33 @@ export default function App() {
   );
 
   const sendCd = useCallback(
-    (path: string) => {
+    async (path: string) => {
       if (activeLeafId === null) return;
-      const term = terminalRefs.current.get(activeLeafId);
+      const leafId = activeLeafId;
+      const term = terminalRefs.current.get(leafId);
       if (!term) return;
+
+      const reqId = (cdRequestCounters.current.get(leafId) || 0) + 1;
+      cdRequestCounters.current.set(leafId, reqId);
+
+      const hasFg = await leafHasForegroundProcess(leafId);
+
+      if (cdRequestCounters.current.get(leafId) !== reqId) return;
+
+      if (hasFg === "error") {
+        toast.error("Terminal directory not synced", {
+          description: "Could not check if a process is running.",
+        });
+        return;
+      }
+
+      if (hasFg === true) {
+        toast.info("Terminal directory not synced", {
+          description: "An active process is running. Exit it to change directories.",
+        });
+        return;
+      }
+
       term.write(`cd ${quoteShellArg(path)}\r`);
       term.focus();
     },
