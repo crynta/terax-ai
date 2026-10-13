@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "linux")]
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -306,6 +308,67 @@ fn compute_appimage_env_overrides(
     }
 
     out
+}
+
+#[cfg(target_os = "linux")]
+const NV_DISABLE_EXPLICIT_SYNC: &str = "__NV_DISABLE_EXPLICIT_SYNC";
+
+#[cfg(target_os = "linux")]
+static NV_EXPLICIT_SYNC_DISABLED: AtomicBool = AtomicBool::new(false);
+
+// WebKitGTK commits DMABUF buffers without an explicit-sync acquire point, so an
+// explicit-sync compositor answers with a wp_linux_drm_syncobj_surface_v1
+// protocol error and GDK aborts before the window maps. Falling back to implicit
+// sync keeps the DMABUF renderer, unlike WEBKIT_DISABLE_DMABUF_RENDERER, which
+// costs terminal latency. Must run before GTK init and before any thread spawns.
+#[cfg(target_os = "linux")]
+pub fn disable_nv_explicit_sync_if_needed() {
+    let has_nvidia_driver = Path::new("/sys/module/nvidia").exists();
+    if should_disable_nv_explicit_sync(|k| std::env::var_os(k), has_nvidia_driver) {
+        std::env::set_var(NV_DISABLE_EXPLICIT_SYNC, "1");
+        NV_EXPLICIT_SYNC_DISABLED.store(true, Ordering::Relaxed);
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn should_disable_nv_explicit_sync(
+    read: impl Fn(&str) -> Option<OsString>,
+    has_nvidia_driver: bool,
+) -> bool {
+    if read(NV_DISABLE_EXPLICIT_SYNC).is_some() {
+        return false;
+    }
+    let is_wayland = read("WAYLAND_DISPLAY").is_some()
+        || read("XDG_SESSION_TYPE").is_some_and(|v| v.eq_ignore_ascii_case("wayland"));
+    is_wayland && has_nvidia_driver
+}
+
+/// Env fixups applied to every child process Terax spawns.
+pub fn child_env_overrides() -> Vec<(&'static str, Option<OsString>)> {
+    #[cfg(target_os = "linux")]
+    {
+        compute_child_env_overrides(
+            appimage_env_overrides(),
+            NV_EXPLICIT_SYNC_DISABLED.load(Ordering::Relaxed),
+        )
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        appimage_env_overrides()
+    }
+}
+
+// The workaround exists for the Terax webview only. A child that inherited it
+// would lose explicit sync for no reason.
+#[cfg(target_os = "linux")]
+fn compute_child_env_overrides(
+    mut appimage: Vec<(&'static str, Option<OsString>)>,
+    nv_explicit_sync_disabled: bool,
+) -> Vec<(&'static str, Option<OsString>)> {
+    if nv_explicit_sync_disabled {
+        appimage.push((NV_DISABLE_EXPLICIT_SYNC, None));
+    }
+    appimage
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -997,5 +1060,79 @@ mod appimage_tests {
 
         let outside = reader(&[("FONTCONFIG_FILE", "/etc/fonts/fonts.conf")]);
         assert!(find(&compute_appimage_env_overrides(appdir, outside), "FONTCONFIG_FILE").is_none());
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod nv_explicit_sync_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn reader(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<OsString> {
+        let map: HashMap<String, OsString> = pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), OsString::from(v)))
+            .collect();
+        move |k: &str| map.get(k).cloned()
+    }
+
+    #[test]
+    fn disables_on_wayland_with_nvidia() {
+        assert!(should_disable_nv_explicit_sync(
+            reader(&[("WAYLAND_DISPLAY", "wayland-0")]),
+            true
+        ));
+        // Session type alone is enough, and its value is not case sensitive.
+        assert!(should_disable_nv_explicit_sync(
+            reader(&[("XDG_SESSION_TYPE", "Wayland")]),
+            true
+        ));
+    }
+
+    #[test]
+    fn skips_x11_sessions_and_non_nvidia_systems() {
+        assert!(!should_disable_nv_explicit_sync(
+            reader(&[("XDG_SESSION_TYPE", "x11"), ("DISPLAY", ":0")]),
+            true
+        ));
+        assert!(!should_disable_nv_explicit_sync(
+            reader(&[("WAYLAND_DISPLAY", "wayland-0")]),
+            false
+        ));
+    }
+
+    #[test]
+    fn never_overrides_an_explicit_user_value() {
+        let env = reader(&[
+            ("WAYLAND_DISPLAY", "wayland-0"),
+            ("__NV_DISABLE_EXPLICIT_SYNC", "0"),
+        ]);
+        assert!(!should_disable_nv_explicit_sync(env, true));
+    }
+
+    #[test]
+    fn children_do_not_inherit_the_workaround() {
+        let out = compute_child_env_overrides(Vec::new(), true);
+        let entry = out.iter().find(|(k, _)| *k == NV_DISABLE_EXPLICIT_SYNC);
+        assert_eq!(entry.map(|(_, value)| value), Some(&None));
+    }
+
+    #[test]
+    fn child_env_is_untouched_when_the_workaround_is_off() {
+        assert!(compute_child_env_overrides(Vec::new(), false).is_empty());
+    }
+
+    #[test]
+    fn appimage_overrides_survive_alongside_the_workaround() {
+        let appimage = vec![("PATH", Some(OsString::from("/usr/bin")))];
+        let out = compute_child_env_overrides(appimage, true);
+
+        assert_eq!(
+            out.iter()
+                .find(|(k, _)| *k == "PATH")
+                .map(|(_, value)| value),
+            Some(&Some(OsString::from("/usr/bin")))
+        );
+        assert!(out.iter().any(|(k, _)| *k == NV_DISABLE_EXPLICIT_SYNC));
     }
 }
