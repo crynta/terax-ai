@@ -197,4 +197,46 @@ describe("GhosttySearchController", () => {
     expect(cancel).toHaveBeenCalledWith(42);
     expect(model.clearSearch).toHaveBeenCalledOnce();
   });
+
+  it("exposes match position and notifies subscribers", () => {
+    const model = {
+      cols: 1,
+      rows: 1,
+      setSearchQuery: vi.fn(() => completeStatus),
+      stepSearch: vi.fn(() => completeStatus),
+      selectSearchMatch: vi.fn(() => ({
+        ...completeStatus,
+        selectedIndex: 1,
+        totalMatches: 4,
+      })),
+      searchViewportMatches: vi.fn(() => []),
+    } as unknown as GhosttyTerminalModelApi;
+    const controller = new GhosttySearchController(model, vi.fn(), {
+      request: (callback) => {
+        callback();
+        return 1;
+      },
+      cancel: vi.fn(),
+    });
+    const listener = vi.fn();
+    const unsubscribe = controller.subscribe(listener);
+
+    expect(controller.matchStatus()).toEqual({
+      current: 0,
+      total: 0,
+      complete: true,
+    });
+    expect(controller.findNext("agent")).toBe(true);
+    expect(controller.matchStatus()).toEqual({
+      current: 2,
+      total: 4,
+      complete: true,
+    });
+    expect(listener).toHaveBeenCalled();
+    unsubscribe();
+    listener.mockClear();
+    controller.findPrevious("agent");
+    expect(listener).not.toHaveBeenCalled();
+    controller.dispose();
+  });
 });

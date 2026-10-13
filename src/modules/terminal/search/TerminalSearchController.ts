@@ -8,8 +8,16 @@ export type TerminalSearchOptions = {
   };
 };
 
+export type SearchMatchStatus = {
+  readonly current: number;
+  readonly total: number;
+  readonly complete: boolean;
+};
+
 export interface TerminalSearchController {
   findNext(query: string, options?: TerminalSearchOptions): boolean;
   findPrevious(query: string, options?: TerminalSearchOptions): boolean;
   clearDecorations(): void;
+  matchStatus(): SearchMatchStatus;
+  subscribe(listener: () => void): () => void;
 }
