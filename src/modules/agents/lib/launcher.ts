@@ -26,6 +26,13 @@ export const AGENT_LAUNCHERS = [
     supportsHooks: true,
   },
   {
+    id: "gjc",
+    label: "GJC",
+    defaultCommand: "gjc",
+    // GJC emits the OSC 777 marker itself; nothing to install.
+    supportsHooks: false,
+  },
+  {
     id: "opencode",
     label: "OpenCode",
     defaultCommand: "opencode",
