@@ -9,6 +9,7 @@ on:
 jobs:
   publish-tauri:
     permissions:
+      actions: read
       contents: write
       id-token: write
     strategy:
@@ -126,17 +127,12 @@ jobs:
           chmod +x "./$BASENAME"
           "./$BASENAME" --appimage-extract >/dev/null
 
-          # Fail loud if Tauri/linuxdeploy stops bundling these, so a future
-          # layout change cannot silently ship an unfixed AppImage.
-          for lib in libwayland-client.so.0 libwayland-egl.so.1 libwayland-cursor.so.0; do
-            test -e "squashfs-root/usr/lib/$lib" \
-              || { echo "expected bundled lib missing: $lib (layout changed?)"; exit 1; }
-          done
+          test -x squashfs-root/usr/bin/terax \
+            || { echo "terax binary missing from AppImage"; exit 1; }
 
-          rm -f squashfs-root/usr/lib/libwayland-client.so.0 \
-                squashfs-root/usr/lib/libwayland-egl.so.1 \
-                squashfs-root/usr/lib/libwayland-cursor.so.0 \
-                squashfs-root/usr/lib/libwayland-server.so.0
+          # linuxdeploy may already exclude some of these libraries.
+          find squashfs-root \( -type f -o -type l \) \
+            -name 'libwayland-*.so*' -print -delete
 
           curl -fsSL -o appimagetool.AppImage \
             https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
@@ -147,10 +143,10 @@ jobs:
           rm -rf squashfs-root
           chmod +x "./$BASENAME"
           "./$BASENAME" --appimage-extract >/dev/null
-          for lib in libwayland-client.so.0 libwayland-egl.so.1 libwayland-cursor.so.0; do
-            test ! -e "squashfs-root/usr/lib/$lib" \
-              || { echo "lib still present after repack: $lib"; exit 1; }
-          done
+          if find squashfs-root -name 'libwayland-*.so*' -print -quit | grep -q .; then
+            echo "Wayland library still present after repack"
+            exit 1
+          fi
           test -x squashfs-root/usr/bin/terax \
             || { echo "terax binary missing from repacked AppImage"; exit 1; }
           popd >/dev/null
