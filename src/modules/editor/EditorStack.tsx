@@ -1,5 +1,6 @@
 import { cn, isMarkdownPath } from "@/lib/utils";
 import { MarkdownViewToggle } from "@/modules/markdown";
+import { useWindowInactive } from "@/modules/theme/WindowActivityBridge";
 import type { EditorTab, Tab } from "@/modules/tabs";
 import { useEffect, useRef } from "react";
 import { EditorPane, type EditorPaneHandle } from "./EditorPane";
@@ -88,11 +89,13 @@ export function EditorStack({
     }
   }, [editors]);
 
+  const windowInactive = useWindowInactive();
+
   if (editors.length === 0) return null;
   return (
     <div className="relative h-full w-full">
       {editors.map((t) => {
-        const visible = t.id === activeId;
+        const visible = t.id === activeId && !windowInactive;
         return (
           <div
             key={t.id}
