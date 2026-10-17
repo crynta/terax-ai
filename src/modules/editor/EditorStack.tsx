@@ -117,6 +117,7 @@ export function EditorStack({
                 overrideLanguage={t.overrideLanguage}
                 onDirtyChange={getDirtyCallback(t.id)}
                 onClose={getCloseCallback(t.id)}
+                visible={visible}
               />
             </div>
           </div>

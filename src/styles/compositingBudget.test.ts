@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 // layers by default. These constructs force or imply one; they may only appear
 // in the files below, each of which gates the layer behind a state the user
 // asked for or that lasts a moment.
-const SRC = new URL("..", import.meta.url).pathname;
+const SRC = decodeURIComponent(new URL("..", import.meta.url).pathname);
 
 const FORCED_LAYER_PATTERNS: Record<string, RegExp> = {
   "will-change": /will-change|willChange/,
