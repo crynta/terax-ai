@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 // Locks the compositing budget documented in TERAX.md. Every composited layer
@@ -8,7 +9,7 @@ import { describe, expect, it } from "vitest";
 // layers by default. These constructs force or imply one; they may only appear
 // in the files below, each of which gates the layer behind a state the user
 // asked for or that lasts a moment.
-const SRC = decodeURIComponent(new URL("..", import.meta.url).pathname);
+const SRC = fileURLToPath(new URL("..", import.meta.url));
 
 const FORCED_LAYER_PATTERNS: Record<string, RegExp> = {
   "will-change": /will-change|willChange/,

@@ -8,13 +8,13 @@ const src = readFileSync(path.join(here, "EditorPane.tsx"), "utf8");
 
 describe("EditorPane media visibility", () => {
   it("hides video element when not visible", () => {
-    expect(src).toMatch(/<video[\s\S]*className[^>]*hidden/);
-    expect(src).toMatch(/<video[\s\S]*ref={mediaRef/);
+    expect(src).toMatch(/className=\{cn\("max-w-full max-h-full", !visible && "hidden"\)\}/);
+    expect(src).toMatch(/ref=\{mediaRef as React\.RefObject<HTMLVideoElement>\}/);
   });
 
   it("hides audio element when not visible", () => {
-    expect(src).toMatch(/<audio[\s\S]*className[^>]*hidden/);
-    expect(src).toMatch(/<audio[\s\S]*ref={mediaRef/);
+    expect(src).toMatch(/className=\{cn\("w-full max-w-md", !visible && "hidden"\)\}/);
+    expect(src).toMatch(/ref=\{mediaRef as React\.RefObject<HTMLAudioElement>\}/);
   });
 
   it("accepts visible prop", () => {
