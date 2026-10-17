@@ -58,6 +58,8 @@ import { type LanguageResult, resolveLanguage } from "./lib/languageResolver";
 import { FORCE_READ_LIMIT, useDocument } from "./lib/useDocument";
 import { useEditorThemeExt } from "./lib/useEditorThemeExt";
 import { initVimGlobals, vimHandlersExtension } from "./lib/vim";
+import { cn } from "@/lib/utils";
+import { mediaPreviewKind } from "./lib/mediaPreview";
 
 initVimGlobals();
 
@@ -92,6 +94,7 @@ type Props = {
   onDirtyChange?: (dirty: boolean) => void;
   onSaved?: () => void;
   onClose?: () => void;
+  visible?: boolean;
 };
 
 // Above this, syntax highlighting and LSP are disabled: a multi-MB lezer
@@ -108,7 +111,7 @@ function formatBytes(n: number): string {
 // skip re-rendering entirely when App re-renders (terminal events, tab churn).
 export const EditorPane = memo(
   forwardRef<EditorPaneHandle, Props>(function EditorPane(props, ref) {
-    const { path, overrideLanguage, onDirtyChange, onSaved, onClose } = props;
+    const { path, overrideLanguage, onDirtyChange, onSaved, onClose, visible = true } = props;
 
     const { doc, onChange, save, reload, adoptDiskText, openAnyway } =
       useDocument({
@@ -428,6 +431,12 @@ export const EditorPane = memo(
       });
     }, [lspExt]);
 
+    const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement | null>(null);
+    useEffect(() => {
+      if (visible) return;
+      mediaRef.current?.pause();
+    }, [visible]);
+
     useEffect(
       () => () => useDiagnosticsStore.getState().report(pathRef.current, null),
       [],
@@ -566,19 +575,11 @@ export const EditorPane = memo(
       );
     }
     if (doc.status === "binary" || doc.status === "toolarge") {
-      const ext = path.split(".").pop()?.toLowerCase() ?? "";
-      const isImage = [
-        "png",
-        "jpg",
-        "jpeg",
-        "gif",
-        "webp",
-        "svg",
-        "ico",
-      ].includes(ext);
-      const isVideo = ["mp4", "webm", "ogg", "mov"].includes(ext);
-      const isAudio = ["mp3", "wav", "flac", "aac", "m4a"].includes(ext);
-      const isPdf = ext === "pdf";
+      const kind = mediaPreviewKind(path);
+      const isImage = kind === "image";
+      const isVideo = kind === "video";
+      const isAudio = kind === "audio";
+      const isPdf = kind === "pdf";
 
       if (isImage || isVideo || isAudio || isPdf) {
         const assetUrl = convertFileSrc(path);
@@ -601,18 +602,20 @@ export const EditorPane = memo(
             {isVideo && (
               // biome-ignore lint/a11y/useMediaCaption: local media preview opens arbitrary files with no caption track
               <video
+                ref={mediaRef as React.RefObject<HTMLVideoElement>}
                 controls
                 preload="metadata"
-                className="max-w-full max-h-full"
+                className={cn("max-w-full max-h-full", !visible && "hidden")}
                 src={assetUrl}
               />
             )}
             {isAudio && (
               // biome-ignore lint/a11y/useMediaCaption: local media preview opens arbitrary files with no caption track
               <audio
+                ref={mediaRef as React.RefObject<HTMLAudioElement>}
                 controls
                 preload="metadata"
-                className="w-full max-w-md"
+                className={cn("w-full max-w-md", !visible && "hidden")}
                 src={assetUrl}
               />
             )}
