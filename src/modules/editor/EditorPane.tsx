@@ -58,8 +58,8 @@ import { type LanguageResult, resolveLanguage } from "./lib/languageResolver";
 import { FORCE_READ_LIMIT, useDocument } from "./lib/useDocument";
 import { useEditorThemeExt } from "./lib/useEditorThemeExt";
 import { initVimGlobals, vimHandlersExtension } from "./lib/vim";
-import { cn } from "@/lib/utils";
 import { mediaPreviewKind } from "./lib/mediaPreview";
+import { MediaPreview } from "./MediaPreview";
 
 initVimGlobals();
 
@@ -94,7 +94,7 @@ type Props = {
   onDirtyChange?: (dirty: boolean) => void;
   onSaved?: () => void;
   onClose?: () => void;
-  visible?: boolean;
+  mediaActive?: boolean;
 };
 
 // Above this, syntax highlighting and LSP are disabled: a multi-MB lezer
@@ -111,7 +111,14 @@ function formatBytes(n: number): string {
 // skip re-rendering entirely when App re-renders (terminal events, tab churn).
 export const EditorPane = memo(
   forwardRef<EditorPaneHandle, Props>(function EditorPane(props, ref) {
-    const { path, overrideLanguage, onDirtyChange, onSaved, onClose, visible = true } = props;
+    const {
+      path,
+      overrideLanguage,
+      onDirtyChange,
+      onSaved,
+      onClose,
+      mediaActive = true,
+    } = props;
 
     const { doc, onChange, save, reload, adoptDiskText, openAnyway } =
       useDocument({
@@ -431,12 +438,6 @@ export const EditorPane = memo(
       });
     }, [lspExt]);
 
-    const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement | null>(null);
-    useEffect(() => {
-      if (visible) return;
-      mediaRef.current?.pause();
-    }, [visible]);
-
     useEffect(
       () => () => useDiagnosticsStore.getState().report(pathRef.current, null),
       [],
@@ -599,25 +600,8 @@ export const EditorPane = memo(
                 alt={path.split("/").pop()}
               />
             )}
-            {isVideo && (
-              // biome-ignore lint/a11y/useMediaCaption: local media preview opens arbitrary files with no caption track
-              <video
-                ref={mediaRef as React.RefObject<HTMLVideoElement>}
-                controls
-                preload="metadata"
-                className={cn("max-w-full max-h-full", !visible && "hidden")}
-                src={assetUrl}
-              />
-            )}
-            {isAudio && (
-              // biome-ignore lint/a11y/useMediaCaption: local media preview opens arbitrary files with no caption track
-              <audio
-                ref={mediaRef as React.RefObject<HTMLAudioElement>}
-                controls
-                preload="metadata"
-                className={cn("w-full max-w-md", !visible && "hidden")}
-                src={assetUrl}
-              />
+            {(kind === "video" || kind === "audio") && (
+              <MediaPreview kind={kind} src={assetUrl} active={mediaActive} />
             )}
             {isPdf && (
               <iframe
@@ -630,7 +614,8 @@ export const EditorPane = memo(
         );
       }
 
-      const canForce = doc.status === "toolarge" && doc.size <= FORCE_READ_LIMIT;
+      const canForce =
+        doc.status === "toolarge" && doc.size <= FORCE_READ_LIMIT;
       return (
         <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
           <div className="text-sm text-foreground">

@@ -1,61 +1,83 @@
+import type { EditorTab } from "@/modules/tabs";
+import { useWindowInactive } from "@/modules/theme/WindowActivityBridge";
+import { isWindowInactive } from "@/modules/theme/windowActivity";
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
-import type { EditorTab } from "@/modules/tabs";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { EditorStack } from "./EditorStack";
 
 vi.mock("@/modules/theme/WindowActivityBridge", () => ({
   useWindowInactive: vi.fn(),
 }));
 
-const { useWindowInactive } = await import("@/modules/theme/WindowActivityBridge");
-
 vi.mock("./EditorPane", () => ({
-  EditorPane: vi.fn(({ visible }: { visible: boolean }) => (
-    <div data-testid="editor-pane" data-visible={visible ? "true" : "false"} />
-  )),
+  EditorPane: ({ mediaActive }: { mediaActive: boolean }) => (
+    <div data-media-active={mediaActive} />
+  ),
 }));
 
-const baseTab: EditorTab = {
-  id: 1,
-  kind: "editor",
-  title: "test.ts",
-  path: "/test/test.ts",
-  dirty: false,
-  preview: false,
-  spaceId: "default",
-};
+function renderEditor(path: string, activeId = 1) {
+  const tab: EditorTab = {
+    id: 1,
+    kind: "editor",
+    title: path,
+    path,
+    dirty: false,
+    preview: false,
+    spaceId: "default",
+  };
+  return renderToString(
+    createElement(EditorStack, {
+      tabs: [tab],
+      activeId,
+      onDirtyChange: () => {},
+      registerHandle: () => {},
+      onCloseTab: () => {},
+      onSetMarkdownView: () => {},
+    }),
+  );
+}
 
-describe("EditorStack window inactive", () => {
-  it("passes visible=false when window is inactive even if tab is active", async () => {
-    vi.mocked(useWindowInactive).mockReturnValue(true);
-    const html = renderToString(
-      createElement(EditorStack, {
-        tabs: [baseTab],
-        activeId: 1,
-        onDirtyChange: () => {},
-        registerHandle: () => {},
-        onCloseTab: () => {},
-        onSetMarkdownView: () => {},
+afterEach(() => vi.clearAllMocks());
+
+describe("EditorStack presentation", () => {
+  it.each([
+    "code.ts",
+    "notes.md",
+    "image.png",
+    "document.pdf",
+    "video.mp4",
+    "audio.mp3",
+  ])("keeps the active %s pane visible when another app has focus", (name) => {
+    vi.mocked(useWindowInactive).mockReturnValue(
+      isWindowInactive({
+        focused: false,
+        documentVisible: true,
+        presentationVisible: true,
       }),
     );
-    expect(html).toContain('data-visible="false"');
-    vi.mocked(useWindowInactive).mockReset();
+    const html = renderEditor(`/test/${name}`);
+    expect(html).not.toContain("invisible pointer-events-none");
+    expect(html).toContain('aria-hidden="false"');
+    expect(html).toContain('data-media-active="false"');
   });
 
-  it("passes visible=true when tab is active and window is active", async () => {
+  it.each([false, true])(
+    "hides inactive tabs when window inactivity is %s",
+    (inactive) => {
+      vi.mocked(useWindowInactive).mockReturnValue(inactive);
+      const html = renderEditor("/test/video.mp4", 2);
+      expect(html).toContain("invisible pointer-events-none");
+      expect(html).toContain('aria-hidden="true"');
+      expect(html).toContain('data-media-active="false"');
+    },
+  );
+
+  it("allows media in the active tab of an active window", () => {
     vi.mocked(useWindowInactive).mockReturnValue(false);
-    const html = renderToString(
-      createElement(EditorStack, {
-        tabs: [baseTab],
-        activeId: 1,
-        onDirtyChange: () => {},
-        registerHandle: () => {},
-        onCloseTab: () => {},
-        onSetMarkdownView: () => {},
-      }),
-    );
-    expect(html).toContain('data-visible="true"');
-    vi.mocked(useWindowInactive).mockReset();
+    const html = renderEditor("/test/video.mp4");
+    expect(html).not.toContain("invisible pointer-events-none");
+    expect(html).toContain('aria-hidden="false"');
+    expect(html).toContain('data-media-active="true"');
   });
 });

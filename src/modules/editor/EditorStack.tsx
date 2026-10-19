@@ -95,7 +95,7 @@ export function EditorStack({
   return (
     <div className="relative h-full w-full">
       {editors.map((t) => {
-        const visible = t.id === activeId && !windowInactive;
+        const visible = t.id === activeId;
         return (
           <div
             key={t.id}
@@ -120,7 +120,7 @@ export function EditorStack({
                 overrideLanguage={t.overrideLanguage}
                 onDirtyChange={getDirtyCallback(t.id)}
                 onClose={getCloseCallback(t.id)}
-                visible={visible}
+                mediaActive={visible && !windowInactive}
               />
             </div>
           </div>

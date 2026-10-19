@@ -12,3 +12,20 @@ export function mediaPreviewKind(path: string): MediaPreviewKind | null {
   if (ext === "pdf") return "pdf";
   return null;
 }
+
+type MediaPlayback = Pick<
+  HTMLMediaElement,
+  "pause" | "addEventListener" | "removeEventListener"
+>;
+
+export function bindMediaPlayback(media: MediaPlayback, active: boolean) {
+  const pause = () => media.pause();
+  if (!active) {
+    pause();
+    media.addEventListener("play", pause);
+  }
+  return () => {
+    media.removeEventListener("play", pause);
+    pause();
+  };
+}
