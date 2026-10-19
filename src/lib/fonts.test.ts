@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { resolveFontFamily } from "./fonts";
+import { primaryFamily, resolveFontFamily } from "./fonts";
 
 const FALLBACK = '"JetBrains Mono", SFMono-Regular, Menlo, monospace';
 
@@ -89,5 +89,21 @@ describe("resolveFontFamily", () => {
   it("falls back to the mono chain for empty input", () => {
     expect(resolveFontFamily("")).toBe(FALLBACK);
     expect(resolveFontFamily("   ")).toBe(FALLBACK);
+  });
+});
+
+describe("primaryFamily", () => {
+  it("returns the first unquoted family of a stack", () => {
+    expect(primaryFamily('"MesloLGS NF", "JetBrains Mono", monospace')).toBe(
+      "MesloLGS NF",
+    );
+  });
+
+  it("returns a single bare family", () => {
+    expect(primaryFamily("Hack Nerd Font Mono")).toBe("Hack Nerd Font Mono");
+  });
+
+  it("returns null for blank input", () => {
+    expect(primaryFamily("   ")).toBeNull();
   });
 });
