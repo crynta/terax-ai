@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { IS_MAC } from "./platform";
 
 const NERD_FONT_CANDIDATES = [
   "JetBrainsMono Nerd Font",
@@ -96,11 +97,18 @@ export function primaryFamily(cssFamily: string): string | null {
  * canvas glyph rasterization can use them. WKWebView canvas does not resolve
  * user-installed fonts by name, so the terminal would otherwise draw Nerd Font
  * glyphs with the system monospace. Families that are not installed resolve
- * with nothing registered and the CSS fallback chain keeps applying.
+ * with nothing registered and the CSS fallback chain keeps applying. Only macOS
+ * has font directories for the lookup (see `modules/fonts.rs`), so other
+ * platforms skip it.
  */
 export function ensureInstalledFontLoaded(cssFamily: string): Promise<void> {
   const family = primaryFamily(cssFamily);
-  if (!family || typeof document === "undefined" || !document.fonts) {
+  if (
+    !IS_MAC ||
+    !family ||
+    typeof document === "undefined" ||
+    !document.fonts
+  ) {
     return Promise.resolve();
   }
   let pending = installedFamilies.get(family);
@@ -119,9 +127,16 @@ async function loadInstalledFaces(family: string): Promise<void> {
         style,
       }).catch(() => null);
       if (!data) return;
-      const face = new FontFace(family, data, { weight });
-      await face.load();
-      document.fonts.add(face);
+      try {
+        const face = new FontFace(family, data, { weight });
+        await face.load();
+        document.fonts.add(face);
+      } catch (error) {
+        console.warn(
+          `Could not register installed font ${family} ${style}`,
+          error,
+        );
+      }
     }),
   );
 }
