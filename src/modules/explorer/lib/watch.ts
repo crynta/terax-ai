@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { currentWorkspaceEnv } from "@/modules/workspace";
+import { toWorkspacePath } from "./watchPaths";
 
 const FS_CHANGED_EVENT = "fs:changed";
 
@@ -34,7 +35,12 @@ export function listenFsChanged(
 ): Promise<() => void> {
   return getCurrentWebviewWindow().listen<FsChangedPayload>(
     FS_CHANGED_EVENT,
-    (e) => handler(e.payload.paths),
+    // Translate once here, at the only place the event arrives, so every
+    // listener (explorer tree, editor tab sync) sees workspace-spelled paths.
+    (e) => {
+      const workspace = currentWorkspaceEnv();
+      handler(e.payload.paths.map((p) => toWorkspacePath(p, workspace)));
+    },
   );
 }
 
