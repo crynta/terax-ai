@@ -47,7 +47,13 @@ impl Notify {
 
 impl Backend for Notify {
     fn sync(&mut self, set: &WatchSet) {
-        let wanted: HashSet<PathBuf> = set.dir_paths().map(PathBuf::from).collect();
+        // Share paths stay in `set` so refcounts and the poller see them, but registering them
+        // would only produce a watcher that never fires: the poller owns them instead.
+        let wanted: HashSet<PathBuf> = set
+            .dir_paths()
+            .filter(|dir| !plan::is_wsl_share(&to_canon(dir)))
+            .map(PathBuf::from)
+            .collect();
         for gone in self.watched.difference(&wanted) {
             let _ = self.watcher.unwatch(gone);
         }

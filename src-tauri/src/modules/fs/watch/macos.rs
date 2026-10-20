@@ -305,7 +305,8 @@ mod tests {
 
         fn watch_unsettled(&mut self, dir: &Path) {
             let canonical = std::fs::canonicalize(dir).unwrap();
-            self.set.add_dir(to_canon(&canonical), canonical);
+            // FSEvents on a local volume always notifies, so nothing here is polled.
+            self.set.add_dir(to_canon(&canonical), canonical, false);
             *self.sink.dirs.write().unwrap() = Arc::new(self.set.snapshot());
             self.backend.sync(&self.set);
         }

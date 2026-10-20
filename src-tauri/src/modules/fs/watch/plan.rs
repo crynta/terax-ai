@@ -117,6 +117,21 @@ pub fn is_skipped(path: &Path) -> bool {
         .is_some_and(|n| SKIP_DIRS.contains(&n))
 }
 
+/// True for paths reached through the WSL network share, where the OS delivers
+/// no change notifications: `\\wsl.localhost\<distro>\...` or `\\wsl$\<distro>\...`.
+/// Keys are canonical (`to_canon`), so the share appears as `//wsl.localhost/...`.
+pub fn is_wsl_share(key: &str) -> bool {
+    // Backslashes only survive when a raw Windows path is passed: `to_canon` turns them into
+    // separators everywhere else, but this predicate must also hold before that conversion.
+    let normalized = key.replace('\\', "/");
+    let Some(rest) = normalized.strip_prefix("//") else {
+        return false;
+    };
+    let share = rest.split('/').next().unwrap_or_default();
+    // Matched whole: `wsl.localhost.evil` is a different server, not this share.
+    share.eq_ignore_ascii_case("wsl.localhost") || share.eq_ignore_ascii_case("wsl$")
+}
+
 fn is_within(path: &str, ancestor: &str) -> bool {
     path == ancestor
         || path
@@ -238,6 +253,8 @@ struct DirWatch {
     /// Fingerprint of the listing the frontend was last told about (or could have read when the
     /// directory was registered); `None` until known.
     listing: Option<u64>,
+    /// On a share with no change notifications the listing is re-read on a timer instead.
+    poll: bool,
 }
 
 /// Refcounted directories (explorer expansion and open editors can ask for the
@@ -249,8 +266,9 @@ pub struct WatchSet {
 }
 
 impl WatchSet {
-    /// True when the directory was not watched before.
-    pub fn add_dir(&mut self, key: String, path: PathBuf) -> bool {
+    /// True when the directory was not watched before. `poll` is fixed by the first
+    /// registration: every caller derives it from the same canonical key.
+    pub fn add_dir(&mut self, key: String, path: PathBuf, poll: bool) -> bool {
         match self.dirs.get_mut(&key) {
             Some(watch) => {
                 watch.refs += 1;
@@ -263,6 +281,7 @@ impl WatchSet {
                         refs: 1,
                         path,
                         listing: None,
+                        poll,
                     },
                 );
                 true
@@ -293,9 +312,32 @@ impl WatchSet {
         }
     }
 
+    /// Whether the listing moved since the last report, without remembering the new one:
+    /// the poller only decides *whether* to report, and `resolve_changes` still owns the state.
+    pub fn listing_moved(&self, key: &str, current: Option<u64>) -> bool {
+        let Some(watch) = self.dirs.get(key) else {
+            return false;
+        };
+        match (watch.listing, current) {
+            (Some(before), Some(now)) => before != now,
+            // Unreadable or too large to fingerprint: never a change on its own, or an unreadable
+            // directory would report every tick. A deletion is caught by its parent's poll.
+            _ => false,
+        }
+    }
+
     /// Where a watched directory lives on disk.
     pub fn dir_path(&self, key: &str) -> Option<PathBuf> {
         self.dirs.get(key).map(|watch| watch.path.clone())
+    }
+
+    /// The directories the OS cannot notify about, re-read on a timer instead.
+    pub fn polled_dirs(&self) -> Vec<(String, PathBuf)> {
+        self.dirs
+            .iter()
+            .filter(|(_, watch)| watch.poll)
+            .map(|(key, watch)| (key.clone(), watch.path.clone()))
+            .collect()
     }
 
     /// Whether the frontend must be told about `key`: its listing (names and kinds) moved since
@@ -587,7 +629,7 @@ mod tests {
     fn set_of(dirs: &[&str]) -> WatchSet {
         let mut set = WatchSet::default();
         for dir in dirs {
-            set.add_dir((*dir).to_owned(), PathBuf::from(dir));
+            set.add_dir((*dir).to_owned(), PathBuf::from(dir), false);
         }
         set
     }
@@ -604,8 +646,8 @@ mod tests {
     #[test]
     fn refcounts_release_only_on_the_last_reference() {
         let mut set = WatchSet::default();
-        assert!(set.add_dir("/a".into(), "/a".into()));
-        assert!(!set.add_dir("/a".into(), "/a".into()));
+        assert!(set.add_dir("/a".into(), "/a".into(), false));
+        assert!(!set.add_dir("/a".into(), "/a".into(), false));
         assert!(!set.remove_dir("/a"));
         assert!(set.contains_dir("/a"));
         assert!(set.remove_dir("/a"));
@@ -979,10 +1021,84 @@ mod tests {
         let mut set = set_of(&["/w/a"]);
         set.record_listing("/w/a", Some(5));
         assert!(set.remove_dir("/w/a"));
-        assert!(set.add_dir("/w/a".into(), "/w/a".into()));
+        assert!(set.add_dir("/w/a".into(), "/w/a".into(), false));
         assert!(
             set.listing_changed("/w/a", Some(5)),
             "a re-registered directory starts unknown"
         );
+    }
+
+    #[test]
+    fn only_wsl_share_paths_are_polled() {
+        assert!(is_wsl_share("//wsl.localhost/FedoraLinux-43/home/x"));
+        assert!(is_wsl_share("\\\\wsl$\\Ubuntu\\home"));
+        // Canonical keys keep the prefix lowercase, but nothing guarantees the spelling.
+        assert!(is_wsl_share("//WSL.LOCALHOST/Ubuntu/home"));
+        assert!(is_wsl_share("\\\\WSL$\\Ubuntu"));
+        // A plain UNC server that merely starts with the same letters is not the share.
+        assert!(!is_wsl_share("//server/share"));
+        assert!(!is_wsl_share("//wsl.localhost.evil/share"));
+        assert!(!is_wsl_share("/home/x"));
+        assert!(!is_wsl_share("C:/Users/x"));
+        assert!(!is_wsl_share("C:\\Users\\x"));
+        assert!(!is_wsl_share(""));
+    }
+
+    #[test]
+    fn polling_compares_without_remembering_and_ignores_unknown_listings() {
+        let mut set = set_of(&["/w/a"]);
+        // Nothing recorded yet: not a change, or the first tick after registration would fire.
+        assert!(!set.listing_moved("/w/a", Some(1)));
+        set.record_listing("/w/a", Some(1));
+        assert!(!set.listing_moved("/w/a", Some(1)), "unchanged");
+        assert!(set.listing_moved("/w/a", Some(2)), "moved");
+        // The comparison left the remembered listing alone.
+        assert!(set.listing_moved("/w/a", Some(2)));
+        assert!(
+            set.listing_changed("/w/a", Some(2)),
+            "the first report still goes out"
+        );
+        assert!(!set.listing_changed("/w/a", Some(2)));
+        // Unreadable now, or unreadable when registered: never a change on its own.
+        assert!(!set.listing_moved("/w/a", None));
+        set.record_listing("/w/a", None);
+        assert!(!set.listing_moved("/w/a", Some(3)));
+        assert!(!set.listing_moved("/w/zzz", Some(3)));
+    }
+
+    #[test]
+    fn polled_dirs_lists_only_the_directories_registered_for_polling() {
+        let mut set = WatchSet::default();
+        set.add_dir(
+            "//wsl.localhost/U/home".into(),
+            "//wsl.localhost/U/home".into(),
+            true,
+        );
+        set.add_dir(
+            "//wsl.localhost/U/home/src".into(),
+            "//wsl.localhost/U/home/src".into(),
+            true,
+        );
+        set.add_dir("C:/repo".into(), "C:/repo".into(), false);
+        let mut polled = set.polled_dirs();
+        polled.sort();
+        assert_eq!(
+            polled,
+            vec![
+                (
+                    "//wsl.localhost/U/home".to_owned(),
+                    PathBuf::from("//wsl.localhost/U/home")
+                ),
+                (
+                    "//wsl.localhost/U/home/src".to_owned(),
+                    PathBuf::from("//wsl.localhost/U/home/src")
+                ),
+            ]
+        );
+        // Refcounts do not duplicate a directory, and releasing the last reference removes it.
+        assert!(!set.add_dir("C:/repo".into(), "C:/repo".into(), false));
+        assert!(!set.remove_dir("C:/repo"));
+        assert!(set.remove_dir("C:/repo"));
+        assert_eq!(set.polled_dirs().len(), 2);
     }
 }
