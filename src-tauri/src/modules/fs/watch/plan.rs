@@ -424,6 +424,30 @@ impl WatchSet {
         changed
     }
 
+    /// The files registered under `dir`: the open editor buffers it holds.
+    pub fn file_keys(&self, dir: &str) -> Vec<String> {
+        self.files
+            .get(dir)
+            .map(|in_dir| in_dir.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// Whether any file registered under `dir` moved since it was stamped, without
+    /// remembering the new stamp: the poller only decides *whether* to report, and
+    /// `resolve_changes` still owns the state.
+    ///
+    /// `current` holds the stamp of each file by its key. A file missing from it was
+    /// registered after the snapshot was taken: it is left alone, and the next tick
+    /// picks it up.
+    pub fn files_moved(&self, dir: &str, current: &HashMap<String, Option<FileStamp>>) -> bool {
+        let Some(in_dir) = self.files.get(dir) else {
+            return false;
+        };
+        in_dir
+            .iter()
+            .any(|(file, watch)| current.get(file).is_some_and(|now| *now != watch.stamp))
+    }
+
     /// The fewest directories that cover everything watched. FSEvents streams
     /// are recursive, so one stream path per top-level directory is enough.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -1100,5 +1124,51 @@ mod tests {
         assert!(!set.remove_dir("C:/repo"));
         assert!(set.remove_dir("C:/repo"));
         assert_eq!(set.polled_dirs().len(), 2);
+    }
+
+    #[test]
+    fn a_registered_file_is_seen_as_moved_by_its_stamp_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("open.ts");
+        std::fs::write(&file, "one").unwrap();
+        let file_key = file.to_string_lossy().into_owned();
+        let dir_key = dir.path().to_string_lossy().into_owned();
+
+        let mut set = WatchSet::default();
+        set.add_file(dir_key.clone(), file_key.clone(), FileStamp::of(&file));
+        assert_eq!(set.file_keys(&dir_key), vec![file_key.clone()]);
+
+        // The stamp is what moves, not the listing: an edit in place keeps the name.
+        let unchanged = HashMap::from([(file_key.clone(), FileStamp::of(&file))]);
+        assert!(!set.files_moved(&dir_key, &unchanged));
+
+        std::fs::write(&file, "two, a different length").unwrap();
+        let changed = HashMap::from([(file_key.clone(), FileStamp::of(&file))]);
+        assert!(set.files_moved(&dir_key, &changed));
+
+        // A file the snapshot did not catch was registered after it: left for the next tick.
+        assert!(!set.files_moved(&dir_key, &HashMap::new()));
+        assert!(!set.files_moved("/not/watched", &changed));
+
+        // The comparison left the remembered stamp alone.
+        assert!(set.files_moved(&dir_key, &changed));
+    }
+
+    #[test]
+    fn a_deleted_file_reads_as_moved() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("open.ts");
+        std::fs::write(&file, "one").unwrap();
+        let file_key = file.to_string_lossy().into_owned();
+        let dir_key = dir.path().to_string_lossy().into_owned();
+
+        let mut set = WatchSet::default();
+        set.add_file(dir_key.clone(), file_key.clone(), FileStamp::of(&file));
+        std::fs::remove_file(&file).unwrap();
+        let gone = HashMap::from([(file_key, None)]);
+        assert!(
+            set.files_moved(&dir_key, &gone),
+            "a file that no longer exists must still be reported"
+        );
     }
 }
