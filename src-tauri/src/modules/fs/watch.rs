@@ -13,6 +13,7 @@ mod macos;
 #[cfg(not(target_os = "macos"))]
 mod portable;
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex, RwLock};
@@ -155,20 +156,41 @@ fn poll_once(tx: &mpsc::Sender<Batch>, shared: &Shared) -> bool {
         .iter()
         .map(|(_, path)| plan::listing_signature(path))
         .collect();
+    // The files open in editors are registered under the same directory. An edit in place
+    // leaves the listing untouched, so their own stamps are what move.
+    let watched_files: Vec<Vec<String>> = {
+        let set = shared.set.lock().unwrap_or_else(|e| e.into_inner());
+        polled
+            .iter()
+            .map(|(key, _)| set.file_keys(key))
+            .collect::<Vec<_>>()
+    };
+    let stamps: Vec<HashMap<String, Option<FileStamp>>> = watched_files
+        .iter()
+        .map(|files| {
+            files
+                .iter()
+                .map(|file| (file.clone(), FileStamp::of(std::path::Path::new(file))))
+                .collect()
+        })
+        .collect();
     let moved: Vec<String> = {
         let set = shared.set.lock().unwrap_or_else(|e| e.into_inner());
         polled
             .iter()
             .zip(signatures)
-            .filter(|((key, _), signature)| set.listing_moved(key, *signature))
-            .map(|((key, _), _)| key.clone())
+            .zip(stamps)
+            .filter(|(((key, _), signature), stamps)| {
+                set.listing_moved(key, *signature) || set.files_moved(key, stamps)
+            })
+            .map(|(((key, _), _), _)| key.clone())
             .collect()
     };
     if moved.is_empty() {
         return true;
     }
-    // `resolve_changes` re-reads and remembers the listing: the poller only decides that
-    // something moved.
+    // `resolve_changes` re-reads and remembers the listing and re-stamps the files: the
+    // poller only decides that something moved.
     tx.send(Batch {
         dirs: moved,
         subtrees: Vec::new(),
@@ -440,6 +462,73 @@ mod tests {
             set: Mutex::new(set),
             dirs: Arc::new(RwLock::new(Arc::new(DirSet::new()))),
         }
+    }
+
+    /// A polled directory that also holds an open editor file, as the editor registers it.
+    fn shared_polling_with_file(dir: &std::path::Path, file: &std::path::Path) -> Shared {
+        let shared = shared_polling(dir);
+        let mut set = shared.set.lock().unwrap();
+        set.add_file(to_canon(dir), to_canon(file), FileStamp::of(file));
+        drop(set);
+        shared
+    }
+
+    #[test]
+    fn an_edited_open_file_reaches_the_frontend_through_the_poller() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("open.ts");
+        std::fs::write(&file, "one").unwrap();
+        let shared = shared_polling_with_file(dir.path(), &file);
+        let (tx, rx) = mpsc::channel::<Batch>();
+
+        assert!(poll_once(&tx, &shared));
+        assert!(rx.try_recv().is_err(), "an untouched file is not a tick");
+
+        // An edit in place: the listing is unchanged, only the file's stamp moved.
+        std::fs::write(&file, "two, a different length").unwrap();
+        assert!(poll_once(&tx, &shared));
+        let batch = rx.try_recv().expect("the moved file is a batch");
+        assert_eq!(batch.dirs, vec![to_canon(dir.path())]);
+
+        // The batch takes the normal resolve path, which re-stamps the file.
+        let mut pending = Pending::default();
+        pending.merge(batch);
+        let changes = resolve_changes(pending, &shared);
+        assert_eq!(
+            changes.report,
+            vec![to_canon(&file)],
+            "the file is reported, not the directory"
+        );
+
+        // The new stamp is the baseline: the next tick is quiet again.
+        assert!(poll_once(&tx, &shared));
+        assert!(
+            rx.try_recv().is_err(),
+            "a reported change is not reported twice"
+        );
+    }
+
+    #[test]
+    fn a_deleted_open_file_reaches_the_frontend_through_the_poller() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("open.ts");
+        std::fs::write(&file, "one").unwrap();
+        let shared = shared_polling_with_file(dir.path(), &file);
+        let (tx, rx) = mpsc::channel::<Batch>();
+
+        std::fs::remove_file(&file).unwrap();
+        assert!(poll_once(&tx, &shared));
+        let batch = rx.try_recv().expect("the deleted file is a batch");
+        assert_eq!(batch.dirs, vec![to_canon(dir.path())]);
+
+        let mut pending = Pending::default();
+        pending.merge(batch);
+        let changes = resolve_changes(pending, &shared);
+        assert_eq!(
+            changes.report,
+            vec![to_canon(dir.path()), to_canon(&file)],
+            "the directory loses the entry and the file is reported as gone"
+        );
     }
 
     #[test]
