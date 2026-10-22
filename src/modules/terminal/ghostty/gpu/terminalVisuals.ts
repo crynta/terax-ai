@@ -1,3 +1,4 @@
+import { ensureInstalledFontLoaded } from "@/lib/fonts";
 import { readTerminalTokens } from "@/styles/tokens";
 import type { Rgb } from "../core/packedCells";
 
@@ -109,6 +110,7 @@ export async function measureTerminalFont(
   font: TerminalFontSpec,
   scale = devicePixelScale(),
 ): Promise<TerminalFontMetrics> {
+  await ensureInstalledFontLoaded(font.family);
   await document.fonts.load(fontCss(font, false, false)).catch(() => undefined);
   return measureTerminalFontSync(font, scale);
 }
