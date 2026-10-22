@@ -22,16 +22,19 @@ function joinRel(cwd: string, rel: string): string {
 
 function resolveDir(dirPart: string, cwd: string): string | null {
   if (dirPart.startsWith("~")) return null; // home expansion not handled yet
-  if (dirPart.startsWith("/")) return dirPart || "/";
+  if (/^[a-zA-Z]:\//.test(dirPart) || dirPart.startsWith("/")) return dirPart;
   return joinRel(cwd, dirPart);
 }
 
 // Completes the argument token against the terminal's live cwd. Directories get
 // a trailing slash and re-trigger completion so the next level opens on accept.
+// Backslashes arrive from Windows shells; they are normalized up front so
+// splitting, cwd joining, and fromOffset (1:1 char swap) all stay consistent.
 export async function pathCompletions(
   token: string,
   cwd: string,
 ): Promise<PathResult | null> {
+  token = token.replace(/\\/g, "/");
   const slash = token.lastIndexOf("/");
   const dirPart = slash >= 0 ? token.slice(0, slash + 1) : "";
   const base = slash >= 0 ? token.slice(slash + 1) : token;
