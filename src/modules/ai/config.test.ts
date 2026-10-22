@@ -5,6 +5,7 @@ import {
   estimateCost,
   getModelContextLimit,
   isCompatModelId,
+  isResolvableModelId,
   migrateLegacyCompatEndpoint,
   modelKeepsReasoning,
   modelSupportsTemperature,
@@ -34,6 +35,71 @@ describe("compat model id helpers", () => {
   it("treats static model ids as non-compat", () => {
     expect(isCompatModelId("gpt-5.4-mini")).toBe(false);
     expect(endpointIdFromCompatModel("gpt-5.4-mini")).toBe("");
+  });
+});
+
+describe("isResolvableModelId", () => {
+  it("accepts static catalog ids", () => {
+    expect(isResolvableModelId("gpt-5.4-mini")).toBe(true);
+  });
+
+  it("rejects unknown static ids", () => {
+    expect(isResolvableModelId("nope-not-real")).toBe(false);
+    expect(isResolvableModelId("")).toBe(false);
+  });
+
+  it("accepts a compat id whose endpoint exists and is complete", () => {
+    expect(
+      isResolvableModelId(compatModelIdForEndpoint(endpoint.id), [endpoint]),
+    ).toBe(true);
+  });
+
+  it("rejects a compat id whose endpoint no longer exists", () => {
+    expect(
+      isResolvableModelId(compatModelIdForEndpoint("missing"), [endpoint]),
+    ).toBe(false);
+  });
+
+  it("rejects a compat id whose endpoint is still incomplete", () => {
+    expect(
+      isResolvableModelId(compatModelIdForEndpoint(endpoint.id), [
+        { ...endpoint, baseURL: "   " },
+      ]),
+    ).toBe(false);
+    expect(
+      isResolvableModelId(compatModelIdForEndpoint(endpoint.id), [
+        { ...endpoint, modelId: "" },
+      ]),
+    ).toBe(false);
+  });
+
+  it("treats a compat id with no endpoint list as unresolved", () => {
+    expect(isResolvableModelId(compatModelIdForEndpoint(endpoint.id))).toBe(
+      false,
+    );
+  });
+
+  it("agrees with the picker: a compat id resolves iff its endpoint is complete", () => {
+    // `isConfigured` and `DefaultModelPicker` both keep only endpoints with a
+    // non-empty baseURL and modelId. The persisted-id validator must agree,
+    // or the default is kept while the picker hides every option for it.
+    // resolveModel cannot serve as this reference — it returns a placeholder
+    // for a missing endpoint and never throws for a compat id.
+    const pickerComplete = (e: CustomEndpoint) =>
+      e.baseURL.trim() !== "" && e.modelId.trim() !== "";
+    const eps: CustomEndpoint[] = [
+      endpoint,
+      { ...endpoint, id: "blankurl", baseURL: "   " },
+      { ...endpoint, id: "blankmodel", modelId: "" },
+    ];
+    for (const e of eps) {
+      expect(isResolvableModelId(compatModelIdForEndpoint(e.id), eps)).toBe(
+        pickerComplete(e),
+      );
+    }
+    expect(isResolvableModelId(compatModelIdForEndpoint("gone"), eps)).toBe(
+      false,
+    );
   });
 });
 
