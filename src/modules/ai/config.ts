@@ -9,6 +9,7 @@ export type ProviderId =
   | "groq"
   | "deepseek"
   | "mistral"
+  | "opencode-go"
   | "openrouter"
   | "openai-compatible"
   | "lmstudio"
@@ -81,6 +82,13 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "mistral-api-key",
     keyPrefix: null,
     consoleUrl: "https://console.mistral.ai/api-keys/",
+  },
+  {
+    id: "opencode-go",
+    label: "OpenCode Go",
+    keyringAccount: "opencode-go-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://opencode.ai",
   },
   {
     id: "openrouter",
@@ -581,6 +589,26 @@ export const MODELS = [
     tags: ["reasoning", "tools"],
   },
 
+  // ── OpenCode Go (paid subscription; API key) ──────────────────────────────
+  {
+    id: "opencode-go-deepseek-v4-flash",
+    provider: "opencode-go",
+    label: "DeepSeek V4 Flash",
+    hint: "Fast",
+    description: "Fast everyday tier on OpenCode Go.",
+    capabilities: { intelligence: 4, speed: 5, cost: 5 },
+    tags: ["reasoning", "tools"],
+  },
+  {
+    id: "opencode-go-deepseek-v4-pro",
+    provider: "opencode-go",
+    label: "DeepSeek V4 Pro",
+    hint: "Best",
+    description: "Frontier reasoning and coding on OpenCode Go.",
+    capabilities: { intelligence: 5, speed: 3, cost: 4 },
+    tags: ["reasoning", "tools", "coding"],
+  },
+
   // ── OpenRouter (gateway; model id is user-supplied at runtime) ────────────
   {
     id: "openrouter-custom",
@@ -756,6 +784,8 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "openai/gpt-oss-20b": 128_000,
   "llama-3.3-70b-versatile": 128_000,
   "deepseek-r1-distill-llama-70b": 128_000,
+  "opencode-go-deepseek-v4-flash": 128_000,
+  "opencode-go-deepseek-v4-pro": 128_000,
   "openrouter-custom": 256_000,
   "openai-compatible-custom": 128_000,
   "lmstudio-local": 32_000,
