@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import { useMemo } from "react";
 import { labelFor } from "./lib/tabLabel";
 import type { TabSwitcherState } from "./lib/useTabSwitcher";
@@ -22,6 +23,7 @@ export function TabSwitcherHud({
   tabs: Tab[];
   state: TabSwitcherState;
 }) {
+  const terminalShell = usePreferencesStore((s) => s.terminalShell);
   const byId = useMemo(() => new Map(tabs.map((t) => [t.id, t])), [tabs]);
   const rows = state.order
     .map((id) => byId.get(id))
@@ -47,7 +49,9 @@ export function TabSwitcherHud({
               )}
             >
               <TabIcon tab={t} />
-              <span className="min-w-0 flex-1 truncate">{labelFor(t)}</span>
+              <span className="min-w-0 flex-1 truncate">
+                {labelFor(t, terminalShell)}
+              </span>
               {subtitle && (
                 <span className="shrink-0 truncate text-[10px] text-muted-foreground/55">
                   {subtitle}
