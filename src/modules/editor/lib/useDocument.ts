@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { detectEol, type Eol, normalizeToLf, restoreEol } from "./eol";
+import { decideSave } from "./saveConflict";
 
 type ReadResult =
   | { kind: "text"; content: string; size: number; mtime: number }
@@ -28,6 +29,15 @@ type Options = {
   onDirtyChange?: (dirty: boolean) => void;
 };
 
+function reportSaveError(path: string, e: unknown) {
+  console.error("[save]", path, e);
+  const name = path.split(/[\\/]/).pop() ?? path;
+  toast.error(`Could not save ${name}`, {
+    id: `save-error:${path}`,
+    description: String(e),
+  });
+}
+
 export function useDocument({ path, onDirtyChange }: Options) {
   const [doc, setDoc] = useState<DocumentState>({ status: "loading" });
   const [dirty, setDirty] = useState(false);
@@ -40,9 +50,11 @@ export function useDocument({ path, onDirtyChange }: Options) {
   const bufferRef = useRef<string>("");
   const eolRef = useRef<Eol>("\n");
   const dirtyRef = useRef(false);
-  useEffect(() => {
-    dirtyRef.current = dirty;
-  }, [dirty]);
+  // Updates the ref synchronously: reload() can run before the next render.
+  const markDirty = useCallback((next: boolean) => {
+    dirtyRef.current = next;
+    setDirty(next);
+  }, []);
 
   const autoSaveRef = useRef({ autoSave, autoSaveDelay });
   autoSaveRef.current = { autoSave, autoSaveDelay };
@@ -55,6 +67,16 @@ export function useDocument({ path, onDirtyChange }: Options) {
       timeoutRef.current = null;
     }
   }, []);
+
+  const readFromDisk = useCallback(
+    (force: boolean) =>
+      invoke<ReadResult>("fs_read_file", {
+        path,
+        workspace: currentWorkspaceEnv(),
+        force,
+      }),
+    [path],
+  );
 
   const diskMtimeRef = useRef<number | null>(null);
 
@@ -69,9 +91,12 @@ export function useDocument({ path, onDirtyChange }: Options) {
     diskMtimeRef.current = mtime;
     savedRef.current = content;
     // Edits typed while the write was in flight must stay dirty.
-    setDirty(bufferRef.current !== content);
+    markDirty(bufferRef.current !== content);
+    // A successful write supersedes any earlier failure or conflict notice.
+    toast.dismiss(`save-error:${path}`);
+    toast.dismiss(`save-conflict:${path}`);
     notifyDocumentSaved(path);
-  }, [path]);
+  }, [path, markDirty]);
 
   // False when the write was withheld because the file changed on disk
   // since load; overwriting is an explicit user action from the toast.
@@ -83,18 +108,32 @@ export function useDocument({ path, onDirtyChange }: Options) {
         workspace: currentWorkspaceEnv(),
       }).catch(() => null);
       if (stat && stat.mtime !== known) {
-        const name = path.split(/[\\/]/).pop() ?? path;
-        toast.warning("File changed on disk", {
-          id: `save-conflict:${path}`,
-          description: `${name} was modified by another program while you had unsaved changes. Overwrite to keep your version.`,
-          action: { label: "Overwrite", onClick: () => void writeToDisk() },
+        const res = await readFromDisk(false).catch(() => null);
+        const decision = decideSave({
+          knownMtime: known,
+          statMtime: stat.mtime,
+          diskText: res?.kind === "text" ? normalizeToLf(res.content) : null,
+          savedText: savedRef.current,
         });
-        return false;
+        if (decision === "conflict") {
+          const name = path.split(/[\\/]/).pop() ?? path;
+          toast.warning("File changed on disk", {
+            id: `save-conflict:${path}`,
+            description: `${name} was modified by another program while you had unsaved changes. Overwrite to keep your version.`,
+            duration: Number.POSITIVE_INFINITY,
+            action: {
+              label: "Overwrite",
+              onClick: () =>
+                void writeToDisk().catch((e) => reportSaveError(path, e)),
+            },
+          });
+          return false;
+        }
       }
     }
     await writeToDisk();
     return true;
-  }, [path, writeToDisk]);
+  }, [path, writeToDisk, readFromDisk]);
 
   // Notify parent of dirty transitions.
   const onDirtyChangeRef = useRef(onDirtyChange);
@@ -110,31 +149,24 @@ export function useDocument({ path, onDirtyChange }: Options) {
   // Adopts a read result as the new saved baseline. `skipIfUnchanged` avoids
   // the re-render when disk already matches the buffer (self-save / duplicate
   // watcher event); initial loads must always publish a state.
-  const adoptRead = useCallback((res: ReadResult, skipIfUnchanged = false) => {
-    if (res.kind === "text") {
-      eolRef.current = detectEol(res.content);
-      diskMtimeRef.current = res.mtime;
-      const content = normalizeToLf(res.content);
-      if (skipIfUnchanged && content === savedRef.current) return;
-      savedRef.current = content;
-      bufferRef.current = content;
-      setDirty(false);
-      setDoc({ status: "ready", content, size: res.size });
-    } else if (res.kind === "binary") {
-      setDoc({ status: "binary", size: res.size });
-    } else if (res.kind === "toolarge") {
-      setDoc({ status: "toolarge", size: res.size, limit: res.limit });
-    }
-  }, []);
-
-  const readFromDisk = useCallback(
-    (force: boolean) =>
-      invoke<ReadResult>("fs_read_file", {
-        path,
-        workspace: currentWorkspaceEnv(),
-        force,
-      }),
-    [path],
+  const adoptRead = useCallback(
+    (res: ReadResult, skipIfUnchanged = false) => {
+      if (res.kind === "text") {
+        eolRef.current = detectEol(res.content);
+        diskMtimeRef.current = res.mtime;
+        const content = normalizeToLf(res.content);
+        if (skipIfUnchanged && content === savedRef.current) return;
+        savedRef.current = content;
+        bufferRef.current = content;
+        markDirty(false);
+        setDoc({ status: "ready", content, size: res.size });
+      } else if (res.kind === "binary") {
+        setDoc({ status: "binary", size: res.size });
+      } else if (res.kind === "toolarge") {
+        setDoc({ status: "toolarge", size: res.size, limit: res.limit });
+      }
+    },
+    [markDirty],
   );
 
   // Load on path change.
@@ -143,7 +175,7 @@ export function useDocument({ path, onDirtyChange }: Options) {
     // "Open anyway" is a per-file decision; a new path starts unforced.
     forceRef.current = false;
     setDoc({ status: "loading" });
-    setDirty(false);
+    markDirty(false);
 
     readFromDisk(forceRef.current)
       .then((res) => {
@@ -156,7 +188,7 @@ export function useDocument({ path, onDirtyChange }: Options) {
     return () => {
       cancelled = true;
     };
-  }, [readFromDisk, adoptRead]);
+  }, [readFromDisk, adoptRead, markDirty]);
 
   const openAnyway = useCallback(() => {
     forceRef.current = true;
@@ -197,31 +229,40 @@ export function useDocument({ path, onDirtyChange }: Options) {
       diskMtimeRef.current = mtime;
       const content = normalizeToLf(diskText);
       savedRef.current = content;
-      setDirty(bufferRef.current !== content);
+      markDirty(bufferRef.current !== content);
       return content;
     },
-    [],
+    [markDirty],
   );
 
   const onChange = useCallback(
     (next: string) => {
       bufferRef.current = next;
       const isDirty = next !== savedRef.current;
-      setDirty(isDirty);
+      markDirty(isDirty);
 
       clearAutoSaveTimer();
 
       const { autoSave: active, autoSaveDelay: delay } = autoSaveRef.current;
       if (active && isDirty) {
         timeoutRef.current = setTimeout(() => {
-          saveNow().catch((e) => console.error("[autosave]", e));
+          saveNow().catch((e) => reportSaveError(path, e));
         }, delay);
       }
     },
-    [clearAutoSaveTimer, saveNow],
+    [clearAutoSaveTimer, saveNow, markDirty, path],
   );
 
   useEffect(() => clearAutoSaveTimer, [path, clearAutoSaveTimer]);
+
+  // The conflict toast never times out; its Overwrite action is bound to this
+  // path and must not outlive the tab or a rename.
+  useEffect(
+    () => () => {
+      toast.dismiss(`save-conflict:${path}`);
+    },
+    [path],
+  );
 
   return { doc, dirty, onChange, save, reload, adoptDiskText, openAnyway };
 }
