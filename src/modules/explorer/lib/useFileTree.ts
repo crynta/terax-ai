@@ -18,26 +18,17 @@ import {
   excludeNestedSources,
   type FsMoveResult,
 } from "./batchMove";
+import {
+  type DirEntry,
+  refreshTargets,
+  type TreeState,
+} from "./refreshTargets";
 import { listenFsChanged, watchAdd, watchRemove } from "./watch";
 import { createWatchRegistry, planVisibilityEdge } from "./watchRegistry";
 
-export type DirEntry = {
-  name: string;
-  kind: "file" | "dir" | "symlink";
-  size: number;
-  mtime: number;
-  gitignored: boolean;
-};
+export type { DirEntry } from "./refreshTargets";
 
 type DeleteBatchResult = { deleted: string[]; failed: number };
-
-type ChildrenState =
-  | { status: "idle" }
-  | { status: "loading" }
-  | { status: "loaded"; entries: DirEntry[] }
-  | { status: "error"; message: string };
-
-type TreeState = Record<string, ChildrenState>;
 
 export type PendingCreate = {
   parentPath: string;
@@ -411,6 +402,18 @@ export function useFileTree(rootPath: string | null, options?: Options) {
     [fetchChildren, addWatch, rootPath, scopeKey],
   );
 
+  // The Refresh button means "show me what is on disk now": a root-only re-read would leave
+  // every expanded subfolder as stale as the WSL share left it.
+  const refreshAll = useCallback(async () => {
+    if (scopeKeyRef.current !== scopeKey) return;
+    const targets = refreshTargets(
+      rootPath,
+      nodesRef.current,
+      expandedRef.current,
+    );
+    await Promise.all(targets.map((path) => fetchChildren(path)));
+  }, [fetchChildren, rootPath, scopeKey]);
+
   // --- mutations ---
 
   const beginCreate = useCallback(
@@ -610,6 +613,7 @@ export function useFileTree(rootPath: string | null, options?: Options) {
     toggle,
     expand,
     refresh,
+    refreshAll,
     beginCreate,
     cancelCreate,
     commitCreate,
