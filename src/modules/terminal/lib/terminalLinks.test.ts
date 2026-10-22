@@ -11,7 +11,7 @@ describe("createTerminalLinkHandler", () => {
     vi.clearAllMocks();
   });
 
-  it("opens OSC 8 links natively and restores late-bound terminal focus", async () => {
+  it("opens OSC 8 https links natively and restores late-bound terminal focus", async () => {
     openUrl.mockResolvedValue(undefined);
     const initialFocus = vi.fn();
     let focus = initialFocus;
@@ -28,5 +28,29 @@ describe("createTerminalLinkHandler", () => {
     );
     await vi.waitFor(() => expect(focus).toHaveBeenCalledOnce());
     expect(initialFocus).not.toHaveBeenCalled();
+  });
+
+  it("allows non-http OSC 8 protocols and opens file URLs", async () => {
+    openUrl.mockResolvedValue(undefined);
+    const focus = vi.fn();
+    const handler = createTerminalLinkHandler(focus);
+
+    expect(handler.allowNonHttpProtocols).toBe(true);
+
+    handler.activate({} as MouseEvent, "file:///Users/me/project/README.md");
+
+    expect(openUrl).toHaveBeenCalledWith("file:///Users/me/project/README.md");
+    await vi.waitFor(() => expect(focus).toHaveBeenCalledOnce());
+  });
+
+  it("does not open javascript: OSC 8 payloads", async () => {
+    openUrl.mockResolvedValue(undefined);
+    const focus = vi.fn();
+    const handler = createTerminalLinkHandler(focus);
+
+    handler.activate({} as MouseEvent, "javascript:alert(1)");
+
+    expect(openUrl).not.toHaveBeenCalled();
+    expect(focus).toHaveBeenCalledOnce();
   });
 });
