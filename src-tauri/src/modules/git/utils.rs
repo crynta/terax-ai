@@ -26,6 +26,50 @@ fn normalize_git_path(path: &str) -> String {
     path.replace('\\', "/")
 }
 
+/// Strip Windows verbatim prefixes and normalize separators for containment.
+/// Pure so Windows prefix-mismatch cases stay unit-testable on any host.
+/// Must not be used for real Unix path containment (backslashes are legal names).
+/// On non-Windows lib builds this is only referenced from unit tests (same as
+/// `fs::strip_verbatim`); allow dead_code so clippy -D warnings stays green.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn strip_verbatim_for_containment(s: &str) -> String {
+    let stripped = if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{rest}")
+    } else if let Some(rest) = s.strip_prefix(r"\\?\") {
+        rest.to_string()
+    } else if let Some(rest) = s.strip_prefix(r"//?/") {
+        rest.to_string()
+    } else {
+        s.to_string()
+    };
+    stripped.replace('\\', "/")
+}
+
+/// Windows string containment after verbatim-prefix strip (testable on any host).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn windows_path_is_under(repo_root: &str, candidate: &str) -> bool {
+    let root = strip_verbatim_for_containment(repo_root);
+    let cand = strip_verbatim_for_containment(candidate);
+    Path::new(&cand).starts_with(Path::new(&root))
+}
+
+/// True if `candidate` is inside (or equal to) `repo_root`.
+/// On Windows, strips `\\?\` / `//?/` so canonicalize vs plain roots still match (#814).
+/// On Unix/macOS, uses native `Path` containment and never rewrites backslashes.
+fn path_is_under(repo_root: &Path, candidate: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        windows_path_is_under(
+            &repo_root.to_string_lossy(),
+            &candidate.to_string_lossy(),
+        )
+    }
+    #[cfg(not(windows))]
+    {
+        candidate.starts_with(repo_root)
+    }
+}
+
 pub fn canonical_dir(
     registry: &WorkspaceRegistry,
     path: &str,
@@ -69,7 +113,7 @@ pub fn resolve_within_repo(repo_root: &Path, rel: &str) -> Result<PathBuf> {
     let joined = repo_root.join(rel);
     match std::fs::canonicalize(&joined) {
         Ok(canonical) => {
-            if !canonical.starts_with(repo_root) {
+            if !path_is_under(repo_root, &canonical) {
                 return Err(GitError::PathOutsideWorkspace(canonical));
             }
             Ok(canonical)
@@ -106,7 +150,7 @@ fn resolve_deleted_within_repo(repo_root: &Path, joined: &Path, rel: &str) -> Re
         tail.push(name);
         match std::fs::canonicalize(parent) {
             Ok(canonical_parent) => {
-                if !canonical_parent.starts_with(repo_root) {
+                if !path_is_under(repo_root, &canonical_parent) {
                     return Err(GitError::PathOutsideWorkspace(canonical_parent));
                 }
                 let mut resolved = canonical_parent;
@@ -223,5 +267,63 @@ mod tests {
         let tmp = std::env::temp_dir();
         let err = resolve_within_repo(&tmp, "../outside.txt");
         assert!(matches!(err, Err(GitError::InvalidPath(_))));
+    }
+
+    #[test]
+    fn windows_path_is_under_ignores_verbatim_prefix_mismatch() {
+        // Simulate canonicalize returning a prefixed path while repo_root is plain.
+        assert!(windows_path_is_under(
+            r"C:\Users\dev\project",
+            r"\\?\C:\Users\dev\project\src\gone.rs",
+        ));
+        // Reverse: root prefixed, candidate plain.
+        assert!(windows_path_is_under(
+            r"\\?\C:\Users\dev\project",
+            r"C:\Users\dev\project\deleted.txt",
+        ));
+        assert!(windows_path_is_under(
+            r"C:\Users\dev\project",
+            r"\\?\C:\Users\dev\project",
+        ));
+        assert!(windows_path_is_under(
+            r"\\?\C:\Users\dev\project",
+            r"C:\Users\dev\project",
+        ));
+    }
+
+    #[test]
+    fn windows_path_is_under_rejects_outside_despite_prefix() {
+        assert!(!windows_path_is_under(
+            r"C:\Users\dev\project",
+            r"\\?\C:\Users\dev\other\file.rs",
+        ));
+        assert!(!windows_path_is_under(
+            r"C:\Users\dev\project",
+            r"\\?\C:\Users\dev\project-evil\x",
+        ));
+    }
+
+    #[test]
+    fn windows_path_is_under_handles_forward_slash_verbatim() {
+        assert!(windows_path_is_under(
+            "C:/Users/dev/project",
+            "//?/C:/Users/dev/project/src/a.rs",
+        ));
+    }
+
+    #[test]
+    fn strip_verbatim_for_containment_matches_fs_rules() {
+        assert_eq!(
+            strip_verbatim_for_containment(r"\\?\C:\Users\foo"),
+            "C:/Users/foo"
+        );
+        assert_eq!(
+            strip_verbatim_for_containment(r"C:\Users\foo"),
+            "C:/Users/foo"
+        );
+        assert_eq!(
+            strip_verbatim_for_containment(r"\\?\UNC\server\share\dir"),
+            "//server/share/dir"
+        );
     }
 }
