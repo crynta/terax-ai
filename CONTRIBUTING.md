@@ -184,16 +184,20 @@ Within a PR, individual commit messages can be free-form (they get squashed or g
 
 ```
 src-tauri/                  Rust backend
+  crates/                   terax-cli and its control protocol
   src/
     lib.rs                  Tauri command registration
     modules/
       agent.rs              Terminal coding-agent hook installer/status
+      ai_sessions.rs        AI conversation files (atomic writes, migration)
+      control.rs            CLI control plane (authenticated local endpoint)
       fs/                   File system commands (read/write/search/grep)
       git/                  Source control commands
       history/              Shell history integration
+      lsp/                  Language server process host
       mod.rs                Module exports
       net.rs                AI HTTP proxy with SSRF guard
-      proc.rs               Process utilities
+      proc/                 Process utilities (bounded capture, Windows Job Object)
       pty/                  Terminal sessions, shell integration, DA filter
       secrets.rs            OS keychain access
       shell/                Oneshot/session/background shell commands
@@ -206,10 +210,12 @@ src/                        React frontend
     agents/                 Agent notifications and management
     ai/                     Agents, sessions, tools, providers, composer
     command-palette/        Modal command palette and actions
+    control/                UI side of CLI control requests
     editor/                 CodeMirror stack, AI autocomplete
     explorer/               File tree
     git-history/            Git graph and history pane
     header/                 Top bar, search, window controls
+    lsp/                    Opt-in language server client
     markdown/               Markdown preview renderer
     preview/                Dev server, image, and web preview
     settings/               Settings UI and preferences store
@@ -219,7 +225,7 @@ src/                        React frontend
     spaces/                 Workspace spaces/projects with per-space tab persistence
     statusbar/              Bottom bar and cwd breadcrumb
     tabs/                   Tab/split model
-    terminal/               xterm.js sessions, OSC handlers, renderer pool
+    terminal/               Ghostty sessions, OSC handlers, WebGPU/WebGL renderers
     theme/                  Custom theme engine and presets
     updater/                Auto-updater UI
     workspace/              Workspace environment switching

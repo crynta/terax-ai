@@ -40,7 +40,7 @@ UI rendering, themes, syntax-highlight tables, and anything the type-checker alr
 A good test locks the invariant you are relying on. Examples from the codebase:
 
 - `src-tauri/src/modules/workspace.rs` `auth_tests` verify that an authorized path, a subdir of an authorized root, an unauthorized path, a missing path, and a symlink escape all behave correctly.
-- `src-tauri/src/modules/pty/job.rs` tests verify that dropping the Job Object kills the assigned process tree on Windows.
+- `src-tauri/src/modules/proc/job.rs` tests verify that dropping the Job Object kills the assigned process tree on Windows.
 - `src-tauri/src/modules/pty/session.rs` tests verify that dropping a `Session` kills the child process.
 - `src-tauri/src/modules/pty/shell_init.rs` tests verify shell classification and WSL fish launch specs.
 - `src/modules/ai/lib/security.ts` is exercised by tests that assert specific paths are refused and that canonicalization catches symlink traversal.
