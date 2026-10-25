@@ -34,7 +34,7 @@ describe("terminal clipboard", () => {
 
   it("does not fall back to permission-gated web reads after an IPC failure", async () => {
     native.readText.mockRejectedValue(new Error("clipboard busy"));
-    await expect(readTerminalClipboard()).resolves.toBe("");
+    await expect(readTerminalClipboard()).rejects.toThrow("clipboard busy");
     expect(web.readText).not.toHaveBeenCalled();
     native.readText.mockResolvedValue("retry");
     await expect(readTerminalClipboard()).resolves.toBe("retry");
@@ -56,5 +56,16 @@ describe("terminal clipboard", () => {
     expect(web.writeText).toHaveBeenCalledWith("preview");
     expect(native.readText).not.toHaveBeenCalled();
     expect(native.writeText).not.toHaveBeenCalled();
+  });
+
+  it("rejects unavailable browser clipboard access", async () => {
+    vi.stubGlobal("isTauri", false);
+    vi.stubGlobal("navigator", {});
+    await expect(readTerminalClipboard()).rejects.toThrow(
+      "Clipboard is unavailable",
+    );
+    await expect(writeTerminalClipboard("text")).rejects.toThrow(
+      "Clipboard is unavailable",
+    );
   });
 });

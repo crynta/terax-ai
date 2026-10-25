@@ -12,10 +12,12 @@ import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { TerminalBackendKind } from "@/modules/terminal/backend/contracts";
 import { setLeafPresentation } from "@/modules/terminal/lib/ptyPresentation";
 import { PtyResizeDelivery } from "@/modules/terminal/lib/ptyResizeDelivery";
+import { BoundedPtyWriter } from "@/modules/terminal/lib/BoundedPtyWriter";
 import { useTerminalFont } from "@/modules/terminal/lib/useTerminalFont";
 import type { TerminalSearchController } from "@/modules/terminal/search/TerminalSearchController";
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { openPty, type PtySession } from "../lib/pty-bridge";
 import { writeTerminalClipboard } from "../lib/terminalClipboard";
 import { LatestClipboardWrite } from "@/modules/terminal/lib/LatestClipboardWrite";
@@ -48,8 +50,6 @@ type GhosttySessionFailure = {
 
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
-const MAX_PENDING_INPUT_BYTES = 256 * 1024;
-const MAX_WRITE_BATCH_BYTES = 64 * 1024;
 
 type Callbacks = {
   onModel?: (model: GhosttyTerminalModelApi | null) => void;
@@ -543,7 +543,11 @@ function ensureSession(
     pty: null,
     ptyResize,
     writer: new BoundedPtyWriter((error) => {
-      console.error("[terax] Ghostty PTY write failed:", error);
+      console.error("[terax] Terminal input failed:", error);
+      toast.error("Unable to send terminal input", {
+        id: `terminal-input-${leafId}`,
+        description: toError(error).message,
+      });
     }),
     container: null,
     callbacks: {},
@@ -873,10 +877,15 @@ function createGhosttyInput(
     onText: insertPromptText,
     onPaste: insertPromptText,
     getSelection: () => surface.getSelection(),
+    onClipboardError: () => {
+      toast.error("Unable to paste from clipboard", { id: "terminal-paste" });
+    },
     onCopy: () => {
       const text = surface.getSelection();
       if (!text) return false;
-      void writeTerminalClipboard(text).catch(() => {});
+      void writeTerminalClipboard(text).catch(() => {
+        toast.error("Unable to copy to clipboard", { id: "terminal-copy" });
+      });
       return true;
     },
   });
@@ -1152,103 +1161,6 @@ function fontSpecKey(font: TerminalFontSpec): string {
     font.letterSpacing,
     font.weight,
   ].join("|");
-}
-
-class BoundedPtyWriter {
-  private readonly queue: Uint8Array[] = [];
-  private pty: PtySession | null = null;
-  private flushing = false;
-  private disposed = false;
-  pendingBytes = 0;
-
-  constructor(private readonly onError: (error: unknown) => void) {}
-
-  attach(pty: PtySession): void {
-    if (this.disposed) return;
-    this.pty = pty;
-    void this.flush();
-  }
-
-  detach(): void {
-    this.pty = null;
-  }
-
-  clear(): void {
-    this.queue.length = 0;
-    this.pendingBytes = 0;
-  }
-
-  enqueue(bytes: Uint8Array): boolean {
-    if (
-      this.disposed ||
-      bytes.byteLength === 0 ||
-      this.pendingBytes + bytes.byteLength > MAX_PENDING_INPUT_BYTES
-    ) {
-      return false;
-    }
-    this.queue.push(bytes);
-    this.pendingBytes += bytes.byteLength;
-    void this.flush();
-    return true;
-  }
-
-  dispose(): void {
-    this.disposed = true;
-    this.pty = null;
-    this.queue.length = 0;
-    this.pendingBytes = 0;
-  }
-
-  private async flush(): Promise<void> {
-    if (this.flushing || this.disposed || !this.pty) return;
-    this.flushing = true;
-    try {
-      while (!this.disposed && this.pty && this.queue.length > 0) {
-        const pty = this.pty;
-        const batch = this.takeBatch();
-        try {
-          await pty.write(batch);
-        } catch (error) {
-          this.onError(error);
-          return;
-        }
-      }
-    } finally {
-      this.flushing = false;
-      if (!this.disposed && this.pty && this.queue.length > 0) {
-        queueMicrotask(() => void this.flush());
-      }
-    }
-  }
-
-  private takeBatch(): Uint8Array {
-    let length = 0;
-    let count = 0;
-    while (count < this.queue.length) {
-      const nextLength = this.queue[count].byteLength;
-      if (count > 0 && length + nextLength > MAX_WRITE_BATCH_BYTES) break;
-      length += nextLength;
-      count += 1;
-      if (length >= MAX_WRITE_BATCH_BYTES) break;
-    }
-
-    if (count === 1) {
-      const single = this.queue.shift();
-      if (!single) return new Uint8Array(0);
-      this.pendingBytes -= single.byteLength;
-      return single;
-    }
-    const batch = new Uint8Array(length);
-    let offset = 0;
-    for (let index = 0; index < count; index += 1) {
-      const chunk = this.queue[index];
-      batch.set(chunk, offset);
-      offset += chunk.byteLength;
-    }
-    this.queue.splice(0, count);
-    this.pendingBytes -= length;
-    return batch;
-  }
 }
 
 if (import.meta.hot) {

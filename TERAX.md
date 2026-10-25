@@ -175,6 +175,10 @@ or search-mask work until presentation resumes.
 Terminal clipboard shortcuts use the native text clipboard plugin on all desktop
 platforms. Context clicks expose the selected text through the input element to
 restore the webview's native text menu; no persistent DOM scrollback is maintained.
+Windows Ctrl+V and Ctrl+Shift+V paste text; Ctrl+C copies a terminal selection
+and otherwise reaches the CLI. Clipboard and input-queue failures are visible.
+The 256 KiB input limit includes in-flight bytes; accepted input is sent in
+ordered writes of at most 64 KiB, and oversized pastes are rejected atomically.
 On macOS the input `<textarea>` always holds one selected placeholder character
 (`TerminalInputProxy`; elsewhere it stays empty, a selection could take X11 PRIMARY): a focused editable with a collapsed selection keeps
 WebKit's caret animation (a display link at display rate) running at ~3 % CPU and
@@ -294,6 +298,10 @@ WebGPU permits at most two outstanding frame submissions and keeps one
 `onSubmittedWorkDone` wait outstanding at a time: frames submitted while it is
 pending ride the next wait, which starts when it resolves (waiting only every
 second frame was tried and cut a 32 Hz producer to 23 presented frames a second).
+GPU completion must progress within five seconds while a terminal is visible.
+A timeout falls the shared runtime back to WebGL through the existing surface
+replacement path, retaining models and PTYs. The deadline is suspended while
+the window is hidden or no pane is registered, and cleared when work completes.
 User wheel, drag, and keyboard interaction gives only its pane 150 ms of focused
 cadence, including in an unfocused visible window. It starts no idle timer or
 frame loop.

@@ -1,12 +1,216 @@
 import type { GhosttyTerminalModelApi } from "@/modules/terminal/ghostty/GhosttyTerminalModel";
 import { readFile } from "node:fs/promises";
 import { TeraxGhostty } from "@terax/ghostty-core/adapted";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeElement, FakeTextArea } from "./fakeTextArea";
 import {
   GhosttyInputController,
+  type GhosttyInputControllerOptions,
   terminalMouseModifiers,
 } from "./GhosttyInputController";
+
+const clipboard = vi.hoisted(() => ({ read: vi.fn<() => Promise<string>>() }));
+vi.mock("@/modules/terminal/lib/terminalClipboard", () => ({
+  readTerminalClipboard: clipboard.read,
+}));
+beforeEach(() => {
+  clipboard.read.mockReset().mockResolvedValue("clipboard text");
+});
+
+describe("terminal clipboard input", () => {
+  it.each([
+    { isMac: false, isWindows: true, key: "v", code: "KeyV", ctrlKey: true },
+    {
+      isMac: false,
+      isWindows: true,
+      key: "V",
+      code: "KeyV",
+      ctrlKey: true,
+      shiftKey: true,
+    },
+    {
+      isMac: false,
+      isWindows: false,
+      key: "V",
+      code: "KeyV",
+      ctrlKey: true,
+      shiftKey: true,
+    },
+    {
+      isMac: false,
+      isWindows: true,
+      key: "Insert",
+      code: "Insert",
+      shiftKey: true,
+    },
+    { isMac: true, isWindows: false, key: "v", code: "KeyV", metaKey: true },
+  ])(
+    "pastes once for $code on Windows=$isWindows macOS=$isMac",
+    async (values) => {
+      const h = clipboardInput(values);
+      try {
+        const event = keyboardEvent(values);
+        h.input.dispatchEvent(event);
+        await Promise.resolve();
+        expect(event.defaultPrevented).toBe(true);
+        expect(clipboard.read).toHaveBeenCalledOnce();
+        expect(h.onData).toHaveBeenCalledOnce();
+        expect(new TextDecoder().decode(h.onData.mock.calls[0][0])).toBe(
+          "clipboard text",
+        );
+        expect(h.encodeKey).not.toHaveBeenCalled();
+      } finally {
+        h.controller.dispose();
+      }
+    },
+  );
+
+  it("keeps Linux Ctrl+V and Windows Ctrl+C without a selection available to the CLI", () => {
+    for (const values of [
+      { isWindows: false, key: "v", code: "KeyV" },
+      { isWindows: true, key: "c", code: "KeyC" },
+    ]) {
+      const h = clipboardInput({ isMac: false, isWindows: values.isWindows });
+      try {
+        h.input.dispatchEvent(keyboardEvent({ ...values, ctrlKey: true }));
+        expect(h.encodeKey).toHaveBeenCalledOnce();
+        expect(clipboard.read).not.toHaveBeenCalled();
+      } finally {
+        h.controller.dispose();
+      }
+    }
+  });
+
+  it.each([
+    { key: "c", code: "KeyC", ctrlKey: true },
+    { key: "C", code: "KeyC", ctrlKey: true, shiftKey: true },
+    { key: "Insert", code: "Insert", ctrlKey: true },
+  ])(
+    "copies a Windows selection with $code instead of interrupting the CLI",
+    (values) => {
+      const onCopy = vi.fn(() => true);
+      const h = clipboardInput({ isMac: false, isWindows: true, onCopy });
+      try {
+        const event = keyboardEvent(values);
+        h.input.dispatchEvent(event);
+        expect(onCopy).toHaveBeenCalledOnce();
+        expect(event.defaultPrevented).toBe(true);
+        expect(h.onData).not.toHaveBeenCalled();
+        expect(h.encodeKey).not.toHaveBeenCalled();
+      } finally {
+        h.controller.dispose();
+      }
+    },
+  );
+
+  it("reports clipboard read failures without sending empty input", async () => {
+    const error = new Error("clipboard busy");
+    clipboard.read.mockRejectedValue(error);
+    const onClipboardError = vi.fn();
+    const h = clipboardInput({ isWindows: true, onClipboardError });
+    try {
+      h.input.dispatchEvent(
+        keyboardEvent({ key: "v", code: "KeyV", ctrlKey: true }),
+      );
+      await Promise.resolve();
+      expect(onClipboardError).toHaveBeenCalledWith(error);
+      expect(h.onData).not.toHaveBeenCalled();
+    } finally {
+      h.controller.dispose();
+    }
+  });
+
+  it.each([false, true])(
+    "ignores a late clipboard completion after disposal (reject=%s)",
+    async (reject) => {
+      let finish = (_text: string) => {};
+      let fail = (_error: Error) => {};
+      clipboard.read.mockReturnValue(
+        new Promise((resolve, reject) => {
+          finish = resolve;
+          fail = reject;
+        }),
+      );
+      const onClipboardError = vi.fn();
+      const h = clipboardInput({ isWindows: true, onClipboardError });
+      h.input.dispatchEvent(
+        keyboardEvent({ key: "v", code: "KeyV", ctrlKey: true }),
+      );
+      h.controller.dispose();
+      if (reject) fail(new Error("closed"));
+      else finish("late text");
+      await Promise.resolve();
+      expect(onClipboardError).not.toHaveBeenCalled();
+      expect(h.onData).not.toHaveBeenCalled();
+    },
+  );
+
+  it("handles a native paste once while allowing repeated identical pastes", () => {
+    const h = clipboardInput();
+    try {
+      const paste = () =>
+        h.input.dispatchEvent(
+          Object.assign(new Event("paste", { cancelable: true }), {
+            clipboardData: { getData: () => "text" },
+          }),
+        );
+      paste();
+      h.input.dispatchEvent(
+        Object.assign(new Event("beforeinput", { cancelable: true }), {
+          inputType: "insertFromPaste",
+          data: "text",
+          isComposing: false,
+        }),
+      );
+      expect(h.onData).toHaveBeenCalledOnce();
+      paste();
+      expect(h.onData).toHaveBeenCalledTimes(2);
+    } finally {
+      h.controller.dispose();
+    }
+  });
+
+  it("reads the native clipboard when the paste input event has no text payload", async () => {
+    const h = clipboardInput();
+    try {
+      const event = Object.assign(
+        new Event("beforeinput", { cancelable: true }),
+        {
+          inputType: "insertFromPaste",
+          data: null,
+          isComposing: false,
+        },
+      );
+      h.input.dispatchEvent(event);
+      await Promise.resolve();
+      expect(event.defaultPrevented).toBe(true);
+      expect(h.onData).toHaveBeenCalledOnce();
+      expect(new TextDecoder().decode(h.onData.mock.calls[0][0])).toBe(
+        "clipboard text",
+      );
+    } finally {
+      h.controller.dispose();
+    }
+  });
+});
+
+function clipboardInput(options: Partial<GhosttyInputControllerOptions> = {}) {
+  const input = new FakeTextArea();
+  const onData = vi.fn();
+  const encodeKey = vi.fn(() => Uint8Array.of(3));
+  const controller = new GhosttyInputController({
+    model: { ...inputModel(), encodeKey },
+    input: input as unknown as HTMLTextAreaElement,
+    pointerTarget: new FakeElement() as unknown as HTMLElement,
+    cellSize: () => ({ width: 10, height: 20 }),
+    isMac: false,
+    isWindows: false,
+    onCopy: () => false,
+    onData,
+    ...options,
+  });
+  return { controller, input, onData, encodeKey };
+}
 
 describe("terminalMouseModifiers", () => {
   it("encodes xterm Shift, Alt, and Control bits", () => {
