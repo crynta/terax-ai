@@ -1,4 +1,4 @@
-import { cn, isMarkdownPath } from "@/lib/utils";
+import { cn, isRenderablePath } from "@/lib/utils";
 import { MarkdownViewToggle } from "@/modules/markdown";
 import { useWindowInactive } from "@/modules/theme/WindowActivityBridge";
 import type { EditorTab, Tab } from "@/modules/tabs";
@@ -106,7 +106,7 @@ export function EditorStack({
             aria-hidden={!visible}
           >
             <div className="relative h-full overflow-hidden bg-background">
-              {isMarkdownPath(t.path) && (
+              {isRenderablePath(t.path) && (
                 <MarkdownViewToggle
                   mode="raw"
                   onChange={(mode) => onSetMarkdownView(t.id, mode)}

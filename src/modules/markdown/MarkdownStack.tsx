@@ -1,6 +1,16 @@
-import { cn } from "@/lib/utils";
+import { cn, isHtmlPath } from "@/lib/utils";
 import type { MarkdownTab, Tab } from "@/modules/tabs";
-import { MarkdownPreviewPane } from "./MarkdownPreviewPane";
+import { lazy, Suspense } from "react";
+
+// Split so an HTML preview never pulls the markdown renderer and vice versa.
+const MarkdownPreviewPane = lazy(() =>
+  import("./MarkdownPreviewPane").then((m) => ({
+    default: m.MarkdownPreviewPane,
+  })),
+);
+const HtmlPreviewPane = lazy(() =>
+  import("./HtmlPreviewPane").then((m) => ({ default: m.HtmlPreviewPane })),
+);
 
 type Props = {
   tabs: Tab[];
@@ -17,6 +27,7 @@ export function MarkdownStack({ tabs, activeId, onSetMarkdownView }: Props) {
     <div className="relative h-full w-full">
       {markdowns.map((t) => {
         const visible = t.id === activeId;
+        const Pane = isHtmlPath(t.path) ? HtmlPreviewPane : MarkdownPreviewPane;
         return (
           <div
             key={t.id}
@@ -26,11 +37,13 @@ export function MarkdownStack({ tabs, activeId, onSetMarkdownView }: Props) {
             )}
             aria-hidden={!visible}
           >
-            <MarkdownPreviewPane
-              path={t.path}
-              visible={visible}
-              onSetView={(mode) => onSetMarkdownView(t.id, mode)}
-            />
+            <Suspense fallback={null}>
+              <Pane
+                path={t.path}
+                visible={visible}
+                onSetView={(mode) => onSetMarkdownView(t.id, mode)}
+              />
+            </Suspense>
           </div>
         );
       })}
