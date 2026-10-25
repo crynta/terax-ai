@@ -12,8 +12,9 @@ import { useEffect, useRef, useState } from "react";
 import {
   createCoalescer,
   htmlPreviewAssetUrl,
+  HTML_PREVIEW_BLOCK_HINT,
+  htmlPreviewBlock,
   htmlPreviewSrc,
-  htmlPreviewSupported,
   pathsInclude,
 } from "./lib/htmlPreview";
 import { MarkdownViewToggle } from "./MarkdownViewToggle";
@@ -22,7 +23,7 @@ type Props = {
   path: string;
   visible: boolean;
   /** The tab's own workspace, which may differ from the active one. */
-  env: WorkspaceEnv;
+  env: WorkspaceEnv | undefined;
   onSetView: (mode: "rendered" | "raw") => void;
 };
 
@@ -35,7 +36,8 @@ const SUSPEND_AFTER_MS = 30_000;
 const RELOAD_COALESCE_MS = 300;
 
 export function HtmlPreviewPane({ path, visible, env, onSetView }: Props) {
-  const supported = htmlPreviewSupported(env);
+  const block = htmlPreviewBlock(env);
+  const supported = block === null;
   const [revision, setRevision] = useState(0);
   const [loaded, setLoaded] = useState(visible);
   const visibleRef = useRef(visible);
@@ -56,7 +58,7 @@ export function HtmlPreviewPane({ path, visible, env, onSetView }: Props) {
   }, [visible]);
 
   useEffect(() => {
-    if (!htmlPreviewSupported(env)) return;
+    if (!env || htmlPreviewBlock(env)) return;
     const dir = parentDir(path);
     watchAdd([dir], [path], env);
 
@@ -132,7 +134,9 @@ export function HtmlPreviewPane({ path, visible, env, onSetView }: Props) {
         </div>
       ) : (
         <p className="px-8 py-6 text-[12px] text-muted-foreground">
-          HTML preview is not available in WSL workspaces yet.
+          {block === "wsl"
+            ? "HTML preview is not available in WSL workspaces yet."
+            : `${HTML_PREVIEW_BLOCK_HINT["workspace-loading"]}.`}
         </p>
       )}
     </div>

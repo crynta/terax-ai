@@ -2,9 +2,20 @@ import type { WorkspaceEnv } from "@/modules/workspace";
 
 const normalize = (path: string) => path.replace(/\\/g, "/");
 
-// The host asset protocol cannot serve paths inside a WSL distro.
-export function htmlPreviewSupported(env: WorkspaceEnv | undefined): boolean {
-  return env?.kind !== "wsl";
+export type HtmlPreviewBlock = "workspace-loading" | "wsl";
+
+export const HTML_PREVIEW_BLOCK_HINT: Record<HtmlPreviewBlock, string> = {
+  "workspace-loading": "Workspace is still loading",
+  wsl: "Not available in WSL workspaces",
+};
+
+// The host asset protocol cannot serve paths inside a WSL distro. An unknown
+// env means the tab's space is not hydrated yet (boot), so fail closed.
+export function htmlPreviewBlock(
+  env: WorkspaceEnv | undefined,
+): HtmlPreviewBlock | null {
+  if (!env) return "workspace-loading";
+  return env.kind === "wsl" ? "wsl" : null;
 }
 
 type Timers = {

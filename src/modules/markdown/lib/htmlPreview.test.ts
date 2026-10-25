@@ -1,20 +1,23 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createCoalescer,
+  htmlPreviewBlock,
   htmlPreviewAssetUrl,
   htmlPreviewSrc,
-  htmlPreviewSupported,
   pathsInclude,
 } from "./htmlPreview";
 
-describe("htmlPreviewSupported", () => {
-  it("allows local workspaces and tabs with no recorded environment", () => {
-    expect(htmlPreviewSupported({ kind: "local" })).toBe(true);
-    expect(htmlPreviewSupported(undefined)).toBe(true);
+describe("htmlPreviewBlock", () => {
+  it("allows local workspaces", () => {
+    expect(htmlPreviewBlock({ kind: "local" })).toBeNull();
   });
 
   it("refuses WSL workspaces", () => {
-    expect(htmlPreviewSupported({ kind: "wsl", distro: "Ubuntu" })).toBe(false);
+    expect(htmlPreviewBlock({ kind: "wsl", distro: "Ubuntu" })).toBe("wsl");
+  });
+
+  it("fails closed while the tab's space is not hydrated", () => {
+    expect(htmlPreviewBlock(undefined)).toBe("workspace-loading");
   });
 });
 

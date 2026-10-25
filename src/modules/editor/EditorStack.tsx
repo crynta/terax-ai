@@ -1,5 +1,9 @@
 import { cn, isHtmlPath, isRenderablePath } from "@/lib/utils";
-import { htmlPreviewSupported, MarkdownViewToggle } from "@/modules/markdown";
+import {
+  HTML_PREVIEW_BLOCK_HINT,
+  htmlPreviewBlock,
+  MarkdownViewToggle,
+} from "@/modules/markdown";
 import { useSpaces } from "@/modules/spaces/lib/useSpaces";
 import { useWindowInactive } from "@/modules/theme/WindowActivityBridge";
 import type { EditorTab, Tab } from "@/modules/tabs";
@@ -98,9 +102,9 @@ export function EditorStack({
     <div className="relative h-full w-full">
       {editors.map((t) => {
         const visible = t.id === activeId;
-        const previewBlocked =
-          isHtmlPath(t.path) &&
-          !htmlPreviewSupported(spaces.find((sp) => sp.id === t.spaceId)?.env);
+        const previewBlock = isHtmlPath(t.path)
+          ? htmlPreviewBlock(spaces.find((sp) => sp.id === t.spaceId)?.env)
+          : null;
         return (
           <div
             key={t.id}
@@ -115,10 +119,10 @@ export function EditorStack({
                 <MarkdownViewToggle
                   mode="raw"
                   onChange={(mode) => onSetMarkdownView(t.id, mode)}
-                  renderedDisabled={t.dirty || previewBlocked}
+                  renderedDisabled={t.dirty || previewBlock !== null}
                   renderedHint={
-                    previewBlocked
-                      ? "Not available in WSL workspaces"
+                    previewBlock
+                      ? HTML_PREVIEW_BLOCK_HINT[previewBlock]
                       : "Save to preview"
                   }
                 />

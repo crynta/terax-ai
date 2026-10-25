@@ -1,3 +1,3 @@
 export { MarkdownStack } from "./MarkdownStackLazy";
 export { MarkdownViewToggle } from "./MarkdownViewToggle";
-export { htmlPreviewSupported } from "./lib/htmlPreview";
+export { HTML_PREVIEW_BLOCK_HINT, htmlPreviewBlock } from "./lib/htmlPreview";
