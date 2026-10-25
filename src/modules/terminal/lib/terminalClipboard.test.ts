@@ -19,6 +19,51 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("terminal clipboard", () => {
+  it("waits for an immediately preceding copy before reading for paste", async () => {
+    let complete = () => {};
+    native.writeText.mockReturnValue(
+      new Promise<void>((resolve) => {
+        complete = resolve;
+      }),
+    );
+    native.readText.mockResolvedValue("new selection");
+    const copied = writeTerminalClipboard("new selection");
+    const pasted = readTerminalClipboard();
+    await Promise.resolve();
+    expect(native.readText).not.toHaveBeenCalled();
+    complete();
+    await copied;
+    await expect(pasted).resolves.toBe("new selection");
+  });
+
+  it("does not paste stale contents after the preceding copy failed", async () => {
+    native.writeText.mockRejectedValue(new Error("clipboard busy"));
+    const copied = writeTerminalClipboard("new selection");
+    const pasted = readTerminalClipboard();
+    await expect(copied).rejects.toThrow("clipboard busy");
+    await expect(pasted).rejects.toThrow("clipboard busy");
+    expect(native.readText).not.toHaveBeenCalled();
+    native.readText.mockResolvedValue("external selection");
+    await expect(readTerminalClipboard()).resolves.toBe("external selection");
+  });
+
+  it("keeps successive clipboard writes in invocation order", async () => {
+    let complete = () => {};
+    native.writeText.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          complete = resolve;
+        }),
+    );
+    native.writeText.mockResolvedValueOnce(undefined);
+    const first = writeTerminalClipboard("first");
+    const second = writeTerminalClipboard("second");
+    await vi.waitFor(() => expect(native.writeText).toHaveBeenCalledOnce());
+    complete();
+    await Promise.all([first, second]);
+    expect(native.writeText.mock.calls).toEqual([["first"], ["second"]]);
+  });
+
   it.each(["Macintosh", "Windows NT", "X11; Linux"])(
     "uses native copy and paste in the %s application without WebKit prompts",
     async (userAgent) => {

@@ -177,6 +177,12 @@ platforms. Context clicks expose the selected text through the input element to
 restore the webview's native text menu; no persistent DOM scrollback is maintained.
 Windows Ctrl+V and Ctrl+Shift+V paste text; Ctrl+C copies a terminal selection
 and otherwise reaches the CLI. Clipboard and input-queue failures are visible.
+Native clipboard reads serialize subsequent CLI input, so Enter cannot overtake
+a pending paste. Deferred input is bounded to 256 KiB / 256 operations and is
+discarded if reading or delivery fails. A five-second read deadline restores
+typing without issuing another clipboard request until the old one settles.
+Ctrl+C can cancel a pending paste immediately. A read also waits for preceding
+Terax clipboard writes, so copying and immediately pasting cannot read old text.
 The 256 KiB input limit includes in-flight bytes; accepted input is sent in
 ordered writes of at most 64 KiB, and oversized pastes are rejected atomically.
 On macOS the input `<textarea>` always holds one selected placeholder character
@@ -191,6 +197,12 @@ The block prompt retains an enabled terminal input proxy for native menus and
 routes editing keys, composed text and paste back to its command editor.
 Character drags retain a native selection pin from pointerdown, including before
 the first pointermove. Unmoved clicks and lost captures discard provisional pins.
+Mouse word/line selection uses the native mousedown click count; pointerdown's
+detail is zero. Three-pixel drag slop prevents jitter from selecting adjacent
+cells. Selection autoscroll is time-based, capped at 120 rows per second, and
+stops at history boundaries or lost button state. Copy reconciles native pins
+immediately; typing and pasting clear the old selection. Dragging over a link
+does not open it.
 Key encoding supplies the base character required by Kitty keyboard mode; plain
 keys and key releases also use Ghostty encoding when the application requests it.
 Terminal text uses the configured font, an installed Nerd Font when detected,

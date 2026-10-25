@@ -1,6 +1,9 @@
 import { terminalWindowFocused } from "@/modules/terminal/ghostty/renderScheduling";
 import { bindTerminalInteraction } from "@/modules/terminal/ghostty/input/terminalInteraction";
-import { isClampedScrollEcho, TerminalScrollbarSync } from "@/modules/terminal/ghostty/gpu/terminalScrollbar";
+import {
+  isClampedScrollEcho,
+  TerminalScrollbarSync,
+} from "@/modules/terminal/ghostty/gpu/terminalScrollbar";
 import { terminalWindowPresentation } from "@/modules/terminal/ghostty/windowPresentation";
 import type { TerminalSurface } from "@/modules/terminal/backend/contracts";
 import { smoothHooks } from "@/bench/smoothHooks";
@@ -821,7 +824,10 @@ export class WebGpuTerminalSurface
     if (event.button !== 0) return;
     this.updateHoveredLink(event);
     const uri = this.hoveredLink;
-    const activate = uri !== null && uri === this.mouseDownLink;
+    const activate =
+      uri !== null &&
+      uri === this.mouseDownLink &&
+      this.selection.value === null;
     this.mouseDownLink = null;
     if (!activate) return;
     event.preventDefault();

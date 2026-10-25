@@ -18,6 +18,120 @@ beforeEach(() => {
 });
 
 describe("terminal clipboard input", () => {
+  it("sends Ctrl+C immediately and cancels a pending clipboard read", async () => {
+    let complete = (_text: string) => {};
+    clipboard.read.mockReturnValue(
+      new Promise<string>((resolve) => {
+        complete = resolve;
+      }),
+    );
+    const h = clipboardInput({ isWindows: true });
+    try {
+      h.input.dispatchEvent(
+        keyboardEvent({ key: "v", code: "KeyV", ctrlKey: true }),
+      );
+      h.input.dispatchEvent(
+        keyboardEvent({ key: "c", code: "KeyC", ctrlKey: true }),
+      );
+      expect(h.onData).toHaveBeenCalledWith(Uint8Array.of(3));
+      complete("cancelled");
+      await Promise.resolve();
+      expect(h.onData).toHaveBeenCalledOnce();
+    } finally {
+      h.controller.dispose();
+    }
+  });
+
+  it("does not send Enter before a pending native clipboard paste", async () => {
+    let complete = (_text: string) => {};
+    clipboard.read.mockReturnValue(
+      new Promise<string>((resolve) => {
+        complete = resolve;
+      }),
+    );
+    const h = clipboardInput({ isWindows: true });
+    h.encodeKey.mockReturnValue(Uint8Array.of(13));
+    try {
+      h.input.dispatchEvent(
+        keyboardEvent({ key: "v", code: "KeyV", ctrlKey: true }),
+      );
+      h.input.dispatchEvent(keyboardEvent({ key: "Enter", code: "Enter" }));
+      expect(h.onData).not.toHaveBeenCalled();
+      complete("pasted command");
+      await Promise.resolve();
+      expect(
+        h.onData.mock.calls.map(([bytes]) => new TextDecoder().decode(bytes)),
+      ).toEqual(["pasted command", "\r"]);
+    } finally {
+      h.controller.dispose();
+    }
+  });
+
+  it("does not read the clipboard repeatedly while the paste shortcut is held", async () => {
+    const h = clipboardInput({ isWindows: true });
+    try {
+      h.input.dispatchEvent(
+        keyboardEvent({ key: "v", code: "KeyV", ctrlKey: true }),
+      );
+      for (let index = 0; index < 20; index++)
+        h.input.dispatchEvent(
+          keyboardEvent({
+            key: "v",
+            code: "KeyV",
+            ctrlKey: true,
+            repeat: true,
+          }),
+        );
+      await Promise.resolve();
+      expect(clipboard.read).toHaveBeenCalledOnce();
+      expect(h.onData).toHaveBeenCalledOnce();
+    } finally {
+      h.controller.dispose();
+    }
+  });
+
+  it("clears an old selection when typing so the next Ctrl+C interrupts the CLI", () => {
+    let selected = true;
+    const onCopy = vi.fn(() => selected);
+    const setSelection = vi.fn(() => {
+      selected = false;
+    });
+    const h = clipboardInput({
+      isWindows: true,
+      onCopy,
+      model: {
+        ...inputModel(),
+        trackedSelection: () =>
+          selected
+            ? {
+                anchor: { line: 0, column: 0 },
+                focus: { line: 0, column: 4 },
+                rectangular: false,
+              }
+            : null,
+        setSelection,
+        encodeKey: () => Uint8Array.of(3),
+      },
+    });
+    try {
+      h.input.dispatchEvent(
+        keyboardEvent({ key: "c", code: "KeyC", ctrlKey: true }),
+      );
+      expect(selected).toBe(true);
+      expect(h.onData).not.toHaveBeenCalled();
+      h.input.dispatchEvent(keyboardEvent({ key: "x", code: "KeyX" }));
+      expect(selected).toBe(false);
+      h.input.dispatchEvent(
+        keyboardEvent({ key: "c", code: "KeyC", ctrlKey: true }),
+      );
+      expect(h.onData).toHaveBeenLastCalledWith(Uint8Array.of(3));
+      expect(h.onData).toHaveBeenCalledTimes(2);
+      expect(setSelection).toHaveBeenCalledOnce();
+    } finally {
+      h.controller.dispose();
+    }
+  });
+
   it.each([
     { isMac: false, isWindows: true, key: "v", code: "KeyV", ctrlKey: true },
     {

@@ -341,6 +341,29 @@ describe("search mask", () => {
 });
 
 describe("selection", () => {
+  it("does not open a hyperlink when releasing a text selection over it", async () => {
+    const h = await harness();
+    Object.assign(h.model, {
+      hyperlinkAtViewportCell: () => "https://example.test",
+    });
+    const pointer = (type: string) =>
+      h.surface.eventTarget().dispatchEvent(
+        Object.assign(new Event(type, { cancelable: true }), {
+          button: 0,
+          clientX: 12,
+          clientY: 12,
+          shiftKey: false,
+        }),
+      );
+    pointer("mousedown");
+    pointer("mouseup");
+    expect(h.onOpenLink).not.toHaveBeenCalled();
+    Object.assign(h.model, { trackedSelection: () => null });
+    h.surface.getSelection();
+    pointer("mousedown");
+    pointer("mouseup");
+    expect(h.onOpenLink).toHaveBeenCalledWith("https://example.test");
+  });
   it("redraws through its uniform when the viewport origin shifts", async () => {
     const h = await harness();
     h.render();
@@ -1409,6 +1432,7 @@ async function harness(options: { scale?: number } = {}) {
   };
   const onError = vi.fn();
   const onResize = vi.fn();
+  const onOpenLink = vi.fn();
   const surface = await WebGpuTerminalSurface.create({
     model: model as unknown as GhosttyTerminalModelApi,
     metrics: METRICS,
@@ -1423,6 +1447,7 @@ async function harness(options: { scale?: number } = {}) {
     cursorStyle: "block",
     onResize,
     onError,
+    onOpenLink,
     // Grid changes are rate limited in production; tests that are not about that apply at once.
   });
   surfaces.push(surface);
@@ -1441,6 +1466,7 @@ async function harness(options: { scale?: number } = {}) {
     [...buffers].reverse().find((buffer) => buffer.label?.includes(label));
   return {
     surface,
+    onOpenLink,
     cursor,
     writeBuffer,
     createBuffer,

@@ -6,7 +6,8 @@ type PtyWriter = { write(bytes: Uint8Array): Promise<void> };
 export class BoundedPtyWriter {
   private readonly queue: Uint8Array[] = [];
   private pty: PtyWriter | null = null;
-  private flushing = false;
+  private flushingGeneration: number | null = null;
+  private generation = 0;
   private disposed = false;
   private failed = false;
   private queuedBytes = 0;
@@ -20,13 +21,18 @@ export class BoundedPtyWriter {
 
   attach(pty: PtyWriter): void {
     if (this.disposed) return;
+    if (this.pty === pty) return;
+    this.generation += 1;
     this.pty = pty;
+    this.inFlightBytes = 0;
     this.failed = false;
     void this.flush();
   }
 
   detach(): void {
+    this.generation += 1;
     this.pty = null;
+    this.inFlightBytes = 0;
   }
 
   clear(): void {
@@ -57,25 +63,39 @@ export class BoundedPtyWriter {
   }
 
   private async flush(): Promise<void> {
-    if (this.flushing || this.disposed || this.failed || !this.pty) return;
-    this.flushing = true;
+    if (
+      this.flushingGeneration === this.generation ||
+      this.disposed ||
+      this.failed ||
+      !this.pty
+    )
+      return;
+    const generation = this.generation;
+    const pty = this.pty;
+    this.flushingGeneration = generation;
     try {
-      while (!this.disposed && this.pty && this.queue.length > 0) {
+      while (
+        !this.disposed &&
+        generation === this.generation &&
+        this.queue.length > 0
+      ) {
         const batch = this.takeBatch();
         this.inFlightBytes = batch.byteLength;
         try {
-          await this.pty.write(batch);
+          await pty.write(batch);
         } catch (error) {
+          if (generation !== this.generation) return;
           this.failed = true;
           this.clear();
           if (!this.disposed) this.onError(error);
           return;
         } finally {
-          this.inFlightBytes = 0;
+          if (generation === this.generation) this.inFlightBytes = 0;
         }
       }
     } finally {
-      this.flushing = false;
+      if (this.flushingGeneration === generation)
+        this.flushingGeneration = null;
     }
   }
 

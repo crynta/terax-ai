@@ -330,9 +330,9 @@ export function pasteIntoGhosttySession(leafId: number, text: string): boolean {
   }
   const session = sessions.get(leafId);
   if (!session?.input) return false;
-  session.input.paste(text);
+  const accepted = session.input.paste(text);
   session.surface?.focus();
-  return true;
+  return accepted;
 }
 
 export function ghosttySelectionForLeaf(leafId: number): string | null {
@@ -866,7 +866,7 @@ function createGhosttyInput(
         !(bytes.length === 1 && bytes[0] === 3)
       )
         return;
-      session.writer.enqueue(bytes);
+      return session.writer.enqueue(bytes);
     },
     onKeyDown: (event) => {
       const blocks = ghosttyBlocks(session.leafId);
@@ -877,8 +877,11 @@ function createGhosttyInput(
     onText: insertPromptText,
     onPaste: insertPromptText,
     getSelection: () => surface.getSelection(),
-    onClipboardError: () => {
-      toast.error("Unable to paste from clipboard", { id: "terminal-paste" });
+    onClipboardError: (error) => {
+      toast.error("Unable to paste from clipboard", {
+        id: "terminal-paste",
+        description: toError(error).message,
+      });
     },
     onCopy: () => {
       const text = surface.getSelection();

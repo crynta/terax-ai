@@ -555,7 +555,10 @@ export class WebGlTerminalSurface
     if (event.button !== 0) return;
     this.updateHoveredLink(event);
     const uri = this.hoveredLink;
-    const activate = uri !== null && uri === this.mouseDownLink;
+    const activate =
+      uri !== null &&
+      uri === this.mouseDownLink &&
+      this.selection.value === null;
     this.mouseDownLink = null;
     if (!activate) return;
     event.preventDefault();

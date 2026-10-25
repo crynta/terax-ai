@@ -2,6 +2,40 @@ import { describe, expect, it, vi } from "vitest";
 import { BoundedPtyWriter } from "@/modules/terminal/lib/BoundedPtyWriter";
 
 describe("BoundedPtyWriter", () => {
+  it.each([false, true])(
+    "does not let a superseded write block or fail a replacement PTY (reject=%s)",
+    async (reject) => {
+      const onError = vi.fn();
+      const writer = new BoundedPtyWriter(onError);
+      let complete = () => {};
+      let fail = (_error: Error) => {};
+      writer.attach({
+        write: () =>
+          new Promise<void>((resolve, reject) => {
+            complete = resolve;
+            fail = reject;
+          }),
+      });
+      writer.enqueue(Uint8Array.of(1));
+      writer.detach();
+      writer.clear();
+      const replacement = { write: vi.fn(async (_bytes: Uint8Array) => {}) };
+      writer.attach(replacement);
+      writer.enqueue(Uint8Array.of(2));
+      expect(replacement.write).toHaveBeenCalledWith(Uint8Array.of(2));
+      if (reject) fail(new Error("old pipe closed"));
+      else complete();
+      await Promise.resolve();
+      expect(onError).not.toHaveBeenCalled();
+      expect(writer.enqueue(Uint8Array.of(3))).toBe(true);
+      await vi.waitFor(() => expect(writer.pendingBytes).toBe(0));
+      expect(replacement.write.mock.calls.map(([bytes]) => [...bytes])).toEqual(
+        [[2], [3]],
+      );
+      writer.dispose();
+    },
+  );
+
   it("splits a paste into ordered writes of at most 64 KiB", async () => {
     const onError = vi.fn();
     const writer = new BoundedPtyWriter(onError);

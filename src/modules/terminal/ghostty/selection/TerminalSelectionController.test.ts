@@ -58,6 +58,186 @@ describe("selection across renderer replacement", () => {
 });
 
 describe("terminal selection pointer ownership", () => {
+  it.each(["ghostty-vt.wasm", "ghostty-vt-scalar.wasm"])(
+    "uses native mouse click counts for word and line selection (%s)",
+    async (artifact) => {
+      const bytes = await readFile(
+        new URL(
+          `../../../../../packages/ghostty-core/adapted/${artifact}`,
+          import.meta.url,
+        ),
+      );
+      const core = await TeraxGhostty.loadBytes(Uint8Array.from(bytes).buffer);
+      const model = new AdaptedGhosttyTerminalModel(core, {
+        backend: "ghostty-webgpu",
+        cols: 80,
+        rows: 24,
+      });
+      const h = dragFixture(model);
+      try {
+        model.write(
+          new TextEncoder().encode("alpha bravo charlie\r\ne\u0301clair_42"),
+        );
+        h.pointer("pointerdown", 65);
+        const down = Object.assign(
+          new Event("mousedown", { cancelable: true }),
+          { button: 0, detail: 2, clientX: 65, clientY: 10, altKey: false },
+        );
+        h.target.dispatchEvent(down);
+        h.pointer("pointerup", 65);
+        expect(down.defaultPrevented).toBe(true);
+        expect(h.controller.text()).toBe("bravo");
+        h.pointer("pointerdown", 65);
+        h.target.dispatchEvent(
+          Object.assign(new Event("mousedown", { cancelable: true }), {
+            button: 0,
+            detail: 2,
+            clientX: 65,
+            clientY: 10,
+            altKey: false,
+          }),
+        );
+        h.pointer("pointermove", 155);
+        h.pointer("pointerup", 155);
+        expect(h.controller.text()).toBe("bravo charlie");
+        h.pointer("pointerdown", 65);
+        h.target.dispatchEvent(
+          Object.assign(new Event("mousedown", { cancelable: true }), {
+            button: 0,
+            detail: 3,
+            clientX: 65,
+            clientY: 10,
+            altKey: false,
+          }),
+        );
+        h.pointer("pointerup", 65);
+        expect(h.controller.text()).toBe("alpha bravo charlie");
+        h.pointer("pointerdown", 5, 30);
+        h.target.dispatchEvent(
+          Object.assign(new Event("mousedown", { cancelable: true }), {
+            button: 0,
+            detail: 2,
+            clientX: 5,
+            clientY: 30,
+            altKey: false,
+          }),
+        );
+        h.pointer("pointerup", 5, 30);
+        expect(h.controller.text()).toBe("e\u0301clair_42");
+      } finally {
+        h.controller.dispose();
+        model.dispose();
+      }
+    },
+  );
+
+  it("ignores mouse jitter across a cell boundary", () => {
+    const h = dragFixture();
+    h.pointer("pointerdown", 19);
+    h.pointer("pointermove", 21);
+    h.pointer("pointerup", 21);
+    expect(h.controller.value).toBeNull();
+    expect(h.tracked()).toBeNull();
+    h.controller.dispose();
+  });
+
+  it("extends a completed selection with Shift without moving its anchor", () => {
+    const h = dragFixture();
+    h.pointer("pointerdown", 45);
+    h.pointer("pointermove", 75);
+    h.pointer("pointerup", 75);
+    h.pointer("pointerdown", 15, 10, { shiftKey: true });
+    h.pointer("pointerup", 15, 10, { shiftKey: true });
+    expect(h.controller.value).toEqual({
+      anchor: { line: 0, column: 4 },
+      focus: { line: 0, column: 1 },
+      rectangular: false,
+    });
+    h.controller.dispose();
+  });
+
+  it("copies the current native selection without waiting for a render frame", () => {
+    const h = dragFixture();
+    h.pointer("pointerdown", 15);
+    h.pointer("pointermove", 45);
+    h.pointer("pointerup", 45);
+    h.model.setSelection?.(null);
+    expect(h.controller.text()).toBeNull();
+    h.controller.dispose();
+  });
+
+  it("stops a drag when the mouse button was released outside the window", () => {
+    const h = dragFixture();
+    h.pointer("pointerdown", 15);
+    h.pointer("pointermove", 45);
+    h.pointer("pointermove", 75, 10, { buttons: 0 });
+    expect(h.target.hasPointerCapture(1)).toBe(false);
+    expect(h.controller.value?.focus.column).toBe(4);
+    h.pointer("pointermove", 95);
+    expect(h.controller.value?.focus.column).toBe(4);
+    h.controller.dispose();
+  });
+
+  it("clamps an outside drag to visible rows in a shorter pane", () => {
+    const h = dragFixture();
+    h.target.getBoundingClientRect = () => ({
+      left: 0,
+      top: 0,
+      right: 800,
+      bottom: 60,
+    });
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn(() => 1),
+    );
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    try {
+      h.pointer("pointerdown", 15);
+      h.pointer("pointermove", 45, 200);
+      h.pointer("pointerup", 45, 200);
+      expect(h.controller.value?.focus.line).toBe(2);
+    } finally {
+      h.controller.dispose();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("autoscrolls at the same speed on 60 Hz and 144 Hz displays", () => {
+    const run = (hz: number) => {
+      let frame: FrameRequestCallback | undefined;
+      vi.stubGlobal(
+        "requestAnimationFrame",
+        (callback: FrameRequestCallback) => {
+          frame = callback;
+          return 1;
+        },
+      );
+      vi.stubGlobal("cancelAnimationFrame", vi.fn());
+      const h = dragFixture();
+      vi.mocked(h.model.scrollBy).mockReturnValue(true);
+      try {
+        h.pointer("pointerdown", 15);
+        h.pointer("pointermove", 45, -20);
+        for (let index = 0; index <= hz; index++) {
+          const tick = frame;
+          frame = undefined;
+          tick?.((index * 1_000) / hz);
+        }
+        return vi
+          .mocked(h.model.scrollBy)
+          .mock.calls.reduce((sum, [lines]) => sum + Math.abs(lines), 0);
+      } finally {
+        h.controller.dispose();
+        vi.unstubAllGlobals();
+      }
+    };
+    const slow = run(60);
+    const fast = run(144);
+    expect(slow).toBeGreaterThanOrEqual(30);
+    expect(slow).toBeLessThanOrEqual(31);
+    expect(Math.abs(slow - fast)).toBeLessThanOrEqual(1);
+  });
+
   it("updates only selected rows without rebuilding native text or accumulating duplicate uploads", async () => {
     const bytes = await readFile(
       new URL(
@@ -340,16 +520,25 @@ function dragFixture(
     model,
     onChange,
     tracked: () => tracked,
-    pointer: (type: string, clientX: number, clientY = 10) =>
+    target,
+    pointer: (
+      type: string,
+      clientX: number,
+      clientY = 10,
+      values: Partial<PointerEvent> = {},
+    ) =>
       target.dispatchEvent(
         Object.assign(new Event(type, { cancelable: true }), {
           pointerId: 1,
           button: 0,
-          detail: 1,
+          detail: 0,
+          pointerType: "mouse",
+          buttons: type === "pointerup" ? 0 : 1,
           shiftKey: false,
           altKey: false,
           clientX,
           clientY,
+          ...values,
         }),
       ),
   };
