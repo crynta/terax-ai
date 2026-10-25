@@ -6,12 +6,14 @@ import {
   watchRemove,
 } from "@/modules/explorer/lib/watch";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import type { WorkspaceEnv } from "@/modules/workspace";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { useEffect, useRef, useState } from "react";
 import {
   createCoalescer,
   htmlPreviewAssetUrl,
   htmlPreviewSrc,
+  htmlPreviewSupported,
   pathsInclude,
 } from "./lib/htmlPreview";
 import { MarkdownViewToggle } from "./MarkdownViewToggle";
@@ -19,7 +21,8 @@ import { MarkdownViewToggle } from "./MarkdownViewToggle";
 type Props = {
   path: string;
   visible: boolean;
-  supported: boolean;
+  /** The tab's own workspace, which may differ from the active one. */
+  env: WorkspaceEnv;
   onSetView: (mode: "rendered" | "raw") => void;
 };
 
@@ -31,12 +34,8 @@ const SUSPEND_AFTER_MS = 30_000;
 // trails it by FSEvents latency (100 ms) plus its debounce (150 ms).
 const RELOAD_COALESCE_MS = 300;
 
-export function HtmlPreviewPane({
-  path,
-  visible,
-  supported,
-  onSetView,
-}: Props) {
+export function HtmlPreviewPane({ path, visible, env, onSetView }: Props) {
+  const supported = htmlPreviewSupported(env);
   const [revision, setRevision] = useState(0);
   const [loaded, setLoaded] = useState(visible);
   const visibleRef = useRef(visible);
@@ -57,9 +56,9 @@ export function HtmlPreviewPane({
   }, [visible]);
 
   useEffect(() => {
-    if (!supported) return;
+    if (!htmlPreviewSupported(env)) return;
     const dir = parentDir(path);
-    watchAdd([dir], [path]);
+    watchAdd([dir], [path], env);
 
     const reload = createCoalescer(() => {
       if (visibleRef.current) setRevision((r) => r + 1);
@@ -86,9 +85,9 @@ export function HtmlPreviewPane({
       alive = false;
       reload.cancel();
       for (const un of unlisteners) un();
-      watchRemove([dir], [path]);
+      watchRemove([dir], [path], env);
     };
-  }, [path, supported]);
+  }, [path, env]);
 
   const src = htmlPreviewSrc(
     htmlPreviewAssetUrl(convertFileSrc(""), path),

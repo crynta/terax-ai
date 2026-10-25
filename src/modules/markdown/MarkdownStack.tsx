@@ -1,8 +1,8 @@
 import { cn, isHtmlPath } from "@/lib/utils";
 import { useSpaces } from "@/modules/spaces/lib/useSpaces";
 import type { MarkdownTab, Tab } from "@/modules/tabs";
+import { LOCAL_WORKSPACE } from "@/modules/workspace";
 import { lazy, Suspense } from "react";
-import { htmlPreviewSupported } from "./lib/htmlPreview";
 
 // Split so an HTML preview never pulls the markdown renderer and vice versa.
 const MarkdownPreviewPane = lazy(() =>
@@ -47,9 +47,10 @@ export function MarkdownStack({ tabs, activeId, onSetMarkdownView }: Props) {
                   path={t.path}
                   visible={visible}
                   // The tab's own space, not the active workspace.
-                  supported={htmlPreviewSupported(
-                    spaces.find((sp) => sp.id === t.spaceId)?.env,
-                  )}
+                  env={
+                    spaces.find((sp) => sp.id === t.spaceId)?.env ??
+                    LOCAL_WORKSPACE
+                  }
                   onSetView={onSetView}
                 />
               ) : (
