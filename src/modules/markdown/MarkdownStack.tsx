@@ -1,6 +1,8 @@
 import { cn, isHtmlPath } from "@/lib/utils";
+import { useSpaces } from "@/modules/spaces/lib/useSpaces";
 import type { MarkdownTab, Tab } from "@/modules/tabs";
 import { lazy, Suspense } from "react";
+import { htmlPreviewSupported } from "./lib/htmlPreview";
 
 // Split so an HTML preview never pulls the markdown renderer and vice versa.
 const MarkdownPreviewPane = lazy(() =>
@@ -19,6 +21,7 @@ type Props = {
 };
 
 export function MarkdownStack({ tabs, activeId, onSetMarkdownView }: Props) {
+  const spaces = useSpaces((s) => s.spaces);
   const markdowns = tabs.filter(
     (t): t is MarkdownTab => t.kind === "markdown" && !t.cold,
   );
@@ -27,7 +30,8 @@ export function MarkdownStack({ tabs, activeId, onSetMarkdownView }: Props) {
     <div className="relative h-full w-full">
       {markdowns.map((t) => {
         const visible = t.id === activeId;
-        const Pane = isHtmlPath(t.path) ? HtmlPreviewPane : MarkdownPreviewPane;
+        const onSetView = (mode: "rendered" | "raw") =>
+          onSetMarkdownView(t.id, mode);
         return (
           <div
             key={t.id}
@@ -38,11 +42,23 @@ export function MarkdownStack({ tabs, activeId, onSetMarkdownView }: Props) {
             aria-hidden={!visible}
           >
             <Suspense fallback={null}>
-              <Pane
-                path={t.path}
-                visible={visible}
-                onSetView={(mode) => onSetMarkdownView(t.id, mode)}
-              />
+              {isHtmlPath(t.path) ? (
+                <HtmlPreviewPane
+                  path={t.path}
+                  visible={visible}
+                  // The tab's own space, not the active workspace.
+                  supported={htmlPreviewSupported(
+                    spaces.find((sp) => sp.id === t.spaceId)?.env,
+                  )}
+                  onSetView={onSetView}
+                />
+              ) : (
+                <MarkdownPreviewPane
+                  path={t.path}
+                  visible={visible}
+                  onSetView={onSetView}
+                />
+              )}
             </Suspense>
           </div>
         );

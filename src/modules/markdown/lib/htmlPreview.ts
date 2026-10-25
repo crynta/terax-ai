@@ -1,4 +1,46 @@
+import type { WorkspaceEnv } from "@/modules/workspace";
+
 const normalize = (path: string) => path.replace(/\\/g, "/");
+
+// The host asset protocol cannot serve paths inside a WSL distro.
+export function htmlPreviewSupported(env: WorkspaceEnv | undefined): boolean {
+  return env?.kind !== "wsl";
+}
+
+type Timers = {
+  set: (fn: () => void, ms: number) => unknown;
+  clear: (handle: unknown) => void;
+};
+
+const defaultTimers: Timers = {
+  set: (fn, ms) => setTimeout(fn, ms),
+  clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
+
+/** Runs `fn` once, `windowMs` after the last of a burst of triggers. */
+export function createCoalescer(
+  fn: () => void,
+  windowMs: number,
+  timers: Timers = defaultTimers,
+) {
+  let handle: unknown;
+  let armed = false;
+  const cancel = () => {
+    if (armed) timers.clear(handle);
+    armed = false;
+  };
+  return {
+    trigger() {
+      cancel();
+      armed = true;
+      handle = timers.set(() => {
+        armed = false;
+        fn();
+      }, windowMs);
+    },
+    cancel,
+  };
+}
 
 export function pathsInclude(paths: readonly string[], path: string): boolean {
   const target = normalize(path);

@@ -1,9 +1,62 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  createCoalescer,
   htmlPreviewAssetUrl,
   htmlPreviewSrc,
+  htmlPreviewSupported,
   pathsInclude,
 } from "./htmlPreview";
+
+describe("htmlPreviewSupported", () => {
+  it("allows local workspaces and tabs with no recorded environment", () => {
+    expect(htmlPreviewSupported({ kind: "local" })).toBe(true);
+    expect(htmlPreviewSupported(undefined)).toBe(true);
+  });
+
+  it("refuses WSL workspaces", () => {
+    expect(htmlPreviewSupported({ kind: "wsl", distro: "Ubuntu" })).toBe(false);
+  });
+});
+
+describe("createCoalescer", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("runs once for a write event followed by the trailing watcher event", () => {
+    vi.useFakeTimers();
+    const fn = vi.fn();
+    const c = createCoalescer(fn, 300);
+    c.trigger();
+    vi.advanceTimersByTime(260);
+    c.trigger();
+    vi.advanceTimersByTime(299);
+    expect(fn).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(fn).toHaveBeenCalledOnce();
+  });
+
+  it("runs again for a change after the window has closed", () => {
+    vi.useFakeTimers();
+    const fn = vi.fn();
+    const c = createCoalescer(fn, 300);
+    c.trigger();
+    vi.advanceTimersByTime(300);
+    c.trigger();
+    vi.advanceTimersByTime(300);
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+
+  it("never runs after cancel", () => {
+    vi.useFakeTimers();
+    const fn = vi.fn();
+    const c = createCoalescer(fn, 300);
+    c.trigger();
+    c.cancel();
+    vi.advanceTimersByTime(1000);
+    expect(fn).not.toHaveBeenCalled();
+  });
+});
 
 // Mirrors the asset protocol handler: drop the leading `/`, percent-decode.
 const servedPath = (url: string) =>

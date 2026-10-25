@@ -1,5 +1,6 @@
-import { cn, isRenderablePath } from "@/lib/utils";
-import { MarkdownViewToggle } from "@/modules/markdown";
+import { cn, isHtmlPath, isRenderablePath } from "@/lib/utils";
+import { htmlPreviewSupported, MarkdownViewToggle } from "@/modules/markdown";
+import { useSpaces } from "@/modules/spaces/lib/useSpaces";
 import { useWindowInactive } from "@/modules/theme/WindowActivityBridge";
 import type { EditorTab, Tab } from "@/modules/tabs";
 import { useEffect, useRef } from "react";
@@ -90,12 +91,16 @@ export function EditorStack({
   }, [editors]);
 
   const windowInactive = useWindowInactive();
+  const spaces = useSpaces((s) => s.spaces);
 
   if (editors.length === 0) return null;
   return (
     <div className="relative h-full w-full">
       {editors.map((t) => {
         const visible = t.id === activeId;
+        const previewBlocked =
+          isHtmlPath(t.path) &&
+          !htmlPreviewSupported(spaces.find((sp) => sp.id === t.spaceId)?.env);
         return (
           <div
             key={t.id}
@@ -110,8 +115,12 @@ export function EditorStack({
                 <MarkdownViewToggle
                   mode="raw"
                   onChange={(mode) => onSetMarkdownView(t.id, mode)}
-                  renderedDisabled={t.dirty}
-                  renderedHint="Save to preview"
+                  renderedDisabled={t.dirty || previewBlocked}
+                  renderedHint={
+                    previewBlocked
+                      ? "Not available in WSL workspaces"
+                      : "Save to preview"
+                  }
                 />
               )}
               <EditorPane
