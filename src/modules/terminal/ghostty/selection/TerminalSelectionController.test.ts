@@ -141,15 +141,20 @@ describe("terminal selection pointer ownership", () => {
     h.controller.dispose();
   });
 
-  it("extends a completed selection with Shift without moving its anchor", () => {
+  it("extends the current native selection with Shift before the next render frame", () => {
     const h = dragFixture();
     h.pointer("pointerdown", 45);
     h.pointer("pointermove", 75);
     h.pointer("pointerup", 75);
+    h.model.setSelection?.({
+      anchor: { line: 1, column: 4 },
+      focus: { line: 1, column: 7 },
+      rectangular: false,
+    });
     h.pointer("pointerdown", 15, 10, { shiftKey: true });
     h.pointer("pointerup", 15, 10, { shiftKey: true });
     expect(h.controller.value).toEqual({
-      anchor: { line: 0, column: 4 },
+      anchor: { line: 1, column: 4 },
       focus: { line: 0, column: 1 },
       rectangular: false,
     });

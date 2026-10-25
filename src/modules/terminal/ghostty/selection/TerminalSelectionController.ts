@@ -150,6 +150,7 @@ export class TerminalSelectionController {
       return;
     }
 
+    this.reconcile();
     const point = this.pointFromEvent(event);
     if (!point) return;
     // Keep compatibility mousedown: it carries the native click count.
