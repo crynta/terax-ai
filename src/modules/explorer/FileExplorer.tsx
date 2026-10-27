@@ -39,7 +39,7 @@ import {
 } from "./TreeRow";
 import { InlineInput } from "./InlineInput";
 import {
-  copyToClipboard,
+  copyPathToClipboard,
   relativePath,
   revealInFinder,
 } from "./lib/contextActions";
@@ -964,14 +964,14 @@ export const FileExplorer = memo(
                   <ContextMenuSeparator />
                   <ContextMenuItem
                     className={COMPACT_ITEM}
-                    onSelect={() => void copyToClipboard(menuTarget.path)}
+                    onSelect={() => void copyPathToClipboard(menuTarget.path)}
                   >
                     Copy Path
                   </ContextMenuItem>
                   <ContextMenuItem
                     className={COMPACT_ITEM}
                     onSelect={() =>
-                      void copyToClipboard(
+                      void copyPathToClipboard(
                         relativePath(rootPath, menuTarget.path),
                       )
                     }
@@ -1058,7 +1058,7 @@ export const FileExplorer = memo(
                   <ContextMenuSeparator />
                   <ContextMenuItem
                     className={COMPACT_ITEM}
-                    onSelect={() => void copyToClipboard(rootPath)}
+                    onSelect={() => void copyPathToClipboard(rootPath)}
                   >
                     Copy Path
                   </ContextMenuItem>

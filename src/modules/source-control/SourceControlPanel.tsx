@@ -39,7 +39,7 @@ import { IS_MAC } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { type GitBranchEntry, native } from "@/modules/ai/lib/native";
 import {
-  copyToClipboard,
+  copyPathToClipboard,
   revealInFinder,
 } from "@/modules/explorer/lib/contextActions";
 import { FileIcon } from "@/modules/explorer/FileIcon";
@@ -1362,14 +1362,16 @@ const EntryRow = memo(function EntryRow({
         {/* Copy paths */}
         <ContextMenuItem
           className={COMPACT_ITEM}
-          onSelect={() => void copyToClipboard(entry.path.replace(/\\/g, "/"))}
+          onSelect={() =>
+            void copyPathToClipboard(entry.path.replace(/\\/g, "/"))
+          }
         >
           Copy Relative Path
         </ContextMenuItem>
         {absolutePath ? (
           <ContextMenuItem
             className={COMPACT_ITEM}
-            onSelect={() => void copyToClipboard(absolutePath)}
+            onSelect={() => void copyPathToClipboard(absolutePath)}
           >
             Copy Absolute Path
           </ContextMenuItem>
