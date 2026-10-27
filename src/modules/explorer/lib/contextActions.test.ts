@@ -49,11 +49,40 @@ describe("escapeForShell", () => {
     expect(escapeForShell("/a/b\\ c", false)).toBe("/a/b\\\\\\ c");
   });
 
-  it("quotes instead of escaping on Windows, where backslash is a separator", () => {
+  it("quotes with a PowerShell literal on Windows, where backslash is a separator", () => {
     expect(escapeForShell("C:\\a\\My Folder\\c.ts", true)).toBe(
-      '"C:\\a\\My Folder\\c.ts"',
+      "'C:\\a\\My Folder\\c.ts'",
     );
     expect(escapeForShell("C:\\a\\c.ts", true)).toBe("C:\\a\\c.ts");
+  });
+
+  it.each([
+    ["semicolon", "C:\\a\\b;c"],
+    ["dollar sign", "C:\\a\\$env:USERPROFILE"],
+    ["backtick", "C:\\a\\b`nc"],
+    ["percent sign", "C:\\a\\%TEMP%"],
+    ["command separator", "C:\\a\\b & c"],
+  ])(
+    "quotes a Windows path containing a %s so it stays literal",
+    (_label, path) => {
+      const escaped = escapeForShell(path, true);
+      expect(escaped).toBe(`'${path}'`);
+    },
+  );
+
+  it("doubles apostrophes inside a Windows literal", () => {
+    expect(escapeForShell("C:\\a\\it's here.txt", true)).toBe(
+      "'C:\\a\\it''s here.txt'",
+    );
+    expect(escapeForShell("C:\\a\\'quoted'.txt", true)).toBe(
+      "'C:\\a\\''quoted''.txt'",
+    );
+  });
+
+  it("keeps double quotes inside a Windows literal verbatim", () => {
+    expect(escapeForShell('C:\\a\\say "hi".txt', true)).toBe(
+      "'C:\\a\\say \"hi\".txt'",
+    );
   });
 
   it("keeps empty input empty", () => {
