@@ -1,3 +1,7 @@
+import {
+  beginTerminalResizeInteraction,
+  endTerminalResizeInteraction,
+} from "@/modules/terminal/lib/terminalResizeInteraction";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GhosttyTerminalModelApi } from "@/modules/terminal/ghostty/GhosttyTerminalModel";
 import type { WindowPresentation } from "@/modules/terminal/ghostty/WindowPresentationPolicy";
@@ -39,7 +43,11 @@ describe("WebGL surface renderer ownership", () => {
       expect(h.onError).toHaveBeenCalledOnce();
       expect(h.surface.diagnostics().renderer).toBeNull();
       expect(h.renderer.resize).toHaveBeenCalledTimes(calls);
-      h.surface.setFontMetrics({ ...METRICS, cellWidth: 10 });
+      h.surface.setFontMetrics({
+        ...METRICS,
+        deviceCellWidth: 10,
+        cellWidth: 10,
+      });
       h.resize();
       expect(
         h.surface.renderFrame(h.renderer as unknown as WebGlCellRenderer),
@@ -70,6 +78,52 @@ describe("WebGL surface renderer ownership", () => {
   });
 });
 
+describe("WebGL surface resizing", () => {
+  it("keeps the model, the PTY and the renderer still during a gesture and applies the final size once", () => {
+    const h = harness();
+    h.surface.renderFrame(h.renderer as unknown as WebGlCellRenderer);
+    vi.advanceTimersByTime(500);
+    const rendererResizes = h.renderer.resize.mock.calls.length;
+    const first = h.surface.diagnostics().cols;
+    h.onResize.mockClear();
+
+    const token = {};
+    beginTerminalResizeInteraction(token);
+    for (let step = 1; step <= 62; step++) {
+      h.setHost(960 - step * 8);
+      h.resize();
+      h.surface.renderFrame(h.renderer as unknown as WebGlCellRenderer);
+      vi.advanceTimersByTime(16);
+      h.surface.renderFrame(h.renderer as unknown as WebGlCellRenderer);
+    }
+    expect(h.onResize).not.toHaveBeenCalled();
+    expect(h.renderer.resize).toHaveBeenCalledTimes(rendererResizes);
+    expect(h.surface.diagnostics().cols).toBe(first);
+
+    endTerminalResizeInteraction(token);
+    h.surface.renderFrame(h.renderer as unknown as WebGlCellRenderer);
+
+    const cols = Math.floor((960 - 62 * 8) / 8);
+    expect(h.onResize).toHaveBeenCalledOnce();
+    expect(h.onResize).toHaveBeenCalledWith(cols, expect.any(Number));
+    expect(h.surface.diagnostics().cols).toBe(cols);
+  });
+
+  it("applies a change outside a gesture at once", () => {
+    const h = harness();
+    h.surface.renderFrame(h.renderer as unknown as WebGlCellRenderer);
+    vi.advanceTimersByTime(500);
+    h.onResize.mockClear();
+
+    h.setHost(800);
+    h.resize();
+    h.surface.renderFrame(h.renderer as unknown as WebGlCellRenderer);
+
+    expect(h.onResize).toHaveBeenCalledOnce();
+    expect(h.surface.diagnostics().cols).toBe(100);
+  });
+});
+
 const METRICS = {
   font: {
     family: "monospace",
@@ -78,6 +132,10 @@ const METRICS = {
     letterSpacing: 0,
     weight: "400",
   },
+  scale: 1,
+  deviceCellWidth: 8,
+  deviceCellHeight: 16,
+  deviceBaseline: 12,
   cellWidth: 8,
   cellHeight: 16,
   baseline: 12,
@@ -101,6 +159,23 @@ function renderer() {
   };
 }
 
+function measuringContext() {
+  const context = {
+    font: "",
+    measureText: () => {
+      const size = Number.parseFloat(
+        /([\d.]+)px/.exec(context.font)?.[1] ?? "14",
+      );
+      return {
+        width: size * 0.6,
+        actualBoundingBoxAscent: size * 0.8,
+        actualBoundingBoxDescent: size * 0.2,
+      };
+    },
+  };
+  return context;
+}
+
 function harness() {
   vi.useFakeTimers();
   const element = () =>
@@ -113,6 +188,7 @@ function harness() {
       appendChild: vi.fn(),
       remove: vi.fn(),
       getBoundingClientRect: () => ({ width: 960, height: 640 }),
+      getContext: () => measuringContext(),
     });
   const media = new EventTarget();
   vi.stubGlobal("document", { createElement: element });
@@ -159,6 +235,7 @@ function harness() {
     viewportOriginLine: () => 0,
     modes: () => ({ alternateScreen: false }),
     setPixelSize: vi.fn(),
+    compactPresentationResources: vi.fn(),
     resize: (cols: number, rows: number) => {
       model.cols = cols;
       model.rows = rows;
@@ -168,19 +245,28 @@ function harness() {
     consumeDamage: () => ({ kind: "none" }),
   };
   const onError = vi.fn();
+  const onResize = vi.fn();
   const surface = new WebGlTerminalSurface({
     model: model as unknown as GhosttyTerminalModelApi,
     metrics: METRICS,
     theme: THEME,
     cursorBlink: false,
     cursorStyle: "block",
-    onResize: vi.fn(),
+    onResize,
     onError,
   });
   surfaces.push(surface);
-  surface.attach(element() as unknown as HTMLElement);
+  const hostElement = element();
+  const hostSize = { width: 960, height: 640 };
+  hostElement.getBoundingClientRect = () => ({ ...hostSize });
+  surface.attach(hostElement as unknown as HTMLElement);
   return {
     surface,
+    onResize,
+    setHost(width: number, height = 640) {
+      hostSize.width = width;
+      hostSize.height = height;
+    },
     renderer: current,
     acquire,
     onError,
@@ -189,7 +275,11 @@ function harness() {
       if (trigger === "theme")
         surface.setTheme({ ...THEME, background: [1, 2, 3] });
       if (trigger === "font")
-        surface.setFontMetrics({ ...METRICS, cellWidth: 9 });
+        surface.setFontMetrics({
+          ...METRICS,
+          deviceCellWidth: 9,
+          cellWidth: 9,
+        });
       if (trigger === "resume") {
         bridge.visibility({ visible: false, reclaim: false });
         bridge.visibility({ visible: true, reclaim: false });

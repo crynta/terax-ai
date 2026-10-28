@@ -114,7 +114,7 @@ Les installateurs récents sont disponibles sur la page [Releases](https://githu
 **Prérequis**
 
 - Rust (stable), https://rustup.rs
-- Node 20+ et [pnpm](https://pnpm.io)
+- Node 22+ et [pnpm](https://pnpm.io)
 - Prérequis Tauri pour votre plateforme, https://tauri.app/start/prerequisites/
 
 **Exécution**

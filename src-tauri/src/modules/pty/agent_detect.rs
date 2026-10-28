@@ -1,9 +1,18 @@
+use std::time::{Duration, Instant};
+
+use memchr::{memchr, memchr2};
+
 const ESC: u8 = 0x1b;
 const BEL: u8 = 0x07;
 const OSC_INTRO: u8 = b']';
 const ST_FINAL: u8 = b'\\';
 
 const OSC_MAX: usize = 2048;
+
+/// Generic attention (OSC 9, or an OSC 777 that is not ours) repeats while an
+/// agent waits: once the status is already `Waiting`, further requests inside
+/// this window are the same moment of attention and are not re-emitted.
+const ATTENTION_REPEAT: Duration = Duration::from_secs(3);
 
 const DEFAULT_AGENTS: &[&str] = &["claude", "codex", "gemini", "pi", "opencode", "grok"];
 
@@ -61,6 +70,9 @@ pub struct AgentDetector {
     osc: Vec<u8>,
     armed: bool,
     status: Status,
+    /// When generic attention was last emitted; consulted only while armed.
+    last_attention: Option<Instant>,
+    clock: fn() -> Instant,
 }
 
 impl AgentDetector {
@@ -69,12 +81,18 @@ impl AgentDetector {
     }
 
     pub fn with_agents(agents: Vec<String>) -> Self {
+        Self::with_clock(agents, Instant::now)
+    }
+
+    fn with_clock(agents: Vec<String>, clock: fn() -> Instant) -> Self {
         Self {
             agents,
             state: State::Ground,
             osc: Vec::new(),
             armed: false,
             status: Status::Working,
+            last_attention: None,
+            clock,
         }
     }
 
@@ -82,51 +100,72 @@ impl AgentDetector {
     /// (`133` prompt boundaries, our `777` hook marker), never from raw output,
     /// so a TUI agent that repaints continuously never flaps working/waiting.
     pub fn process<F: FnMut(Transition)>(&mut self, input: &[u8], mut emit: F) {
-        if self.state == State::Ground && !input.contains(&ESC) {
-            return;
-        }
-
-        for &b in input {
+        let mut i = 0;
+        while i < input.len() {
             match self.state {
                 State::Ground => {
-                    if b == ESC {
-                        self.state = State::Esc;
+                    // Output without an escape is never interesting.
+                    let Some(esc) = memchr(ESC, &input[i..]) else {
+                        return;
+                    };
+                    self.state = State::Esc;
+                    i += esc + 1;
+                }
+                State::Esc => {
+                    let b = input[i];
+                    i += 1;
+                    match b {
+                        OSC_INTRO => {
+                            self.state = State::Osc;
+                            self.osc.clear();
+                        }
+                        ESC => {}
+                        _ => self.state = State::Ground,
                     }
                 }
-                State::Esc => match b {
-                    OSC_INTRO => {
-                        self.state = State::Osc;
+                State::Osc => {
+                    // The body runs to BEL or ESC; copy it as one run.
+                    let rest = &input[i..];
+                    let end = memchr2(BEL, ESC, rest).unwrap_or(rest.len());
+                    let room = OSC_MAX - self.osc.len();
+                    if end > room {
+                        // Oversized: drop it and resume plain scanning after
+                        // the byte that overflowed.
                         self.osc.clear();
-                    }
-                    ESC => {}
-                    _ => self.state = State::Ground,
-                },
-                State::Osc => match b {
-                    BEL => {
-                        self.finish_osc(&mut emit);
                         self.state = State::Ground;
+                        i += room + 1;
+                        continue;
                     }
-                    ESC => self.state = State::OscEsc,
-                    _ => {
-                        if self.osc.len() < OSC_MAX {
-                            self.osc.push(b);
-                        } else {
+                    self.osc.extend_from_slice(&rest[..end]);
+                    i += end;
+                    match rest.get(end) {
+                        Some(&BEL) => {
+                            i += 1;
+                            self.finish_osc(&mut emit);
+                            self.state = State::Ground;
+                        }
+                        Some(_) => {
+                            i += 1;
+                            self.state = State::OscEsc;
+                        }
+                        None => {}
+                    }
+                }
+                State::OscEsc => {
+                    let b = input[i];
+                    i += 1;
+                    match b {
+                        ST_FINAL => {
+                            self.finish_osc(&mut emit);
+                            self.state = State::Ground;
+                        }
+                        ESC => {}
+                        _ => {
                             self.osc.clear();
                             self.state = State::Ground;
                         }
                     }
-                },
-                State::OscEsc => match b {
-                    ST_FINAL => {
-                        self.finish_osc(&mut emit);
-                        self.state = State::Ground;
-                    }
-                    ESC => {}
-                    _ => {
-                        self.osc.clear();
-                        self.state = State::Ground;
-                    }
-                },
+                }
             }
         }
     }
@@ -143,6 +182,11 @@ impl AgentDetector {
     fn disarm(&mut self) {
         self.armed = false;
         self.status = Status::Working;
+        self.last_attention = None;
+    }
+
+    fn note_attention(&mut self) {
+        self.last_attention = Some((self.clock)());
     }
 
     fn finish_osc<F: FnMut(Transition)>(&mut self, emit: &mut F) {
@@ -184,11 +228,13 @@ impl AgentDetector {
                 b"attention" => {
                     self.ensure_armed(agent, emit);
                     self.status = Status::Waiting;
+                    self.note_attention();
                     emit(Transition::Attention);
                 }
                 b"finished" => {
                     self.ensure_armed(agent, emit);
                     self.status = Status::Waiting;
+                    self.note_attention();
                     emit(Transition::Finished);
                 }
                 _ => {}
@@ -234,11 +280,25 @@ impl AgentDetector {
         }
     }
 
+    /// Emits on the transition into `Waiting`. While already waiting, a repeat
+    /// is the same moment of attention unless enough time has passed for it to
+    /// plausibly be the next turn (agents without hooks never report
+    /// `working`, so the status alone cannot tell the two apart).
     fn generic_attention<F: FnMut(Transition)>(&mut self, emit: &mut F) {
-        if self.armed {
-            self.status = Status::Waiting;
-            emit(Transition::Attention);
+        if !self.armed {
+            return;
         }
+        let now = (self.clock)();
+        let repeat = self.status == Status::Waiting
+            && self
+                .last_attention
+                .is_some_and(|last| now.saturating_duration_since(last) < ATTENTION_REPEAT);
+        if repeat {
+            return;
+        }
+        self.status = Status::Waiting;
+        self.last_attention = Some(now);
+        emit(Transition::Attention);
     }
 
     fn match_agent(&self, cmd: &[u8]) -> Option<String> {
@@ -400,14 +460,113 @@ mod tests {
         assert_eq!(run(&mut d, &osc("777;notify;Terax;gemini;finished")), vec![Transition::Finished]);
     }
 
+    thread_local! {
+        static NOW: std::cell::Cell<Option<Instant>> = const { std::cell::Cell::new(None) };
+    }
+
+    fn fake_now() -> Instant {
+        NOW.with(|now| {
+            let value = now.get().unwrap_or_else(Instant::now);
+            now.set(Some(value));
+            value
+        })
+    }
+
+    fn advance(by: Duration) {
+        NOW.with(|now| now.set(Some(fake_now() + by)));
+    }
+
+    fn timed() -> AgentDetector {
+        AgentDetector::with_clock(
+            DEFAULT_AGENTS.iter().map(|s| s.to_string()).collect(),
+            fake_now,
+        )
+    }
+
     #[test]
     fn generic_osc777_and_osc9_attention_only_when_armed() {
-        let mut d = AgentDetector::new();
+        let mut d = timed();
         assert!(run(&mut d, &osc("777;notify;Other;ready")).is_empty());
+        assert!(run(&mut d, &osc("9;needs you")).is_empty());
         run(&mut d, &osc("133;C;codex"));
         assert_eq!(run(&mut d, &osc("777;notify;Codex;ready")), vec![Transition::Attention]);
+        advance(ATTENTION_REPEAT);
         assert_eq!(run(&mut d, &osc("9;needs you")), vec![Transition::Attention]);
         assert!(run(&mut d, &osc("9;4;1;50")).is_empty());
+    }
+
+    #[test]
+    fn repeated_generic_attention_is_one_transition_until_the_window_passes() {
+        let mut d = timed();
+        run(&mut d, &osc("133;C;codex"));
+        assert_eq!(run(&mut d, &osc("9;turn complete")), vec![Transition::Attention]);
+        // A TUI that rings OSC 9 on every redraw must not flood the frontend.
+        for _ in 0..500 {
+            advance(Duration::from_millis(5));
+            assert!(run(&mut d, &osc("9;still waiting")).is_empty());
+        }
+        // The next turn of an agent without hooks arrives much later.
+        advance(ATTENTION_REPEAT);
+        assert_eq!(run(&mut d, &osc("9;turn complete")), vec![Transition::Attention]);
+    }
+
+    #[test]
+    fn a_new_turn_after_working_is_a_fresh_transition() {
+        let mut d = timed();
+        run(&mut d, &osc("133;C;claude"));
+        assert_eq!(run(&mut d, &osc("9;done")), vec![Transition::Attention]);
+        assert_eq!(run(&mut d, &osc("777;notify;Terax;working")), vec![Transition::Working]);
+        assert_eq!(run(&mut d, &osc("9;done again")), vec![Transition::Attention]);
+    }
+
+    #[test]
+    fn a_hook_marker_and_its_generic_twin_are_one_attention() {
+        let mut d = timed();
+        run(&mut d, &osc("133;C;codex"));
+        assert_eq!(run(&mut d, &osc("777;notify;Terax;codex;finished")), vec![Transition::Finished]);
+        assert!(run(&mut d, &osc("9;Agent turn complete")).is_empty());
+        advance(ATTENTION_REPEAT);
+        assert_eq!(run(&mut d, &osc("9;Agent turn complete")), vec![Transition::Attention]);
+    }
+
+    #[test]
+    fn disarming_forgets_the_attention_window() {
+        let mut d = timed();
+        run(&mut d, &osc("133;C;codex"));
+        assert_eq!(run(&mut d, &osc("9;x")), vec![Transition::Attention]);
+        run(&mut d, &osc("133;D;0"));
+        run(&mut d, &osc("133;C;codex"));
+        assert_eq!(run(&mut d, &osc("9;x")), vec![Transition::Attention]);
+    }
+
+    #[test]
+    fn plain_output_is_skipped_without_scanning_state_and_escapes_still_split_anywhere() {
+        let mut d = AgentDetector::new();
+        run(&mut d, &osc("133;C;claude"));
+        let big = vec![b'a'; 1024 * 1024];
+        assert!(run(&mut d, &big).is_empty());
+        let marker = osc("777;notify;Terax;attention");
+        // Every split point of the marker, embedded in plain text.
+        for split in 1..marker.len() {
+            let mut d = AgentDetector::new();
+            run(&mut d, &osc("133;C;claude"));
+            let mut out = run(&mut d, &[&big[..100], &marker[..split]].concat());
+            out.extend(run(&mut d, &[&marker[split..], &big[..100]].concat()));
+            assert_eq!(out, vec![Transition::Attention], "split at {split}");
+        }
+    }
+
+    #[test]
+    fn a_body_that_ends_exactly_at_the_limit_still_terminates() {
+        let mut d = AgentDetector::new();
+        run(&mut d, &osc("133;C;claude"));
+        let body = format!("9;{}", "x".repeat(OSC_MAX - 2));
+        assert_eq!(body.len(), OSC_MAX);
+        assert_eq!(run(&mut d, &osc(&body)), vec![Transition::Attention]);
+        let too_long = format!("9;{}", "x".repeat(OSC_MAX - 1));
+        assert!(run(&mut d, &osc(&too_long)).is_empty());
+        // The decoder resynchronises on the next sequence.
+        assert_eq!(run(&mut d, &osc("777;notify;Terax;attention")), vec![Transition::Attention]);
     }
 
     #[test]

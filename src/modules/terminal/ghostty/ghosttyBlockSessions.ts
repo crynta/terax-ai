@@ -2,6 +2,10 @@ import { subscribeWindowPresentation } from "@/modules/terminal/ghostty/windowPr
 import type { GhosttyTerminalModelApi } from "@/modules/terminal/ghostty/GhosttyTerminalModel";
 import type { GhosttyBlocks } from "@/modules/terminal/ghostty/GhosttyBlocks";
 import type { BlockMode } from "@/modules/terminal/block/lib/modeMachine";
+import {
+  type BlockViewportSignature,
+  sameBlockViewport,
+} from "@/modules/terminal/block/lib/viewportSignature";
 
 export type WatermarkState = "visible" | "hidden" | "dead";
 
@@ -11,6 +15,13 @@ export class GhosttyBlockSession {
   focus: (() => void) | null = null;
   paste: ((text: string) => void) | null = null;
   keyDown: ((event: KeyboardEvent) => boolean) | null = null;
+  /** Current cell height in CSS px, supplied by the surface owner. */
+  cellHeight: () => number = () => 0;
+  /**
+   * Runs once per block-mode change (never per output chunk). The terminal
+   * session uses it to switch the input element between shell and prompt mode.
+   */
+  modeEffect: (() => void) | null = null;
   draft = "";
   inputActive = false;
   everSubmitted = false;
@@ -22,7 +33,9 @@ export class GhosttyBlockSession {
   private dirty = true;
   private requestFrame: (() => void) | null = null;
   private unsubscribeDamage: (() => void) | null = null;
+  private presentedSignature: BlockViewportSignature | null = null;
   private readonly viewportListeners = new Set<() => void>();
+  private readonly contentListeners = new Set<() => void>();
   private readonly modeListeners = new Set<() => void>();
 
   async attach(
@@ -71,14 +84,30 @@ export class GhosttyBlockSession {
     if (mode !== this.mode) {
       this.mode = mode;
       for (const listener of this.modeListeners) listener();
+      this.modeEffect?.();
     }
     this.dirty = true;
     if (this.visible && this.presented) this.requestFrame?.();
   }
 
+  /**
+   * Called once per presented renderer frame. Content subscribers (watermark)
+   * hear about every dirty frame; viewport subscribers (block chrome) only when
+   * something that positions blocks changed, so frames that merely repaint
+   * cells cost no block recomputation and no React commit.
+   */
   present(): void {
     if (!this.dirty || !this.visible || !this.presented) return;
     this.dirty = false;
+    for (const listener of this.contentListeners) listener();
+    const signature = this.readSignature();
+    if (
+      signature &&
+      this.presentedSignature &&
+      sameBlockViewport(signature, this.presentedSignature)
+    )
+      return;
+    this.presentedSignature = signature;
     for (const listener of this.viewportListeners) listener();
   }
 
@@ -89,11 +118,22 @@ export class GhosttyBlockSession {
       this.modeListeners.delete(listener);
     };
   };
+  /** Block chrome: notified when block positions may have changed. */
   readonly subscribeViewport = (listener: () => void): (() => void) => {
     this.viewportListeners.add(listener);
+    // A new subscriber has never seen the current layout.
+    this.presentedSignature = null;
     this.changed();
     return () => {
       this.viewportListeners.delete(listener);
+    };
+  };
+  /** Anything derived from screen contents: notified on every dirty frame. */
+  readonly subscribeContent = (listener: () => void): (() => void) => {
+    this.contentListeners.add(listener);
+    this.changed();
+    return () => {
+      this.contentListeners.delete(listener);
     };
   };
 
@@ -114,12 +154,31 @@ export class GhosttyBlockSession {
     this.paste = null;
     this.keyDown = null;
     this.draft = "";
+    this.modeEffect = null;
     this.modeListeners.clear();
     this.viewportListeners.clear();
+    this.contentListeners.clear();
   }
 
   private invalidateViewport(): void {
     this.dirty = true;
+    this.presentedSignature = null;
+  }
+
+  private readSignature(): BlockViewportSignature | null {
+    const { model, controller } = this;
+    if (!model || !controller) return null;
+    const mode = controller.mode;
+    return {
+      mode,
+      revision: controller.revision,
+      origin: model.viewportOriginLine(),
+      history: model.scrollPosition().history,
+      rows: model.rows,
+      cols: model.cols,
+      cellHeight: this.cellHeight(),
+      cursorLine: mode === "running" ? (model.bufferCursorLine?.() ?? -1) : -1,
+    };
   }
 }
 

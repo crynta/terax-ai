@@ -144,6 +144,35 @@ describe("terminal selection pointer ownership", () => {
     }
   });
 
+  it("selects the text drawn under the pointer while the grid is shifted up, across real Ghostty rows", async () => {
+    const bytes = await readFile(
+      new URL(
+        "../../../../../packages/ghostty-core/adapted/ghostty-vt.wasm",
+        import.meta.url,
+      ),
+    );
+    const core = await TeraxGhostty.loadBytes(Uint8Array.from(bytes).buffer);
+    const model = new AdaptedGhosttyTerminalModel(core, {
+      backend: "ghostty-webgpu",
+      cols: 80,
+      rows: 24,
+    });
+    // One row (20 px) of the grid is moved off the top of a shorter pane.
+    const fixture = dragFixture(model, () => 20);
+    try {
+      model.write(new TextEncoder().encode("alpha\r\nbravo\r\ncharlie"));
+      fixture.pointer("pointerdown", 5, 10);
+      fixture.controller.reconcile();
+      fixture.pointer("pointermove", 45, 10);
+      fixture.controller.reconcile();
+      fixture.pointer("pointerup", 45, 10);
+      expect(fixture.controller.text()).toBe("bravo");
+    } finally {
+      fixture.controller.dispose();
+      model.dispose();
+    }
+  });
+
   it("retains a single-click drag anchor through render frames without selecting a click", () => {
     const fixture = dragFixture();
     fixture.pointer("pointerdown", 15);
@@ -213,6 +242,30 @@ describe("terminal selection pointer ownership", () => {
     }
   });
 
+  it("selects the cell that is drawn under the pointer while the grid is shifted up", () => {
+    // A pane shorter than its grid during a resize gesture shows the grid moved up by 40 px.
+    let shift = 40;
+    const fixture = dragFixture(undefined, () => shift);
+    fixture.pointer("pointerdown", 15, 10);
+    fixture.pointer("pointermove", 45, 50);
+    fixture.pointer("pointerup", 45, 50);
+    // 10 + 40 is in row 2, 50 + 40 in row 4 (rows are 20 px).
+    expect(fixture.controller.value).toEqual({
+      anchor: { line: 2, column: 1 },
+      focus: { line: 4, column: 4 },
+      rectangular: false,
+    });
+    fixture.pointer("pointerdown", 15, 10);
+    fixture.pointer("pointerup", 15, 10);
+    shift = 0;
+    fixture.pointer("pointerdown", 15, 10);
+    fixture.pointer("pointermove", 45, 50);
+    fixture.pointer("pointerup", 45, 50);
+    expect(fixture.controller.value?.anchor.line).toBe(0);
+    expect(fixture.controller.value?.focus.line).toBe(2);
+    fixture.controller.dispose();
+  });
+
   it("does not capture a pointer already claimed by a resize separator", () => {
     expect(
       shouldStartTerminalSelection(
@@ -244,7 +297,10 @@ describe("terminal selection pointer ownership", () => {
   });
 });
 
-function dragFixture(realModel?: GhosttyTerminalModelApi) {
+function dragFixture(
+  realModel?: GhosttyTerminalModelApi,
+  gridShiftY?: () => number,
+) {
   let tracked: TerminalBufferSelection | null = null;
   let capture: number | null = null;
   const target = Object.assign(new EventTarget(), {
@@ -275,6 +331,7 @@ function dragFixture(realModel?: GhosttyTerminalModelApi) {
     model,
     target: target as unknown as HTMLElement,
     cellSize: () => ({ width: 10, height: 20 }),
+    gridShiftY,
     shouldIgnoreTarget: () => false,
     onChange,
   });

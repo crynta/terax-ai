@@ -83,6 +83,7 @@ function resourceSample() {
     core: ghosttyCoreRuntimeDiagnostics(),
     surfaces: ghosttySessionResourceTotals(),
     webgpu: gpu && {
+      canvases: gpu.canvases,
       atlasCount: gpu.atlasCount,
       atlasBytes: gpu.atlasBytes,
       atlasCpuBytes: gpu.atlasCpuBytes,

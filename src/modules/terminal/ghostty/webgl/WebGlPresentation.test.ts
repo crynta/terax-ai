@@ -55,6 +55,10 @@ it("keeps unchanged WebGL frames idle, retains cursor buffers, and presents cach
     renderer.configure(
       {
         metrics: {
+          scale: 1,
+          deviceCellWidth: 8,
+          deviceCellHeight: 16,
+          deviceBaseline: 12,
           cellWidth: 8,
           cellHeight: 16,
           baseline: 12,

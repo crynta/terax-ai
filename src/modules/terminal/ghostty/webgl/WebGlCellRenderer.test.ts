@@ -25,6 +25,10 @@ function profile(scale = 2): WebGlRendererProfile {
         letterSpacing: 0,
         weight: "400",
       },
+      scale,
+      deviceCellWidth: 9 * scale,
+      deviceCellHeight: 18 * scale,
+      deviceBaseline: 14 * scale,
       cellWidth: 9,
       cellHeight: 18,
       baseline: 14,
@@ -56,7 +60,11 @@ describe("rendererProfileKey", () => {
     expect(rendererProfileKey(profile())).not.toBe(
       rendererProfileKey({
         ...profile(),
-        metrics: { ...profile().metrics, cellWidth: 10 },
+        metrics: {
+          ...profile().metrics,
+          deviceCellWidth: 20,
+          cellWidth: 10,
+        },
       }),
     );
   });

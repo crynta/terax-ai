@@ -1,6 +1,9 @@
 import type { Tab } from "@/modules/tabs";
-import { hasLeaf, leafIdForPty } from "@/modules/terminal";
-import { listen } from "@tauri-apps/api/event";
+import {
+  hasLeaf,
+  leafIdForPty,
+  subscribeAgentSignals,
+} from "@/modules/terminal";
 import { useEffect, useRef } from "react";
 import { displayAgent } from "../lib/format";
 import { maybeTriggerManagedReview } from "../lib/review";
@@ -104,22 +107,14 @@ export function AgentNotificationsBridge({
   const ctxRef = useRef<Ctx>({ tabs, activeId, focused, onActivate });
   ctxRef.current = { tabs, activeId, focused, onActivate };
 
-  useEffect(() => {
-    let alive = true;
-    let unlisten: (() => void) | undefined;
-    listen<AgentSignal>("terax:agent-signal", (e) =>
-      handleSignal(e.payload, ctxRef.current),
-    )
-      .then((u) => {
-        if (alive) unlisten = u;
-        else u();
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-      unlisten?.();
-    };
-  }, []);
+  // Shares the terminal module's single `terax:agent-signal` listener.
+  useEffect(
+    () =>
+      subscribeAgentSignals((signal) =>
+        handleSignal(signal as AgentSignal, ctxRef.current),
+      ),
+    [],
+  );
 
   return null;
 }

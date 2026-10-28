@@ -58,6 +58,8 @@ import { type LanguageResult, resolveLanguage } from "./lib/languageResolver";
 import { FORCE_READ_LIMIT, useDocument } from "./lib/useDocument";
 import { useEditorThemeExt } from "./lib/useEditorThemeExt";
 import { initVimGlobals, vimHandlersExtension } from "./lib/vim";
+import { mediaPreviewKind } from "./lib/mediaPreview";
+import { MediaPreview } from "./MediaPreview";
 
 initVimGlobals();
 
@@ -79,6 +81,8 @@ export type EditorPaneHandle = {
   /** Apply CodeMirror's undo/redo commands. */
   undo: () => void;
   redo: () => void;
+  /** Persist the buffer (format-on-save + write), same as Mod+S / :w. */
+  save: () => Promise<void>;
   /** Request an AI ghost suggestion at the cursor. */
   triggerAiComplete: () => void;
   /** Open CodeMirror's completion popup. */
@@ -91,6 +95,7 @@ type Props = {
   onDirtyChange?: (dirty: boolean) => void;
   onSaved?: () => void;
   onClose?: () => void;
+  mediaActive?: boolean;
 };
 
 // Above this, syntax highlighting and LSP are disabled: a multi-MB lezer
@@ -107,7 +112,14 @@ function formatBytes(n: number): string {
 // skip re-rendering entirely when App re-renders (terminal events, tab churn).
 export const EditorPane = memo(
   forwardRef<EditorPaneHandle, Props>(function EditorPane(props, ref) {
-    const { path, overrideLanguage, onDirtyChange, onSaved, onClose } = props;
+    const {
+      path,
+      overrideLanguage,
+      onDirtyChange,
+      onSaved,
+      onClose,
+      mediaActive = true,
+    } = props;
 
     const { doc, onChange, save, reload, adoptDiskText, openAnyway } =
       useDocument({
@@ -546,6 +558,7 @@ export const EditorPane = memo(
           const view = cmRef.current?.view;
           if (view) redo(view);
         },
+        save: () => performSaveRef.current(),
         triggerAiComplete: () => {
           const view = cmRef.current?.view;
           if (view) triggerInlineCompletion(view);
@@ -575,19 +588,11 @@ export const EditorPane = memo(
       );
     }
     if (doc.status === "binary" || doc.status === "toolarge") {
-      const ext = path.split(".").pop()?.toLowerCase() ?? "";
-      const isImage = [
-        "png",
-        "jpg",
-        "jpeg",
-        "gif",
-        "webp",
-        "svg",
-        "ico",
-      ].includes(ext);
-      const isVideo = ["mp4", "webm", "ogg", "mov"].includes(ext);
-      const isAudio = ["mp3", "wav", "flac", "aac", "m4a"].includes(ext);
-      const isPdf = ext === "pdf";
+      const kind = mediaPreviewKind(path);
+      const isImage = kind === "image";
+      const isVideo = kind === "video";
+      const isAudio = kind === "audio";
+      const isPdf = kind === "pdf";
 
       if (isImage || isVideo || isAudio || isPdf) {
         const assetUrl = convertFileSrc(path);
@@ -607,23 +612,8 @@ export const EditorPane = memo(
                 alt={path.split("/").pop()}
               />
             )}
-            {isVideo && (
-              // biome-ignore lint/a11y/useMediaCaption: local media preview opens arbitrary files with no caption track
-              <video
-                controls
-                preload="metadata"
-                className="max-w-full max-h-full"
-                src={assetUrl}
-              />
-            )}
-            {isAudio && (
-              // biome-ignore lint/a11y/useMediaCaption: local media preview opens arbitrary files with no caption track
-              <audio
-                controls
-                preload="metadata"
-                className="w-full max-w-md"
-                src={assetUrl}
-              />
+            {(kind === "video" || kind === "audio") && (
+              <MediaPreview kind={kind} src={assetUrl} active={mediaActive} />
             )}
             {isPdf && (
               <iframe
@@ -636,7 +626,8 @@ export const EditorPane = memo(
         );
       }
 
-      const canForce = doc.status === "toolarge" && doc.size <= FORCE_READ_LIMIT;
+      const canForce =
+        doc.status === "toolarge" && doc.size <= FORCE_READ_LIMIT;
       return (
         <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
           <div className="text-sm text-foreground">

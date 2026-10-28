@@ -69,7 +69,7 @@ const ghostDecorations = EditorView.decorations.compute(
   },
 );
 
-export function acceptInlineSuggestion(view: EditorView): boolean {
+function acceptInlineSuggestion(view: EditorView): boolean {
   const t = tail(view.state);
   if (t === null) return false;
   view.dispatch({

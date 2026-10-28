@@ -1,8 +1,8 @@
 import { memo, type ReactElement } from "react";
 import type { GraphEdge, GraphRow } from "./lib/graph";
 
-export const LANE_WIDTH = 14;
-export const RAIL_PADDING_X = 8;
+const LANE_WIDTH = 14;
+const RAIL_PADDING_X = 8;
 export const MAX_VISIBLE_LANES = 6;
 
 const STRAIGHT_WIDTH = 1.5;

@@ -1,17 +1,13 @@
 export {
-  type AgentTabStatus,
-  tabAgentStatus,
+  subscribeAgentSignals,
   useAgentActivityStore,
 } from "./lib/agentActivity";
 export {
   findLeafCwd,
   hasLeaf,
-  isLeaf,
   leafIds,
   type PaneBounds,
-  type PaneId,
   type PaneNode,
-  type SplitDir,
 } from "./lib/panes";
 export {
   clearFocusedTerminal,
@@ -21,7 +17,6 @@ export {
   navigateFocusedBlocks,
   pasteIntoSession,
   ptyIdForLeaf,
-  respawnSession,
   whenSessionReady,
   writeToSession,
 } from "./lib/terminalSessionApi";
@@ -30,5 +25,5 @@ export {
   type TerminalPathDropTarget,
   useTerminalFileDrop,
 } from "./lib/useTerminalFileDrop";
-export { TerminalPane, type TerminalPaneHandle } from "./TerminalPane";
+export type { TerminalPaneHandle } from "./TerminalPane";
 export { TerminalStack } from "./TerminalStack";

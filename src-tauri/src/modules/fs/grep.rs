@@ -1,5 +1,5 @@
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use globset::{Glob, GlobSet, GlobSetBuilder};
@@ -8,22 +8,22 @@ use grep_searcher::sinks::UTF8;
 use grep_searcher::{BinaryDetection, SearcherBuilder};
 use ignore::{WalkBuilder, WalkState};
 use serde::Serialize;
+use tauri::State;
 
-use super::to_canon;
+use super::supersede::Supersede;
+use super::{blocking, display_path, to_canon};
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
 const FILE_SIZE_CAP: u64 = 5 * 1024 * 1024;
 const DEFAULT_MAX_RESULTS: usize = 200;
 const HARD_MAX_RESULTS: usize = 2000;
 
-/// Supersession counter for interactive content search. Each new interactive
-/// query bumps the generation; in-flight walks observe the change and quit,
-/// so fast typing stops superseded searches server-side instead of letting
-/// them run to completion.
-#[derive(Default)]
-pub struct ContentSearchState {
-    generation: AtomicU64,
-}
+/// Supersession key for the command palette's live content search: each new
+/// query cancels the previous walk on its worker threads.
+const INTERACTIVE_KEY: &str = "grep-interactive";
+/// Walker threads per search. The default is one per core, which for a burst of
+/// keystrokes spawned a dozen threads per query.
+const WALK_THREADS: usize = 4;
 
 #[derive(Serialize)]
 pub struct GrepHit {
@@ -38,6 +38,8 @@ pub struct GrepResponse {
     pub hits: Vec<GrepHit>,
     pub truncated: bool,
     pub files_scanned: usize,
+    /// Stopped early because a newer query replaced this one.
+    pub cancelled: bool,
 }
 
 fn build_globset(patterns: &[String]) -> Result<Option<GlobSet>, String> {
@@ -82,6 +84,7 @@ fn search_tree(
         .ignore(true)
         .parents(true)
         .follow_links(false)
+        .threads(WALK_THREADS)
         .build_parallel();
 
     let hits: Arc<Mutex<Vec<GrepHit>>> = Arc::new(Mutex::new(Vec::new()));
@@ -166,11 +169,33 @@ fn search_tree(
         hits: final_hits,
         truncated: truncated.load(Ordering::Relaxed),
         files_scanned: scanned.load(Ordering::Relaxed),
+        cancelled: cancel(),
     }
 }
 
 #[tauri::command]
-pub fn fs_grep(
+pub async fn fs_grep(
+    pattern: String,
+    root: String,
+    glob: Option<Vec<String>>,
+    case_insensitive: Option<bool>,
+    max_results: Option<usize>,
+    workspace: Option<WorkspaceEnv>,
+) -> Result<GrepResponse, String> {
+    blocking(move || {
+        run_grep(
+            pattern,
+            root,
+            glob,
+            case_insensitive,
+            max_results,
+            workspace,
+        )
+    })
+    .await
+}
+
+pub fn run_grep(
     pattern: String,
     root: String,
     glob: Option<Vec<String>>,
@@ -210,20 +235,36 @@ pub fn fs_grep(
 }
 
 /// Interactive content search for the command palette. Treats the query as a
-/// literal (smart-case), and self-cancels when a newer query arrives.
+/// literal (smart-case), and self-cancels when a newer query arrives. The
+/// generation is bumped when the command is dispatched, so the previous walk
+/// stops even though it is still occupying a blocking thread.
 #[tauri::command]
-pub fn fs_grep_interactive(
-    state: tauri::State<'_, ContentSearchState>,
+pub async fn fs_grep_interactive(
+    supersede: State<'_, Supersede>,
     pattern: String,
     root: String,
     max_results: Option<usize>,
     workspace: Option<WorkspaceEnv>,
 ) -> Result<GrepResponse, String> {
+    let ticket = supersede.begin(INTERACTIVE_KEY);
+    blocking(move || {
+        run_grep_interactive(pattern, root, max_results, workspace, &|| {
+            ticket.is_superseded()
+        })
+    })
+    .await
+}
+
+pub fn run_grep_interactive(
+    pattern: String,
+    root: String,
+    max_results: Option<usize>,
+    workspace: Option<WorkspaceEnv>,
+    cancel: &(dyn Fn() -> bool + Sync),
+) -> Result<GrepResponse, String> {
     if pattern.trim().is_empty() {
         return Err("empty pattern".into());
     }
-    let my_gen = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
-
     let workspace = WorkspaceEnv::from_option(workspace);
     let root_path = resolve_path(&root, &workspace);
     if !root_path.is_dir() {
@@ -239,15 +280,8 @@ pub fn fs_grep_interactive(
         .build(&escape_literal(&pattern))
         .map_err(|e| format!("bad pattern: {e}"))?;
 
-    let cancel = || state.generation.load(Ordering::SeqCst) != my_gen;
     Ok(search_tree(
-        &root_path,
-        &root,
-        &workspace,
-        &matcher,
-        &None,
-        cap,
-        &cancel,
+        &root_path, &root, &workspace, &matcher, &None, cap, cancel,
     ))
 }
 
@@ -264,7 +298,16 @@ pub struct GlobResponse {
 }
 
 #[tauri::command]
-pub fn fs_glob(
+pub async fn fs_glob(
+    pattern: String,
+    root: String,
+    max_results: Option<usize>,
+    workspace: Option<WorkspaceEnv>,
+) -> Result<GlobResponse, String> {
+    blocking(move || run_glob(pattern, root, max_results, workspace)).await
+}
+
+pub fn run_glob(
     pattern: String,
     root: String,
     max_results: Option<usize>,
@@ -322,27 +365,6 @@ pub fn fs_glob(
     Ok(GlobResponse { hits, truncated })
 }
 
-fn display_path(
-    path: &std::path::Path,
-    root_path: &std::path::Path,
-    root_display: &str,
-    workspace: &WorkspaceEnv,
-) -> String {
-    if workspace.is_wsl() {
-        if let Ok(rel) = path.strip_prefix(root_path) {
-            let rel = to_canon(rel);
-            return if rel.is_empty() {
-                root_display.to_string()
-            } else if root_display.ends_with('/') {
-                format!("{root_display}{rel}")
-            } else {
-                format!("{root_display}/{rel}")
-            };
-        }
-    }
-    to_canon(path)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -361,11 +383,75 @@ mod tests {
         let ws = WorkspaceEnv::from_option(None);
         let root_display = dir.path().to_string_lossy().to_string();
 
-        let live = search_tree(dir.path(), &root_display, &ws, &matcher, &None, 100, &|| false);
+        let live = search_tree(
+            dir.path(),
+            &root_display,
+            &ws,
+            &matcher,
+            &None,
+            100,
+            &|| false,
+        );
         assert_eq!(live.hits.len(), 1, "uncancelled search finds the match");
 
-        let stopped =
-            search_tree(dir.path(), &root_display, &ws, &matcher, &None, 100, &|| true);
+        let stopped = search_tree(
+            dir.path(),
+            &root_display,
+            &ws,
+            &matcher,
+            &None,
+            100,
+            &|| true,
+        );
         assert!(stopped.hits.is_empty(), "cancelled search yields nothing");
+    }
+
+    #[test]
+    fn a_walk_stops_soon_after_it_is_superseded_and_says_so() {
+        let dir = tempfile::tempdir().unwrap();
+        for i in 0..400 {
+            std::fs::write(dir.path().join(format!("f{i}.txt")), "needle\n").unwrap();
+        }
+        let matcher = RegexMatcherBuilder::new().build("needle").unwrap();
+        let ws = WorkspaceEnv::from_option(None);
+        let root_display = dir.path().to_string_lossy().to_string();
+        let polls = AtomicUsize::new(0);
+        let cancel = || polls.fetch_add(1, Ordering::SeqCst) >= 20;
+
+        let out = search_tree(
+            dir.path(),
+            &root_display,
+            &ws,
+            &matcher,
+            &None,
+            2000,
+            &cancel,
+        );
+        assert!(out.cancelled);
+        assert!(
+            out.files_scanned < 100,
+            "kept scanning after cancellation: {}",
+            out.files_scanned
+        );
+    }
+
+    #[test]
+    fn interactive_search_reports_not_cancelled_when_it_runs_to_completion() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "Find Me\n").unwrap();
+        let out = run_grep_interactive(
+            "find me".into(),
+            dir.path().to_string_lossy().into_owned(),
+            None,
+            None,
+            &|| false,
+        )
+        .unwrap();
+        assert!(!out.cancelled);
+        assert_eq!(
+            out.hits.len(),
+            1,
+            "smart-case: lowercase query matches any case"
+        );
     }
 }

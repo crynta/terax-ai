@@ -38,6 +38,13 @@
 
 Terax is a lightweight open-source terminal-first AI-native development environment (ADE) built on Tauri 2 + Rust and React 19. A native PTY backend with a WebGL renderer, an agentic AI side-panel that runs against your own keys or fully local models, plus a code editor, file explorer, source control with a git graph, and a web preview pane built in. About 7-8 MB on disk. No telemetry. No account.
 
+> [!NOTE]
+> Over the past few months, most of my development time went into building [Zephium](https://zephium.app), a new browser-native work environment rebuilt for humans and agents.
+>
+> Terax is now returning to active development. A major **v0.9.0** update is already in progress, with some substantial architectural changes, including moving from **xterm.js to libghostty + WebGPU**.
+>
+> More updates soon.
+
 ## Screenshots
 
 <table>
@@ -138,7 +145,7 @@ Latest installers are on the [Releases](https://github.com/crynta/terax-ai/relea
 
 **Prerequisites**
 - Rust (stable), https://rustup.rs
-- Node 20+ and [pnpm](https://pnpm.io)
+- Node 22+ and [pnpm](https://pnpm.io)
 - Tauri prerequisites for your platform, https://tauri.app/start/prerequisites/
 
 **Run**

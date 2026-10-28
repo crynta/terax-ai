@@ -6,7 +6,7 @@ import {
   type ShortcutId,
 } from "../shortcuts";
 
-export type ShortcutHandler = (e: KeyboardEvent) => void;
+type ShortcutHandler = (e: KeyboardEvent) => void;
 export type ShortcutHandlers = Partial<Record<ShortcutId, ShortcutHandler>>;
 
 export type UseGlobalShortcutsOptions = {

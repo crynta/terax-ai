@@ -164,4 +164,113 @@ mod tests {
             serde_json::from_value(json!({ "path": "/tmp/a" })).expect("deserialize open params");
         assert!(params.focus);
     }
+
+    #[test]
+    fn protocol_version_is_locked_at_one() {
+        assert_eq!(PROTOCOL_VERSION, 1);
+        assert_eq!(MAX_MESSAGE_BYTES, 64 * 1024);
+    }
+
+    #[test]
+    fn methods_catalog_matches_the_wire_literals() {
+        assert_eq!(METHODS, &["ping", "capabilities", "identify", "open"]);
+    }
+
+    #[test]
+    fn open_params_omit_absent_optionals_from_the_wire() {
+        let minimal = OpenParams {
+            path: "/tmp/a".into(),
+            line: None,
+            column: None,
+            focus: true,
+        };
+        assert_eq!(
+            serde_json::to_value(&minimal).unwrap(),
+            json!({ "path": "/tmp/a", "focus": true })
+        );
+
+        let located = OpenParams {
+            path: "/tmp/a".into(),
+            line: Some(12),
+            column: Some(34),
+            focus: false,
+        };
+        assert_eq!(
+            serde_json::to_value(&located).unwrap(),
+            json!({
+                "path": "/tmp/a",
+                "line": 12,
+                "column": 34,
+                "focus": false,
+            })
+        );
+    }
+
+    #[test]
+    fn success_responses_omit_null_fields_and_failures_omit_results() {
+        let success = ControlResponse::success("7", json!({ "version": "0.8.6" }));
+        let value = serde_json::to_value(&success).unwrap();
+        assert!(value.get("result").is_some());
+        assert!(value.get("error").is_none());
+
+        let failure = ControlResponse::failure("8", "unauthorized", "bad token");
+        let value = serde_json::to_value(&failure).unwrap();
+        assert!(value.get("result").is_none());
+        assert!(value.get("error").is_some());
+    }
+
+    #[test]
+    fn caller_context_round_trips_with_and_without_a_pane() {
+        let with_pane = CallerContext {
+            pane_id: Some(3),
+        };
+        let value = serde_json::to_value(&with_pane).unwrap();
+        assert_eq!(value, json!({ "pane_id": 3 }));
+        let back: CallerContext = serde_json::from_value(value).unwrap();
+        assert_eq!(back, with_pane);
+
+        let value = serde_json::to_value(CallerContext::default()).unwrap();
+        assert_eq!(value, json!({}));
+    }
+
+    #[test]
+    fn frontend_exchange_shapes_survive_a_round_trip() {
+        let request = FrontendRequest {
+            id: "9".into(),
+            method: METHOD_OPEN.into(),
+            params: json!({ "path": "/tmp/a", "line": 1 }),
+            caller: CallerContext { pane_id: Some(5) },
+        };
+        let value = serde_json::to_value(&request).unwrap();
+        let back: FrontendRequest = serde_json::from_value(value).unwrap();
+        assert_eq!(back, request);
+
+        let response = FrontendResponse {
+            ok: true,
+            result: Some(json!({ "opened": true })),
+            error: None,
+        };
+        let value = serde_json::to_value(&response).unwrap();
+        assert!(value.get("error").is_none());
+        let back: FrontendResponse = serde_json::from_value(value).unwrap();
+        assert_eq!(back, response);
+    }
+
+    #[test]
+    fn descriptor_carries_the_discovery_fields() {
+        let descriptor = ControlDescriptor {
+            protocol: PROTOCOL_VERSION,
+            address: "127.0.0.1:54321".into(),
+            token: "tok".into(),
+            pid: 4242,
+            app_version: "0.8.6".into(),
+        };
+        let back: ControlDescriptor =
+            serde_json::from_str(&serde_json::to_string(&descriptor).unwrap()).unwrap();
+        assert_eq!(back.protocol, 1);
+        assert_eq!(back.address, "127.0.0.1:54321");
+        assert_eq!(back.token, "tok");
+        assert_eq!(back.pid, 4242);
+        assert_eq!(back.app_version, "0.8.6");
+    }
 }

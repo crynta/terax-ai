@@ -33,7 +33,7 @@ export function setSelectedTerminalBackend(kind: TerminalBackendKind): void {
   }
 }
 
-export function canUseWebGpu(): boolean {
+function canUseWebGpu(): boolean {
   return typeof navigator !== "undefined" && "gpu" in navigator;
 }
 
@@ -56,27 +56,6 @@ export function resolvedTerminalBackend(): TerminalBackendKind {
   const preferred = selectedTerminalBackend();
   if (preferred === "ghostty-webgpu" && canUseWebGpu()) return preferred;
   return "ghostty-webgl";
-}
-
-let webGl2Available: boolean | null = null;
-
-export function canUseWebGl2(): boolean {
-  if (webGl2Available !== null) return webGl2Available;
-  if (typeof document === "undefined") return false;
-  const canvas = document.createElement("canvas");
-  const context = canvas.getContext("webgl2", {
-    failIfMajorPerformanceCaveat: false,
-  });
-  const available = context !== null;
-  context?.getExtension("WEBGL_lose_context")?.loseContext();
-  webGl2Available = available;
-  return webGl2Available;
-}
-
-export function isGhosttyBackend(
-  kind: TerminalBackendKind,
-): kind is "ghostty-webgl" | "ghostty-webgpu" {
-  return GHOSTTY_BACKENDS.has(kind);
 }
 
 function parseTerminalBackend(value: unknown): TerminalBackendKind | null {

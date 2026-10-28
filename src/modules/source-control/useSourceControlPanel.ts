@@ -32,12 +32,12 @@ const CONVENTIONAL_PREFIX =
 const COMMIT_MESSAGE_SYSTEM_PROMPT =
   "You write concise Conventional Commit subject lines in English. Return exactly one complete line, with no markdown, no quotes, no body, and no explanation.";
 
-export type DiffSelection = {
+type DiffSelection = {
   path: string;
   mode: DiffMode;
 };
 
-export type SourceControlEntry = {
+type SourceControlEntry = {
   key: string;
   path: string;
   mode: DiffMode;
@@ -64,7 +64,7 @@ export type SourceControlFileEntry = {
   untracked: boolean;
 };
 
-export type PendingDiscard = {
+type PendingDiscard = {
   scope: "single" | "all";
   count: number;
   label: string;

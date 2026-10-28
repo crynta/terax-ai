@@ -1,181 +1,117 @@
-import { CellFlags } from "@terax/ghostty-core/protocol";
-import { hasIntrinsicColor } from "./glyphColor";
+import { isBuiltinGlyph } from "./BuiltinGlyphs";
+import { GlyphRasterizer } from "./GlyphRasterizer";
 import { SkylineAtlasAllocator } from "./SkylineAtlasAllocator";
-import { fontCss, type TerminalFontMetrics } from "./terminalVisuals";
+import type { TerminalFontMetrics } from "./terminalVisuals";
 
-const COVERAGE_ATLAS_SIZE = 1_024;
-const COLOR_ATLAS_SIZE = 512;
-const RASTER_SIZE = 256;
-const GLYPH_PADDING = 2;
-const COPY_BYTES_PER_ROW_ALIGNMENT = 256;
+/** Words per `glyph_table` entry: rect xy, size wh, bearing xy, flags. */
+export const GLYPH_ENTRY_WORDS = 4;
+const GLYPH_ENTRY_BYTES = GLYPH_ENTRY_WORDS * 4;
+export const GLYPH_ENTRY_FLAG_COLOR = 1;
+/** Coverage is final (cell-exact shapes): the shader applies no contrast. */
+export const GLYPH_ENTRY_FLAG_EXACT = 2;
+/** `resolve()` result when nothing more fits even at the largest atlas. */
+export const ATLAS_FULL = -1;
 
-export type GlyphEntry = {
-  readonly originOffsetX: number;
-  readonly originOffsetY: number;
-  readonly width: number;
-  readonly height: number;
-  readonly uvMinX: number;
-  readonly uvMinY: number;
-  readonly uvMaxX: number;
-  readonly uvMaxY: number;
-  readonly intrinsicColor: boolean;
+const COVERAGE_SIZES = [1_024, 2_048, 4_096] as const;
+const COLOR_SIZES = [512, 1_024, 2_048] as const;
+const MIN_TABLE_ENTRIES = 1_024;
+const MAX_TABLE_ENTRIES = 65_536;
+
+type Retired = {
+  readonly resource: { destroy(): void };
+  readonly bytes: number;
 };
 
-type DirtyRectangle = {
-  left: number;
-  top: number;
-  right: number;
-  bottom: number;
+type Plane = {
+  readonly format: "r8unorm" | "rgba8unorm";
+  readonly sizes: readonly number[];
+  step: number;
+  texture: GPUTexture;
+  view: GPUTextureView;
+  readonly allocator: SkylineAtlasAllocator;
 };
 
-type TextureUpload = {
-  readonly texture: GPUTexture;
-  readonly source: Uint8Array;
-  readonly atlasWidth: number;
-  readonly bytesPerPixel: number;
-  readonly originX: number;
-  readonly originY: number;
-  readonly width: number;
-  readonly height: number;
-  readonly rowBytes: number;
-  readonly bytesPerRow: number;
-  readonly byteLength: number;
-};
-
-const NULL_GLYPH: GlyphEntry = {
-  originOffsetX: 0,
-  originOffsetY: 0,
-  width: 0,
-  height: 0,
-  uvMinX: 0,
-  uvMinY: 0,
-  uvMaxX: 0,
-  uvMaxY: 0,
-  intrinsicColor: false,
-};
-
-export class GlyphAtlasCapacityError extends Error {
-  constructor(
-    readonly atlasKind: "coverage" | "color",
-    readonly glyphWidth: number,
-    readonly glyphHeight: number,
-  ) {
-    const size = atlasKind === "color" ? COLOR_ATLAS_SIZE : COVERAGE_ATLAS_SIZE;
-    super(
-      `The ${size}px ${atlasKind} glyph atlas cannot fit a ${glyphWidth}x${glyphHeight}px glyph`,
-    );
-    this.name = "GlyphAtlasCapacityError";
-  }
-}
-
-/** A shared, fixed-budget WebGPU atlas keyed by font metrics and scale. */
+/**
+ * A glyph atlas shared by every surface that uses one font at one device pixel
+ * ratio. Pixels live only on the GPU: glyphs are written with `writeTexture`
+ * when rasterized and the textures grow 1024^2 -> 2048^2 -> 4096^2 (colour:
+ * 512^2 -> 2048^2) by a GPU copy before anything is evicted. When the largest
+ * atlas is full the owner calls `flush()` between frames: the epoch advances,
+ * every index is invalid, and each surface re-rasterizes what it shows.
+ */
 export class GlyphAtlas {
-  readonly coverageInRed = true;
-
-  private readonly coverageAllocator = new SkylineAtlasAllocator(
-    COVERAGE_ATLAS_SIZE,
-    COVERAGE_ATLAS_SIZE,
-  );
-  private readonly colorAllocator = new SkylineAtlasAllocator(
-    COLOR_ATLAS_SIZE,
-    COLOR_ATLAS_SIZE,
-  );
-  private readonly simpleGlyphs = new Map<number, GlyphEntry>();
-  private readonly complexGlyphs = new Map<number, Map<string, GlyphEntry>>();
-  private coveragePixels = new Uint8Array(
-    COVERAGE_ATLAS_SIZE * COVERAGE_ATLAS_SIZE,
-  );
-  private colorPixels: Uint8Array | null = null;
-  private readonly rasterCanvas = document.createElement("canvas");
-  private readonly rasterContext: CanvasRenderingContext2D;
-  private coverageTexture: GPUTexture;
-  private coverageView: GPUTextureView;
-  private colorTexture: GPUTexture;
-  private colorView: GPUTextureView;
-  private coverageDirty: DirtyRectangle | null = null;
-  private colorDirty: DirtyRectangle | null = null;
-  private coverageUsed: DirtyRectangle | null = null;
-  private colorUsed: DirtyRectangle | null = null;
-  private readonly encodedUploadBuffers: GPUBuffer[] = [];
-  private readonly submittedUploadBuffers = new Set<GPUBuffer>();
-  private readonly retiredTextures: GPUTexture[] = [];
-  private readonly submittedTextures = new Set<GPUTexture>();
+  private readonly rasterizer: GlyphRasterizer;
+  private coverage: Plane | null = null;
+  private color: Plane | null = null;
+  private placeholder: GPUTexture | null = null;
+  private placeholderView: GPUTextureView | null = null;
+  private table: GPUBuffer | null = null;
+  private tableData = new Uint32Array(0);
+  private tableDirtyStart = Number.POSITIVE_INFINITY;
+  private tableDirtyEnd = -1;
+  private readonly simple = new Map<number, number>();
+  private readonly complex = new Map<string, number>();
+  private count = 0;
+  private retired: Retired[] = [];
+  private retiredBytesValue = 0;
+  private epochValue = 1;
+  private generationValue = 1;
   private uploadCountValue = 0;
   private uploadedBytesValue = 0;
-  private resetCountValue = 0;
+  private flushCountValue = 0;
+  private growthCountValue = 0;
   private capacityFailureCountValue = 0;
-  private generationValue = 1;
-  private gpuActive = true;
+  private gpuActive = false;
   private disposed = false;
 
   constructor(
     private device: GPUDevice,
-    private readonly metrics: TerminalFontMetrics,
-    private readonly scale: number,
-    private readonly onReset: () => void,
+    readonly metrics: TerminalFontMetrics,
   ) {
-    this.rasterCanvas.width = RASTER_SIZE;
-    this.rasterCanvas.height = RASTER_SIZE;
-    const context = this.rasterCanvas.getContext("2d", {
-      willReadFrequently: true,
-    });
-    if (!context) throw new Error("Glyph rasterization is unavailable");
-    this.rasterContext = context;
-    [
-      this.coverageTexture,
-      this.coverageView,
-      this.colorTexture,
-      this.colorView,
-    ] = this.allocateTextures();
+    this.rasterizer = new GlyphRasterizer(metrics);
+    this.activate();
   }
 
-  get byteSize(): number {
-    if (!this.gpuActive || this.disposed) return 0;
-    let retiredBytes = 0;
-    for (const texture of this.retiredTextures)
-      retiredBytes += textureBytes(texture);
-    for (const texture of this.submittedTextures)
-      retiredBytes += textureBytes(texture);
-    return (
-      retiredBytes +
-      COVERAGE_ATLAS_SIZE * COVERAGE_ATLAS_SIZE +
-      (this.colorPixels ? COLOR_ATLAS_SIZE * COLOR_ATLAS_SIZE * 4 : 4)
-    );
+  /** Increments when every atlas index becomes invalid (flush or resume). */
+  get epoch(): number {
+    return this.epochValue;
   }
 
-  get cpuByteSize(): number {
-    return (
-      this.coveragePixels.byteLength +
-      (this.colorPixels?.byteLength ?? 0) +
-      (this.disposed || !this.gpuActive ? 0 : RASTER_SIZE * RASTER_SIZE * 4)
-    );
-  }
-
-  get stagingBytes(): number {
-    let total = 0;
-    for (const buffer of this.encodedUploadBuffers) total += buffer.size;
-    for (const buffer of this.submittedUploadBuffers) total += buffer.size;
-    return total;
-  }
-
+  /** Increments when a texture or the table buffer is replaced (rebind). */
   get generation(): number {
     return this.generationValue;
   }
 
-  get coverageTextureView(): GPUTextureView {
-    return this.coverageView;
-  }
-
-  get colorTextureView(): GPUTextureView {
-    return this.colorView;
+  get active(): boolean {
+    return this.gpuActive && !this.disposed;
   }
 
   get glyphCount(): number {
-    let complexCount = 0;
-    for (const glyphs of this.complexGlyphs.values()) {
-      complexCount += glyphs.size;
-    }
-    return this.simpleGlyphs.size + complexCount;
+    return this.count;
+  }
+
+  get coverageTextureView(): GPUTextureView {
+    return this.requirePlane(this.coverage).view;
+  }
+
+  get colorTextureView(): GPUTextureView {
+    return this.color?.view ?? (this.placeholderView as GPUTextureView);
+  }
+
+  get tableBuffer(): GPUBuffer {
+    if (!this.table) throw new Error("Glyph atlas is not active");
+    return this.table;
+  }
+
+  get byteSize(): number {
+    if (!this.gpuActive || this.disposed) return 0;
+    const coverage = this.coverage ? this.coverage.allocator.width ** 2 : 0;
+    const color = this.color ? this.color.allocator.width ** 2 * 4 : 4;
+    return coverage + color + (this.table?.size ?? 0);
+  }
+
+  get cpuByteSize(): number {
+    return this.tableData.byteLength + this.rasterizer.cpuBytes;
   }
 
   get uploadCount(): number {
@@ -186,28 +122,162 @@ export class GlyphAtlas {
     return this.uploadedBytesValue;
   }
 
-  get resetCount(): number {
-    return this.resetCountValue;
+  get flushCount(): number {
+    return this.flushCountValue;
+  }
+
+  get growthCount(): number {
+    return this.growthCountValue;
   }
 
   get capacityFailureCount(): number {
     return this.capacityFailureCountValue;
   }
 
-  get hasEncodedUploads(): boolean {
-    return (
-      this.encodedUploadBuffers.length > 0 || this.retiredTextures.length > 0
+  /** Replaced GPU resources not yet destroyed (waiting for a submission). */
+  get retiredBytes(): number {
+    return this.retiredBytesValue;
+  }
+
+  get coverageSize(): number {
+    return this.coverage?.allocator.width ?? 0;
+  }
+
+  /**
+   * Returns the table index for `text` in `style`, rasterizing on first use.
+   * `ATLAS_FULL` means even the largest atlas is exhausted; the caller flushes
+   * between frames and tries again.
+   */
+  resolve(text: string, style: number): number {
+    this.assertActive();
+    const codepoint = text.codePointAt(0) ?? 0;
+    const single = text.length === (codepoint > 0xffff ? 2 : 1);
+    // Procedural glyphs ignore bold and italic, so all four styles share one.
+    const keyStyle = single && isBuiltinGlyph(codepoint) ? 0 : style & 3;
+    const simpleKey = codepoint * 4 + keyStyle;
+    const complexKey = single ? "" : `${keyStyle}\u0000${text}`;
+    const cached = single
+      ? this.simple.get(simpleKey)
+      : this.complex.get(complexKey);
+    if (cached !== undefined) return cached;
+    if (this.count >= MAX_TABLE_ENTRIES) {
+      this.capacityFailureCountValue += 1;
+      return ATLAS_FULL;
+    }
+
+    const glyph = this.rasterizer.rasterize(text, style);
+    const plane = glyph.intrinsicColor
+      ? (this.color ?? this.createColorPlane())
+      : this.requirePlane(this.coverage);
+    let region = plane.allocator.allocate(glyph.width, glyph.height);
+    while (!region && this.growPlane(plane)) {
+      region = plane.allocator.allocate(glyph.width, glyph.height);
+    }
+    if (!region) {
+      this.capacityFailureCountValue += 1;
+      return ATLAS_FULL;
+    }
+
+    const bytesPerPixel = glyph.intrinsicColor ? 4 : 1;
+    this.device.queue.writeTexture(
+      { texture: plane.texture, origin: [region.x, region.y, 0] },
+      glyph.pixels,
+      { bytesPerRow: glyph.width * bytesPerPixel, rowsPerImage: glyph.height },
+      [glyph.width, glyph.height, 1],
     );
+    this.uploadCountValue += 1;
+    this.uploadedBytesValue += glyph.width * glyph.height * bytesPerPixel;
+
+    const index = this.count;
+    this.ensureTableCapacity(index + 1);
+    const base = index * GLYPH_ENTRY_WORDS;
+    this.tableData[base] = region.x | (region.y << 16);
+    this.tableData[base + 1] = glyph.width | (glyph.height << 16);
+    this.tableData[base + 2] =
+      (glyph.bearingX & 0xffff) | ((glyph.bearingY & 0xffff) << 16);
+    this.tableData[base + 3] =
+      (glyph.intrinsicColor ? GLYPH_ENTRY_FLAG_COLOR : 0) |
+      (glyph.exact ? GLYPH_ENTRY_FLAG_EXACT : 0);
+    this.tableDirtyStart = Math.min(this.tableDirtyStart, index);
+    this.tableDirtyEnd = Math.max(this.tableDirtyEnd, index);
+    this.count += 1;
+    if (single) this.simple.set(simpleKey, index);
+    else this.complex.set(complexKey, index);
+    return index;
+  }
+
+  /** Uploads table entries written since the last commit. */
+  commit(): void {
+    if (this.tableDirtyEnd < 0 || !this.table) return;
+    const start = this.tableDirtyStart * GLYPH_ENTRY_WORDS;
+    const end = (this.tableDirtyEnd + 1) * GLYPH_ENTRY_WORDS;
+    this.device.queue.writeBuffer(
+      this.table,
+      start * 4,
+      this.tableData,
+      start,
+      end - start,
+    );
+    this.uploadCountValue += 1;
+    this.uploadedBytesValue += (end - start) * 4;
+    this.tableDirtyStart = Number.POSITIVE_INFINITY;
+    this.tableDirtyEnd = -1;
+  }
+
+  /**
+   * Starts a new epoch: all indices are invalid and the full atlas area is
+   * free again. Texture sizes are kept; stale pixels are overwritten as
+   * glyphs claim their regions. Call only between frames, never while a
+   * surface has already encoded draws that read the old indices.
+   */
+  flush(): void {
+    this.assertActive();
+    this.coverage?.allocator.reset();
+    this.color?.allocator.reset();
+    this.simple.clear();
+    this.complex.clear();
+    this.count = 0;
+    this.tableDirtyStart = Number.POSITIVE_INFINITY;
+    this.tableDirtyEnd = -1;
+    this.flushCountValue += 1;
+    this.epochValue += 1;
+  }
+
+  /**
+   * Retired textures and buffers may still be referenced by commands recorded
+   * this frame. Destroy them once the frame's submission has completed, or at
+   * once when nothing was submitted.
+   */
+  releaseRetired(completion: Promise<unknown> | null): void {
+    if (this.retired.length === 0) return;
+    const resources = this.retired;
+    this.retired = [];
+    const destroy = () => {
+      for (const { resource, bytes } of resources) {
+        resource.destroy();
+        this.retiredBytesValue = Math.max(0, this.retiredBytesValue - bytes);
+      }
+    };
+    if (!completion) destroy();
+    else void completion.then(destroy, destroy);
+  }
+
+  get hasRetired(): boolean {
+    return this.retired.length > 0;
   }
 
   suspend(): void {
     if (this.disposed || !this.gpuActive) return;
     this.gpuActive = false;
-    this.coverageTexture.destroy();
-    this.colorTexture.destroy();
-    this.releaseUploads();
-    this.rasterCanvas.width = 1;
-    this.rasterCanvas.height = 1;
+    this.destroyGpu();
+    this.rasterizer.dispose();
+    this.simple.clear();
+    this.complex.clear();
+    this.count = 0;
+    this.tableData = new Uint32Array(0);
+    this.tableDirtyStart = Number.POSITIVE_INFINITY;
+    this.tableDirtyEnd = -1;
+    this.epochValue += 1;
   }
 
   resume(device: GPUDevice): void {
@@ -215,373 +285,174 @@ export class GlyphAtlas {
     if (this.gpuActive && this.device === device) return;
     this.suspend();
     this.device = device;
-    [
-      this.coverageTexture,
-      this.coverageView,
-      this.colorTexture,
-      this.colorView,
-    ] = this.allocateTextures();
-    this.gpuActive = true;
-    this.rasterCanvas.width = RASTER_SIZE;
-    this.rasterCanvas.height = RASTER_SIZE;
-    this.coverageDirty = this.coverageUsed ? { ...this.coverageUsed } : null;
-    this.colorDirty = this.colorUsed ? { ...this.colorUsed } : null;
-    this.bumpGeneration();
-  }
-
-  glyph(codepoint: number, grapheme: string | null, flags: number): GlyphEntry {
-    this.assertLive();
-    if (codepoint === 0 || codepoint === 32) return NULL_GLYPH;
-    const style = flags & (CellFlags.BOLD | CellFlags.ITALIC);
-    if (grapheme === null) {
-      const key = codepoint * 4 + style;
-      const cached = this.simpleGlyphs.get(key);
-      if (cached) return cached;
-      const entry = this.rasterize(String.fromCodePoint(codepoint), flags);
-      this.simpleGlyphs.set(key, entry);
-      return entry;
-    }
-
-    let styledGlyphs = this.complexGlyphs.get(style);
-    const cached = styledGlyphs?.get(grapheme);
-    if (cached) return cached;
-    const entry = this.rasterize(grapheme, flags);
-    if (!styledGlyphs) {
-      styledGlyphs = new Map();
-      this.complexGlyphs.set(style, styledGlyphs);
-    }
-    styledGlyphs.set(grapheme, entry);
-    return entry;
-  }
-
-  encodePendingUploads(encoder: GPUCommandEncoder): void {
-    this.assertLive();
-    const uploads: TextureUpload[] = [];
-    if (this.coverageDirty) {
-      uploads.push(
-        createTextureUpload(
-          this.coverageTexture,
-          this.coveragePixels,
-          COVERAGE_ATLAS_SIZE,
-          1,
-          this.coverageDirty,
-        ),
-      );
-    }
-    if (this.colorDirty && this.colorPixels) {
-      uploads.push(
-        createTextureUpload(
-          this.colorTexture,
-          this.colorPixels,
-          COLOR_ATLAS_SIZE,
-          4,
-          this.colorDirty,
-        ),
-      );
-    }
-    if (uploads.length === 0) return;
-
-    const offsets: number[] = [];
-    let totalBytes = 0;
-    for (const upload of uploads) {
-      offsets.push(totalBytes);
-      totalBytes += upload.byteLength;
-    }
-    const staging = this.device.createBuffer({
-      label: "Terax terminal glyph upload staging",
-      size: totalBytes,
-      usage: GPUBufferUsage.COPY_SRC,
-      mappedAtCreation: true,
-    });
-    this.encodedUploadBuffers.push(staging);
-    const mapped = new Uint8Array(staging.getMappedRange());
-    for (let index = 0; index < uploads.length; index += 1) {
-      writeTextureUpload(mapped, offsets[index], uploads[index]);
-    }
-    staging.unmap();
-
-    for (let index = 0; index < uploads.length; index += 1) {
-      const upload = uploads[index];
-      encoder.copyBufferToTexture(
-        {
-          buffer: staging,
-          offset: offsets[index],
-          bytesPerRow: upload.bytesPerRow,
-          rowsPerImage: upload.height,
-        },
-        {
-          texture: upload.texture,
-          origin: [upload.originX, upload.originY, 0],
-        },
-        [upload.width, upload.height, 1],
-      );
-    }
-    this.uploadCountValue += uploads.length;
-    this.uploadedBytesValue += totalBytes;
-    this.coverageDirty = null;
-    this.colorDirty = null;
-  }
-
-  completeSubmission(
-    completion = this.device.queue.onSubmittedWorkDone(),
-  ): void {
-    if (!this.hasEncodedUploads) return;
-    const textures = this.retiredTextures.splice(0);
-    for (const texture of textures) this.submittedTextures.add(texture);
-    const buffers = this.encodedUploadBuffers.splice(0);
-    for (const buffer of buffers) this.submittedUploadBuffers.add(buffer);
-    void completion
-      .catch(() => undefined)
-      .then(() => {
-        for (const texture of textures) {
-          if (this.submittedTextures.delete(texture)) texture.destroy();
-        }
-        for (const buffer of buffers) {
-          if (this.submittedUploadBuffers.delete(buffer)) buffer.destroy();
-        }
-      });
-  }
-
-  /**
-   * Discards cold glyphs before rebuilding one surface's complete visible set.
-   * Callers must not reset an atlas that is still shared by another surface.
-   */
-  resetForRebuild(): void {
-    this.assertLive();
-    this.resetCountValue += 1;
-    this.reset();
+    this.activate();
   }
 
   dispose(): void {
     if (this.disposed) return;
     this.suspend();
     this.disposed = true;
-    this.simpleGlyphs.clear();
-    this.complexGlyphs.clear();
-    this.coverageDirty = null;
-    this.colorDirty = null;
-    this.colorPixels = null;
-    this.coveragePixels = new Uint8Array(0);
   }
 
-  private releaseUploads(): void {
-    for (const texture of this.retiredTextures) texture.destroy();
-    this.retiredTextures.length = 0;
-    for (const texture of this.submittedTextures) texture.destroy();
-    this.submittedTextures.clear();
-    for (const buffer of this.encodedUploadBuffers) buffer.destroy();
-    this.encodedUploadBuffers.length = 0;
-    for (const buffer of this.submittedUploadBuffers) buffer.destroy();
-    this.submittedUploadBuffers.clear();
-  }
-
-  private rasterize(text: string, flags: number): GlyphEntry {
-    const context = this.rasterContext;
-    const bold = (flags & CellFlags.BOLD) !== 0;
-    const italic = (flags & CellFlags.ITALIC) !== 0;
-    context.clearRect(0, 0, RASTER_SIZE, RASTER_SIZE);
-    context.font = fontCss(
-      {
-        ...this.metrics.font,
-        size: this.metrics.font.size * this.scale,
-      },
-      bold,
-      italic,
-    );
-    context.textAlign = "left";
-    context.textBaseline = "alphabetic";
-    context.fillStyle = "white";
-
-    const measurement = context.measureText(text);
-    const left = Math.max(0, Math.ceil(measurement.actualBoundingBoxLeft || 0));
-    const right = Math.ceil(
-      measurement.actualBoundingBoxRight || this.metrics.cellWidth * this.scale,
-    );
-    const ascent = Math.ceil(
-      measurement.actualBoundingBoxAscent || this.metrics.baseline * this.scale,
-    );
-    const descent = Math.ceil(
-      measurement.actualBoundingBoxDescent ||
-        (this.metrics.cellHeight - this.metrics.baseline) * this.scale,
-    );
-    const width = Math.min(
-      RASTER_SIZE,
-      Math.max(1, left + right + GLYPH_PADDING * 2),
-    );
-    const height = Math.min(
-      RASTER_SIZE,
-      Math.max(1, ascent + descent + GLYPH_PADDING * 2),
-    );
-    context.fillText(text, GLYPH_PADDING + left, GLYPH_PADDING + ascent);
-
-    const rgba = context.getImageData(0, 0, width, height).data;
-    const intrinsicColor = hasIntrinsicColor(rgba);
-    if (intrinsicColor) this.ensureColorAtlas();
-    const allocator = intrinsicColor
-      ? this.colorAllocator
-      : this.coverageAllocator;
-    const region = allocator.allocate(width, height);
-    if (!region) {
-      this.capacityFailureCountValue += 1;
-      throw new GlyphAtlasCapacityError(
-        intrinsicColor ? "color" : "coverage",
-        width,
-        height,
-      );
-    }
-
-    if (intrinsicColor) {
-      const colorPixels = this.colorPixels as Uint8Array;
-      for (let row = 0; row < height; row += 1) {
-        const source = row * width * 4;
-        const target = ((region.y + row) * COLOR_ATLAS_SIZE + region.x) * 4;
-        colorPixels.set(rgba.subarray(source, source + width * 4), target);
-      }
-      this.colorUsed = mergeDirty(
-        this.colorUsed,
-        region.x,
-        region.y,
-        width,
-        height,
-      );
-      this.colorDirty = mergeDirty(
-        this.colorDirty,
-        region.x,
-        region.y,
-        width,
-        height,
-      );
-    } else {
-      for (let row = 0; row < height; row += 1) {
-        let source = row * width * 4 + 3;
-        let target = (region.y + row) * COVERAGE_ATLAS_SIZE + region.x;
-        for (let column = 0; column < width; column += 1) {
-          this.coveragePixels[target] = rgba[source];
-          source += 4;
-          target += 1;
-        }
-      }
-      this.coverageUsed = mergeDirty(
-        this.coverageUsed,
-        region.x,
-        region.y,
-        width,
-        height,
-      );
-      this.coverageDirty = mergeDirty(
-        this.coverageDirty,
-        region.x,
-        region.y,
-        width,
-        height,
-      );
-    }
-
-    const atlasSize = intrinsicColor ? COLOR_ATLAS_SIZE : COVERAGE_ATLAS_SIZE;
-    return {
-      originOffsetX: -left - GLYPH_PADDING,
-      originOffsetY:
-        this.metrics.baseline * this.scale - ascent - GLYPH_PADDING,
-      width,
-      height,
-      uvMinX: region.x / atlasSize,
-      uvMinY: region.y / atlasSize,
-      uvMaxX: (region.x + width) / atlasSize,
-      uvMaxY: (region.y + height) / atlasSize,
-      intrinsicColor,
-    };
-  }
-
-  private ensureColorAtlas(): void {
-    if (this.colorPixels) return;
-    const texture = this.createColorTexture();
-    let view: GPUTextureView;
+  private activate(): void {
+    const coverage = this.createPlane("r8unorm", COVERAGE_SIZES, "coverage");
+    this.coverage = coverage;
     try {
-      view = texture.createView();
+      this.placeholder = this.device.createTexture({
+        label: "Terax terminal color glyph placeholder",
+        size: [1, 1],
+        format: "rgba8unorm",
+        usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING,
+      });
+      this.placeholderView = this.placeholder.createView();
+      this.tableData = new Uint32Array(MIN_TABLE_ENTRIES * GLYPH_ENTRY_WORDS);
+      this.table = this.createTable(MIN_TABLE_ENTRIES);
+    } catch (error) {
+      this.destroyGpu();
+      throw error;
+    }
+    this.gpuActive = true;
+    this.generationValue += 1;
+  }
+
+  private destroyGpu(): void {
+    this.coverage?.texture.destroy();
+    this.color?.texture.destroy();
+    this.placeholder?.destroy();
+    this.table?.destroy();
+    for (const { resource, bytes } of this.retired) {
+      resource.destroy();
+      this.retiredBytesValue = Math.max(0, this.retiredBytesValue - bytes);
+    }
+    this.retired = [];
+    this.coverage = null;
+    this.color = null;
+    this.placeholder = null;
+    this.placeholderView = null;
+    this.table = null;
+  }
+
+  private createPlane(
+    format: Plane["format"],
+    allSizes: readonly number[],
+    label: string,
+  ): Plane {
+    const limit = this.device.limits?.maxTextureDimension2D ?? 8_192;
+    const sizes = allSizes.filter((size) => size <= limit);
+    const size = sizes[0] ?? allSizes[0];
+    const texture = this.device.createTexture({
+      label: `Terax terminal glyph ${label} atlas`,
+      size: [size, size],
+      format,
+      usage:
+        GPUTextureUsage.COPY_DST |
+        GPUTextureUsage.COPY_SRC |
+        GPUTextureUsage.TEXTURE_BINDING,
+    });
+    try {
+      return {
+        format,
+        sizes: sizes.length > 0 ? sizes : [size],
+        step: 0,
+        texture,
+        view: texture.createView(),
+        allocator: new SkylineAtlasAllocator(size, size),
+      };
     } catch (error) {
       texture.destroy();
       throw error;
     }
-    this.colorPixels = new Uint8Array(COLOR_ATLAS_SIZE * COLOR_ATLAS_SIZE * 4);
-    this.retiredTextures.push(this.colorTexture);
-    this.colorTexture = texture;
-    this.colorView = view;
-    this.bumpGeneration();
   }
 
-  private reset(): void {
-    const textures = this.allocateTextures();
-    this.retiredTextures.push(this.coverageTexture, this.colorTexture);
-    [
-      this.coverageTexture,
-      this.coverageView,
-      this.colorTexture,
-      this.colorView,
-    ] = textures;
-    this.coverageAllocator.reset();
-    this.colorAllocator.reset();
-    this.simpleGlyphs.clear();
-    this.complexGlyphs.clear();
-    this.coveragePixels.fill(0);
-    this.colorPixels?.fill(0);
-    this.coverageDirty = null;
-    this.colorDirty = null;
-    this.coverageUsed = null;
-    this.colorUsed = null;
-    this.bumpGeneration();
-  }
-
-  private bumpGeneration(): void {
+  private createColorPlane(): Plane {
+    const plane = this.createPlane("rgba8unorm", COLOR_SIZES, "color");
+    this.color = plane;
     this.generationValue += 1;
-    this.onReset();
+    return plane;
   }
 
-  private allocateTextures(): [
-    GPUTexture,
-    GPUTextureView,
-    GPUTexture,
-    GPUTextureView,
-  ] {
-    const coverage = this.createCoverageTexture();
-    let color: GPUTexture | null = null;
+  private growPlane(plane: Plane): boolean {
+    if (plane.step + 1 >= plane.sizes.length) return false;
+    const previousSize = plane.allocator.width;
+    const size = plane.sizes[plane.step + 1];
+    const texture = this.device.createTexture({
+      label: `Terax terminal glyph ${plane.format === "r8unorm" ? "coverage" : "color"} atlas`,
+      size: [size, size],
+      format: plane.format,
+      usage:
+        GPUTextureUsage.COPY_DST |
+        GPUTextureUsage.COPY_SRC |
+        GPUTextureUsage.TEXTURE_BINDING,
+    });
+    let view: GPUTextureView;
     try {
-      const coverageView = coverage.createView();
-      color = this.colorPixels
-        ? this.createColorTexture()
-        : this.createPlaceholderColorTexture();
-      return [coverage, coverageView, color, color.createView()];
+      view = texture.createView();
+      // Submitted on its own so it runs after every earlier writeTexture and
+      // before any glyph written into the larger texture afterwards.
+      const encoder = this.device.createCommandEncoder({
+        label: "Terax terminal glyph atlas growth",
+      });
+      encoder.copyTextureToTexture({ texture: plane.texture }, { texture }, [
+        previousSize,
+        previousSize,
+        1,
+      ]);
+      this.device.queue.submit([encoder.finish()]);
     } catch (error) {
-      coverage.destroy();
-      color?.destroy();
+      texture.destroy();
       throw error;
     }
+    this.retire(
+      plane.texture,
+      previousSize * previousSize * bytesPerTexel(plane),
+    );
+    plane.texture = texture;
+    plane.view = view;
+    plane.step += 1;
+    plane.allocator.grow(size, size);
+    this.growthCountValue += 1;
+    this.generationValue += 1;
+    return true;
   }
 
-  private createCoverageTexture(): GPUTexture {
-    return this.device.createTexture({
-      label: "Terax terminal glyph coverage atlas",
-      size: [COVERAGE_ATLAS_SIZE, COVERAGE_ATLAS_SIZE],
-      format: "r8unorm",
-      usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING,
+  private createTable(entries: number): GPUBuffer {
+    return this.device.createBuffer({
+      label: "Terax terminal glyph table",
+      size: entries * GLYPH_ENTRY_BYTES,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
   }
 
-  private createColorTexture(): GPUTexture {
-    return this.device.createTexture({
-      label: "Terax terminal color glyph atlas",
-      size: [COLOR_ATLAS_SIZE, COLOR_ATLAS_SIZE],
-      format: "rgba8unorm",
-      usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING,
-    });
+  private ensureTableCapacity(entries: number): void {
+    const capacity = this.tableData.length / GLYPH_ENTRY_WORDS;
+    if (entries <= capacity) return;
+    let next = capacity;
+    while (next < entries) next *= 2;
+    const data = new Uint32Array(next * GLYPH_ENTRY_WORDS);
+    data.set(this.tableData);
+    const table = this.createTable(next);
+    if (this.table) this.retire(this.table, this.table.size);
+    this.table = table;
+    this.tableData = data;
+    // The replacement starts empty: everything written so far is dirty.
+    this.tableDirtyStart = 0;
+    this.tableDirtyEnd = Math.max(this.tableDirtyEnd, entries - 1);
+    this.generationValue += 1;
   }
 
-  private createPlaceholderColorTexture(): GPUTexture {
-    return this.device.createTexture({
-      label: "Terax terminal color glyph placeholder",
-      size: [1, 1],
-      format: "rgba8unorm",
-      usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING,
-    });
+  private retire(resource: { destroy(): void }, bytes: number): void {
+    this.retired.push({ resource, bytes });
+    this.retiredBytesValue += bytes;
+  }
+
+  private requirePlane(plane: Plane | null): Plane {
+    if (!plane) throw new Error("Glyph atlas is not active");
+    return plane;
+  }
+
+  private assertActive(): void {
+    this.assertLive();
+    if (!this.gpuActive) throw new Error("Glyph atlas is suspended");
   }
 
   private assertLive(): void {
@@ -589,71 +460,6 @@ export class GlyphAtlas {
   }
 }
 
-function createTextureUpload(
-  texture: GPUTexture,
-  source: Uint8Array,
-  atlasWidth: number,
-  bytesPerPixel: number,
-  dirty: DirtyRectangle,
-): TextureUpload {
-  const width = dirty.right - dirty.left;
-  const height = dirty.bottom - dirty.top;
-  const rowBytes = width * bytesPerPixel;
-  const bytesPerRow = align(rowBytes, COPY_BYTES_PER_ROW_ALIGNMENT);
-  return {
-    texture,
-    source,
-    atlasWidth,
-    bytesPerPixel,
-    originX: dirty.left,
-    originY: dirty.top,
-    width,
-    height,
-    rowBytes,
-    bytesPerRow,
-    byteLength: bytesPerRow * height,
-  };
-}
-
-function writeTextureUpload(
-  target: Uint8Array,
-  targetOffset: number,
-  upload: TextureUpload,
-): void {
-  for (let row = 0; row < upload.height; row += 1) {
-    const sourceOffset =
-      ((upload.originY + row) * upload.atlasWidth + upload.originX) *
-      upload.bytesPerPixel;
-    target.set(
-      upload.source.subarray(sourceOffset, sourceOffset + upload.rowBytes),
-      targetOffset + row * upload.bytesPerRow,
-    );
-  }
-}
-
-function mergeDirty(
-  current: DirtyRectangle | null,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-): DirtyRectangle {
-  if (!current) {
-    return { left: x, top: y, right: x + width, bottom: y + height };
-  }
-  current.left = Math.min(current.left, x);
-  current.top = Math.min(current.top, y);
-  current.right = Math.max(current.right, x + width);
-  current.bottom = Math.max(current.bottom, y + height);
-  return current;
-}
-
-function align(value: number, alignment: number): number {
-  return Math.ceil(value / alignment) * alignment;
-}
-
-function textureBytes(texture: GPUTexture): number {
-  return (
-    texture.width * texture.height * (texture.format === "r8unorm" ? 1 : 4)
-  );
+function bytesPerTexel(plane: Plane): number {
+  return plane.format === "r8unorm" ? 1 : 4;
 }

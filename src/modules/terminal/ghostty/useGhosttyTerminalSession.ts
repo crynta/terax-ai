@@ -10,8 +10,8 @@ import { openExternalUrl } from "@/lib/external-link";
 import { ensureMonoFontsLoaded, resolveFontFamily } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { TerminalBackendKind } from "@/modules/terminal/backend/contracts";
-import { PtyResizeScheduler } from "@/modules/terminal/lib/ptyResizeScheduler";
-import { subscribeTerminalResizeInteraction } from "@/modules/terminal/lib/terminalResizeInteraction";
+import { setLeafPresentation } from "@/modules/terminal/lib/ptyPresentation";
+import { PtyResizeDelivery } from "@/modules/terminal/lib/ptyResizeDelivery";
 import { useTerminalFont } from "@/modules/terminal/lib/useTerminalFont";
 import type { TerminalSearchController } from "@/modules/terminal/search/TerminalSearchController";
 import { invoke } from "@tauri-apps/api/core";
@@ -29,6 +29,7 @@ import {
   type TerminalFontSpec,
 } from "./gpu/terminalVisuals";
 import { getWebGpuTerminalRuntime } from "./gpu/WebGpuTerminalRuntime";
+import { webGpuTerminalRuntimeDiagnostics } from "./gpu/WebGpuTerminalRuntime";
 import { WebGpuTerminalSurface } from "./gpu/WebGpuTerminalSurface";
 import { GhosttyInputController } from "./input/GhosttyInputController";
 import { encodeTerminalSubmission } from "./input/terminalInputEncoding";
@@ -68,8 +69,7 @@ type GhosttySession = {
   surfaceOptions: GhosttySurfaceBaseOptions | null;
   input: GhosttyInputController | null;
   pty: PtySession | null;
-  ptyResize: PtyResizeScheduler;
-  unsubscribeResizeInteraction: () => void;
+  ptyResize: PtyResizeDelivery;
   writer: BoundedPtyWriter;
   container: HTMLDivElement | null;
   callbacks: Callbacks;
@@ -193,6 +193,7 @@ export function useGhosttyTerminalSession({
     const session = ensureSession(leafId, backend, initialCwdRef.current);
     session.visible = visible;
     session.focused = focused;
+    setLeafPresentation(leafId, visible, focused);
     ghosttyBlocks(leafId)?.setVisible(visible);
     const surface = session.surface;
     if (!surface || session.rendererError) return;
@@ -402,7 +403,6 @@ export function disposeGhosttySession(leafId: number): boolean {
   session.surface?.dispose();
   disposeGhosttyBlocks(leafId);
   session.model?.dispose();
-  session.unsubscribeResizeInteraction();
   session.ptyResize.reset();
   session.writer.dispose();
   void session.pty?.close();
@@ -411,7 +411,7 @@ export function disposeGhosttySession(leafId: number): boolean {
   return true;
 }
 
-export async function respawnGhosttySession(
+async function respawnGhosttySession(
   leafId: number,
   cwd?: string,
 ): Promise<boolean> {
@@ -493,6 +493,12 @@ export function ghosttySessionResourceTotals() {
     canvasColorBytes += renderer.canvasColorBytes;
   }
 
+  // The WebGPU swapchain belongs to the window canvases, not to the panes drawing into them.
+  const windowCanvasBytes =
+    webGpuTerminalRuntimeDiagnostics()?.canvases.colorBytes ?? 0;
+  canvasColorBytes += windowCanvasBytes;
+  estimatedSwapchainBytes += windowCanvasBytes * 3;
+
   return {
     modelCellCapacity,
     modelRowCapacity,
@@ -519,15 +525,12 @@ function ensureSession(
     }
     return existing;
   }
-  const ptyResize = new PtyResizeScheduler((cols, rows) => {
-    void sessions.get(leafId)?.pty?.resize(cols, rows);
+  const ptyResize = new PtyResizeDelivery((cols, rows) => {
+    const pty = sessions.get(leafId)?.pty;
+    if (!pty) return false;
+    void pty.resize(cols, rows);
+    return true;
   });
-  const unsubscribeResizeInteraction = subscribeTerminalResizeInteraction(
-    (active) => {
-      if (active) ptyResize.suspend();
-      else ptyResize.resume();
-    },
-  );
   const session: GhosttySession = {
     leafId,
     backend,
@@ -539,7 +542,6 @@ function ensureSession(
     input: null,
     pty: null,
     ptyResize,
-    unsubscribeResizeInteraction,
     writer: new BoundedPtyWriter((error) => {
       console.error("[terax] Ghostty PTY write failed:", error);
     }),
@@ -684,9 +686,14 @@ async function initializeSessionGeneration(
   mark("modelReadyMs");
   session.model = model;
   session.callbacks.onModel?.(model);
-  await ghosttyBlocks(session.leafId)?.attach(model, () =>
-    session.surface?.requestFrame(),
-  );
+  const blockSession = ghosttyBlocks(session.leafId);
+  if (blockSession) {
+    blockSession.cellHeight = () => session.surface?.cellSize().height ?? 0;
+    // The shell/prompt input switch only depends on the block mode, so it runs
+    // when the mode changes instead of after every PTY chunk.
+    blockSession.modeEffect = () => applyBlockInputMode(session);
+  }
+  await blockSession?.attach(model, () => session.surface?.requestFrame());
   if (!alive()) {
     if (ghosttyBlocks(session.leafId)?.model === model)
       ghosttyBlocks(session.leafId)?.detach();
@@ -701,7 +708,7 @@ async function initializeSessionGeneration(
     cursorBlink: preferences.terminalCursorBlink,
     cursorStyle: preferences.terminalCursorStyle,
     onResize: (cols: number, rows: number) => {
-      session.ptyResize.schedule(cols, rows);
+      session.ptyResize.send(cols, rows);
     },
     onFirstFrame: () => mark("firstFrameMs"),
     onFrame: () => ghosttyBlocks(session.leafId)?.present(),
@@ -798,7 +805,6 @@ async function initializeSessionGeneration(
           mark("firstOutputMs");
           model.write(bytes);
           ghosttyBlocks(session.leafId)?.changed();
-          applyBlockInputMode(session);
         }
       },
       onExit: (code) => {
@@ -826,7 +832,7 @@ async function initializeSessionGeneration(
   session.pty = pty;
   session.writer.attach(pty);
   if (model.cols !== startCols || model.rows !== startRows) {
-    session.ptyResize.schedule(model.cols, model.rows);
+    session.ptyResize.send(model.cols, model.rows);
   }
 }
 
@@ -849,6 +855,7 @@ function createGhosttyInput(
       width: surface.cellSize().width,
       height: surface.cellSize().height,
     }),
+    gridShiftY: () => surface.gridShiftY(),
     onData: (bytes) => {
       if (
         ghosttyBlocks(session.leafId)?.getMode() === "prompt" &&
@@ -905,6 +912,19 @@ function applyBlockInputMode(
   if (session.visible && session.focused) focusSessionSurface(session, surface);
 }
 
+/**
+ * Cell height only: a plain read of cached font metrics. The per-frame block
+ * overlay needs nothing else, and unlike {@link ghosttyBlockGeometry} it forces
+ * no layout.
+ */
+export function ghosttyBlockCellHeight(leafId: number): number {
+  return sessions.get(leafId)?.surface?.cellSize().height ?? 0;
+}
+
+/**
+ * Surface top edge plus cell height. Reads the bounding rect (forces layout),
+ * so it is for one-off pointer hit-testing, never for per-frame work.
+ */
 export function ghosttyBlockGeometry(
   leafId: number,
 ): { top: number; height: number } | null {

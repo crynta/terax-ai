@@ -141,23 +141,32 @@ pub fn bootstrap_registry(registry: &WorkspaceRegistry) {
 
 #[tauri::command]
 pub async fn workspace_authorize(
+    app: tauri::AppHandle,
     path: String,
     workspace: Option<WorkspaceEnv>,
-    registry: tauri::State<'_, WorkspaceRegistry>,
 ) -> Result<String, String> {
-    let workspace = WorkspaceEnv::from_option(workspace);
-    let resolved = resolve_path(&path, &workspace);
-    let canonical = registry.authorize(&resolved).map_err(|e| e.to_string())?;
-    Ok(crate::modules::fs::to_canon(&canonical))
+    // Canonicalizing touches the disk (possibly a network volume).
+    crate::modules::fs::blocking(move || {
+        let workspace = WorkspaceEnv::from_option(workspace);
+        let resolved = resolve_path(&path, &workspace);
+        let canonical = tauri::Manager::state::<WorkspaceRegistry>(&app)
+            .authorize(&resolved)
+            .map_err(|e| e.to_string())?;
+        Ok(crate::modules::fs::to_canon(&canonical))
+    })
+    .await
 }
 
 #[tauri::command]
-pub async fn workspace_current_dir(
-    registry: tauri::State<'_, WorkspaceRegistry>,
-) -> Result<String, String> {
-    let launch = resolve_launch_dir();
-    let canonical = registry.authorize(&launch).map_err(|e| e.to_string())?;
-    Ok(crate::modules::fs::to_canon(&canonical))
+pub async fn workspace_current_dir(app: tauri::AppHandle) -> Result<String, String> {
+    crate::modules::fs::blocking(move || {
+        let launch = resolve_launch_dir();
+        let canonical = tauri::Manager::state::<WorkspaceRegistry>(&app)
+            .authorize(&launch)
+            .map_err(|e| e.to_string())?;
+        Ok(crate::modules::fs::to_canon(&canonical))
+    })
+    .await
 }
 
 // Snapshotted once at app startup so the live `current_dir()` drifting later
@@ -573,7 +582,8 @@ pub async fn wsl_default_distro() -> Result<Option<String>, String> {
     }
 }
 
-#[tauri::command]
+/// Spawns `wsl.exe` on Windows, so the command wrapper keeps it off the main
+/// thread; internal callers are already on the blocking pool.
 pub fn wsl_home(distro: String) -> Result<String, String> {
     #[cfg(not(windows))]
     {
@@ -589,6 +599,15 @@ pub fn wsl_home(distro: String) -> Result<String, String> {
         } else {
             Ok(home)
         }
+    }
+}
+
+/// IPC entry points whose names are fixed by the frontend but whose blocking
+/// counterparts are also called synchronously from the PTY spawn path.
+pub mod ipc {
+    #[tauri::command]
+    pub async fn wsl_home(distro: String) -> Result<String, String> {
+        crate::modules::fs::blocking(move || super::wsl_home(distro)).await
     }
 }
 

@@ -8,7 +8,7 @@ import {
   CommandShortcut,
 } from "@/components/ui/command";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
+import { FileIcon } from "@/modules/explorer/FileIcon";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   getBindingTokens,
@@ -313,9 +313,8 @@ export function CommandPalette({
                         onSelect={() => openContent(hit.path, hit.line)}
                         className="text-[12.5px]"
                       >
-                        <img
-                          src={fileIconUrl(basename(hit.rel))}
-                          alt=""
+                        <FileIcon
+                          name={basename(hit.rel)}
                           className="size-4 shrink-0"
                         />
                         <span className="min-w-0 flex-1 truncate font-mono text-[11.5px]">

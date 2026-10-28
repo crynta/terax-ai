@@ -15,7 +15,7 @@ type PanelSpec = {
   onPick: (item: LocationItem) => void;
 };
 
-export const setLocationList = StateEffect.define<PanelSpec | null>();
+const setLocationList = StateEffect.define<PanelSpec | null>();
 
 const locationsField = StateField.define<PanelSpec | null>({
   create: () => null,

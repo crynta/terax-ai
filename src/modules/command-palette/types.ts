@@ -1,7 +1,7 @@
 import type { ShortcutId } from "@/modules/shortcuts";
 import type { TerminalIcon } from "@hugeicons/core-free-icons";
 
-export type PaletteIcon = typeof TerminalIcon;
+type PaletteIcon = typeof TerminalIcon;
 
 export type PaletteItem = {
   id: string;

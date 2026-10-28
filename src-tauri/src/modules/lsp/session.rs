@@ -19,6 +19,35 @@ const MEM_POLL_INTERVAL: Duration = Duration::from_secs(30);
 // steady state.
 const MEM_STARTUP_GRACE: Duration = Duration::from_secs(120);
 const DEFAULT_MAX_RSS_MB: u64 = 4096;
+// Pipe pumps and the waiter only shuffle bytes, so they need very little stack.
+const THREAD_STACK: usize = 256 * 1024;
+
+fn spawn_thread(
+    name: String,
+    work: impl FnOnce() + Send + 'static,
+) -> Result<thread::JoinHandle<()>, String> {
+    thread::Builder::new()
+        .name(name)
+        .stack_size(THREAD_STACK)
+        .spawn(work)
+        .map_err(|e| e.to_string())
+}
+
+/// Resident size in whole MB when it exceeds the budget.
+fn over_budget(rss_bytes: u64, cap_mb: u64) -> Option<u64> {
+    let rss_mb = rss_bytes / (1024 * 1024);
+    (rss_mb > cap_mb).then_some(rss_mb)
+}
+
+/// When the next memory check is due: once after the startup grace, then on
+/// the steady-state interval.
+fn next_memory_check(now: Instant, first: bool) -> Instant {
+    now + if first {
+        MEM_STARTUP_GRACE
+    } else {
+        MEM_POLL_INTERVAL
+    }
+}
 
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -134,150 +163,125 @@ pub fn spawn(
     });
 
     let session_reader = session.clone();
-    let reader_thread = thread::Builder::new()
-        .name(format!("terax-lsp-reader-{id}"))
-        .spawn(move || {
-            let mut decoder = FrameDecoder::default();
-            let mut buf = [0u8; READ_BUF];
-            loop {
-                match stdout.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => match decoder.push(&buf[..n]) {
-                        Ok(messages) => {
-                            for msg in messages {
-                                if on_message.send(Response::new(msg.into_bytes())).is_err() {
-                                    log::info!("lsp id={id}: channel closed; killing server");
-                                    session_reader.kill();
-                                    return;
-                                }
+    let reader_thread = spawn_thread(format!("terax-lsp-reader-{id}"), move || {
+        let mut decoder = FrameDecoder::default();
+        let mut buf = [0u8; READ_BUF];
+        loop {
+            match stdout.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => match decoder.push(&buf[..n]) {
+                    Ok(messages) => {
+                        for msg in messages {
+                            if on_message.send(Response::new(msg.into_bytes())).is_err() {
+                                log::info!("lsp id={id}: channel closed; killing server");
+                                session_reader.kill();
+                                return;
                             }
                         }
-                        Err(e) => {
-                            log::error!("lsp id={id}: {e}; killing server");
-                            session_reader.kill();
-                            return;
-                        }
-                    },
-                    Err(e) => {
-                        log::debug!("lsp id={id} stdout ended: {e}");
-                        break;
                     }
+                    Err(e) => {
+                        log::error!("lsp id={id}: {e}; killing server");
+                        session_reader.kill();
+                        return;
+                    }
+                },
+                Err(e) => {
+                    log::debug!("lsp id={id} stdout ended: {e}");
+                    break;
                 }
             }
-        })
-        .map_err(|e| e.to_string())?;
+        }
+    })?;
 
     let stderr_tail: Arc<Mutex<std::collections::VecDeque<String>>> =
         Arc::new(Mutex::new(std::collections::VecDeque::new()));
     let stderr_tail_w = stderr_tail.clone();
-    thread::Builder::new()
-        .name(format!("terax-lsp-stderr-{id}"))
-        .spawn(move || {
-            let mut buf = [0u8; 4096];
-            let mut line: Vec<u8> = Vec::new();
-            let push_line = |line: &mut Vec<u8>| {
-                if line.is_empty() {
-                    return;
-                }
-                let text = String::from_utf8_lossy(line).into_owned();
-                log::debug!("lsp id={id} stderr: {text}");
-                let mut tail = stderr_tail_w.lock().unwrap();
-                if tail.len() >= STDERR_TAIL_LINES {
-                    tail.pop_front();
-                }
-                tail.push_back(text);
-                line.clear();
-            };
-            while let Ok(n) = stderr.read(&mut buf) {
-                if n == 0 {
-                    break;
-                }
-                for &b in &buf[..n] {
-                    if b == b'\n' {
-                        push_line(&mut line);
-                    } else if line.len() < STDERR_LINE_CAP {
-                        line.push(b);
-                    }
+    spawn_thread(format!("terax-lsp-stderr-{id}"), move || {
+        let mut buf = [0u8; 4096];
+        let mut line: Vec<u8> = Vec::new();
+        let push_line = |line: &mut Vec<u8>| {
+            if line.is_empty() {
+                return;
+            }
+            let text = String::from_utf8_lossy(line).into_owned();
+            log::debug!("lsp id={id} stderr: {text}");
+            let mut tail = stderr_tail_w.lock().unwrap();
+            if tail.len() >= STDERR_TAIL_LINES {
+                tail.pop_front();
+            }
+            tail.push_back(text);
+            line.clear();
+        };
+        while let Ok(n) = stderr.read(&mut buf) {
+            if n == 0 {
+                break;
+            }
+            for &b in &buf[..n] {
+                if b == b'\n' {
+                    push_line(&mut line);
+                } else if line.len() < STDERR_LINE_CAP {
+                    line.push(b);
                 }
             }
-            push_line(&mut line);
-        })
-        .map_err(|e| e.to_string())?;
+        }
+        push_line(&mut line);
+    })?;
 
     let kill_reason: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
-    {
-        let cap_mb = max_rss_mb.unwrap_or(DEFAULT_MAX_RSS_MB);
-        let pid = child.id();
-        let session_w = session.clone();
-        let exited_m = exited.clone();
-        let reason_w = kill_reason.clone();
-        thread::Builder::new()
-            .name(format!("terax-lsp-memwatch-{id}"))
-            .spawn(move || {
-                let grace_deadline = Instant::now() + MEM_STARTUP_GRACE;
-                while Instant::now() < grace_deadline {
-                    if exited_m.load(Ordering::Acquire) {
-                        return;
-                    }
-                    thread::sleep(Duration::from_secs(1));
-                }
-                loop {
-                    if exited_m.load(Ordering::Acquire) {
-                        return;
-                    }
+    let cap_mb = max_rss_mb.unwrap_or(DEFAULT_MAX_RSS_MB);
+    let pid = child.id();
+    let session_w = session.clone();
+    let child_waiter = child;
+    let exited_w = exited;
+    // One thread both reaps the server and polices its memory: the wait is a
+    // timed condvar sleep, so an idle server costs two wakeups per minute and
+    // no dedicated polling thread.
+    spawn_thread(format!("terax-lsp-waiter-{id}"), move || {
+        let mut check_at = next_memory_check(Instant::now(), true);
+        let code = loop {
+            match child_waiter.wait_deadline(check_at) {
+                Ok(Some(status)) => break status.code(),
+                Ok(None) => {
                     if let Some(rss) = crate::modules::proc::rss::rss_bytes(pid) {
-                        let rss_mb = rss / (1024 * 1024);
-                        if rss_mb > cap_mb {
+                        if let Some(rss_mb) = over_budget(rss, cap_mb) {
                             log::warn!(
                                 "lsp id={id} rss {rss_mb} MB over budget {cap_mb} MB; killing"
                             );
-                            *reason_w.lock().unwrap() = Some(format!(
+                            *kill_reason.lock().unwrap() = Some(format!(
                                 "Killed after exceeding the {cap_mb} MB memory budget ({rss_mb} MB resident)."
                             ));
                             session_w.kill();
-                            return;
                         }
                     }
-                    thread::sleep(MEM_POLL_INTERVAL);
+                    check_at = next_memory_check(Instant::now(), false);
                 }
-            })
-            .map_err(|e| e.to_string())?;
-    }
-
-    let child_waiter = child;
-    let exited_w = exited;
-    thread::Builder::new()
-        .name(format!("terax-lsp-waiter-{id}"))
-        .spawn(move || {
-            let code = match child_waiter.wait() {
-                Ok(status) => status.code(),
                 Err(e) => {
                     log::warn!("lsp id={id} wait failed: {e}");
-                    None
+                    break None;
                 }
-            };
-            exited_w.store(true, Ordering::Release);
-            // Bounded, not join: a grandchild inheriting stdout keeps the
-            // pipe open past child exit and would hang us.
-            let deadline = Instant::now() + Duration::from_millis(500);
-            while Instant::now() < deadline && !reader_thread.is_finished() {
-                thread::sleep(Duration::from_millis(10));
             }
-            if let Some(state) = app.try_state::<super::LspState>() {
-                state.take(id);
-            }
-            log::info!("lsp id={id} exited code={code:?}");
-            let tail: Vec<String> = stderr_tail.lock().unwrap().iter().cloned().collect();
-            let exit = LspExit {
-                code,
-                stderr_tail: tail.join("\n"),
-                reason: kill_reason.lock().unwrap().take(),
-            };
-            if on_exit.send(exit).is_err() {
-                log::debug!("lsp id={id} exit send failed (channel closed)");
-            }
-        })
-        .map_err(|e| e.to_string())?;
+        };
+        exited_w.store(true, Ordering::Release);
+        // Bounded, not join: a grandchild inheriting stdout keeps the
+        // pipe open past child exit and would hang us.
+        let deadline = Instant::now() + Duration::from_millis(500);
+        while Instant::now() < deadline && !reader_thread.is_finished() {
+            thread::sleep(Duration::from_millis(10));
+        }
+        if let Some(state) = app.try_state::<super::LspState>() {
+            state.take(id);
+        }
+        log::info!("lsp id={id} exited code={code:?}");
+        let tail: Vec<String> = stderr_tail.lock().unwrap().iter().cloned().collect();
+        let exit = LspExit {
+            code,
+            stderr_tail: tail.join("\n"),
+            reason: kill_reason.lock().unwrap().take(),
+        };
+        if on_exit.send(exit).is_err() {
+            log::debug!("lsp id={id} exit send failed (channel closed)");
+        }
+    })?;
 
     Ok(session)
 }
@@ -292,6 +296,37 @@ mod tests {
             stdin: Mutex::new(stdin),
             exited: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    #[test]
+    fn memory_checks_wait_out_the_grace_then_settle_to_the_slow_interval() {
+        let now = Instant::now();
+        assert_eq!(next_memory_check(now, true), now + MEM_STARTUP_GRACE);
+        assert_eq!(next_memory_check(now, false), now + MEM_POLL_INTERVAL);
+        assert!(MEM_STARTUP_GRACE > MEM_POLL_INTERVAL);
+    }
+
+    #[test]
+    fn budget_is_enforced_in_whole_megabytes() {
+        let mb = 1024 * 1024;
+        assert_eq!(over_budget(4096 * mb, 4096), None);
+        assert_eq!(over_budget(4096 * mb + mb - 1, 4096), None);
+        assert_eq!(over_budget(4097 * mb, 4096), Some(4097));
+    }
+
+    #[test]
+    fn a_deadline_wait_returns_at_the_deadline_without_a_polling_loop() {
+        let mut cmd = Command::new("/bin/sh");
+        cmd.args(["-c", "sleep 30"]);
+        let child = SharedChild::spawn(&mut cmd).expect("spawn");
+        let started = Instant::now();
+        let waited = child
+            .wait_deadline(started + Duration::from_millis(150))
+            .expect("wait");
+        assert!(waited.is_none());
+        assert!(started.elapsed() >= Duration::from_millis(140));
+        let _ = child.kill();
+        let _ = child.wait();
     }
 
     #[test]
@@ -349,10 +384,7 @@ mod tests {
             if !alive {
                 break;
             }
-            assert!(
-                Instant::now() < deadline,
-                "grandchild survived group kill",
-            );
+            assert!(Instant::now() < deadline, "grandchild survived group kill",);
             thread::sleep(Duration::from_millis(20));
         }
     }

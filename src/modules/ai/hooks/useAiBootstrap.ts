@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { firePendingReviewForSession } from "@/modules/agents/lib/review";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { onKeysChanged } from "@/modules/settings/store";
@@ -95,7 +96,12 @@ export function useAiBootstrap(): {
   }, [prefsHydrated, prefDefaultModel, setSelectedModelId]);
 
   useEffect(() => {
-    void hydrateSessions();
+    void hydrateSessions().catch((error: unknown) => {
+      toast.error("Could not load chat history", {
+        id: "chat-history-load",
+        description: String(error),
+      });
+    });
     void useAgentsStore.getState().hydrate();
     void useSnippetsStore.getState().hydrate();
   }, [hydrateSessions]);

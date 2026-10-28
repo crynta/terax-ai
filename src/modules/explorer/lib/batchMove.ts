@@ -1,4 +1,4 @@
-export type BatchMoveItem = {
+type BatchMoveItem = {
   from: string;
   to: string;
   name: string;

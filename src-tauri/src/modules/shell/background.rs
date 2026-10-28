@@ -12,6 +12,26 @@ use super::ringbuffer::BoundedRingBuffer;
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
 const RING_CAP: usize = 4 * 1024 * 1024;
+const THREAD_STACK: usize = 128 * 1024;
+
+fn spawn_thread(name: &str, work: impl FnOnce() + Send + 'static) -> Result<(), String> {
+    thread::Builder::new()
+        .name(name.into())
+        .stack_size(THREAD_STACK)
+        .spawn(work)
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+fn pump(mut pipe: impl Read, proc: &BackgroundProc) {
+    let mut buf = [0u8; 8192];
+    loop {
+        match pipe.read(&mut buf) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => proc.buffer.lock().unwrap().push(&buf[..n]),
+        }
+    }
+}
 
 pub struct BackgroundProc {
     pub command: String,
@@ -143,38 +163,27 @@ pub fn spawn(
         exit_unknown: AtomicBool::new(false),
     });
 
-    {
+    let fail = |error: String| {
+        proc.kill();
+        error
+    };
+    for (name, pipe) in [
+        (
+            "terax-bg-out",
+            Box::new(stdout_pipe) as Box<dyn Read + Send>,
+        ),
+        (
+            "terax-bg-err",
+            Box::new(stderr_pipe) as Box<dyn Read + Send>,
+        ),
+    ] {
         let proc_ref = proc.clone();
-        let mut pipe = stdout_pipe;
-        thread::spawn(move || {
-            let mut buf = [0u8; 8192];
-            loop {
-                match pipe.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => proc_ref.buffer.lock().unwrap().push(&buf[..n]),
-                    Err(_) => break,
-                }
-            }
-        });
-    }
-    {
-        let proc_ref = proc.clone();
-        let mut pipe = stderr_pipe;
-        thread::spawn(move || {
-            let mut buf = [0u8; 8192];
-            loop {
-                match pipe.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => proc_ref.buffer.lock().unwrap().push(&buf[..n]),
-                    Err(_) => break,
-                }
-            }
-        });
+        spawn_thread(name, move || pump(pipe, &proc_ref)).map_err(fail)?;
     }
     {
         let proc_ref = proc.clone();
         let child_for_wait = proc.child.clone();
-        thread::spawn(move || {
+        spawn_thread("terax-bg-wait", move || {
             match child_for_wait.wait() {
                 Ok(status) => match status.code() {
                     Some(code) => proc_ref.exit_code.store(code, Ordering::Release),
@@ -183,7 +192,8 @@ pub fn spawn(
                 Err(_) => proc_ref.exit_unknown.store(true, Ordering::Release),
             }
             proc_ref.exited.store(true, Ordering::Release);
-        });
+        })
+        .map_err(fail)?;
     }
 
     Ok(proc)

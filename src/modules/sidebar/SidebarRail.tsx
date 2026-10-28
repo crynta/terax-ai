@@ -3,7 +3,7 @@ import { FolderGitTwoIcon, FolderTreeIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { SidebarViewId } from "./types";
 
-export const SIDEBAR_RAIL_HEIGHT = 36;
+const SIDEBAR_RAIL_HEIGHT = 36;
 
 type RailItem = {
   id: SidebarViewId;

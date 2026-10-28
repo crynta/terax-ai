@@ -44,6 +44,39 @@ describe("GhosttySearchController", () => {
     expect(controller.matchAt(0, 2)).toBe(0);
     controller.dispose();
   });
+  it("exposes the highlight mask with a revision that moves only when cells change", () => {
+    let spans = [{ row: 0, startColumn: 1, endColumn: 3, selected: false }];
+    const model = {
+      cols: 6,
+      rows: 2,
+      blockSearchActive: () => true,
+      searchViewportMatches: () => spans,
+    } as unknown as GhosttyTerminalModelApi;
+    const controller = new GhosttySearchController(model, vi.fn());
+    expect(controller.viewportMaskBytes()).toBeNull();
+    controller.refreshOverlay();
+    const revision = controller.maskRevision;
+    expect([...(controller.viewportMaskBytes() ?? [])]).toEqual([
+      0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ]);
+    for (let frame = 0; frame < 50; frame += 1) controller.refreshOverlay();
+    expect(controller.maskRevision).toBe(revision);
+
+    spans = [{ row: 1, startColumn: 0, endColumn: 2, selected: true }];
+    controller.refreshOverlay();
+    expect(controller.maskRevision).toBe(revision + 1);
+    expect([...(controller.viewportMaskBytes() ?? [])].slice(6)).toEqual([
+      2, 2, 0, 0, 0, 0,
+    ]);
+
+    spans = [];
+    controller.refreshOverlay();
+    expect(controller.viewportMaskBytes()).toBeNull();
+    expect(controller.maskRevision).toBe(revision + 2);
+    controller.dispose();
+    expect(controller.viewportMaskBytes()).toBeNull();
+  });
+
   it.each([false, true])(
     "restores the native search without resetting or skipping a match (pending: %s)",
     (pending) => {

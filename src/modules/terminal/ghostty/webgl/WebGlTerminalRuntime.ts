@@ -15,7 +15,7 @@ import {
 } from "./WebGlCellRenderer";
 
 export const MAX_WEBGL_RENDERER_SLOTS = 5;
-export const MIN_WARM_WEBGL_RENDERER_SLOTS = 1;
+const MIN_WARM_WEBGL_RENDERER_SLOTS = 1;
 export const WEBGL_RENDERER_IDLE_TTL_MS = 30_000;
 
 export interface WebGlRuntimeSurface {
@@ -72,6 +72,7 @@ export class WebGlTerminalRuntime {
   private renderSurfaces = new Set<WebGlRuntimeSurface>();
   private animationFrame: number | null = null;
   private frameTimer: number | null = null;
+  private frameTimerDueAt = 0;
   private idleSweepTimer: number | null = null;
   private submittedFrames = 0;
   private windowFocused: boolean;
@@ -207,6 +208,7 @@ export class WebGlTerminalRuntime {
   schedule(surface: WebGlRuntimeSurface): void {
     if (this.disposed || !this.leases.has(surface)) return;
     this.dirtySurfaces.add(surface);
+    this.pacer.dirty(surface, this.dependencies.now());
     this.requestFrame();
   }
 
@@ -268,22 +270,34 @@ export class WebGlTerminalRuntime {
   private requestFrame(): void {
     if (
       this.animationFrame !== null ||
-      this.frameTimer !== null ||
       this.dirtySurfaces.size === 0 ||
       !this.dependencies.isVisible()
     ) {
       return;
     }
-    const delay = this.pacer.delay(
+    const plan = this.pacer.plan(
       this.dirtySurfaces,
       this.windowFocused,
       this.dependencies.now(),
     );
-    if (delay > 1) {
+    if (plan.kind === "idle") return;
+    const now = this.dependencies.now();
+    if (this.frameTimer !== null) {
+      // A pane that turns dirty while the page sleeps for a later deadline must not wait for it.
+      if (
+        plan.kind === "wait" &&
+        now + plan.delayMs >= this.frameTimerDueAt - 0.5
+      )
+        return;
+      this.dependencies.clearTimer(this.frameTimer);
+      this.frameTimer = null;
+    }
+    if (plan.kind === "wait") {
+      this.frameTimerDueAt = now + plan.delayMs;
       this.frameTimer = this.dependencies.setTimer(() => {
         this.frameTimer = null;
         this.requestFrame();
-      }, delay);
+      }, plan.delayMs);
       return;
     }
     this.animationFrame = this.dependencies.requestFrame((frameAt) =>
@@ -293,6 +307,7 @@ export class WebGlTerminalRuntime {
 
   private flushFrame(frameAt = this.dependencies.now()): void {
     this.animationFrame = null;
+    this.pacer.frameStarted(frameAt);
     if (this.disposed || this.dirtySurfaces.size === 0) return;
     if (!this.dependencies.isVisible()) return;
     const batch = this.dirtySurfaces;
@@ -305,6 +320,7 @@ export class WebGlTerminalRuntime {
         this.dirtySurfaces.add(surface);
         continue;
       }
+      this.pacer.settled(surface);
       try {
         if (surface.renderFrame(slot.renderer)) {
           this.pacer.presented(surface, frameAt);

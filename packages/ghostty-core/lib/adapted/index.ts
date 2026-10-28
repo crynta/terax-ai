@@ -5,11 +5,36 @@ export {
   supportsWasmSimd,
   ADAPTED_RESTTY_COMMIT,
   TeraxGhostty,
+  TeraxGhosttyInstance,
   TeraxGhosttyTerminal,
 } from "./TeraxGhostty";
+export {
+  GPU_ATTR_BLINK,
+  GPU_ATTR_OVERLINE,
+  GPU_ATTR_SHIFT,
+  GPU_ATTR_STRIKETHROUGH,
+  GPU_ATTR_UNDERLINE_MASK,
+  GPU_ATTR_WIDE_LEAD,
+  GPU_CELL_BYTES,
+  GPU_CELL_WORDS,
+  GPU_GLYPH_BOLD,
+  GPU_GLYPH_ID_MASK,
+  GPU_GLYPH_ITALIC,
+  decodeGpuCell,
+} from "./gpuCells";
+export type { TeraxGhosttyGpuCell } from "./gpuCells";
+export { GpuGlyphBatch } from "./gpuGlyphs";
 export type {
   TeraxGhosttyCursor,
+  TeraxGhosttyGpuGlyph,
+  TeraxGhosttyGpuGlyphBatch,
+  TeraxGhosttyGpuRenderState,
+  TeraxGhosttyLine,
+  TeraxGhosttyRenderBase,
+  TeraxGhosttyRenderFormat,
+  TeraxGhosttyInstantiate,
   TeraxGhosttyLoadOptions,
+  TeraxGhosttyMemoryStats,
   TeraxGhosttyKeyEvent,
   TeraxGhosttyRenderState,
   TeraxGhosttySearchStatus,

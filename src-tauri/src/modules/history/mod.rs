@@ -1,22 +1,25 @@
+mod index;
 mod parse;
 
-use parse::{
-    build_index, complete_commands, demetafy, list, parse_bash, parse_fish, parse_zsh, sort_recent,
-    suggest, HistEntry,
-};
+use index::HistoryIndex;
+use parse::{demetafy, parse_bash, parse_fish, parse_zsh};
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-struct Index {
-    entries: Vec<HistEntry>,
-    path_cmds: Vec<String>,
+#[derive(Default)]
+struct Inner {
+    index: Mutex<Option<HistoryIndex>>,
+    /// Flips once the (slow) first build has finished; later calls are cheap
+    /// enough to answer without leaving the async worker.
+    ready: AtomicBool,
+    /// PATH executables, scanned only when command-name completion asks.
+    path_cmds: OnceLock<Vec<String>>,
 }
 
-#[derive(Default)]
-pub struct HistoryState {
-    inner: Mutex<Option<Index>>,
-}
+#[derive(Default, Clone)]
+pub struct HistoryState(Arc<Inner>);
 
 fn now() -> i64 {
     SystemTime::now()
@@ -115,72 +118,111 @@ fn is_executable(entry: &std::fs::DirEntry) -> bool {
     }
 }
 
-fn ensure(state: &HistoryState) -> std::sync::MutexGuard<'_, Option<Index>> {
-    let mut guard = state.inner.lock().unwrap();
-    if guard.is_none() {
-        *guard = Some(Index {
-            entries: build_index(read_histories()),
-            path_cmds: scan_path(),
-        });
+impl HistoryState {
+    fn with_index<T>(&self, f: impl FnOnce(&mut HistoryIndex) -> T) -> T {
+        let mut guard = self.0.index.lock().unwrap_or_else(|e| e.into_inner());
+        let index = guard.get_or_insert_with(|| HistoryIndex::build(read_histories()));
+        self.0.ready.store(true, Ordering::Release);
+        f(index)
     }
-    guard
+
+    fn path_commands(&self) -> &[String] {
+        self.0.path_cmds.get_or_init(scan_path)
+    }
+
+    /// Whether a query can be answered without a slow first-time build.
+    fn is_warm(&self, needs_path: bool) -> bool {
+        self.0.ready.load(Ordering::Acquire) && (!needs_path || self.0.path_cmds.get().is_some())
+    }
+}
+
+/// The first call parses every history file; once warm, queries are
+/// microseconds and run inline instead of paying for a pool hop per keystroke.
+async fn run<T, F>(state: &HistoryState, needs_path: bool, work: F) -> Option<T>
+where
+    T: Send + 'static,
+    F: FnOnce(&HistoryState) -> T + Send + 'static,
+{
+    if state.is_warm(needs_path) {
+        return Some(work(state));
+    }
+    let state = state.clone();
+    tauri::async_runtime::spawn_blocking(move || work(&state))
+        .await
+        .ok()
 }
 
 #[tauri::command]
-pub fn history_suggest(state: tauri::State<'_, HistoryState>, line: String) -> Option<String> {
-    let guard = ensure(&state);
-    suggest(&guard.as_ref()?.entries, &line)
+pub async fn history_suggest(
+    state: tauri::State<'_, HistoryState>,
+    line: String,
+) -> Result<Option<String>, String> {
+    Ok(run(state.inner(), false, move |s| {
+        s.with_index(|i| i.suggest(&line))
+    })
+    .await
+    .flatten())
 }
 
 #[tauri::command]
-pub fn history_commands(
+pub async fn history_commands(
     state: tauri::State<'_, HistoryState>,
     prefix: String,
     limit: Option<usize>,
-) -> Vec<String> {
-    let guard = ensure(&state);
-    match guard.as_ref() {
-        Some(idx) => complete_commands(&idx.entries, &idx.path_cmds, &prefix, limit.unwrap_or(50)),
-        None => Vec::new(),
-    }
+) -> Result<Vec<String>, String> {
+    Ok(run(state.inner(), true, move |s| {
+        // Warm the index first so the PATH scan is the only cold cost left.
+        s.with_index(|_| ());
+        let path = s.path_commands();
+        s.with_index(|i| i.complete_commands(path, &prefix, limit.unwrap_or(50)))
+    })
+    .await
+    .unwrap_or_default())
 }
 
 #[tauri::command]
-pub fn history_list(
+pub async fn history_list(
     state: tauri::State<'_, HistoryState>,
     query: String,
     limit: Option<usize>,
-) -> Vec<String> {
-    let guard = ensure(&state);
-    match guard.as_ref() {
-        Some(idx) => list(&idx.entries, &query, limit.unwrap_or(200)),
-        None => Vec::new(),
-    }
+) -> Result<Vec<String>, String> {
+    Ok(run(state.inner(), false, move |s| {
+        s.with_index(|i| i.list(&query, limit.unwrap_or(200)))
+    })
+    .await
+    .unwrap_or_default())
 }
 
 // Called on every accepted command so in-memory history stays hot without a
 // re-read. Only ever fed prompt-mode commands, never raw running-mode input,
 // so passwords typed into a running command never enter history.
 #[tauri::command]
-pub fn history_record(state: tauri::State<'_, HistoryState>, command: String) {
-    let cmd = command.trim();
-    if cmd.is_empty() {
-        return;
-    }
-    let mut guard = ensure(&state);
-    if let Some(idx) = guard.as_mut() {
-        let n = now();
-        match idx.entries.iter_mut().find(|e| e.cmd == cmd) {
-            Some(e) => {
-                e.count += 1;
-                e.last = n;
-            }
-            None => idx.entries.push(HistEntry {
-                cmd: cmd.to_string(),
-                count: 1,
-                last: n,
-            }),
-        }
-        sort_recent(&mut idx.entries);
+pub async fn history_record(
+    state: tauri::State<'_, HistoryState>,
+    command: String,
+) -> Result<(), String> {
+    run(state.inner(), false, move |s| {
+        s.with_index(|i| i.record(&command, now()))
+    })
+    .await;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_cold_builds_leave_the_async_worker() {
+        let state = HistoryState::default();
+        assert!(!state.is_warm(false), "nothing parsed yet");
+        state.0.ready.store(true, Ordering::Release);
+        assert!(state.is_warm(false));
+        assert!(
+            !state.is_warm(true),
+            "command-name completion also needs the PATH scan"
+        );
+        state.0.path_cmds.set(Vec::new()).unwrap();
+        assert!(state.is_warm(true));
     }
 }

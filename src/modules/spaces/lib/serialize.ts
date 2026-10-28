@@ -11,7 +11,7 @@ import type {
   TerminalTab,
 } from "@/modules/tabs/lib/useTabs";
 
-export type SerializedNode =
+type SerializedNode =
   | { kind: "leaf"; cwd?: string; active?: boolean }
   | { kind: "split"; dir: SplitDir; children: SerializedNode[] };
 

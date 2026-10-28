@@ -25,13 +25,22 @@ afterEach(() => {
 function fakeModel() {
   const listeners = new Set<() => void>();
   const markers = vi.fn();
+  const layout = { origin: 0, history: 0, rows: 24, cols: 80, cursor: 0 };
   const model = {
     enableSemanticMarkers: markers,
     semanticMarkerLine: () => null,
     semanticMarkerColumn: () => null,
     readTextRange: () => "",
     readCellLine: () => [],
-    bufferCursorLine: () => 0,
+    bufferCursorLine: () => layout.cursor,
+    viewportOriginLine: () => layout.origin,
+    scrollPosition: () => ({ offset: 0, history: layout.history }),
+    get rows() {
+      return layout.rows;
+    },
+    get cols() {
+      return layout.cols;
+    },
     modes: () => ({ alternateScreen: false }),
     subscribeDamage: (listener: () => void) => {
       listeners.add(listener);
@@ -40,7 +49,7 @@ function fakeModel() {
       };
     },
   } as unknown as GhosttyTerminalModelApi;
-  return { model, markers, listeners };
+  return { model, markers, listeners, layout };
 }
 
 describe("block presentation ownership", () => {
@@ -92,5 +101,103 @@ describe("block presentation ownership", () => {
     expect(markers).not.toHaveBeenCalled();
     expect(state.controller).toBeNull();
     expect(presentation.listeners.size).toBe(0);
+  });
+});
+
+describe("block chrome recomputation", () => {
+  async function presented() {
+    const env = fakeModel();
+    const state = new GhosttyBlockSession();
+    state.cellHeight = () => 19;
+    const chrome = vi.fn();
+    const content = vi.fn();
+    state.subscribeViewport(chrome);
+    state.subscribeContent(content);
+    await state.attach(env.model, () => {});
+    state.setVisible(true);
+    state.present();
+    chrome.mockClear();
+    content.mockClear();
+    return { ...env, state, chrome, content };
+  }
+
+  it("does not recompute block chrome for frames that move nothing", async () => {
+    const { state, chrome, content } = await presented();
+    for (let frame = 0; frame < 50; frame++) {
+      state.changed();
+      state.present();
+    }
+    expect(chrome).not.toHaveBeenCalled();
+    // Screen-content subscribers (the watermark) still see every dirty frame.
+    expect(content).toHaveBeenCalledTimes(50);
+  });
+
+  it.each([
+    ["scrolling", { origin: 1 }],
+    ["scrollback growth", { history: 1 }],
+    ["a row resize", { rows: 30 }],
+    ["a column resize (reflow)", { cols: 120 }],
+  ])("recomputes block chrome after %s", async (_name, patch) => {
+    const { state, chrome, layout } = await presented();
+    Object.assign(layout, patch);
+    state.changed();
+    state.present();
+    expect(chrome).toHaveBeenCalledTimes(1);
+    state.changed();
+    state.present();
+    expect(chrome).toHaveBeenCalledTimes(1);
+  });
+
+  it("recomputes when the cell height changes (zoom or font)", async () => {
+    const { state, chrome } = await presented();
+    state.cellHeight = () => 22;
+    state.changed();
+    state.present();
+    expect(chrome).toHaveBeenCalledTimes(1);
+  });
+
+  it("recomputes when the block set changes", async () => {
+    const { state, chrome } = await presented();
+    state.controller?.handle(
+      { type: "end-of-command", marker: null, exitCode: 0 } as never,
+      "/",
+    );
+    state.changed();
+    state.present();
+    expect(chrome).toHaveBeenCalledTimes(1);
+  });
+
+  it("resends the layout to a late subscriber and after presentation resumes", async () => {
+    const { state, chrome } = await presented();
+    const late = vi.fn();
+    state.subscribeViewport(late);
+    state.present();
+    expect(late).toHaveBeenCalledTimes(1);
+
+    for (const listener of presentation.listeners)
+      listener({ visible: false, reclaim: false });
+    for (const listener of presentation.listeners)
+      listener({ visible: true, reclaim: false });
+    chrome.mockClear();
+    state.present();
+    expect(chrome).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs the mode effect once per mode change, not per damage", async () => {
+    const { state, listeners } = await presented();
+    const effect = vi.fn();
+    state.modeEffect = effect;
+    for (let i = 0; i < 20; i++) for (const listener of listeners) listener();
+    expect(effect).not.toHaveBeenCalled();
+
+    // Prompt integration flips the controller from "plain" to "prompt".
+    state.controller?.handle(
+      { type: "prompt-end", blockInput: true } as never,
+      "/",
+    );
+    state.changed();
+    expect(effect).toHaveBeenCalledTimes(1);
+    for (let i = 0; i < 20; i++) state.changed();
+    expect(effect).toHaveBeenCalledTimes(1);
   });
 });

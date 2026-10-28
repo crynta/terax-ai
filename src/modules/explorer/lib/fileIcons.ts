@@ -2678,4 +2678,4 @@ const { languageIds, fileExtensions, fileNames } = Object.entries(
   },
 );
 
-export { fileExtensions, fileIcons, fileNames, languageIds };
+export { fileExtensions, fileNames, languageIds };

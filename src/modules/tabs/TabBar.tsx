@@ -21,11 +21,10 @@ import {
   EXPOSED_LANGUAGES,
 } from "@/modules/editor/lib/languageDefinitions";
 import { resolveDisplayName } from "@/modules/editor/lib/languageResolver";
-import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
+import { FileIcon } from "@/modules/explorer/FileIcon";
 import {
   leafIds,
   ptyIdForLeaf,
-  tabAgentStatus,
   useAgentActivityStore,
 } from "@/modules/terminal";
 import {
@@ -51,8 +50,10 @@ import {
   useRef,
   useState,
 } from "react";
+import { useShallow } from "zustand/react/shallow";
+import { selectTabAgentStatus } from "./lib/tabAgentStatus";
 import { labelFor } from "./lib/tabLabel";
-import type { EditorTab, Tab } from "./lib/useTabs";
+import type { EditorTab, Tab, TerminalTab } from "./lib/useTabs";
 import { NewTabMenu } from "./NewTabMenu";
 
 type Props = {
@@ -390,7 +391,7 @@ export function TabBar({
                           side="bottom"
                           sideOffset={6}
                           alignOffset={-4}
-                          className="max-h-75 w-48 overflow-y-auto rounded-xl border border-border/40 bg-popover/90 p-1 backdrop-blur-md shadow-lg"
+                          className="max-h-75 w-48 overflow-y-auto rounded-xl border border-border/40 bg-popover p-1 shadow-lg"
                           onClick={(e) => e.stopPropagation()}
                           onPointerDown={(e) => e.stopPropagation()}
                           onPointerUp={(e) => e.stopPropagation()}
@@ -401,10 +402,9 @@ export function TabBar({
                             }}
                             className="flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg cursor-default focus:bg-accent focus:text-accent-foreground"
                           >
-                            <img
-                              src={fileIconUrl(t.title)}
+                            <FileIcon
+                              name={t.title}
                               className="size-3.5 shrink-0 object-contain"
-                              alt=""
                             />
                             <div className="flex flex-1 flex-col">
                               <span>Auto Detect</span>
@@ -445,10 +445,9 @@ export function TabBar({
                                 }
                                 className="flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg cursor-default focus:bg-accent focus:text-accent-foreground"
                               >
-                                <img
-                                  src={fileIconUrl(`dummy.${lang.ext}`)}
+                                <FileIcon
+                                  name={`dummy.${lang.ext}`}
                                   className="size-3.5 shrink-0 object-contain"
-                                  alt=""
                                 />
                                 <span className="flex-1">{lang.name}</span>
                                 {isSelected && (
@@ -609,40 +608,76 @@ function DropIndicator() {
   );
 }
 
-function useTabAgentStatus(tab: Tab) {
-  const phases = useAgentActivityStore((s) => s.phases);
-  const agents = useAgentActivityStore((s) => s.agents);
-  if (tab.kind !== "terminal" || tab.private) {
-    return { state: null, agent: null } as const;
-  }
+/** Live pty ids behind a terminal tab; resolved at read time, not render time. */
+function terminalPtyIds(tab: TerminalTab): number[] {
   const ptyIds: number[] = [];
   for (const leaf of leafIds(tab.paneTree)) {
     const id = ptyIdForLeaf(leaf);
     if (id !== null) ptyIds.push(id);
   }
-  return tabAgentStatus(phases, agents, ptyIds);
+  return ptyIds;
+}
+
+/**
+ * Agent-aware terminal tab icon. The selector reduces the global activity maps
+ * to this tab's own `{ state, agent }`, and `useShallow` keeps that result
+ * stable, so an agent signal on one tab re-renders only that tab's icon.
+ * Non-terminal tabs never reach this component and subscribe to nothing.
+ */
+function TerminalTabIcon({ tab }: { tab: TerminalTab }) {
+  const agentStatus = useAgentActivityStore(
+    useShallow((s) => selectTabAgentStatus(s, terminalPtyIds(tab))),
+  );
+  if (agentStatus.state === "attention") {
+    return (
+      <HugeiconsIcon
+        icon={Message02Icon}
+        size={14}
+        strokeWidth={2}
+        className="shrink-0"
+      />
+    );
+  }
+  if (agentStatus.state === "finished") {
+    return (
+      <HugeiconsIcon
+        icon={CheckmarkCircle01Icon}
+        size={14}
+        strokeWidth={2}
+        className="shrink-0"
+      />
+    );
+  }
+  if (
+    (agentStatus.state === "working" || agentStatus.state === "idle") &&
+    agentStatus.agent
+  ) {
+    return (
+      <AgentIcon agent={agentStatus.agent} size={14} className="shrink-0" />
+    );
+  }
+  return (
+    <HugeiconsIcon
+      icon={ComputerTerminal02Icon}
+      size={14}
+      strokeWidth={2}
+      className="shrink-0"
+    />
+  );
 }
 
 export function TabIcon({ tab }: { tab: Tab }) {
-  const agentStatus = useTabAgentStatus(tab);
   if (tab.kind === "editor" || tab.kind === "markdown") {
-    const url =
-      tab.kind === "editor" && tab.overrideLanguage
-        ? fileIconUrl(`dummy.${tab.overrideLanguage}`)
-        : fileIconUrl(tab.title);
-    return url ? (
-      <img
-        src={url}
-        alt=""
+    return (
+      <FileIcon
+        name={
+          tab.kind === "editor" && tab.overrideLanguage
+            ? `dummy.${tab.overrideLanguage}`
+            : tab.title
+        }
         className="size-3.5 shrink-0 object-contain"
-        onError={(e) => {
-          const img = e.currentTarget;
-          if (img.dataset.fallback) return;
-          img.dataset.fallback = "1";
-          img.src = fileIconUrl("dummy.txt");
-        }}
       />
-    ) : null;
+    );
   }
   if (tab.kind === "preview") {
     return (
@@ -694,42 +729,7 @@ export function TabIcon({ tab }: { tab: Tab }) {
       />
     );
   }
-  if (agentStatus.state === "attention") {
-    return (
-      <HugeiconsIcon
-        icon={Message02Icon}
-        size={14}
-        strokeWidth={2}
-        className="shrink-0"
-      />
-    );
-  }
-  if (agentStatus.state === "finished") {
-    return (
-      <HugeiconsIcon
-        icon={CheckmarkCircle01Icon}
-        size={14}
-        strokeWidth={2}
-        className="shrink-0"
-      />
-    );
-  }
-  if (
-    (agentStatus.state === "working" || agentStatus.state === "idle") &&
-    agentStatus.agent
-  ) {
-    return (
-      <AgentIcon agent={agentStatus.agent} size={14} className="shrink-0" />
-    );
-  }
-  return (
-    <HugeiconsIcon
-      icon={ComputerTerminal02Icon}
-      size={14}
-      strokeWidth={2}
-      className="shrink-0"
-    />
-  );
+  return <TerminalTabIcon tab={tab} />;
 }
 
 function TabRenameInput({

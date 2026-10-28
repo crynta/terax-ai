@@ -1,4 +1,4 @@
-export type OfficialGhosttyCallbackExports = WebAssembly.Exports & {
+type OfficialGhosttyCallbackExports = WebAssembly.Exports & {
   readonly write_pty: CallableFunction;
 };
 

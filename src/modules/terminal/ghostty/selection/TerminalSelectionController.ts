@@ -20,6 +20,11 @@ export type TerminalSelectionControllerOptions = {
   readonly model: GhosttyTerminalModelApi;
   readonly target: HTMLElement;
   readonly cellSize: () => { readonly width: number; readonly height: number };
+  /**
+   * CSS pixels the drawn grid is moved up inside the target (a pane shorter than its grid
+   * during a resize gesture, see `WebGpuTerminalSurface.gridShiftY`); zero when absent.
+   */
+  readonly gridShiftY?: () => number;
   readonly shouldIgnoreTarget: (target: EventTarget | null) => boolean;
   readonly onChange: () => void;
 };
@@ -253,7 +258,9 @@ export class TerminalSelectionController {
       this.options.model.cols - 1,
     );
     const row = clampInteger(
-      Math.floor((clientY - rect.top) / cell.height),
+      Math.floor(
+        (clientY - rect.top + (this.options.gridShiftY?.() ?? 0)) / cell.height,
+      ),
       0,
       this.options.model.rows - 1,
     );

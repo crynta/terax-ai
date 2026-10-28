@@ -8,6 +8,7 @@ import {
   sourceControlRepositoryPath,
   type SourceControlRepositoryTarget,
 } from "./repositoryTarget";
+import { isStatusLive, statusConsumers } from "./statusConsumers";
 import { useSourceControl } from "./useSourceControl";
 
 type Params = {
@@ -19,6 +20,10 @@ type Params = {
   launchCwdResolved: boolean;
   home: string | null;
   sidebarView: SidebarViewId;
+  /** The sidebar panel is collapsed to 0 px (still mounted, not on screen). */
+  sidebarCollapsed: boolean;
+  /** The `explorerGitDecorations` preference. */
+  explorerGitDecorations: boolean;
   repositoryTarget: SourceControlRepositoryTarget;
   cycleSidebarView: (view: SidebarViewId) => void;
   openCommitHistoryTab: (args: {
@@ -41,6 +46,8 @@ export function useSourceControlContext({
   launchCwdResolved,
   home,
   sidebarView,
+  sidebarCollapsed,
+  explorerGitDecorations,
   repositoryTarget,
   cycleSidebarView,
   openCommitHistoryTab,
@@ -80,14 +87,26 @@ export function useSourceControlContext({
     sidebarView,
     target: repositoryTarget,
   });
-  const sourceControl = useSourceControl(sourceControlPath, true);
+  // `git status` runs on focus / context changes only while something that
+  // shows git state is on screen; otherwise the next consumer refreshes it.
+  const live = isStatusLive(
+    statusConsumers({
+      sidebarCollapsed,
+      sidebarView,
+      activeTabKind: activeTab?.kind,
+      explorerGitDecorations,
+    }),
+  );
+  const sourceControl = useSourceControl(sourceControlPath, true, { live });
 
   const toggleSourceControl = useCallback(() => {
     cycleSidebarView("source-control");
   }, [cycleSidebarView]);
 
   const openGitGraphFromContext = useCallback(async () => {
-    const known = sourceControl.hasRepo ? sourceControl.repo : null;
+    // A snapshot nobody is refreshing may predate a branch switch or a cd, so
+    // only a live one is trusted; otherwise resolve the repo afresh below.
+    const known = live && sourceControl.hasRepo ? sourceControl.repo : null;
     const fixedTargetIsLoaded =
       sidebarView !== "source-control" ||
       repositoryTarget.mode !== "fixed" ||
@@ -112,6 +131,7 @@ export function useSourceControlContext({
     sourceControl.hasRepo,
     sourceControl.repo,
     sourceControl.status?.branch,
+    live,
     graphContextPath,
     repositoryTarget,
     sidebarView,

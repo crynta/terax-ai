@@ -114,7 +114,7 @@ Terax एक हल्का, ओपन-सोर्स, टर्मिनल-�
 **आवश्यकताएँ**
 
 - Rust (stable), https://rustup.rs
-- Node 20+ और [pnpm](https://pnpm.io)
+- Node 22+ और [pnpm](https://pnpm.io)
 - आपके प्लेटफ़ॉर्म के लिए Tauri आवश्यकताएँ, https://tauri.app/start/prerequisites/
 
 **चलाएँ**

@@ -1,23 +1,19 @@
 use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
-use std::io::Read;
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::sync::mpsc;
-use std::sync::{Arc, Mutex, OnceLock};
-use std::thread;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
-
-use shared_child::SharedChild;
 
 use crate::modules::git::errors::{GitError, Result};
 use crate::modules::git::types::{
     GitOutput, TextSource, DEFAULT_TIMEOUT_SECS, MAX_FILE_BYTES, MAX_OUTPUT_BYTES,
     MAX_TIMEOUT_SECS, MIN_GIT_VERSION,
 };
-use crate::modules::workspace::WorkspaceEnv;
+use crate::modules::proc::capture::{self, Limits};
 #[cfg(windows)]
 use crate::modules::workspace::validate_wsl_distro_name;
+use crate::modules::workspace::WorkspaceEnv;
 
 #[derive(Clone)]
 enum Availability {
@@ -91,7 +87,7 @@ pub fn ensure_git_available(workspace: &WorkspaceEnv) -> Result<()> {
 }
 
 fn check_git_availability(workspace: &WorkspaceEnv) -> Availability {
-    let output = match run_git_uncached(workspace, None, ["--version"], 10) {
+    let output = match run_git(workspace, None, ["--version"], 10) {
         Ok(o) => o,
         Err(_) => return Availability::NotInstalled,
     };
@@ -231,7 +227,23 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    run_git_uncached(workspace, cwd, args, timeout_secs)
+    run_git_uncached(workspace, cwd, args, timeout_secs, MAX_OUTPUT_BYTES, false)
+}
+
+/// Like `run_git`, but kills git once it has produced `stdout_cap` bytes. For
+/// listings whose tail is not wanted, so a huge result costs a bounded walk.
+pub fn run_git_capped<I, S>(
+    workspace: &WorkspaceEnv,
+    cwd: Option<&str>,
+    args: I,
+    timeout_secs: u64,
+    stdout_cap: usize,
+) -> Result<GitOutput>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    run_git_uncached(workspace, cwd, args, timeout_secs, stdout_cap, true)
 }
 
 fn run_git_uncached<I, S>(
@@ -239,6 +251,8 @@ fn run_git_uncached<I, S>(
     cwd: Option<&str>,
     args: I,
     timeout_secs: u64,
+    stdout_cap: usize,
+    stop_on_stdout_cap: bool,
 ) -> Result<GitOutput>
 where
     I: IntoIterator<Item = S>,
@@ -262,45 +276,28 @@ where
         .stderr(Stdio::piped());
     crate::modules::proc::hide_console(&mut cmd);
 
-    let child = Arc::new(SharedChild::spawn(&mut cmd).map_err(|e| GitError::Spawn(e.to_string()))?);
-    let mut stdout_pipe = child
-        .take_stdout()
-        .ok_or_else(|| GitError::Spawn("no stdout pipe".into()))?;
-    let mut stderr_pipe = child
-        .take_stderr()
-        .ok_or_else(|| GitError::Spawn("no stderr pipe".into()))?;
-
-    let stdout_handle = thread::spawn(move || drain(&mut stdout_pipe, 64 * 1024));
-    let stderr_handle = thread::spawn(move || drain(&mut stderr_pipe, 4 * 1024));
-
-    let (tx, rx) = mpsc::channel();
-    let waiter = Arc::clone(&child);
-    thread::spawn(move || {
-        let _ = tx.send(waiter.wait());
-    });
-
-    let (exit_code, timed_out) = match rx.recv_timeout(dur) {
-        Ok(Ok(status)) => (status.code(), false),
-        Ok(Err(e)) => return Err(GitError::Io(e)),
-        Err(mpsc::RecvTimeoutError::Timeout) => {
-            let _ = child.kill();
-            let _ = child.wait();
-            (None, true)
+    let captured = capture::run(
+        &mut cmd,
+        dur,
+        Limits {
+            stdout: stdout_cap,
+            stderr: MAX_OUTPUT_BYTES,
+            stop_on_stdout_cap,
+        },
+    )
+    .map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound | std::io::ErrorKind::PermissionDenied => {
+            GitError::Spawn(e.to_string())
         }
-        Err(mpsc::RecvTimeoutError::Disconnected) => {
-            return Err(GitError::Spawn("git wait thread disconnected".into()));
-        }
-    };
-
-    let (stdout, stdout_truncated) = stdout_handle.join().unwrap_or((Vec::new(), false));
-    let (stderr, _stderr_truncated) = stderr_handle.join().unwrap_or((Vec::new(), false));
+        _ => GitError::Io(e),
+    })?;
 
     Ok(GitOutput {
-        stdout,
-        stderr,
-        exit_code,
-        timed_out,
-        truncated: stdout_truncated,
+        stdout: captured.stdout,
+        stderr: captured.stderr,
+        exit_code: captured.exit_code,
+        timed_out: captured.timed_out,
+        truncated: captured.stdout_truncated,
     })
 }
 
@@ -382,38 +379,16 @@ fn decode_text(bytes: Vec<u8>) -> TextSource {
     }
 }
 
-fn drain<R: Read>(reader: &mut R, prealloc: usize) -> (Vec<u8>, bool) {
-    let mut out: Vec<u8> = Vec::with_capacity(prealloc.min(MAX_OUTPUT_BYTES));
-    let mut buf = [0u8; 16 * 1024];
-    let mut truncated = false;
-    loop {
-        match reader.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => {
-                if out.len() >= MAX_OUTPUT_BYTES {
-                    truncated = true;
-                    continue;
-                }
-                let take = (MAX_OUTPUT_BYTES - out.len()).min(n);
-                out.extend_from_slice(&buf[..take]);
-                if take < n {
-                    truncated = true;
-                }
-            }
-            Err(_) => break,
-        }
-    }
-    (out, truncated)
-}
-
 #[cfg(test)]
 mod tests {
     #[cfg(windows)]
     use super::build_git_command;
     use super::{
-        parse_git_version, prune_expired_availability_entries, version_meets_minimum, Availability,
-        AvailabilityCache, AVAILABILITY_TTL,
+        classify_auth_error, decode_text, parse_git_version, prune_expired_availability_entries,
+        version_meets_minimum, Availability, AvailabilityCache, AVAILABILITY_TTL,
     };
+    use crate::modules::git::errors::GitError;
+    use crate::modules::git::types::TextSource;
     #[cfg(windows)]
     use crate::modules::workspace::WorkspaceEnv;
     use std::collections::HashMap;
@@ -518,5 +493,108 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.to_string().contains("unsafe WSL distro name"));
+    }
+
+    #[test]
+    fn detects_common_auth_failures_case_insensitively() {
+        for stderr in [
+            "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+            "error: could not read Password for 'https://example.com': No such device",
+            "remote: Authentication FAILED for the repository",
+            "git@github.com: Permission denied (publickey).",
+            "fatal: Invalid credentials for 'https://github.com'",
+        ] {
+            let err = classify_auth_error(stderr).expect("auth error detected");
+            assert!(matches!(err, GitError::AuthRequired(_)));
+        }
+    }
+
+    #[test]
+    fn host_key_verification_is_classified_separately() {
+        let err = classify_auth_error(
+            "@@@@@@@@@@@@@@@@@@@@@@@\nHost key verification failed.\nfatal: Could not read from remote repository.",
+        )
+        .expect("host key failure detected");
+        assert!(matches!(err, GitError::HostKeyUnverified));
+        assert!(!matches!(err, GitError::AuthRequired(_)));
+    }
+
+    #[test]
+    fn auth_error_carries_first_stderr_line() {
+        let err =
+            classify_auth_error("remote: denied\nfatal: could not read username\nmore detail")
+                .expect("auth error");
+        match err {
+            GitError::AuthRequired(line) => assert_eq!(line, "remote: denied"),
+            other => panic!("expected AuthRequired, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn classifies_host_key_verification_failure() {
+        assert!(matches!(
+            classify_auth_error("fatal: Host key verification failed."),
+            Some(GitError::HostKeyUnverified)
+        ));
+    }
+
+    #[test]
+    fn leaves_unrelated_stderr_untouched() {
+        assert!(
+            classify_auth_error("fatal: not a git repository (or any of the parent directories)")
+                .is_none()
+        );
+        assert!(classify_auth_error("").is_none());
+        assert!(
+            classify_auth_error("error: RPC failed because the HTTP client could not connect")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn decode_text_flags_nulls_as_binary() {
+        let mut bytes = b"hello".to_vec();
+        bytes.push(0);
+        bytes.extend_from_slice(b"world");
+        assert!(matches!(decode_text(bytes), TextSource::Binary));
+    }
+
+    #[test]
+    fn decode_text_passes_ascii_through() {
+        let expected = "main\n5c2f4cd fix(ai): route status-bar AI button\n";
+        let bytes = expected.as_bytes().to_vec();
+        match decode_text(bytes) {
+            TextSource::Text(text) => assert_eq!(text, expected),
+            TextSource::Binary => panic!("expected text, got binary"),
+            TextSource::Missing => panic!("expected text, got missing"),
+        }
+    }
+
+    #[test]
+    fn decode_text_lossy_for_invalid_utf8() {
+        let bytes = vec![b'a', 0xFF, b'b'];
+        match decode_text(bytes) {
+            TextSource::Text(s) => assert_eq!(s, "a\u{FFFD}b"),
+            TextSource::Binary => panic!("expected text, got binary"),
+            TextSource::Missing => panic!("expected text, got missing"),
+        }
+    }
+
+    #[test]
+    fn decode_text_binary_sniff_is_bounded() {
+        let mut bytes = vec![b'a'; 8192];
+        bytes.push(0);
+        match decode_text(bytes) {
+            TextSource::Text(_) => {}
+            TextSource::Binary => panic!("null beyond the sniff window must not be detected"),
+            TextSource::Missing => panic!("expected text, got missing"),
+        }
+    }
+
+    #[test]
+    fn decode_text_null_at_sniff_boundary() {
+        let mut within = vec![b'a'; 8191];
+        within.push(0);
+        assert!(matches!(decode_text(within), TextSource::Binary));
     }
 }

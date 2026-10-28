@@ -66,6 +66,16 @@ const SearchStatus = extern struct {
 const cell_buffer_alignment: usize = 256;
 const row_buffer_alignment: usize = 16;
 
+/// Selects which per-cell representation `restty_render_update` writes.
+///
+/// - `soa`: eleven structure-of-arrays cell buffers (codepoint, style, colors,
+///   grapheme offsets, ...). Used by the WebGL fallback and legacy consumers.
+/// - `gpu`: one packed 16-byte record per cell that a GPU shader can consume
+///   directly (see `GpuCell`), plus interned glyph ids. No SoA cell arrays.
+///
+/// Both formats keep hyperlink ids per cell and the per-row arrays.
+const RenderFormat = enum(u8) { soa = 0, gpu = 1 };
+
 fn nextBufferCapacity(current: usize, required: usize, alignment: usize) usize {
     if (required <= current) return current;
     const headroom = if (current == 0)
@@ -79,68 +89,109 @@ fn nextBufferCapacity(current: usize, required: usize, alignment: usize) usize {
     return ((target + alignment - 1) / alignment) * alignment;
 }
 
+/// Bump carver over the single cell-buffer arena. With an empty byte slice it
+/// only measures, which keeps the sizing pass and the carving pass identical.
+const ArenaCarver = struct {
+    bytes: []u8,
+    offset: usize = 0,
+
+    fn take(self: *ArenaCarver, comptime T: type, len: usize) []T {
+        self.offset = std.mem.alignForward(usize, self.offset, @alignOf(T));
+        const start = self.offset;
+        self.offset += @sizeOf(T) * len;
+        if (self.bytes.len == 0) return &.{};
+        const ptr: [*]T = @ptrCast(@alignCast(self.bytes.ptr + start));
+        return ptr[0..len];
+    }
+};
+
 const CellBuffers = struct {
-    storage: []u64,
-    codepoints: []u32,
-    content_tags: []u8,
-    wide: []u8,
-    flags: []u16,
-    style_flags: []u16,
-    underline_styles: []u8,
-    link_ids: []u32,
-    fg_rgba: []u32,
-    bg_rgba: []u32,
-    ul_rgba: []u32,
-    grapheme_offsets: []u32,
-    grapheme_lengths: []u32,
-    row_selection_start: []i16,
-    row_selection_end: []i16,
-    row_wrapped: []u8,
-    row_dirty: []u8,
+    storage: []u64 = &.{},
+    format: RenderFormat = .soa,
+    cell_capacity: usize = 0,
+    row_capacity: usize = 0,
 
-    const empty: CellBuffers = fromStorage(&.{}, 0, 0);
+    // SoA format only; empty slices in the GPU format.
+    codepoints: []u32 = &.{},
+    content_tags: []u8 = &.{},
+    wide: []u8 = &.{},
+    flags: []u16 = &.{},
+    style_flags: []u16 = &.{},
+    underline_styles: []u8 = &.{},
+    fg_rgba: []u32 = &.{},
+    bg_rgba: []u32 = &.{},
+    ul_rgba: []u32 = &.{},
+    grapheme_offsets: []u32 = &.{},
+    grapheme_lengths: []u32 = &.{},
 
-    fn ensureCapacity(self: *CellBuffers, alloc: Allocator, rows: u16, cols: u16) !bool {
+    // GPU format only: four u32 words (`GpuCell`) per cell.
+    records: []u32 = &.{},
+    // GPU format only: visible blinking glyph cells per row.
+    row_blink: []u16 = &.{},
+
+    // Both formats.
+    link_ids: []u32 = &.{},
+    row_selection_start: []i16 = &.{},
+    row_selection_end: []i16 = &.{},
+    row_wrapped: []u8 = &.{},
+    row_dirty: []u8 = &.{},
+
+    const empty: CellBuffers = .{};
+
+    fn ensureCapacity(
+        self: *CellBuffers,
+        alloc: Allocator,
+        format: RenderFormat,
+        rows: u16,
+        cols: u16,
+    ) !bool {
         const required_cells: usize = @as(usize, rows) * @as(usize, cols);
         const required_rows: usize = rows;
-        if (required_cells <= self.codepoints.len and required_rows <= self.row_dirty.len) {
+        const same_format = self.format == format;
+        if (same_format and
+            required_cells <= self.cell_capacity and
+            required_rows <= self.row_capacity)
+        {
             return false;
         }
 
         const cell_capacity = nextBufferCapacity(
-            self.codepoints.len,
+            if (same_format) self.cell_capacity else 0,
             required_cells,
             cell_buffer_alignment,
         );
         const row_capacity = nextBufferCapacity(
-            self.row_dirty.len,
+            if (same_format) self.row_capacity else 0,
             required_rows,
             row_buffer_alignment,
         );
         const storage = try alloc.realloc(
             self.storage,
-            storageWordCount(cell_capacity, row_capacity),
+            storageWordCount(format, cell_capacity, row_capacity),
         );
-        self.* = fromStorage(storage, cell_capacity, row_capacity);
+        self.* = fromStorage(storage, format, cell_capacity, row_capacity);
         @memset(self.row_dirty, 1);
+        @memset(self.row_blink, 0);
         return true;
     }
 
     fn compactCapacity(self: *CellBuffers, alloc: Allocator, rows: u16, cols: u16) !bool {
+        const format = self.format;
         const cell_capacity = nextBufferCapacity(
             0,
             @as(usize, rows) * @as(usize, cols),
             cell_buffer_alignment,
         );
         const row_capacity = nextBufferCapacity(0, rows, row_buffer_alignment);
-        const target_words = storageWordCount(cell_capacity, row_capacity);
+        const target_words = storageWordCount(format, cell_capacity, row_capacity);
         if (target_words >= self.storage.len or target_words * 3 > self.storage.len * 2) {
             return false;
         }
 
         const storage = try alloc.realloc(self.storage, target_words);
-        self.* = fromStorage(storage, cell_capacity, row_capacity);
+        self.* = fromStorage(storage, format, cell_capacity, row_capacity);
         @memset(self.row_dirty, 1);
+        @memset(self.row_blink, 0);
         return true;
     }
 
@@ -148,67 +199,70 @@ const CellBuffers = struct {
         alloc.free(self.storage);
     }
 
-    fn storageWordCount(cell_capacity: usize, row_capacity: usize) usize {
-        var byte_offset: usize = 0;
-        _ = reserveSlice(u32, &byte_offset, cell_capacity);
-        _ = reserveSlice(u8, &byte_offset, cell_capacity);
-        _ = reserveSlice(u8, &byte_offset, cell_capacity);
-        _ = reserveSlice(u16, &byte_offset, cell_capacity);
-        _ = reserveSlice(u16, &byte_offset, cell_capacity);
-        _ = reserveSlice(u8, &byte_offset, cell_capacity);
-        _ = reserveSlice(u32, &byte_offset, cell_capacity);
-        _ = reserveSlice(u32, &byte_offset, cell_capacity);
-        _ = reserveSlice(u32, &byte_offset, cell_capacity);
-        _ = reserveSlice(u32, &byte_offset, cell_capacity);
-        _ = reserveSlice(u32, &byte_offset, cell_capacity);
-        _ = reserveSlice(u32, &byte_offset, cell_capacity);
-        _ = reserveSlice(i16, &byte_offset, row_capacity);
-        _ = reserveSlice(i16, &byte_offset, row_capacity);
-        _ = reserveSlice(u8, &byte_offset, row_capacity);
-        _ = reserveSlice(u8, &byte_offset, row_capacity);
-        return (byte_offset + @sizeOf(u64) - 1) / @sizeOf(u64);
+    fn storageWordCount(format: RenderFormat, cell_capacity: usize, row_capacity: usize) usize {
+        const sized = carve(&.{}, format, cell_capacity, row_capacity);
+        return (sized.end + @sizeOf(u64) - 1) / @sizeOf(u64);
     }
 
-    fn fromStorage(storage: []u64, cell_capacity: usize, row_capacity: usize) CellBuffers {
-        const bytes = std.mem.sliceAsBytes(storage);
-        var byte_offset: usize = 0;
-        return .{
-            .storage = storage,
-            .codepoints = takeSlice(u32, bytes, &byte_offset, cell_capacity),
-            .content_tags = takeSlice(u8, bytes, &byte_offset, cell_capacity),
-            .wide = takeSlice(u8, bytes, &byte_offset, cell_capacity),
-            .flags = takeSlice(u16, bytes, &byte_offset, cell_capacity),
-            .style_flags = takeSlice(u16, bytes, &byte_offset, cell_capacity),
-            .underline_styles = takeSlice(u8, bytes, &byte_offset, cell_capacity),
-            .link_ids = takeSlice(u32, bytes, &byte_offset, cell_capacity),
-            .fg_rgba = takeSlice(u32, bytes, &byte_offset, cell_capacity),
-            .bg_rgba = takeSlice(u32, bytes, &byte_offset, cell_capacity),
-            .ul_rgba = takeSlice(u32, bytes, &byte_offset, cell_capacity),
-            .grapheme_offsets = takeSlice(u32, bytes, &byte_offset, cell_capacity),
-            .grapheme_lengths = takeSlice(u32, bytes, &byte_offset, cell_capacity),
-            .row_selection_start = takeSlice(i16, bytes, &byte_offset, row_capacity),
-            .row_selection_end = takeSlice(i16, bytes, &byte_offset, row_capacity),
-            .row_wrapped = takeSlice(u8, bytes, &byte_offset, row_capacity),
-            .row_dirty = takeSlice(u8, bytes, &byte_offset, row_capacity),
-        };
-    }
-
-    fn reserveSlice(comptime T: type, byte_offset: *usize, len: usize) usize {
-        byte_offset.* = std.mem.alignForward(usize, byte_offset.*, @alignOf(T));
-        const result = byte_offset.*;
-        byte_offset.* += @sizeOf(T) * len;
+    fn fromStorage(
+        storage: []u64,
+        format: RenderFormat,
+        cell_capacity: usize,
+        row_capacity: usize,
+    ) CellBuffers {
+        var result = carve(
+            std.mem.sliceAsBytes(storage),
+            format,
+            cell_capacity,
+            row_capacity,
+        ).buffers;
+        result.storage = storage;
         return result;
     }
 
-    fn takeSlice(
-        comptime T: type,
+    /// The only place the arena layout is defined. Slice order is stable per
+    /// format, so a resize within capacity never moves a pointer.
+    fn carve(
         bytes: []u8,
-        byte_offset: *usize,
-        len: usize,
-    ) []T {
-        const offset = reserveSlice(T, byte_offset, len);
-        const ptr: [*]T = @ptrCast(@alignCast(bytes.ptr + offset));
-        return ptr[0..len];
+        format: RenderFormat,
+        cell_capacity: usize,
+        row_capacity: usize,
+    ) struct { buffers: CellBuffers, end: usize } {
+        var arena: ArenaCarver = .{ .bytes = bytes };
+        var result: CellBuffers = .{
+            .format = format,
+            .cell_capacity = cell_capacity,
+            .row_capacity = row_capacity,
+        };
+        switch (format) {
+            .soa => {
+                result.codepoints = arena.take(u32, cell_capacity);
+                result.content_tags = arena.take(u8, cell_capacity);
+                result.wide = arena.take(u8, cell_capacity);
+                result.flags = arena.take(u16, cell_capacity);
+                result.style_flags = arena.take(u16, cell_capacity);
+                result.underline_styles = arena.take(u8, cell_capacity);
+                result.link_ids = arena.take(u32, cell_capacity);
+                result.fg_rgba = arena.take(u32, cell_capacity);
+                result.bg_rgba = arena.take(u32, cell_capacity);
+                result.ul_rgba = arena.take(u32, cell_capacity);
+                result.grapheme_offsets = arena.take(u32, cell_capacity);
+                result.grapheme_lengths = arena.take(u32, cell_capacity);
+            },
+            .gpu => {
+                // Must stay first: the arena base is 8-byte aligned, so every
+                // 16-byte record is too (`storeRecord` relies on it) and each
+                // row offset is a multiple of 16 for `queue.writeBuffer`.
+                result.records = arena.take(u32, cell_capacity * gpu_cell_words);
+                result.link_ids = arena.take(u32, cell_capacity);
+            },
+        }
+        result.row_selection_start = arena.take(i16, row_capacity);
+        result.row_selection_end = arena.take(i16, row_capacity);
+        result.row_wrapped = arena.take(u8, row_capacity);
+        result.row_dirty = arena.take(u8, row_capacity);
+        if (format == .gpu) result.row_blink = arena.take(u16, row_capacity);
+        return .{ .buffers = result, .end = arena.offset };
     }
 };
 
@@ -579,6 +633,18 @@ const StreamHandler = struct {
         }
     }
 
+    /// Cursor position for CPR/DECXCPR, relative to the scrolling region when
+    /// origin mode is set.
+    fn cursorReportPos(self: *StreamHandler) struct { x: usize, y: usize } {
+        return if (self.term.modes.get(.origin)) .{
+            .x = self.term.screens.active.cursor.x -| self.term.scrolling_region.left,
+            .y = self.term.screens.active.cursor.y -| self.term.scrolling_region.top,
+        } else .{
+            .x = self.term.screens.active.cursor.x,
+            .y = self.term.screens.active.cursor.y,
+        };
+    }
+
     fn deviceStatusReport(
         self: *StreamHandler,
         req: ghostty.device_status.Request,
@@ -586,16 +652,21 @@ const StreamHandler = struct {
         switch (req) {
             .operating_status => try self.appendOutput("\x1b[0n"),
             .cursor_position => {
-                const pos: struct { x: usize, y: usize } = if (self.term.modes.get(.origin)) .{
-                    .x = self.term.screens.active.cursor.x -| self.term.scrolling_region.left,
-                    .y = self.term.screens.active.cursor.y -| self.term.scrolling_region.top,
-                } else .{
-                    .x = self.term.screens.active.cursor.x,
-                    .y = self.term.screens.active.cursor.y,
-                };
+                const pos = self.cursorReportPos();
 
                 var buf: [64]u8 = undefined;
                 const resp = try std.fmt.bufPrint(&buf, "\x1b[{};{}R", .{
+                    pos.y + 1,
+                    pos.x + 1,
+                });
+                try self.appendOutput(resp);
+            },
+            // DECXCPR: extended cursor position adds a page number, always 1.
+            .cursor_position_extended => {
+                const pos = self.cursorReportPos();
+
+                var buf: [64]u8 = undefined;
+                const resp = try std.fmt.bufPrint(&buf, "\x1b[?{};{};1R", .{
                     pos.y + 1,
                     pos.x + 1,
                 });
@@ -656,6 +727,7 @@ const StreamHandler = struct {
             .csi_14_t => try ghostty.size_report.encode(&writer, .csi_14_t, size),
             .csi_16_t => try ghostty.size_report.encode(&writer, .csi_16_t, size),
             .csi_18_t => try ghostty.size_report.encode(&writer, .csi_18_t, size),
+            .csi_19_t => try ghostty.size_report.encode(&writer, .csi_19_t, size),
             .csi_21_t => unreachable,
         }
         try self.appendOutput(writer.buffered());
@@ -930,6 +1002,20 @@ const Restty = struct {
     damage_full: u8 = 1,
     render_update_count: u32 = 0,
     render_reset_count: u32 = 0,
+    render_format: RenderFormat = .soa,
+    /// GPU format only: glyph intern table, allocated on the first GPU update
+    /// and released with the rest of the presentation state.
+    glyphs: ?*GlyphTable = null,
+    /// Incremented whenever glyph ids are invalidated (table full, release,
+    /// compaction, format change). Starts at 1 so a consumer that has seen
+    /// epoch 0 resets before its first frame.
+    gpu_epoch: u32 = 1,
+    gpu_blinking_cells: u32 = 0,
+    gpu_any_dirty: u8 = 0,
+    /// Cells drawn as glyph 0 because the viewport alone exceeded the table.
+    gpu_glyph_overflow: u32 = 0,
+    /// Scratch for `restty_line_cells_prepare`.
+    line_cells: std.ArrayListUnmanaged(u32) = .empty,
     key_output: [max_key_output_bytes]u8 = undefined,
     key_output_len: u16 = 0,
     cursor: CursorInfo = .{
@@ -1001,6 +1087,242 @@ const SearchState = struct {
     fn isActive(self: *const SearchState) bool {
         return self.status.active != 0;
     }
+};
+
+// ---------------------------------------------------------------------------
+// GPU render format
+// ---------------------------------------------------------------------------
+//
+// In `RenderFormat.gpu` every viewport cell is one 16-byte record made of four
+// little-endian u32 words, stored row-major in one persistent buffer:
+//
+//   word0  bits  0..23  glyph id (0 = nothing is drawn)
+//          bits 24..26  underline style (0 none, 1 single, 2 double, 3 curly,
+//                                        4 dotted, 5 dashed)
+//          bit  27      strikethrough
+//          bit  28      overline
+//          bit  29      blink (the glyph blinks; decorations do not)
+//          bit  30      wide lead (this cell starts a two-cell glyph)
+//          bit  31      reserved, always 0
+//   word1  foreground RGBA8 (inverse applied; alpha 255, or 128 when faint)
+//   word2  background RGBA8 (inverse applied; alpha 255)
+//   word3  underline RGBA8  (alpha 255)
+//
+// The RGBA words hold bytes [r, g, b, a] in memory order, i.e. the exact
+// layout WGSL `unpack4x8unorm` expects (r is the least significant byte, so
+// `.x == r`). Spacer tails carry glyph 0 and copy the lead's colors and
+// decoration bits so a wide lead's background and underline cover both cells,
+// as the structure-of-arrays renderer does. Spacer heads draw nothing and use
+// the default colors.
+
+const gpu_cell_words: usize = 4;
+const gpu_cell_bytes: usize = gpu_cell_words * @sizeOf(u32);
+
+const GpuAttr = struct {
+    const shift: u5 = 24;
+    const underline_mask: u32 = 0x7;
+    const strikethrough: u32 = 1 << 3;
+    const overline: u32 = 1 << 4;
+    const blink: u32 = 1 << 5;
+    const wide_lead: u32 = 1 << 6;
+    const decoration_mask: u32 = underline_mask | strikethrough | overline;
+};
+
+const glyph_id_mask: u32 = 0x00FF_FFFF;
+const glyph_style_bold: u32 = 1 << 0;
+const glyph_style_italic: u32 = 1 << 1;
+const glyph_style_count: usize = 4;
+
+/// Glyph ids are dense from 1. The cap bounds table memory, the JavaScript
+/// id-to-atlas map and the GPU `glyph_map` storage buffer to 64 KiB each. A
+/// full table starts a new epoch (all ids are cleared and the viewport is
+/// re-encoded), which costs one atlas-cache lookup per distinct visible glyph
+/// and no rasterization, so the cap only has to exceed any realistic visible
+/// glyph set (CJK screens rarely exceed a few thousand distinct glyphs).
+const max_glyphs: usize = 16 * 1024;
+/// Bounds the append-only intern stream (records are `3 + codepoints` words)
+/// at 1 MiB so adversarial grapheme clusters cannot grow it past the id cap's
+/// footprint.
+const max_glyph_stream_words: usize = 256 * 1024;
+/// Tables larger than this are released by `restty_render_compact`.
+const max_glyphs_after_compact: usize = 2048;
+const max_retained_line_words: usize = 16 * 1024;
+const max_glyph_codepoints: usize = 1024;
+
+const ascii_glyph_slots: usize = 128 * glyph_style_count;
+
+const SequenceView = struct {
+    style: u32,
+    codepoints: []const u32,
+};
+
+/// Interning table for glyph ids: (codepoint or grapheme sequence, bold,
+/// italic) -> dense id. Records are appended to `stream` as
+/// `[id][style][codepoint_count][codepoints...]` and never move or change
+/// within an epoch, so the same bytes serve as both the identity key store and
+/// the buffer handed to JavaScript. `pending_start` marks the first record the
+/// consumer has not acknowledged yet.
+const GlyphTable = struct {
+    stream: std.ArrayListUnmanaged(u32) = .empty,
+    offsets: std.ArrayListUnmanaged(u32) = .empty,
+    ascii: [ascii_glyph_slots]u32 = [_]u32{0} ** ascii_glyph_slots,
+    singles: std.AutoHashMapUnmanaged(u32, u32) = .empty,
+    sequences: std.HashMapUnmanaged(
+        u32,
+        void,
+        SequenceContext,
+        std.hash_map.default_max_load_percentage,
+    ) = .empty,
+    pending_start: usize = 0,
+    acknowledged: u32 = 0,
+
+    const Error = error{ OutOfMemory, TableFull };
+
+    fn count(self: *const GlyphTable) u32 {
+        return @intCast(self.offsets.items.len);
+    }
+
+    fn deinit(self: *GlyphTable, alloc: Allocator) void {
+        self.stream.deinit(alloc);
+        self.offsets.deinit(alloc);
+        self.singles.deinit(alloc);
+        self.sequences.deinit(alloc);
+        self.* = .{};
+    }
+
+    /// Starts a new epoch: all ids become invalid.
+    fn reset(self: *GlyphTable) void {
+        self.stream.clearRetainingCapacity();
+        self.offsets.clearRetainingCapacity();
+        self.singles.clearRetainingCapacity();
+        self.sequences.clearRetainingCapacity();
+        @memset(&self.ascii, 0);
+        self.pending_start = 0;
+        self.acknowledged = 0;
+    }
+
+    fn acknowledge(self: *GlyphTable) void {
+        self.pending_start = self.stream.items.len;
+        self.acknowledged = self.count();
+    }
+
+    fn view(self: *const GlyphTable, id: u32) SequenceView {
+        const offset = self.offsets.items[id - 1];
+        const length = self.stream.items[offset + 2];
+        return .{
+            .style = self.stream.items[offset + 1],
+            .codepoints = self.stream.items[offset + 3 ..][0..length],
+        };
+    }
+
+    fn context(self: *const GlyphTable) SequenceContext {
+        return .{ .table = self };
+    }
+
+    fn append(
+        self: *GlyphTable,
+        alloc: Allocator,
+        style: u32,
+        codepoints: []const u32,
+    ) Error!u32 {
+        const words = 3 + codepoints.len;
+        if (self.offsets.items.len >= max_glyphs or
+            self.stream.items.len + words > max_glyph_stream_words)
+        {
+            return error.TableFull;
+        }
+        try self.offsets.ensureUnusedCapacity(alloc, 1);
+        try self.stream.ensureUnusedCapacity(alloc, words);
+        const id: u32 = @intCast(self.offsets.items.len + 1);
+        self.offsets.appendAssumeCapacity(@intCast(self.stream.items.len));
+        self.stream.appendAssumeCapacity(id);
+        self.stream.appendAssumeCapacity(style);
+        self.stream.appendAssumeCapacity(@intCast(codepoints.len));
+        self.stream.appendSliceAssumeCapacity(codepoints);
+        return id;
+    }
+
+    /// One codepoint without a grapheme sequence.
+    fn internSingle(
+        self: *GlyphTable,
+        alloc: Allocator,
+        codepoint: u32,
+        style: u32,
+    ) Error!u32 {
+        if (codepoint < 128) {
+            const slot = &self.ascii[codepoint * glyph_style_count + style];
+            if (slot.* != 0) return slot.*;
+            slot.* = try self.append(alloc, style, &.{codepoint});
+            return slot.*;
+        }
+        const key = (codepoint << 2) | style;
+        if (self.singles.get(key)) |id| return id;
+        try self.singles.ensureUnusedCapacity(alloc, 1);
+        const id = try self.append(alloc, style, &.{codepoint});
+        self.singles.putAssumeCapacity(key, id);
+        return id;
+    }
+
+    /// A grapheme cluster (two or more codepoints), interned by content.
+    fn internSequence(
+        self: *GlyphTable,
+        alloc: Allocator,
+        style: u32,
+        codepoints: []const u32,
+    ) Error!u32 {
+        const key: SequenceView = .{ .style = style, .codepoints = codepoints };
+        const adapter: SequenceAdapter = .{ .table = self };
+        if (self.sequences.getKeyAdapted(key, adapter)) |id| return id;
+        try self.sequences.ensureUnusedCapacityContext(alloc, 1, self.context());
+        const id = try self.append(alloc, style, codepoints);
+        self.sequences.putAssumeCapacityContext(id, {}, self.context());
+        return id;
+    }
+};
+
+fn hashSequence(view: SequenceView) u64 {
+    return std.hash.Wyhash.hash(view.style, std.mem.sliceAsBytes(view.codepoints));
+}
+
+const SequenceContext = struct {
+    table: *const GlyphTable,
+
+    pub fn hash(self: SequenceContext, id: u32) u64 {
+        return hashSequence(self.table.view(id));
+    }
+
+    pub fn eql(self: SequenceContext, a: u32, b: u32) bool {
+        const left = self.table.view(a);
+        const right = self.table.view(b);
+        return left.style == right.style and
+            std.mem.eql(u32, left.codepoints, right.codepoints);
+    }
+};
+
+const SequenceAdapter = struct {
+    table: *const GlyphTable,
+
+    pub fn hash(_: SequenceAdapter, key: SequenceView) u64 {
+        return hashSequence(key);
+    }
+
+    pub fn eql(self: SequenceAdapter, key: SequenceView, id: u32) bool {
+        const stored = self.table.view(id);
+        return stored.style == key.style and
+            std.mem.eql(u32, stored.codepoints, key.codepoints);
+    }
+};
+
+/// Per-style color and decoration state shared by consecutive cells of a row.
+const GpuStyleCache = struct {
+    style_id: u16 = std.math.maxInt(u16),
+    valid: bool = false,
+    fg: u32 = 0,
+    bg: u32 = 0,
+    ul: u32 = 0,
+    attrs: u32 = 0,
+    glyph_style: u32 = 0,
+    invisible: bool = false,
 };
 
 fn packRGBA(rgb: ghostty.color.RGB, a: u8) u32 {
@@ -1504,6 +1826,8 @@ pub export fn restty_destroy(handle: ?*Restty) void {
     h.semantic_markers.clear(h.alloc, &h.term);
     h.term.deinit(h.alloc);
     h.buffers.deinit(h.alloc);
+    releaseGlyphTable(h);
+    h.line_cells.deinit(h.alloc);
     h.graphemes.deinit(h.alloc);
     h.link_offsets.deinit(h.alloc);
     h.link_lengths.deinit(h.alloc);
@@ -1985,6 +2309,35 @@ pub export fn restty_resize(handle: ?*Restty, cols: u16, rows: u16) u32 {
     return @intFromEnum(ErrorCode.ok);
 }
 
+/// Changes the primary-screen scrollback limits at runtime. Lowering a limit
+/// prunes complete historical pages immediately; zero is rejected because it
+/// would erase history instead of bounding it.
+pub export fn restty_set_scrollback_limits(
+    handle: ?*Restty,
+    max_bytes: u32,
+    max_lines: u32,
+) u32 {
+    const h = handle orelse return @intFromEnum(ErrorCode.invalid_handle);
+    if (max_bytes == 0 or max_lines == 0) return @intFromEnum(ErrorCode.invalid_arg);
+    h.term.setScrollbackMaxBytes(max_bytes);
+    h.term.setScrollbackMaxLines(max_lines);
+    clearSelectionText(h);
+    reconcileSelectionAfterMutation(h.term.screens.active);
+    if (h.search.isActive()) {
+        h.search.viewport_dirty = true;
+        h.search.active_dirty = true;
+    }
+    return @intFromEnum(ErrorCode.ok);
+}
+
+/// Bytes of page memory the primary screen currently holds (scrollback plus
+/// the active area): the quantity the byte limit is compared against.
+pub export fn restty_scrollback_page_bytes(handle: ?*Restty) u32 {
+    const h = handle orelse return 0;
+    const screen = h.term.screens.get(.primary) orelse return 0;
+    return @intCast(@min(screen.pages.page_size, std.math.maxInt(u32)));
+}
+
 pub export fn restty_set_pixel_size(handle: ?*Restty, width_px: u32, height_px: u32) u32 {
     const h = handle orelse return @intFromEnum(ErrorCode.invalid_handle);
     if (width_px == 0 or height_px == 0) return @intFromEnum(ErrorCode.invalid_arg);
@@ -1993,49 +2346,57 @@ pub export fn restty_set_pixel_size(handle: ?*Restty, width_px: u32, height_px: 
     return @intFromEnum(ErrorCode.ok);
 }
 
-pub export fn restty_render_update(handle: ?*Restty) u32 {
-    const h = handle orelse return @intFromEnum(ErrorCode.invalid_handle);
-    collectKittyPlacements(h) catch return @intFromEnum(ErrorCode.out_of_memory);
-    if (h.render_update_count >= render_state_reset_interval) {
-        h.render_state.deinit(h.alloc);
-        h.render_state = .empty;
-        h.has_render_data = false;
-        h.render_update_count = 0;
-        h.render_reset_count +%= 1;
+const GpuWriteResult = enum { ok, table_full };
+
+/// Interns the hyperlink under `(x, y)` and returns its 1-based id, or 0.
+/// URIs are copied into bridge-owned storage so ids never point into pages
+/// that Ghostty may recycle.
+fn linkIdForCell(
+    h: *Restty,
+    link_context: LinkContext,
+    page_ptr: anytype,
+    x: usize,
+    y: usize,
+) error{OutOfMemory}!u32 {
+    const rac = page_ptr.getRowAndCell(x, y);
+    const link_id = page_ptr.lookupHyperlink(rac.cell) orelse return 0;
+    const link = page_ptr.hyperlink_set.get(page_ptr.memory, link_id);
+    const uri = link.uri.slice(page_ptr.memory);
+    if (uri.len == 0) return 0;
+    if (h.link_map.getKeyAdapted(uri, LinkAdapter{ .context = link_context })) |existing| {
+        return existing;
     }
-    h.render_state.update(h.alloc, &h.term) catch return @intFromEnum(ErrorCode.internal);
-    h.render_update_count += 1;
+    const offset: usize = h.link_buffer.items.len;
+    try h.link_buffer.appendSlice(h.alloc, uri);
+    try h.link_offsets.append(h.alloc, @intCast(offset));
+    try h.link_lengths.append(h.alloc, @intCast(uri.len));
+    const new_index: u32 = @intCast(h.link_offsets.items.len);
+    try h.link_map.putContext(h.alloc, new_index, {}, link_context);
+    return new_index;
+}
 
-    const new_rows: u16 = @intCast(h.render_state.rows);
-    const new_cols: u16 = @intCast(h.render_state.cols);
-    const expected_len: usize = @as(usize, new_rows) * @as(usize, new_cols);
+fn clearLinkTables(h: *Restty) void {
+    h.link_offsets.clearRetainingCapacity();
+    h.link_lengths.clearRetainingCapacity();
+    h.link_map.clearRetainingCapacity();
+    h.link_buffer.clearRetainingCapacity();
+}
 
-    if (new_rows != h.rows or new_cols != h.cols or h.buffers.codepoints.len < expected_len) {
-        _ = h.buffers.ensureCapacity(h.alloc, new_rows, new_cols) catch
-            return @intFromEnum(ErrorCode.out_of_memory);
-        h.rows = new_rows;
-        h.cols = new_cols;
-        h.has_render_data = false;
+fn writeRowMetadata(h: *Restty, r: usize, wrapped: bool, selection: ?[2]u16) void {
+    h.buffers.row_wrapped[r] = @intFromBool(wrapped);
+    if (selection) |sel| {
+        h.buffers.row_selection_start[r] = clampI16Unsigned(sel[0]);
+        h.buffers.row_selection_end[r] = clampI16Unsigned(sel[1]);
+    } else {
+        h.buffers.row_selection_start[r] = -1;
+        h.buffers.row_selection_end[r] = -1;
     }
+}
 
-    const native_damage = h.render_state.dirty;
-    const dynamic_buffers_need_compaction =
-        h.graphemes.items.len > max_retained_grapheme_codepoints or
-        h.link_buffer.items.len > max_retained_link_bytes or
-        h.link_offsets.items.len > max_retained_link_count;
-    const full_damage = !h.has_render_data or
-        native_damage == .full or
-        dynamic_buffers_need_compaction;
-
-    @memset(h.buffers.row_dirty[0..h.rows], 0);
-    if (full_damage) {
-        h.graphemes.clearRetainingCapacity();
-        h.link_offsets.clearRetainingCapacity();
-        h.link_lengths.clearRetainingCapacity();
-        h.link_map.clearRetainingCapacity();
-        h.link_buffer.clearRetainingCapacity();
-    }
-
+/// Structure-of-arrays encoding of every natively dirty row (or all rows on
+/// full damage). This is the original bridge format and is deliberately
+/// unchanged by the GPU format work.
+fn writeSoaRows(h: *Restty, full_damage: bool) error{OutOfMemory}!void {
     const row_data = h.render_state.row_data.slice();
     const row_pins = row_data.items(.pin);
     const row_cells = row_data.items(.cells);
@@ -2053,14 +2414,7 @@ pub export fn restty_render_update(handle: ?*Restty) u32 {
     while (r < h.rows) : (r += 1) {
         if (!full_damage and !row_native_dirty[r]) continue;
         h.buffers.row_dirty[r] = 1;
-        h.buffers.row_wrapped[r] = @intFromBool(row_raw[r].wrap_continuation);
-        if (row_selection[r]) |sel| {
-            h.buffers.row_selection_start[r] = clampI16Unsigned(sel[0]);
-            h.buffers.row_selection_end[r] = clampI16Unsigned(sel[1]);
-        } else {
-            h.buffers.row_selection_start[r] = -1;
-            h.buffers.row_selection_end[r] = -1;
-        }
+        writeRowMetadata(h, r, row_raw[r].wrap_continuation, row_selection[r]);
 
         const list = row_cells[r];
         const cell_slice = list.slice();
@@ -2112,8 +2466,7 @@ pub export fn restty_render_update(handle: ?*Restty) u32 {
                 const grapheme_slice = cell_graphemes[c];
                 const offset = h.graphemes.items.len;
                 if (grapheme_slice.len > 0) {
-                    h.graphemes.ensureUnusedCapacity(h.alloc, grapheme_slice.len) catch
-                        return @intFromEnum(ErrorCode.out_of_memory);
+                    try h.graphemes.ensureUnusedCapacity(h.alloc, grapheme_slice.len);
                     for (grapheme_slice) |cp| {
                         h.graphemes.appendAssumeCapacity(@intCast(cp));
                     }
@@ -2126,32 +2479,391 @@ pub export fn restty_render_update(handle: ?*Restty) u32 {
             }
 
             if (raw.hyperlink) {
-                const rac = page_ptr.getRowAndCell(@intCast(c), pin.y);
-                if (page_ptr.lookupHyperlink(rac.cell)) |link_id| {
-                    const link = page_ptr.hyperlink_set.get(page_ptr.memory, link_id);
-                    const uri = link.uri.slice(page_ptr.memory);
-                    if (uri.len > 0) {
-                        const existing = h.link_map.getKeyAdapted(uri, LinkAdapter{ .context = link_context });
-                        const link_index: u32 = if (existing) |val| val else blk: {
-                            const offset: usize = h.link_buffer.items.len;
-                            h.link_buffer.appendSlice(h.alloc, uri) catch
-                                return @intFromEnum(ErrorCode.out_of_memory);
-                            h.link_offsets.append(h.alloc, @intCast(offset)) catch
-                                return @intFromEnum(ErrorCode.out_of_memory);
-                            h.link_lengths.append(h.alloc, @intCast(uri.len)) catch
-                                return @intFromEnum(ErrorCode.out_of_memory);
-                            const new_index: u32 = @intCast(h.link_offsets.items.len);
-                            h.link_map.putContext(h.alloc, new_index, {}, link_context) catch
-                                return @intFromEnum(ErrorCode.out_of_memory);
-                            break :blk new_index;
-                        };
-                        h.buffers.link_ids[idx] = link_index;
-                    }
-                }
+                h.buffers.link_ids[idx] = try linkIdForCell(h, link_context, page_ptr, c, pin.y);
             }
 
             idx += 1;
         }
+    }
+}
+
+/// Stores a record and returns a non-zero value if it differs from the one
+/// it replaced. Two 64-bit compares halve the memory operations of four words.
+inline fn storeRecord(slot: *[gpu_cell_words]u32, words: [4]u32) u64 {
+    const wide: *[2]u64 = @ptrCast(@alignCast(slot));
+    const first = @as(u64, words[0]) | (@as(u64, words[1]) << 32);
+    const second = @as(u64, words[2]) | (@as(u64, words[3]) << 32);
+    const changed = (wide[0] ^ first) | (wide[1] ^ second);
+    wide[0] = first;
+    wide[1] = second;
+    return changed;
+}
+
+/// Resolves everything a record needs from one style. `raw` supplies the
+/// cell-local background for color-only cells.
+fn resolveGpuStyle(
+    style: ghostty.Style,
+    raw: *const ghostty.Cell,
+    palette: anytype,
+    default_fg: ghostty.color.RGB,
+    default_bg: ghostty.color.RGB,
+) GpuStyleCache {
+    // Same source colors as the structure-of-arrays path so both formats agree.
+    const fg = style.fg(.{ .default = default_fg, .palette = palette, .bold = null });
+    const bg = style.bg(raw, palette) orelse default_bg;
+    const ul = style.underlineColor(palette) orelse
+        if (style.flags.inverse) bg else fg;
+    const shown_fg = if (style.flags.inverse) bg else fg;
+    const shown_bg = if (style.flags.inverse) fg else bg;
+
+    var attrs: u32 = @intFromEnum(style.flags.underline);
+    if (style.flags.strikethrough) attrs |= GpuAttr.strikethrough;
+    if (style.flags.overline) attrs |= GpuAttr.overline;
+    if (style.flags.blink) attrs |= GpuAttr.blink;
+
+    var glyph_style: u32 = 0;
+    if (style.flags.bold) glyph_style |= glyph_style_bold;
+    if (style.flags.italic) glyph_style |= glyph_style_italic;
+
+    return .{
+        .valid = true,
+        .fg = packRGBA(shown_fg, if (style.flags.faint) 128 else 0xFF),
+        .bg = packRGBA(shown_bg, 0xFF),
+        .ul = packRGBA(ul, 0xFF),
+        .attrs = attrs,
+        .glyph_style = glyph_style,
+        .invisible = style.flags.invisible,
+    };
+}
+
+const InternOutcome = union(enum) {
+    glyph: u32,
+    table_full,
+};
+
+/// Slow path of glyph lookup for one cell: sequences, non-ASCII codepoints,
+/// first sight of an ASCII glyph, Kitty placeholders and overflow handling.
+fn internCell(
+    h: *Restty,
+    table: *GlyphTable,
+    codepoint: u32,
+    extras: []const u21,
+    style: u32,
+    sequence: *[max_glyph_codepoints]u32,
+    allow_overflow: bool,
+) error{OutOfMemory}!InternOutcome {
+    const is_kitty_placeholder = if (comptime kitty_graphics_enabled)
+        codepoint == ghostty.kitty.graphics.unicode.placeholder
+    else
+        false;
+    if (is_kitty_placeholder) return .{ .glyph = 0 };
+    if (extras.len + 1 > max_glyph_codepoints) {
+        // An absurdly long cluster is never interned.
+        h.gpu_glyph_overflow +|= 1;
+        return .{ .glyph = 0 };
+    }
+    const interned = if (extras.len == 0)
+        table.internSingle(h.alloc, codepoint, style)
+    else blk: {
+        sequence[0] = codepoint;
+        for (extras, 1..) |cp, i| sequence[i] = cp;
+        break :blk table.internSequence(h.alloc, style, sequence[0 .. extras.len + 1]);
+    };
+    return .{ .glyph = interned catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.TableFull => {
+            if (!allow_overflow) return .table_full;
+            h.gpu_glyph_overflow +|= 1;
+            return .{ .glyph = 0 };
+        },
+    } };
+}
+
+/// GPU record encoding. Every row is encoded when `rewrite_all` (Ghostty
+/// reports full damage, for example after a scroll or palette change), else
+/// only natively dirty rows. A row is reported dirty only when one of its
+/// words differs from the record already stored, or when `invalidate_all`
+/// says the stored records are stale (first frame, resize, new epoch...).
+/// Returns `.table_full` (after partial writes) when the glyph table cannot
+/// hold another glyph; the caller starts a new epoch and re-encodes the
+/// viewport with `allow_overflow` set.
+fn writeGpuRows(
+    h: *Restty,
+    rewrite_all: bool,
+    invalidate_all: bool,
+    allow_overflow: bool,
+) error{OutOfMemory}!GpuWriteResult {
+    const table = h.glyphs.?;
+    const rows: usize = h.rows;
+    const cols: usize = h.cols;
+
+    const row_data = h.render_state.row_data.slice();
+    const row_pins = row_data.items(.pin);
+    const row_cells = row_data.items(.cells);
+    const row_selection = row_data.items(.selection);
+    const row_raw = row_data.items(.raw);
+    const row_native_dirty = row_data.items(.dirty);
+
+    const palette = &h.render_state.colors.palette;
+    const default_fg = h.render_state.colors.foreground;
+    const default_bg = h.render_state.colors.background;
+    // An empty default-style cell, also what a spacer head draws.
+    const default_fg_word = packRGBA(default_fg, 0xFF);
+    const blank_words: [4]u32 = .{
+        0,
+        default_fg_word,
+        packRGBA(default_bg, 0xFF),
+        default_fg_word,
+    };
+
+    const link_context: LinkContext = .{ .h = h };
+
+    var blinking: u32 = if (rewrite_all) 0 else h.gpu_blinking_cells;
+    if (rewrite_all) @memset(h.buffers.row_blink[0..rows], 0);
+    var sequence: [max_glyph_codepoints]u32 = undefined;
+
+    var r: usize = 0;
+    while (r < rows) : (r += 1) {
+        if (!rewrite_all and !row_native_dirty[r]) continue;
+        writeRowMetadata(h, r, row_raw[r].wrap_continuation, row_selection[r]);
+
+        const list = row_cells[r];
+        const cell_slice = list.slice();
+        const raw_cells = cell_slice.items(.raw);
+        const cell_graphemes = cell_slice.items(.grapheme);
+        const cell_styles = cell_slice.items(.style);
+        const pin = row_pins[r];
+        const page_ptr = pin.node.page();
+
+        const link_ids = h.buffers.link_ids[r * cols ..][0..cols];
+        @memset(link_ids, 0);
+        const records = h.buffers.records[r * cols * gpu_cell_words ..][0 .. cols * gpu_cell_words];
+
+        var diff: u64 = 0;
+        var blink_cells: u16 = 0;
+        var cache: GpuStyleCache = .{};
+        var scratch: GpuStyleCache = undefined;
+        var lead: ?[4]u32 = null;
+
+        var c: usize = 0;
+        while (c < cols) : (c += 1) {
+            const raw = raw_cells[c];
+            const slot = records[c * gpu_cell_words ..][0..gpu_cell_words];
+
+            // Fast path: the all-zero cell is the default style with no text.
+            if (@as(u64, @bitCast(raw)) == 0) {
+                diff |= storeRecord(slot, blank_words);
+                lead = null;
+                continue;
+            }
+
+            const bg_only = switch (raw.content_tag) {
+                .bg_color_palette, .bg_color_rgb => true,
+                .codepoint, .codepoint_grapheme => false,
+            };
+
+            // Color-only cells take their background from the cell itself, so
+            // they bypass the per-style cache.
+            const resolved: *const GpuStyleCache = if (bg_only) blk: {
+                const style: ghostty.Style = if (raw.style_id != 0) cell_styles[c] else .{};
+                scratch = resolveGpuStyle(style, &raw, palette, default_fg, default_bg);
+                break :blk &scratch;
+            } else blk: {
+                if (!cache.valid or cache.style_id != raw.style_id) {
+                    const style: ghostty.Style = if (raw.style_id != 0) cell_styles[c] else .{};
+                    cache = resolveGpuStyle(style, &raw, palette, default_fg, default_bg);
+                    cache.style_id = raw.style_id;
+                }
+                break :blk &cache;
+            };
+
+            var words: [4]u32 = undefined;
+            switch (raw.wide) {
+                .spacer_head => {
+                    // A wide glyph continues on the next row; draw nothing.
+                    words = blank_words;
+                },
+                .spacer_tail => {
+                    if (lead) |l| {
+                        const decoration = ((l[0] >> GpuAttr.shift) & GpuAttr.decoration_mask) << GpuAttr.shift;
+                        words = .{ decoration, l[1], l[2], l[3] };
+                    } else {
+                        words = .{
+                            (resolved.attrs & GpuAttr.decoration_mask) << GpuAttr.shift,
+                            resolved.fg,
+                            resolved.bg,
+                            resolved.ul,
+                        };
+                    }
+                },
+                .narrow, .wide => {
+                    const codepoint: u32 = raw.codepoint();
+                    var glyph: u32 = 0;
+                    if (codepoint > 32 and !resolved.invisible) {
+                        // Plain ASCII is the overwhelmingly common case: one
+                        // table read, no hashing, no grapheme or placeholder test.
+                        const ascii_hit: u32 = if (codepoint < 128 and !raw.hasGrapheme())
+                            table.ascii[codepoint * glyph_style_count + resolved.glyph_style]
+                        else
+                            0;
+                        if (ascii_hit != 0) {
+                            glyph = ascii_hit;
+                        } else {
+                            glyph = switch (try internCell(
+                                h,
+                                table,
+                                codepoint,
+                                if (raw.hasGrapheme()) cell_graphemes[c] else &.{},
+                                resolved.glyph_style,
+                                &sequence,
+                                allow_overflow,
+                            )) {
+                                .glyph => |id| id,
+                                .table_full => return .table_full,
+                            };
+                        }
+                    }
+
+                    var attrs = resolved.attrs;
+                    if (raw.wide == .wide) attrs |= GpuAttr.wide_lead;
+                    if (glyph != 0 and (attrs & GpuAttr.blink) != 0) blink_cells += 1;
+                    words = .{
+                        glyph | (attrs << GpuAttr.shift),
+                        resolved.fg,
+                        resolved.bg,
+                        resolved.ul,
+                    };
+                },
+            }
+            lead = if (raw.wide == .wide) words else null;
+
+            if (raw.hyperlink) {
+                link_ids[c] = try linkIdForCell(h, link_context, page_ptr, c, pin.y);
+            }
+
+            diff |= storeRecord(slot, words);
+        }
+
+        h.buffers.row_dirty[r] = @intFromBool(invalidate_all or diff != 0);
+        blinking = blinking - h.buffers.row_blink[r] + blink_cells;
+        h.buffers.row_blink[r] = blink_cells;
+    }
+
+    h.gpu_blinking_cells = blinking;
+    return .ok;
+}
+
+fn releaseGlyphTable(h: *Restty) void {
+    if (h.glyphs) |table| {
+        table.deinit(h.alloc);
+        h.alloc.destroy(table);
+        h.glyphs = null;
+    }
+    // Ids from the released table are meaningless, whether or not one existed.
+    h.gpu_epoch +%= 1;
+    h.gpu_blinking_cells = 0;
+    h.gpu_any_dirty = 0;
+}
+
+fn releaseLineScratch(h: *Restty) void {
+    h.line_cells.deinit(h.alloc);
+    h.line_cells = .empty;
+}
+
+pub export fn restty_render_update(handle: ?*Restty) u32 {
+    const h = handle orelse return @intFromEnum(ErrorCode.invalid_handle);
+    collectKittyPlacements(h) catch return @intFromEnum(ErrorCode.out_of_memory);
+    if (h.render_update_count >= render_state_reset_interval) {
+        h.render_state.deinit(h.alloc);
+        h.render_state = .empty;
+        h.has_render_data = false;
+        h.render_update_count = 0;
+        h.render_reset_count +%= 1;
+    }
+    h.render_state.update(h.alloc, &h.term) catch return @intFromEnum(ErrorCode.internal);
+    h.render_update_count += 1;
+
+    const gpu = h.render_format == .gpu;
+    const new_rows: u16 = @intCast(h.render_state.rows);
+    const new_cols: u16 = @intCast(h.render_state.cols);
+    const expected_len: usize = @as(usize, new_rows) * @as(usize, new_cols);
+
+    if (new_rows != h.rows or
+        new_cols != h.cols or
+        h.buffers.format != h.render_format or
+        h.buffers.cell_capacity < expected_len)
+    {
+        _ = h.buffers.ensureCapacity(h.alloc, h.render_format, new_rows, new_cols) catch
+            return @intFromEnum(ErrorCode.out_of_memory);
+        h.rows = new_rows;
+        h.cols = new_cols;
+        h.has_render_data = false;
+    }
+
+    const native_damage = h.render_state.dirty;
+    const dynamic_buffers_need_compaction =
+        h.graphemes.items.len > max_retained_grapheme_codepoints or
+        h.link_buffer.items.len > max_retained_link_bytes or
+        h.link_offsets.items.len > max_retained_link_count;
+    var full_damage = !h.has_render_data or
+        native_damage == .full or
+        dynamic_buffers_need_compaction;
+
+    @memset(h.buffers.row_dirty[0..h.rows], 0);
+    if (gpu) {
+        // Stored records are stale (every row must be uploaded) only when no
+        // render data exists for this geometry or the glyph ids were
+        // invalidated. Other full damage (a scroll, a palette change) still
+        // re-encodes every row but compares it with the stored record, so
+        // rows whose bytes are unchanged are not reported.
+        var invalidate_all = !h.has_render_data;
+        if (h.glyphs == null) {
+            h.glyphs = h.alloc.create(GlyphTable) catch
+                return @intFromEnum(ErrorCode.out_of_memory);
+            h.glyphs.?.* = .{};
+            invalidate_all = true;
+            full_damage = true;
+        }
+        var allow_overflow = false;
+        while (true) {
+            if (full_damage) clearLinkTables(h);
+            const result = writeGpuRows(h, full_damage, invalidate_all, allow_overflow) catch {
+                // Records were partly rewritten without reporting the rows:
+                // the next update must treat every stored record as stale.
+                h.has_render_data = false;
+                return @intFromEnum(ErrorCode.out_of_memory);
+            };
+            if (result == .ok) break;
+
+            // The table is full: start a new epoch and re-encode everything.
+            // A second overflow means the viewport alone has more distinct
+            // glyphs than the table holds; those cells draw nothing.
+            h.glyphs.?.reset();
+            h.gpu_epoch +%= 1;
+            h.gpu_blinking_cells = 0;
+            full_damage = true;
+            invalidate_all = true;
+            allow_overflow = true;
+            @memset(h.buffers.row_dirty[0..h.rows], 0);
+        }
+        // `damage_full` below reports invalidation, not merely native full damage.
+        full_damage = invalidate_all;
+        var any_dirty = full_damage;
+        if (!any_dirty) {
+            for (h.buffers.row_dirty[0..h.rows]) |dirty| {
+                if (dirty != 0) {
+                    any_dirty = true;
+                    break;
+                }
+            }
+        }
+        h.gpu_any_dirty = @intFromBool(any_dirty);
+    } else {
+        if (full_damage) {
+            h.graphemes.clearRetainingCapacity();
+            clearLinkTables(h);
+        }
+        writeSoaRows(h, full_damage) catch return @intFromEnum(ErrorCode.out_of_memory);
     }
 
     h.has_render_data = true;
@@ -2178,12 +2890,51 @@ pub export fn restty_render_update(handle: ?*Restty) u32 {
     return @intFromEnum(ErrorCode.ok);
 }
 
+/// Selects the per-cell format written by `restty_render_update`: 0 =
+/// structure-of-arrays (default), 1 = GPU records. Changing the format
+/// releases the other format's buffers and forces full damage on the next
+/// update; setting the current format is a no-op.
+pub export fn restty_set_render_format(handle: ?*Restty, format: u32) u32 {
+    const h = handle orelse return @intFromEnum(ErrorCode.invalid_handle);
+    const next: RenderFormat = switch (format) {
+        0 => .soa,
+        1 => .gpu,
+        else => return @intFromEnum(ErrorCode.invalid_arg),
+    };
+    if (next == h.render_format) return @intFromEnum(ErrorCode.ok);
+
+    h.render_format = next;
+    h.buffers.deinit(h.alloc);
+    h.buffers = .empty;
+    releaseGlyphTable(h);
+    h.graphemes.deinit(h.alloc);
+    h.graphemes = .empty;
+    h.link_offsets.deinit(h.alloc);
+    h.link_offsets = .empty;
+    h.link_lengths.deinit(h.alloc);
+    h.link_lengths = .empty;
+    h.link_map.deinit(h.alloc);
+    h.link_map = .empty;
+    h.link_buffer.deinit(h.alloc);
+    h.link_buffer = .empty;
+    h.has_render_data = false;
+    h.damage_full = 1;
+    return @intFromEnum(ErrorCode.ok);
+}
+
+pub export fn restty_render_format(handle: ?*Restty) u32 {
+    const h = handle orelse return 0;
+    return @intFromEnum(h.render_format);
+}
+
 pub export fn restty_render_release(handle: ?*Restty) void {
     const h = handle orelse return;
     h.render_state.deinit(h.alloc);
     h.render_state = .empty;
     h.buffers.deinit(h.alloc);
     h.buffers = .empty;
+    releaseGlyphTable(h);
+    releaseLineScratch(h);
     h.graphemes.deinit(h.alloc);
     h.graphemes = .empty;
     h.link_offsets.deinit(h.alloc);
@@ -2205,6 +2956,10 @@ pub export fn restty_render_compact(handle: ?*Restty) u32 {
     const h = handle orelse return @intFromEnum(ErrorCode.invalid_handle);
     _ = h.buffers.compactCapacity(h.alloc, h.rows, h.cols) catch
         return @intFromEnum(ErrorCode.out_of_memory);
+    if (h.glyphs) |table| {
+        if (table.offsets.items.len > max_glyphs_after_compact) releaseGlyphTable(h);
+    }
+    releaseLineScratch(h);
     h.render_state.deinit(h.alloc);
     h.render_state = .empty;
     h.has_render_data = false;
@@ -2215,17 +2970,172 @@ pub export fn restty_render_compact(handle: ?*Restty) u32 {
 
 pub export fn restty_cells_ptr(handle: ?*Restty) usize {
     const h = handle orelse return 0;
-    return @intFromPtr(h.buffers.codepoints.ptr);
+    return switch (h.buffers.format) {
+        .soa => @intFromPtr(h.buffers.codepoints.ptr),
+        .gpu => @intFromPtr(h.buffers.records.ptr),
+    };
 }
 
 pub export fn restty_cells_len(handle: ?*Restty) u32 {
     const h = handle orelse return 0;
-    return @intCast(h.buffers.codepoints.len);
+    return @intCast(h.buffers.cell_capacity);
 }
 
 pub export fn restty_cell_capacity(handle: ?*Restty) u32 {
     const h = handle orelse return 0;
-    return @intCast(h.buffers.codepoints.len);
+    return @intCast(h.buffers.cell_capacity);
+}
+
+/// Bytes per GPU cell record (four little-endian u32 words).
+pub export fn restty_gpu_cell_stride() u32 {
+    return @intCast(gpu_cell_bytes);
+}
+
+/// First byte of the `rows * cols` GPU records written by the last update, or
+/// 0 when the GPU format has no buffer (not selected, never updated, released).
+pub export fn restty_gpu_cells_ptr(handle: ?*Restty) usize {
+    const h = handle orelse return 0;
+    if (h.buffers.format != .gpu or h.buffers.records.len == 0) return 0;
+    return @intFromPtr(h.buffers.records.ptr);
+}
+
+/// 1 when at least one row's records changed in the last update (always 1
+/// after full damage).
+pub export fn restty_gpu_any_dirty(handle: ?*Restty) u32 {
+    const h = handle orelse return 1;
+    return h.gpu_any_dirty;
+}
+
+/// Glyph-id epoch. When it differs from the value a consumer last saw, every
+/// previously received glyph id is invalid; the next update also reports full
+/// damage and `restty_gpu_new_glyphs_*` then lists the complete new table.
+pub export fn restty_gpu_epoch(handle: ?*Restty) u32 {
+    const h = handle orelse return 0;
+    return h.gpu_epoch;
+}
+
+/// Visible cells with the blink attribute and a drawn glyph.
+pub export fn restty_gpu_blinking_cells(handle: ?*Restty) u32 {
+    const h = handle orelse return 0;
+    return h.gpu_blinking_cells;
+}
+
+/// Glyph ids interned in the current epoch (ids are 1..=count).
+pub export fn restty_gpu_glyph_count(handle: ?*Restty) u32 {
+    const h = handle orelse return 0;
+    return if (h.glyphs) |table| table.count() else 0;
+}
+
+/// Cells drawn as glyph 0 because the visible glyph set exceeded the table.
+pub export fn restty_gpu_glyph_overflow(handle: ?*Restty) u32 {
+    const h = handle orelse return 0;
+    return h.gpu_glyph_overflow;
+}
+
+/// Glyph records interned since the last `restty_gpu_glyphs_ack`, as
+/// `[id][style][codepoint_count][codepoints...]` u32 words. The pointer is
+/// valid until the next update, ack, release or compaction.
+pub export fn restty_gpu_new_glyphs_ptr(handle: ?*Restty) usize {
+    const h = handle orelse return 0;
+    const table = h.glyphs orelse return 0;
+    if (table.pending_start >= table.stream.items.len) return 0;
+    return @intFromPtr(table.stream.items.ptr + table.pending_start);
+}
+
+pub export fn restty_gpu_new_glyphs_len(handle: ?*Restty) u32 {
+    const h = handle orelse return 0;
+    const table = h.glyphs orelse return 0;
+    return @intCast(table.stream.items.len - table.pending_start);
+}
+
+/// Marks every glyph interned so far as delivered.
+pub export fn restty_gpu_glyphs_ack(handle: ?*Restty) void {
+    const h = handle orelse return;
+    if (h.glyphs) |table| table.acknowledge();
+}
+
+/// The complete glyph table of the current epoch in the same record format
+/// (for a consumer that must rebuild its id map without a full repaint).
+pub export fn restty_gpu_glyphs_ptr(handle: ?*Restty) usize {
+    const h = handle orelse return 0;
+    const table = h.glyphs orelse return 0;
+    return if (table.stream.items.len == 0) 0 else @intFromPtr(table.stream.items.ptr);
+}
+
+pub export fn restty_gpu_glyphs_len(handle: ?*Restty) u32 {
+    const h = handle orelse return 0;
+    const table = h.glyphs orelse return 0;
+    return @intCast(table.stream.items.len);
+}
+
+/// Decodes screen lines `first_line..=last_line` (absolute, scrollback
+/// included) straight from the page list without moving the viewport or
+/// touching the render state, in either render format. Output words, per line:
+/// `[wrap_continuation]` then per column `[n][n codepoints]` where n = 0 for a
+/// wide-character spacer, 1 + extras for a grapheme cluster, and a blank cell
+/// is one space.
+pub export fn restty_line_cells_prepare(handle: ?*Restty, first_line: u32, last_line: u32) u32 {
+    const h = handle orelse return @intFromEnum(ErrorCode.invalid_handle);
+    if (last_line < first_line) return @intFromEnum(ErrorCode.invalid_arg);
+    const screen = h.term.screens.active;
+    const total = screen.pages.scrollbar().total;
+    if (first_line >= total) return @intFromEnum(ErrorCode.invalid_arg);
+    const last = @min(last_line, @as(u32, @intCast(total - 1)));
+
+    if (h.line_cells.capacity > max_retained_line_words) releaseLineScratch(h);
+    h.line_cells.clearRetainingCapacity();
+
+    const first_pin = pinForBufferPoint(screen, first_line, 0) orelse
+        return @intFromEnum(ErrorCode.invalid_arg);
+    const last_pin = pinForBufferPoint(screen, last, 0) orelse
+        return @intFromEnum(ErrorCode.invalid_arg);
+
+    var rows = first_pin.rowIterator(.right_down, last_pin);
+    while (rows.next()) |pin| {
+        const cells = pin.cells(.all);
+        h.line_cells.ensureUnusedCapacity(h.alloc, 1 + cells.len * 2) catch
+            return @intFromEnum(ErrorCode.out_of_memory);
+        h.line_cells.appendAssumeCapacity(@intFromBool(pin.rowAndCell().row.wrap_continuation));
+        for (cells) |*cell| {
+            switch (cell.wide) {
+                .spacer_tail, .spacer_head => {
+                    h.line_cells.appendAssumeCapacity(0);
+                    continue;
+                },
+                .narrow, .wide => {},
+            }
+            const codepoint: u32 = cell.codepoint();
+            const is_kitty_placeholder = if (comptime kitty_graphics_enabled)
+                codepoint == ghostty.kitty.graphics.unicode.placeholder
+            else
+                false;
+            const extras: []const u21 = if (cell.hasGrapheme() and !is_kitty_placeholder)
+                pin.grapheme(cell) orelse &.{}
+            else
+                &.{};
+            h.line_cells.ensureUnusedCapacity(h.alloc, 1 + extras.len) catch
+                return @intFromEnum(ErrorCode.out_of_memory);
+            h.line_cells.appendAssumeCapacity(@intCast(1 + extras.len));
+            h.line_cells.appendAssumeCapacity(if (codepoint == 0) ' ' else codepoint);
+            for (extras) |cp| h.line_cells.appendAssumeCapacity(cp);
+        }
+    }
+    return @intFromEnum(ErrorCode.ok);
+}
+
+pub export fn restty_line_cells_ptr(handle: ?*Restty) usize {
+    const h = handle orelse return 0;
+    return if (h.line_cells.items.len == 0) 0 else @intFromPtr(h.line_cells.items.ptr);
+}
+
+pub export fn restty_line_cells_len(handle: ?*Restty) u32 {
+    const h = handle orelse return 0;
+    return @intCast(h.line_cells.items.len);
+}
+
+pub export fn restty_line_cells_release(handle: ?*Restty) void {
+    const h = handle orelse return;
+    if (h.line_cells.capacity > max_retained_line_words) releaseLineScratch(h);
 }
 
 pub export fn restty_row_capacity(handle: ?*Restty) u32 {

@@ -1,8 +1,8 @@
-export type ShellPhase = "prompt" | "running";
+type ShellPhase = "prompt" | "running";
 
 export type BlockMode = "prompt" | "running" | "alt" | "plain";
 
-export type Osc133Marker = "A" | "B" | "C" | "D";
+type Osc133Marker = "A" | "B" | "C" | "D";
 
 export type ModeEvent =
   | { type: "osc133"; marker: Osc133Marker }

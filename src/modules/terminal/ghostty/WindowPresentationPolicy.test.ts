@@ -48,4 +48,28 @@ describe("window presentation resource policy", () => {
     policy.dispose();
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it("publishes the pause synchronously and the reclaim offer later, so a renderer that only pauses never waits", () => {
+    vi.useFakeTimers();
+    const published: Array<{ visible: boolean; reclaim: boolean }> = [];
+    const policy = new WindowPresentationPolicy((state) =>
+      published.push(state),
+    );
+    policy.update(false);
+    // The pause is visible to every consumer before any timer runs.
+    expect(published).toEqual([{ visible: false, reclaim: false }]);
+    vi.advanceTimersByTime(PRESENTATION_RECLAIM_DELAY_MS);
+    expect(published).toEqual([
+      { visible: false, reclaim: false },
+      { visible: false, reclaim: true },
+    ]);
+    // Coming back is one transition, whatever stage the window was in.
+    policy.update(true);
+    expect(published[published.length - 1]).toEqual({
+      visible: true,
+      reclaim: false,
+    });
+    expect(published).toHaveLength(3);
+    policy.dispose();
+  });
 });

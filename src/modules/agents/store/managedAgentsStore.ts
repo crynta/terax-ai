@@ -1,8 +1,8 @@
 import { create } from "zustand";
 
-export const DEFAULT_MAX_ROUNDS = 3;
+const DEFAULT_MAX_ROUNDS = 3;
 
-export type ManagedPhase = "spawning" | "working" | "reviewing" | "done";
+type ManagedPhase = "spawning" | "working" | "reviewing" | "done";
 
 export type ManagedAgent = {
   leafId: number;

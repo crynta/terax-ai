@@ -12,7 +12,6 @@ import {
   hasGhosttySession,
   interruptGhosttySession,
   pasteIntoGhosttySession,
-  respawnGhosttySession,
   submitToGhosttySession,
   whenGhosttySessionReady,
   writeToGhosttySession,
@@ -23,6 +22,7 @@ import {
   ghosttyBlocks,
 } from "@/modules/terminal/ghostty/ghosttyBlockSessions";
 export type { WatermarkState } from "@/modules/terminal/ghostty/ghosttyBlockSessions";
+import { forgetLeafPresentation } from "@/modules/terminal/lib/ptyPresentation";
 import type { WatermarkState } from "@/modules/terminal/ghostty/ghosttyBlockSessions";
 
 export async function whenSessionReady(
@@ -151,13 +151,6 @@ export function ptyIdForLeaf(leafId: number): number | null {
   return ghosttyPtyIdForLeaf(leafId);
 }
 
-export async function respawnSession(
-  leafId: number,
-  cwd?: string,
-): Promise<void> {
-  await respawnGhosttySession(leafId, cwd);
-}
-
 export async function leafHasForegroundProcess(
   leafId: number,
 ): Promise<boolean> {
@@ -167,6 +160,7 @@ export async function leafHasForegroundProcess(
 export function disposeSession(leafId: number): void {
   disposeGhosttySession(leafId);
   disposeGhosttyBlocks(leafId);
+  forgetLeafPresentation(leafId);
 }
 
 function delay(milliseconds: number): Promise<void> {

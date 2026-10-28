@@ -48,6 +48,7 @@ import type {
 } from "ai";
 import { memo, useCallback, useMemo } from "react";
 import { AiToolApproval } from "./AiToolApproval";
+import { estimateMessageHeight } from "./messageHeightEstimate";
 
 function CommandSnippet({ name }: { name: string }) {
   const meta = SLASH_COMMANDS[name];
@@ -226,12 +227,13 @@ export function AiChatView({
   return (
     <Conversation>
       <ConversationContent className="gap-5 p-3">
-        {messages.map((m) => (
+        {messages.map((m, i) => (
           <RenderedMessage
             key={m.id}
             message={m}
             onApproval={onApproval}
             streaming={m.id === streamingMessageId}
+            deferOffscreen={i < messages.length - LIVE_TAIL_MESSAGES}
           />
         ))}
         {compactionNotice && (
@@ -323,15 +325,33 @@ const ContinueRow = memo(function ContinueRow({
   );
 });
 
+/**
+ * Newest messages stay fully laid out: the stream, the stick-to-bottom
+ * measurement and approval prompts all live there. Older ones let the browser
+ * skip layout and paint while off screen (`content-visibility: auto`), so a
+ * chat with hundreds of messages costs only what is near the viewport.
+ */
+const LIVE_TAIL_MESSAGES = 2;
+
 const RenderedMessage = memo(function RenderedMessage({
   message,
   onApproval,
   streaming,
+  deferOffscreen,
 }: {
   message: UIMessage;
   onApproval: (id: string, approved: boolean) => void;
   streaming: boolean;
+  deferOffscreen: boolean;
 }) {
+  const deferProps = deferOffscreen
+    ? {
+        className: "terax-chat-item",
+        style: {
+          containIntrinsicSize: `auto ${estimateMessageHeight(message)}px`,
+        },
+      }
+    : undefined;
   // Index of the trailing text part — only that one is "live" mid-stream.
   // Earlier text parts (separated by tool calls) are already finalized.
   let lastTextIdx = -1;
@@ -359,7 +379,7 @@ const RenderedMessage = memo(function RenderedMessage({
     const stripped = stripUserContextBlocks(withoutCmd);
 
     return (
-      <Message from="user">
+      <Message from="user" {...deferProps}>
         <MessageContent>
           {commandName ? <CommandSnippet name={commandName} /> : null}
           {stripped.chips.length > 0 ? (
@@ -376,7 +396,7 @@ const RenderedMessage = memo(function RenderedMessage({
   }
 
   return (
-    <Message from={message.role}>
+    <Message from={message.role} {...deferProps}>
       <MessageContent>
         <div className="flex flex-col gap-3">
           {groups.map((g) => {

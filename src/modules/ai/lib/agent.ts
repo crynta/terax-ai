@@ -332,12 +332,6 @@ export type AgentUsageDelta = AgentUsage & {
   lastCachedTokens: number;
 };
 
-const EMPTY_USAGE: AgentUsage = {
-  inputTokens: 0,
-  outputTokens: 0,
-  cachedInputTokens: 0,
-};
-
 export type RunAgentOptions = {
   keys: ProviderKeys;
   modelId?: string;
@@ -467,5 +461,3 @@ export async function runAgentStream(opts: RunAgentOptions) {
     },
   });
 }
-
-export { EMPTY_USAGE };

@@ -1,6 +1,5 @@
 export { Header } from "./Header";
-export {
-  SearchInline,
-  type SearchInlineHandle,
-  type SearchTarget,
+export type {
+  SearchInlineHandle,
+  SearchTarget,
 } from "./SearchInline";

@@ -2,6 +2,7 @@ import type { GhosttyTerminalModelApi } from "@/modules/terminal/ghostty/Ghostty
 import { readFile } from "node:fs/promises";
 import { TeraxGhostty } from "@terax/ghostty-core/adapted";
 import { describe, expect, it, vi } from "vitest";
+import { FakeElement, FakeTextArea } from "./fakeTextArea";
 import {
   GhosttyInputController,
   terminalMouseModifiers,
@@ -408,6 +409,35 @@ describe("GhosttyInputController", () => {
     controller.dispose();
   });
 
+  it("reports the cell that is drawn under the pointer while the grid is shifted up", () => {
+    const input = new FakeTextArea();
+    const pointerTarget = new FakeElement();
+    const onData = vi.fn();
+    let shift = 40;
+    const controller = new GhosttyInputController({
+      model: inputModel((mode) => mode === 1003 || mode === 1006),
+      input: input as unknown as HTMLTextAreaElement,
+      pointerTarget: pointerTarget as unknown as HTMLElement,
+      cellSize: () => ({ width: 10, height: 20 }),
+      gridShiftY: () => shift,
+      onData,
+      onCopy: () => false,
+      isMac: false,
+    });
+    const report = (clientY: number) => {
+      onData.mockClear();
+      pointerTarget.dispatchEvent(
+        mouseEvent("mousemove", { clientX: 15, clientY }),
+      );
+      return new TextDecoder().decode(onData.mock.calls[0][0]);
+    };
+    // 25 px down with the grid moved up 40 px is 65 px into the grid: row 4 (1-based).
+    expect(report(25)).toBe("\x1b[<32;2;4M");
+    shift = 0;
+    expect(report(31)).toBe("\x1b[<32;2;2M");
+    controller.dispose();
+  });
+
   it("deduplicates identical mouse-motion reports within a cell", () => {
     const input = new FakeTextArea();
     const pointerTarget = new FakeElement();
@@ -458,26 +488,6 @@ function inputModel(
     scrollBy: () => false,
     encodeKey: () => new Uint8Array(0),
   } as unknown as GhosttyTerminalModelApi;
-}
-
-class FakeElement extends EventTarget {
-  getBoundingClientRect(): DOMRect {
-    return {
-      left: 0,
-      top: 0,
-      right: 800,
-      bottom: 480,
-      width: 800,
-      height: 480,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    } as DOMRect;
-  }
-}
-
-class FakeTextArea extends FakeElement {
-  value = "";
 }
 
 function keyboardEvent(

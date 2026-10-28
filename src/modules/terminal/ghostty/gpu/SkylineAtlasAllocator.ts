@@ -15,10 +15,35 @@ export class SkylineAtlasAllocator {
   private readonly skyline: SkylineNode[] = [];
 
   constructor(
-    readonly width: number,
-    readonly height: number,
+    private widthValue: number,
+    private heightValue: number,
   ) {
     this.reset();
+  }
+
+  get width(): number {
+    return this.widthValue;
+  }
+
+  get height(): number {
+    return this.heightValue;
+  }
+
+  /** Extends the free area; every existing allocation stays valid. */
+  grow(width: number, height: number): void {
+    if (width < this.widthValue || height < this.heightValue) {
+      throw new RangeError("An atlas allocator cannot shrink");
+    }
+    if (width > this.widthValue) {
+      this.skyline.push({
+        x: this.widthValue,
+        y: 0,
+        width: width - this.widthValue,
+      });
+    }
+    this.widthValue = width;
+    this.heightValue = height;
+    this.mergeNeighbors();
   }
 
   allocate(width: number, height: number): AtlasRegion | null {
@@ -77,7 +102,7 @@ export class SkylineAtlasAllocator {
 
   reset(): void {
     this.skyline.length = 0;
-    this.skyline.push({ x: 0, y: 0, width: this.width });
+    this.skyline.push({ x: 0, y: 0, width: this.widthValue });
   }
 
   private findY(index: number, width: number, height: number): number {

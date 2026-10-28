@@ -1,9 +1,6 @@
 export {
   SHORTCUTS,
-  SHORTCUT_GROUPS,
   getBindingTokens,
-  type Shortcut,
-  type ShortcutGroup,
   type ShortcutId,
   type KeyBinding,
 } from "./shortcuts";

@@ -12,7 +12,7 @@ import {
   type GitCommitFileChange,
   type GitLogEntry,
 } from "@/modules/ai/lib/native";
-import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
+import { FileIcon } from "@/modules/explorer/FileIcon";
 import {
   Copy01Icon,
   File02Icon,
@@ -982,18 +982,13 @@ const FileRow = memo(function FileRow({
 }) {
   const fileName = basename(file.path);
   const dir = dirname(file.path);
-  const iconUrl = fileIconUrl(fileName);
   return (
     <button
       type="button"
       onClick={onOpen}
       className="group flex h-7 w-full cursor-pointer items-center gap-2 rounded-md px-1.5 text-left transition-colors hover:bg-accent/40"
     >
-      {iconUrl ? (
-        <img src={iconUrl} alt="" className="size-3.5 shrink-0" />
-      ) : (
-        <span className="size-3.5 shrink-0" />
-      )}
+      <FileIcon name={fileName} className="size-3.5 shrink-0" />
       <div className="flex min-w-0 flex-1 items-baseline gap-1.5 leading-none">
         <span className="truncate text-[11.5px] font-medium leading-tight">
           {fileName}

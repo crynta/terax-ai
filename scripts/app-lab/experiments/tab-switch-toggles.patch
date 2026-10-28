@@ -1,0 +1,145 @@
+--- a/src/modules/terminal/ghostty/gpu/WebGpuTerminalSurface.ts
++++ b/src/modules/terminal/ghostty/gpu/WebGpuTerminalSurface.ts
+@@ -1,3 +1,4 @@
++import { benchFlagOn } from "@/bench/flags";
+ import { terminalWindowFocused } from "@/modules/terminal/ghostty/renderScheduling";
+ import { bindTerminalInteraction } from "@/modules/terminal/ghostty/input/terminalInteraction";
+ import { TerminalScrollbarSync } from "@/modules/terminal/ghostty/gpu/terminalScrollbar";
+@@ -330,7 +331,7 @@
+     if (visible) {
+       if (!this.documentSuspended) this.search.resume();
+       try {
+-        if (this.host && !this.uniformBuffer) {
++        if (this.host && (!this.uniformBuffer || !this.runtimeRegistered)) {
+           this.activateGpuResources();
+           if (!this.documentSuspended) this.resizeToHost();
+         }
+@@ -348,7 +349,8 @@
+       this.search.suspend();
+       this.selection.suspend();
+       this.deactivateGpuResources();
+-      this.options.model.releasePresentationResources();
++      if (!(__TERAX_BENCH__ && benchFlagOn("keep-model")))
++        this.options.model.releasePresentationResources();
+     }
+   }
+ 
+@@ -829,8 +831,11 @@
+       this.runtime.unregister(this);
+       this.runtimeRegistered = false;
+     }
+-    this.releaseGpuResources();
+-    this.releaseCanvas();
++    // Experiment toggles (app lab): keep the GPU buffers, atlas lease and canvas, or just the canvas.
++    const keepGpu = __TERAX_BENCH__ && benchFlagOn("keep-gpu");
++    const keepCanvas = keepGpu || (__TERAX_BENCH__ && benchFlagOn("keep-canvas"));
++    if (!keepGpu) this.releaseGpuResources();
++    if (!keepCanvas) this.releaseCanvas();
+   }
+ 
+   /** Back to the pool, still configured and sized for the next visible pane. */
+--- a/src/modules/terminal/ghostty/gpu/CanvasBackingStore.ts
++++ b/src/modules/terminal/ghostty/gpu/CanvasBackingStore.ts
+@@ -1,3 +1,5 @@
++import { benchFlag } from "@/bench/flags";
++
+ type CanvasTarget = {
+   width: number;
+   height: number;
+@@ -41,12 +43,14 @@
+     const requiredWidth = positivePixelSize(pixelWidth);
+     const requiredHeight = positivePixelSize(pixelHeight);
+     const ratio = Number.isFinite(scale) && scale > 0 ? scale : 1;
+-    const nextTargetWidth = this.presented
+-      ? reusableDimension(this.targetWidth, requiredWidth)
+-      : requiredWidth;
+-    const nextTargetHeight = this.presented
+-      ? reusableDimension(this.targetHeight, requiredHeight)
+-      : requiredHeight;
++    const nextTargetWidth =
++      this.presented || fixedBackingDimension(0) !== null
++        ? reusableDimension(this.targetWidth, requiredWidth, 0)
++        : requiredWidth;
++    const nextTargetHeight =
++      this.presented || fixedBackingDimension(1) !== null
++        ? reusableDimension(this.targetHeight, requiredHeight, 1)
++        : requiredHeight;
+     const targetCssWidth = `${nextTargetWidth / ratio}px`;
+     const targetCssHeight = `${nextTargetHeight / ratio}px`;
+     const changed =
+@@ -89,8 +93,10 @@
+     const requiredWidth = positivePixelSize(pixelWidth);
+     const requiredHeight = positivePixelSize(pixelHeight);
+     if (
+-      reusableDimension(this.targetWidth, requiredWidth) !== this.targetWidth ||
+-      reusableDimension(this.targetHeight, requiredHeight) !== this.targetHeight
++      reusableDimension(this.targetWidth, requiredWidth, 0) !==
++        this.targetWidth ||
++      reusableDimension(this.targetHeight, requiredHeight, 1) !==
++        this.targetHeight
+     ) {
+       return null;
+     }
+@@ -118,7 +124,15 @@
+ }
+ 
+ // Nearby sizes reuse storage instead of accumulating retired presentation buffers.
+-function reusableDimension(current: number, required: number): number {
++function reusableDimension(
++  current: number,
++  required: number,
++  axis: 0 | 1,
++): number {
++  // App-lab experiment: every canvas gets one fixed backing size, so a canvas is never resized
++  // when it moves between panes of different sizes (`terax:bench:fixed-backing` = "WxH").
++  const fixed = fixedBackingDimension(axis);
++  if (fixed !== null && required <= fixed) return fixed;
+   const alignment = required < 256 ? 32 : 128;
+   if (required <= current && current - required < alignment * 2) return current;
+   return Math.ceil(required / alignment) * alignment;
+@@ -128,3 +142,12 @@
+   if (!Number.isFinite(value)) return 1;
+   return Math.max(1, Math.round(value));
+ }
++
++function fixedBackingDimension(axis: 0 | 1): number | null {
++  if (!__TERAX_BENCH__) return null;
++  const value = benchFlag("fixed-backing");
++  if (!value) return null;
++  const parts = value.split("x").map(Number);
++  const dimension = parts[axis];
++  return Number.isFinite(dimension) && dimension > 0 ? dimension : null;
++}
+--- a/src/modules/terminal/ghostty/useGhosttyTerminalSession.ts
++++ b/src/modules/terminal/ghostty/useGhosttyTerminalSession.ts
+@@ -1,3 +1,4 @@
++import { benchFlagOn } from "@/bench/flags";
+ import { loadSessionRenderer } from "@/modules/terminal/ghostty/loadSessionRenderer";
+ import {
+   ensureGhosttyBlocks,
+@@ -206,7 +207,7 @@
+       }
+     } else {
+       surface.setVisible(false);
+-      surface.detach();
++      if (!(__TERAX_BENCH__ && benchFlagOn("keep-attached"))) surface.detach();
+     }
+   }, [leafId, backend, visible, focused]);
+ 
+--- a/src/modules/terminal/TerminalStack.tsx
++++ b/src/modules/terminal/TerminalStack.tsx
+@@ -1,3 +1,4 @@
++import { benchFlagOn } from "@/bench/flags";
+ import type { Tab } from "@/modules/tabs";
+ import type { TerminalSearchController } from "@/modules/terminal/search/TerminalSearchController";
+ import { useEffect, useMemo, useRef } from "react";
+@@ -88,6 +89,9 @@
+             style={{
+               visibility: tabVisible ? "visible" : "hidden",
+               pointerEvents: tabVisible ? "auto" : "none",
++              ...(__TERAX_BENCH__ && benchFlagOn("tab-display-none") && !tabVisible
++                ? { display: "none" }
++                : {}),
+             }}
+             aria-hidden={!tabVisible}
+           >

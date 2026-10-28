@@ -1,10 +1,31 @@
 import { readFile } from "node:fs/promises";
+import v8 from "node:v8";
+import vm from "node:vm";
 import { TeraxGhostty } from "@terax/ghostty-core/adapted";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { PackedCellView } from "./core/packedCells";
 import { GhosttyCoreRuntime } from "./GhosttyCoreRuntime";
 
 let wasmBytes: ArrayBuffer;
+let wasmModule: WebAssembly.Module;
+
+v8.setFlagsFromString("--expose-gc");
+const collectGarbage = vm.runInNewContext("gc") as () => void;
+
+type Weak = { deref(): object | undefined };
+const weak = (target: object): Weak =>
+  new (
+    globalThis as unknown as { WeakRef: new (target: object) => Weak }
+  ).WeakRef(target);
+
+async function collected(ref: Weak): Promise<boolean> {
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    collectGarbage();
+    if (ref.deref() === undefined) return true;
+  }
+  return false;
+}
 
 beforeAll(async () => {
   const path = new URL(
@@ -13,6 +34,7 @@ beforeAll(async () => {
   );
   const file = await readFile(path);
   wasmBytes = Uint8Array.from(file).buffer;
+  wasmModule = await WebAssembly.compile(wasmBytes.slice(0));
 });
 
 describe("GhosttyCoreRuntime", () => {
@@ -47,29 +69,36 @@ describe("GhosttyCoreRuntime", () => {
     },
   );
 
-  it("releases a preload that never becomes a terminal, including a reused high-water instance", async () => {
+  it("releases the compiled module of a preload that never becomes a terminal", async () => {
     vi.useFakeTimers();
     const runtime = new GhosttyCoreRuntime(() =>
       TeraxGhostty.loadBytes(wasmBytes),
     );
     try {
       await runtime.preload();
-      expect(runtime.diagnostics().idleReleaseScheduled).toBe(true);
+      expect(runtime.diagnostics()).toMatchObject({
+        idleReleaseScheduled: true,
+        wasmModuleCached: true,
+        wasmMemoryBytes: 0,
+      });
       await vi.advanceTimersByTimeAsync(60_000);
-      expect(runtime.diagnostics().wasmMemoryBytes).toBe(0);
+      expect(runtime.diagnostics().wasmModuleCached).toBe(false);
       const model = await runtime.createModel({
         leafId: 1,
         cols: 120,
         rows: 40,
       });
       model.write(new TextEncoder().encode("output\r\n".repeat(10_000)));
+      expect(runtime.diagnostics().wasmMemoryBytes).toBeGreaterThan(0);
       model.dispose();
+      expect(runtime.diagnostics().wasmMemoryBytes).toBe(0);
       await vi.advanceTimersByTimeAsync(30_000);
       await runtime.preload();
       await vi.advanceTimersByTimeAsync(60_000);
       expect(runtime.diagnostics()).toMatchObject({
         status: "cold",
         wasmMemoryBytes: 0,
+        wasmModuleCached: false,
         idleReleaseScheduled: false,
       });
     } finally {
@@ -185,7 +214,7 @@ describe("GhosttyCoreRuntime", () => {
     second.dispose();
   });
 
-  it("releases an idle high-water WASM instance and reloads on demand", async () => {
+  it("returns a closed terminal's memory at once and releases the idle compiled module", async () => {
     vi.useFakeTimers();
     try {
       const loader = vi.fn(() => TeraxGhostty.loadBytes(wasmBytes.slice(0)));
@@ -198,6 +227,7 @@ describe("GhosttyCoreRuntime", () => {
 
       expect(runtime.diagnostics().wasmMemoryBytes).toBeGreaterThan(0);
       first.dispose();
+      expect(runtime.diagnostics().wasmMemoryBytes).toBe(0);
       expect(runtime.diagnostics().idleReleaseScheduled).toBe(true);
 
       await vi.advanceTimersByTimeAsync(30_000);
@@ -693,6 +723,409 @@ describe("GhosttyCoreRuntime", () => {
     ).rejects.toThrow(RangeError);
     expect(runtime.diagnostics().pendingModelCount).toBe(0);
     model.dispose();
+  });
+
+  describe("one WebAssembly instance per terminal model", () => {
+    function observedCore() {
+      const modules: WebAssembly.Module[] = [];
+      const core = TeraxGhostty.fromModule(wasmModule, {
+        instantiate: (module, imports) => {
+          modules.push(module);
+          return new WebAssembly.Instance(module, imports);
+        },
+      });
+      return { core, modules };
+    }
+
+    it("instantiates one shared compiled module once per model", async () => {
+      const compile = vi.spyOn(WebAssembly, "compile");
+      const { core, modules } = observedCore();
+      const loader = vi.fn(() => Promise.resolve(core));
+      const runtime = new GhosttyCoreRuntime(loader);
+      try {
+        const models = await Promise.all(
+          Array.from({ length: 8 }, (_, leafId) =>
+            runtime.createModel({ leafId, cols: 80, rows: 24 }),
+          ),
+        );
+
+        expect(loader).toHaveBeenCalledTimes(1);
+        expect(compile).not.toHaveBeenCalled();
+        expect(modules).toHaveLength(8);
+        expect(new Set(modules).size).toBe(1);
+        expect(modules[0]).toBe(core.compiledModule);
+        expect(core.memoryStats().instanceCount).toBe(8);
+        expect(runtime.diagnostics()).toMatchObject({
+          modelCount: 8,
+          wasmInstanceCount: 8,
+          wasmModuleCached: true,
+        });
+        for (const model of models.slice(0, 3)) model.dispose();
+        expect(runtime.diagnostics().wasmInstanceCount).toBe(5);
+      } finally {
+        compile.mockRestore();
+        runtime.dispose();
+      }
+      expect(core.memoryStats().instanceCount).toBe(0);
+    });
+
+    it("gives every model a private linear memory", async () => {
+      const { core } = observedCore();
+      const runtime = new GhosttyCoreRuntime(() => Promise.resolve(core));
+      try {
+        const models = await Promise.all(
+          [0, 1, 2].map((leafId) =>
+            runtime.createModel({ leafId, cols: 120, rows: 40 }),
+          ),
+        );
+        const idle = core.memoryStats().instanceBytes;
+        expect(new Set(idle).size).toBe(1);
+
+        models[1].write(
+          new TextEncoder().encode("busy output line\r\n".repeat(60_000)),
+        );
+        const busy = core.memoryStats().instanceBytes;
+        expect(busy[1]).toBeGreaterThan(idle[1] + 1024 * 1024);
+        expect(busy[0]).toBe(idle[0]);
+        expect(busy[2]).toBe(idle[2]);
+        expect(models[0].readText(24)).toBe("");
+      } finally {
+        runtime.dispose();
+      }
+    });
+
+    it("accounts memory as the sum over live instances", async () => {
+      const { core } = observedCore();
+      const runtime = new GhosttyCoreRuntime(() => Promise.resolve(core));
+      const models = await Promise.all(
+        [0, 1, 2].map((leafId) =>
+          runtime.createModel({ leafId, cols: 100, rows: 30 }),
+        ),
+      );
+      const encode = (text: string) => new TextEncoder().encode(text);
+      models[0].write(encode("a line of output\r\n".repeat(20_000)));
+      models[2].write(encode("another line\r\n".repeat(5_000)));
+      const measured = models.map((model) => {
+        model.renderFormat();
+        return model.consumeGpuFrame().memory.buffer.byteLength;
+      });
+
+      const stats = core.memoryStats();
+      expect(stats.instanceBytes).toHaveLength(3);
+      expect([...stats.instanceBytes].sort((a, b) => a - b)).toEqual(
+        [...measured].sort((a, b) => a - b),
+      );
+      expect(stats.totalBytes).toBe(measured.reduce((a, b) => a + b, 0));
+      expect(core.getMemoryBytes()).toBe(stats.totalBytes);
+      expect(runtime.diagnostics().wasmMemoryBytes).toBe(stats.totalBytes);
+
+      const closed = measured[0];
+      models[0].dispose();
+      expect(runtime.diagnostics().wasmMemoryBytes).toBe(
+        stats.totalBytes - closed,
+      );
+      runtime.disposeAllModels();
+      expect(runtime.diagnostics()).toMatchObject({
+        wasmMemoryBytes: 0,
+        wasmInstanceCount: 0,
+        modelCount: 0,
+      });
+      runtime.dispose();
+    });
+
+    it("probes native device attributes once on a throwaway instance", async () => {
+      const { core } = observedCore();
+      const runtime = new GhosttyCoreRuntime(() => Promise.resolve(core));
+      try {
+        await runtime.preload();
+        expect(core.memoryStats().instancesCreated).toBe(0);
+        for (let index = 0; index < 5; index += 1) {
+          expect(runtime.diagnostics().nativeDeviceAttributes).toBe(true);
+        }
+        expect(core.memoryStats()).toMatchObject({
+          instancesCreated: 1,
+          instanceCount: 0,
+        });
+        const model = await runtime.createModel({
+          leafId: 1,
+          cols: 80,
+          rows: 24,
+        });
+        runtime.diagnostics();
+        expect(core.memoryStats().instancesCreated).toBe(2);
+        model.dispose();
+      } finally {
+        runtime.dispose();
+      }
+    });
+
+    it("frees a disposed model's memory while the disposed model is still referenced", async () => {
+      const { core } = observedCore();
+      const runtime = new GhosttyCoreRuntime(() => Promise.resolve(core));
+      const open = async () => {
+        const model = await runtime.createModel({
+          leafId: 40,
+          cols: 120,
+          rows: 40,
+        });
+        model.write(
+          new TextEncoder().encode("scrollback line\r\n".repeat(30_000)),
+        );
+        return {
+          model,
+          memory: weak(model.consumeGpuFrame().memory),
+        };
+      };
+      try {
+        const { model, memory } = await open();
+        await expect(collected(memory)).resolves.toBe(false);
+
+        model.dispose();
+        expect(model.isDisposed?.()).toBe(true);
+        expect(() => model.consumeGpuFrame()).toThrow("disposed");
+        await expect(collected(memory)).resolves.toBe(true);
+        expect(runtime.getModel(40)).toBeNull();
+        expect(core.memoryStats().instanceCount).toBe(0);
+      } finally {
+        runtime.dispose();
+      }
+    });
+
+    it("detaches borrowed views when the model is disposed", async () => {
+      const runtime = new GhosttyCoreRuntime(() =>
+        TeraxGhostty.loadBytes(wasmBytes.slice(0)),
+      );
+      try {
+        const model = await runtime.createModel({
+          leafId: 41,
+          cols: 40,
+          rows: 8,
+        });
+        model.write(new TextEncoder().encode("borrowed"));
+        const { cells } = model.consumeGpuFrame();
+        expect(cells.byteLength).toBe(40 * 8 * 16);
+        model.dispose();
+        expect(cells.byteLength).toBe(0);
+      } finally {
+        runtime.dispose();
+      }
+    });
+
+    it("frees the instance when its last terminal is disposed", async () => {
+      const core = TeraxGhostty.fromModule(wasmModule);
+      const open = () => {
+        const terminal = core.createTerminal(80, 24);
+        terminal.write(new TextEncoder().encode("hello\r\n".repeat(5_000)));
+        terminal.updateRenderState();
+        return { terminal, memory: weak(terminal.wasmMemory) };
+      };
+      const { terminal, memory } = open();
+      expect(terminal.instanceMemoryBytes).toBeGreaterThan(0);
+      terminal.dispose();
+      expect(() => terminal.write(new Uint8Array([65]))).toThrow("disposed");
+      await expect(collected(memory)).resolves.toBe(true);
+      expect(core.memoryStats().instanceCount).toBe(0);
+    });
+
+    it("invalidates every terminal of a disposed shared instance", async () => {
+      const core = TeraxGhostty.fromModule(wasmModule);
+      const instance = core.instantiate();
+      const first = instance.createTerminal(20, 4);
+      const second = instance.createTerminal(20, 4);
+      first.write(new TextEncoder().encode("shared"));
+      expect(core.memoryStats().instanceCount).toBe(1);
+      second.dispose();
+      expect(core.memoryStats().instanceCount).toBe(1);
+      expect(first.readTextRange(0, 0).trim()).toBe("shared");
+
+      instance.dispose();
+      expect(instance.disposed).toBe(true);
+      expect(instance.memoryBytes).toBe(0);
+      expect(core.getMemoryBytes()).toBe(0);
+      expect(() => first.write(new Uint8Array([65]))).toThrow("disposed");
+      expect(() => instance.createTerminal(20, 4)).toThrow("disposed");
+      first.dispose();
+    });
+
+    it("hints the engine to collect once per burst of released instances", async () => {
+      vi.useFakeTimers();
+      try {
+        const reclaim = vi.fn();
+        const core = TeraxGhostty.fromModule(wasmModule, { reclaim });
+        const terminals = [1, 2, 3].map(() => core.createTerminal(80, 24));
+        const sizes = terminals.map((terminal) => terminal.instanceMemoryBytes);
+        for (const terminal of terminals) terminal.dispose();
+        expect(reclaim).not.toHaveBeenCalled();
+
+        await vi.advanceTimersByTimeAsync(249);
+        expect(reclaim).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(reclaim).toHaveBeenCalledExactlyOnceWith(
+          sizes.reduce((total, bytes) => total + bytes, 0),
+        );
+
+        core.createTerminal(80, 24).dispose();
+        await vi.advanceTimersByTimeAsync(250);
+        expect(reclaim).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("runs the default collection hint and honours opting out", async () => {
+      vi.useFakeTimers();
+      try {
+        const core = TeraxGhostty.fromModule(wasmModule);
+        core.createTerminal(80, 24).dispose();
+        await expect(vi.advanceTimersByTimeAsync(250)).resolves.not.toThrow();
+
+        const reclaim = vi.fn();
+        const silent = TeraxGhostty.fromModule(wasmModule, {
+          reclaim: null,
+        });
+        silent.createTerminal(80, 24).dispose();
+        const custom = TeraxGhostty.fromModule(wasmModule, {
+          reclaim,
+          reclaimDelayMs: 10,
+        });
+        custom.createTerminal(80, 24).dispose();
+        await vi.advanceTimersByTimeAsync(10);
+        expect(reclaim).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("leaves no instance behind when terminal creation fails", () => {
+      const core = TeraxGhostty.fromModule(wasmModule);
+      expect(() => core.createTerminal(0, 24)).toThrow(RangeError);
+      expect(core.memoryStats()).toMatchObject({
+        instanceCount: 0,
+        instancesCreated: 0,
+      });
+      const instance = core.instantiate();
+      expect(() => instance.createTerminal(5_000, 24)).toThrow(RangeError);
+      instance.dispose();
+      expect(core.memoryStats().instanceCount).toBe(0);
+    });
+  });
+
+  describe("global scrollback budget", () => {
+    const MIB = 1024 * 1024;
+    const REQUEST = 9_600_000;
+    const pump = (
+      model: { write(bytes: Uint8Array): void },
+      lines: number,
+    ): void => {
+      const slice = new TextEncoder().encode(
+        `${"x".repeat(98)}\r\n`.repeat(300),
+      );
+      for (let written = 0; written < lines; written += 300) model.write(slice);
+    };
+
+    it("divides the budget between models and returns it when they close", async () => {
+      const runtime = new GhosttyCoreRuntime(
+        () => TeraxGhostty.loadBytes(wasmBytes.slice(0)),
+        { scrollbackBudgetBytes: 12 * MIB },
+      );
+      try {
+        const create = (leafId: number) =>
+          runtime.createModel({ leafId, cols: 120, rows: 40 });
+        await create(1);
+        expect(runtime.diagnostics()).toMatchObject({
+          scrollbackBudgetBytes: 12 * MIB,
+          scrollbackRequestedBytes: REQUEST,
+          scrollbackGrantedBytes: REQUEST,
+        });
+
+        await create(2);
+        const shared = runtime.diagnostics();
+        expect(shared.scrollbackRequestedBytes).toBe(2 * REQUEST);
+        expect(shared.scrollbackGrantedBytes).toBeLessThanOrEqual(12 * MIB);
+        expect(shared.scrollbackGrantedBytes).toBeGreaterThan(12 * MIB - 4);
+
+        await create(3);
+        const crowded = runtime.diagnostics();
+        expect(crowded.scrollbackGrantedBytes).toBeLessThanOrEqual(12 * MIB);
+        expect(crowded.scrollbackGrantedBytes).toBeGreaterThan(12 * MIB - 4);
+
+        runtime.disposeModel(2);
+        runtime.disposeModel(3);
+        expect(runtime.diagnostics().scrollbackGrantedBytes).toBe(REQUEST);
+      } finally {
+        runtime.dispose();
+      }
+    });
+
+    it("stops later terminals at their share without pruning history already held", async () => {
+      const runtime = new GhosttyCoreRuntime(
+        () => TeraxGhostty.loadBytes(wasmBytes.slice(0)),
+        { scrollbackBudgetBytes: 12 * MIB },
+      );
+      try {
+        const first = await runtime.createModel({
+          leafId: 1,
+          cols: 120,
+          rows: 40,
+        });
+        pump(first, 12_000);
+        const history = first.scrollPosition().history;
+        expect(history).toBeGreaterThan(5_000);
+        const firstMemory = runtime.diagnostics().wasmMemoryBytes;
+
+        const [second, third] = await Promise.all(
+          [2, 3].map((leafId) =>
+            runtime.createModel({ leafId, cols: 120, rows: 40 }),
+          ),
+        );
+        expect(first.scrollPosition().history).toBe(history);
+        const granted = runtime.diagnostics().scrollbackGrantedBytes;
+        expect(granted).toBeLessThanOrEqual(12 * MIB + 2 * 2 * MIB);
+
+        pump(second, 20_000);
+        pump(third, 20_000);
+        expect(first.scrollPosition().history).toBe(history);
+        const floorLines = Math.ceil((2 * MIB) / (120 * 8)) + 600;
+        expect(second.scrollPosition().history).toBeLessThan(floorLines);
+        expect(second.scrollPosition().history).toBeGreaterThan(1_000);
+        expect(third.scrollPosition().history).toBeLessThan(floorLines);
+        expect(
+          runtime.diagnostics().wasmMemoryBytes - firstMemory,
+        ).toBeLessThan(2 * (2 * MIB + 3 * MIB));
+
+        runtime.disposeModel(1);
+        expect(
+          runtime.diagnostics().scrollbackGrantedBytes,
+        ).toBeLessThanOrEqual(12 * MIB);
+        pump(second, 20_000);
+        expect(second.scrollPosition().history).toBeGreaterThan(floorLines);
+        expect(() => runtime.setScrollbackBudget(0)).toThrow(RangeError);
+      } finally {
+        runtime.dispose();
+      }
+    });
+
+    it("does not scale terminals while the total fits the default budget", async () => {
+      const runtime = new GhosttyCoreRuntime(() =>
+        TeraxGhostty.loadBytes(wasmBytes.slice(0)),
+      );
+      try {
+        await Promise.all(
+          Array.from({ length: 20 }, (_, leafId) =>
+            runtime.createModel({ leafId, cols: 120, rows: 40 }),
+          ),
+        );
+        const diagnostics = runtime.diagnostics();
+        expect(diagnostics.scrollbackGrantedBytes).toBe(
+          diagnostics.scrollbackRequestedBytes,
+        );
+        expect(diagnostics.scrollbackRequestedBytes).toBeLessThanOrEqual(
+          diagnostics.scrollbackBudgetBytes,
+        );
+      } finally {
+        runtime.dispose();
+      }
+    });
   });
 });
 

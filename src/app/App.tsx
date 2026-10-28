@@ -6,6 +6,7 @@ import {
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { consumeLaunchFiles, getLaunchDir } from "@/lib/launchDir";
+import { IS_MAC } from "@/lib/platform";
 import { quoteShellArg } from "@/lib/shellQuote";
 import { usePresence } from "@/lib/usePresence";
 import { useZoom } from "@/lib/useZoom";
@@ -100,9 +101,13 @@ import {
   writeToSession,
 } from "@/modules/terminal";
 import type { TerminalSearchController } from "@/modules/terminal/search/TerminalSearchController";
+import { bindTerminalWindowFocus } from "@/modules/terminal/ghostty/renderScheduling";
+import { subscribeWindowPresentation } from "@/modules/terminal/ghostty/windowPresentation";
 import {
+  LivePageResizeBridge,
   ThemeProvider,
   useThemeFileEditing,
+  WindowActivityBridge,
   WindowVibrancyBridge,
 } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
@@ -116,6 +121,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -137,6 +144,12 @@ import {
 } from "./hooks/tabCloseGuards";
 import { useTabCloseGuards } from "./hooks/useTabCloseGuards";
 import { useWorkspaceSwitcher } from "./hooks/useWorkspaceSwitcher";
+
+// Real-application benchmark driver (scripts/app-lab). `__TERAX_BENCH__` is the literal `false`
+// in a normal build, so this is `null` and neither the import nor its chunk is emitted.
+const BenchBridge = __TERAX_BENCH__
+  ? lazy(() => import("@/bench/BenchBridge"))
+  : null;
 
 export default function App() {
   const {
@@ -315,6 +328,7 @@ export default function App() {
     sidebarRef,
     sidebarWidthRef,
     sidebarView,
+    sidebarCollapsed,
     initialSidebarCollapsed,
     persistSidebarView,
     persistSidebarCollapsed,
@@ -828,6 +842,9 @@ export default function App() {
     openSourceControl,
     openCommitHistoryTab,
   });
+  const explorerGitDecorations = usePreferencesStore(
+    (s) => s.explorerGitDecorations,
+  );
   const { sourceControl, toggleSourceControl, openGitGraphFromContext } =
     useSourceControlContext({
       activeTab,
@@ -838,13 +855,12 @@ export default function App() {
       launchCwdResolved,
       home,
       sidebarView,
+      sidebarCollapsed,
+      explorerGitDecorations,
       repositoryTarget: sourceControlRepositoryTarget,
       cycleSidebarView,
       openCommitHistoryTab,
     });
-  const explorerGitDecorations = usePreferencesStore(
-    (s) => s.explorerGitDecorations,
-  );
 
   const openPreviewTab = useCallback(
     (url: string) => {
@@ -980,6 +996,9 @@ export default function App() {
       "view.zenMode": () => setZenMode((v) => !v),
       "editor.undo": () => editorRefs.current.get(activeId)?.undo(),
       "editor.redo": () => editorRefs.current.get(activeId)?.redo(),
+      "editor.save": () => {
+        void editorRefs.current.get(activeId)?.save();
+      },
       "editor.aiComplete": () =>
         editorRefs.current.get(activeId)?.triggerAiComplete(),
       "editor.codeComplete": () =>
@@ -1025,6 +1044,7 @@ export default function App() {
       if (
         id === "editor.undo" ||
         id === "editor.redo" ||
+        id === "editor.save" ||
         id === "editor.aiComplete" ||
         id === "editor.codeComplete"
       ) {
@@ -1420,6 +1440,24 @@ export default function App() {
   const shell = (
     <ThemeProvider>
       <TooltipProvider>
+        {BenchBridge && (
+          <Suspense fallback={null}>
+            <BenchBridge
+              tabs={tabs}
+              activeId={activeId}
+              booted={booted}
+              setActiveId={setActiveId}
+              newTab={newTab}
+              newBlockTab={newBlockTab}
+              newAgentGroupTab={newAgentGroupTab}
+              splitActivePane={splitActivePane}
+              closeTab={closeTab}
+              readBuffer={(leafId, maxLines) =>
+                terminalRefs.current.get(leafId)?.getBuffer(maxLines) ?? null
+              }
+            />
+          </Suspense>
+        )}
         <div className="relative flex h-screen flex-col overflow-hidden bg-frame text-foreground">
           {!zenMode && (
             <Header
@@ -1501,6 +1539,7 @@ export default function App() {
                           onOpenGitHistory={handleOpenGitHistoryForPath}
                           onAttachToAgent={handleAttachFileToAgent}
                           pathDropTarget={terminalPathDropTarget}
+                          visible={!sidebarCollapsed}
                         />
                       ) : (
                         <SourceControlPanel
@@ -1586,6 +1625,11 @@ export default function App() {
           )}
 
           <WindowVibrancyBridge />
+          {IS_MAC ? <LivePageResizeBridge /> : null}
+          <WindowActivityBridge
+            bindFocus={bindTerminalWindowFocus}
+            subscribePresentation={subscribeWindowPresentation}
+          />
 
           <AgentNotificationsBridge
             tabs={tabs}

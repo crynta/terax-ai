@@ -13,13 +13,13 @@ const FOCUS_REFRESH_MIN_INTERVAL_MS = 1500;
 // is still inside the loaded repo (cd-within-repo produces identical status).
 const SC_STATUS_TTL_MS = 2000;
 
-export type SourceControlRefreshMode = "auto" | "always" | "never";
-export type SourceControlRemoteAction = "fetch" | "pull" | "push";
-export type SourceControlRemoteActionMode =
+type SourceControlRefreshMode = "auto" | "always" | "never";
+type SourceControlRemoteAction = "fetch" | "pull" | "push";
+type SourceControlRemoteActionMode =
   | "contextual"
   | SourceControlRemoteAction;
 
-export type SourceControlRemoteActionResult = {
+type SourceControlRemoteActionResult = {
   ok: boolean;
   action: SourceControlRemoteAction | null;
   error?: string;
@@ -50,14 +50,6 @@ export type SourceControlSummary = {
   ) => Promise<SourceControlRemoteActionResult>;
 };
 
-export type SourceControlRemoteIndicator = {
-  visible: boolean;
-  label: string;
-  title: string;
-  disabled: boolean;
-  action: SourceControlRemoteAction | null;
-};
-
 type SourceControlSummaryState = {
   contextPath: string | null;
   repo: GitRepoInfo | null;
@@ -79,6 +71,17 @@ type RefreshableSourceControlState = Pick<
   | "localError"
   | "lastRemoteError"
 >;
+
+const EMPTY_STATE: SourceControlSummaryState = {
+  contextPath: null,
+  repo: null,
+  status: null,
+  hasRepo: false,
+  isLoading: false,
+  localError: null,
+  busyAction: null,
+  lastRemoteError: null,
+};
 
 type InflightRefresh = {
   contextKey: string;
@@ -119,6 +122,48 @@ export function repositoryContainsContext(
   return context === root || context.startsWith(prefix);
 }
 
+type ContextRefreshPlan =
+  /** Disabled: drop everything. */
+  | "reset"
+  /** Run `git status` for the new context. */
+  | "refresh"
+  /** Fresh data already covers this context: just record the new path. */
+  | "reuse"
+  /** Nobody is looking and the loaded repo no longer applies: drop it, no git. */
+  | "clear"
+  /** Nobody is looking: leave the loaded snapshot alone, no git. */
+  | "keep";
+
+/**
+ * What a context change (or a consumer appearing) should do.
+ *
+ * While no live consumer is on screen (`live` false) git is never run: the
+ * snapshot is only kept if it still describes the repository the context is in,
+ * because a rail badge showing another repo's change count is worse than none.
+ * When a consumer appears the same decision runs with `live` true, so stale
+ * data is refreshed on open instead of in the background.
+ */
+export function planContextRefresh(input: {
+  enabled: boolean;
+  live: boolean;
+  contextPath: string | null;
+  repoRoot: string | null;
+  hasRepo: boolean;
+  /** Milliseconds since the last completed refresh. */
+  ageMs: number;
+}): ContextRefreshPlan {
+  if (!input.enabled) return "reset";
+  const sameRepo = repositoryContainsContext(input.repoRoot, input.contextPath);
+  if (!input.live) {
+    if (!input.hasRepo && input.repoRoot === null) return "keep";
+    return sameRepo ? "keep" : "clear";
+  }
+  if (input.ageMs < SC_STATUS_TTL_MS && sameRepo && input.hasRepo) {
+    return "reuse";
+  }
+  return "refresh";
+}
+
 export function beginSourceControlRefresh<
   T extends RefreshableSourceControlState,
 >(current: T, contextPath: string, reuseCurrentRepository: boolean): T {
@@ -153,56 +198,6 @@ function getContextualAction(
   return "fetch";
 }
 
-export function getSourceControlRemoteIndicator(
-  summary: Pick<
-    SourceControlSummary,
-    "hasRepo" | "upstream" | "ahead" | "behind" | "busyAction"
-  >,
-): SourceControlRemoteIndicator {
-  if (!summary.hasRepo || !summary.upstream) {
-    return { visible: false, label: "", title: "", disabled: true, action: null };
-  }
-  if (summary.ahead > 0 && summary.behind > 0) {
-    return {
-      visible: true,
-      label: `↑${summary.ahead} ↓${summary.behind}`,
-      title:
-        "Branch has diverged from upstream. Use Source Control or the terminal to resolve it.",
-      disabled: true,
-      action: null,
-    };
-  }
-  if (summary.behind > 0) {
-    return {
-      visible: true,
-      label: `↓${summary.behind}`,
-      title: `Pull ${summary.behind} remote ${
-        summary.behind === 1 ? "commit" : "commits"
-      } with fast-forward only.`,
-      disabled: summary.busyAction !== null,
-      action: "pull",
-    };
-  }
-  if (summary.ahead > 0) {
-    return {
-      visible: true,
-      label: `↑${summary.ahead}`,
-      title: `Push ${summary.ahead} local ${
-        summary.ahead === 1 ? "commit" : "commits"
-      }.`,
-      disabled: summary.busyAction !== null,
-      action: "push",
-    };
-  }
-  return {
-    visible: true,
-    label: "Sync",
-    title: "Fetch remote updates.",
-    disabled: summary.busyAction !== null,
-    action: "fetch",
-  };
-}
-
 function touchAutoFetch(map: Map<string, number>, key: string): void {
   map.delete(key);
   map.set(key, Date.now());
@@ -213,9 +208,19 @@ function touchAutoFetch(map: Map<string, number>, key: string): void {
   }
 }
 
+export type UseSourceControlOptions = {
+  /**
+   * A live consumer (Source Control panel, git tab, explorer decorations) is on
+   * screen. While false the hook runs no `git status` on window focus or when
+   * the context changes; it refreshes once a consumer appears. Default true.
+   */
+  live?: boolean;
+};
+
 export function useSourceControl(
   contextPath: string | null,
   enabled: boolean = true,
+  { live = true }: UseSourceControlOptions = {},
 ): SourceControlSummary {
   const workspaceEnv = useWorkspaceEnvStore((s) => s.env);
   const workspaceKey = workspaceScopeKey(workspaceEnv);
@@ -508,33 +513,46 @@ export function useSourceControl(
   useEffect(() => {
     if (!enabled) {
       requestIdRef.current++;
-      setState({
-        contextPath: null,
-        repo: null,
-        status: null,
-        hasRepo: false,
-        isLoading: false,
-        localError: null,
-        busyAction: null,
-        lastRemoteError: null,
-      });
+      setState(EMPTY_STATE);
       return;
     }
     setState((current) => ({ ...current, lastRemoteError: null }));
     const run = () => {
-      const root = stateRef.current.repo?.repoRoot;
-      const sameRepo = repositoryContainsContext(root ?? null, contextPath);
-      const fresh = Date.now() - lastRefreshAtRef.current < SC_STATUS_TTL_MS;
-      if (fresh && sameRepo && stateRef.current.hasRepo) {
-        setState((current) =>
-          current.contextPath === contextPath
-            ? current
-            : { ...current, contextPath },
-        );
-        return;
+      const current = stateRef.current;
+      const plan = planContextRefresh({
+        enabled,
+        live,
+        contextPath,
+        repoRoot: current.repo?.repoRoot ?? null,
+        hasRepo: current.hasRepo,
+        ageMs: Date.now() - lastRefreshAtRef.current,
+      });
+      switch (plan) {
+        case "refresh":
+          void refresh({ remote: "never" });
+          return;
+        case "reuse":
+          setState((s) =>
+            s.contextPath === contextPath ? s : { ...s, contextPath },
+          );
+          return;
+        case "clear":
+          // Drop any refresh still in flight for the context we just left.
+          requestIdRef.current++;
+          setState(EMPTY_STATE);
+          return;
+        default:
+          return;
       }
-      void refresh({ remote: "never" });
     };
+    // A consumer that is on screen with nothing to show (a freshly opened
+    // panel after a snapshot was dropped) must not wait for an idle slot, or it
+    // would flash "no repository" first.
+    const current = stateRef.current;
+    if (live && contextPath && !current.hasRepo && !current.isLoading) {
+      run();
+      return;
+    }
     const idle =
       typeof window.requestIdleCallback === "function"
         ? window.requestIdleCallback(run, { timeout: 600 })
@@ -550,10 +568,10 @@ export function useSourceControl(
         window.clearTimeout(idle as number);
       }
     };
-  }, [refresh, contextPath, enabled]);
+  }, [refresh, contextPath, enabled, live]);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !live) return;
     let timer = 0;
     const onFocus = () => {
       if (timer) window.clearTimeout(timer);
@@ -569,7 +587,7 @@ export function useSourceControl(
       window.removeEventListener("focus", onFocus);
       if (timer) window.clearTimeout(timer);
     };
-  }, [refresh, enabled]);
+  }, [refresh, enabled, live]);
 
   return useMemo<SourceControlSummary>(
     () => ({

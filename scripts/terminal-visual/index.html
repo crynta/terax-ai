@@ -1,0 +1,19 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Terax terminal visual harness</title>
+    <style>
+      html, body { margin: 0; width: 100%; height: 100%; background: #101214; color: #ccc; font: 12px system-ui; }
+      #stage { position: absolute; left: 0; top: 0; width: var(--area-width, 1600px); height: var(--area-height, 1000px); overflow: hidden; }
+      #host { position: absolute; left: var(--host-left, 0px); top: var(--host-top, 0px); width: var(--host-width, 960px); height: var(--host-height, 560px); }
+      #info { position: absolute; left: 8px; bottom: 6px; white-space: pre; opacity: 0.75; }
+      .absolute { position: absolute; } .inset-0 { inset: 0; } .overflow-hidden { overflow: hidden; } .block { display: block; }
+    </style>
+  </head>
+  <body>
+    <div id="stage" data-terminal-area><div id="host"></div></div>
+    <div id="info"></div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

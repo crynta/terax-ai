@@ -54,7 +54,7 @@ Auto-send after approval uses `lastAssistantMessageIsCompleteWithApprovalRespons
 `src-tauri/src/modules/net.rs` proxies AI provider requests and local-model pings. Before connecting:
 
 1. Resolve the hostname once (`resolve_and_classify`).
-2. Classify every resolved IP as public, private, loopback, or blocked metadata.
+2. Classify every resolved IP as public, private, loopback, or blocked metadata (`net/ip.rs`). An IPv6 address that carries an IPv4 destination (`::ffff:a.b.c.d`, `::a.b.c.d`, NAT64 `64:ff9b::/96`, 6to4 `2002::/16`, Teredo) takes the class of the embedded IPv4, and anything outside global unicast `2000::/3` (unique-local, site-local, link-local, multicast, documentation) is never public. Redirect targets are classified the same way.
 3. Block cloud metadata endpoints (`169.254.169.254`, `metadata.google.internal`, AWS IPv6 metadata, etc.).
 4. Pin reqwest to the resolved IPs so a second DNS lookup cannot return a different address (DNS rebinding).
 

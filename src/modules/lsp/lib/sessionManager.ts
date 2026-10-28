@@ -355,7 +355,7 @@ export function notifyDocumentSaved(path: string): void {
   }
 }
 
-export async function stopPresetSessions(presetId: string): Promise<void> {
+async function stopPresetSessions(presetId: string): Promise<void> {
   const targets = [...sessions.values()].filter(
     (m) => m.preset.id === presetId,
   );

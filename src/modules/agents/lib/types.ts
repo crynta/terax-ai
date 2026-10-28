@@ -2,7 +2,7 @@ export type AgentStatus = "working" | "waiting";
 
 export type AgentSource = "terminal" | "local";
 
-export type AgentSignalKind =
+type AgentSignalKind =
   | "started"
   | "working"
   | "attention"

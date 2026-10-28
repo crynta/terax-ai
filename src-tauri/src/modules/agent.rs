@@ -195,7 +195,10 @@ fn merge_hooks(mut root: Value, spec: &AgentSpec) -> Value {
 fn existing_config(contents: Option<&str>, path: &std::path::Path) -> Result<Value, String> {
     match contents {
         Some(s) if !s.trim().is_empty() => serde_json::from_str::<Value>(s).map_err(|e| {
-            format!("{} is not valid JSON ({e}); refusing to overwrite", path.display())
+            format!(
+                "{} is not valid JSON ({e}); refusing to overwrite",
+                path.display()
+            )
         }),
         _ => Ok(json!({})),
     }
@@ -267,11 +270,15 @@ fn enable_pi_extension() -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn agent_enable_hooks(agent: String) -> Result<(), String> {
+pub async fn agent_enable_hooks(agent: String) -> Result<(), String> {
+    super::fs::blocking(move || enable_hooks(&agent)).await
+}
+
+fn enable_hooks(agent: &str) -> Result<(), String> {
     if agent == "pi" {
         return enable_pi_extension();
     }
-    let spec = find(&agent)?;
+    let spec = find(agent)?;
     let path = settings_path(spec)?;
     let dir = path.parent().unwrap();
     std::fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
@@ -318,7 +325,13 @@ pub fn emit_conout_marker(agent: &str, event: &str) {
 }
 
 #[tauri::command]
-pub fn agent_hooks_status(agent: String) -> bool {
+pub async fn agent_hooks_status(agent: String) -> bool {
+    tauri::async_runtime::spawn_blocking(move || hooks_status(&agent))
+        .await
+        .unwrap_or(false)
+}
+
+fn hooks_status(agent: &str) -> bool {
     if agent == "pi" {
         return pi_extension_path()
             .ok()
@@ -329,7 +342,7 @@ pub fn agent_hooks_status(agent: String) -> bool {
                     .all(|needle| content.contains(needle))
             });
     }
-    let Ok(spec) = find(&agent) else {
+    let Ok(spec) = find(agent) else {
         return false;
     };
     let Some(content) = settings_path(spec)

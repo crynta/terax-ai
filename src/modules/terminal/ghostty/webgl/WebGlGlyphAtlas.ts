@@ -4,6 +4,11 @@
  */
 
 import { CellFlags } from "@terax/ghostty-core/protocol";
+import {
+  BuiltinGlyphRenderer,
+  builtinLineThickness,
+  isBuiltinGlyph,
+} from "../gpu/BuiltinGlyphs";
 import { hasIntrinsicColor } from "../gpu/glyphColor";
 import { SkylineAtlasAllocator } from "../gpu/SkylineAtlasAllocator";
 import { fontCss, type TerminalFontMetrics } from "../gpu/terminalVisuals";
@@ -49,7 +54,9 @@ const NULL_GLYPH: WebGlGlyphEntry = {
  * one byte of coverage and receives its color in the fragment shader, keeping
  * one cache entry across all ANSI and true-color variants. Native emoji use a
  * bounded RGBA atlas that is allocated only when an intrinsic-color glyph is
- * encountered.
+ * encountered. Box drawing, blocks, braille and powerline separators are drawn
+ * procedurally at exactly the cell size (`BuiltinGlyphs.ts`) and share the
+ * coverage atlas, so borders join without gaps and ignore bold and italic.
  */
 export class WebGlGlyphAtlas {
   private readonly coverageAllocator = new SkylineAtlasAllocator(
@@ -66,6 +73,7 @@ export class WebGlGlyphAtlas {
     Map<string, WebGlGlyphEntry>
   >();
   private coverage = new Uint8Array(ATLAS_SIZE * ATLAS_SIZE);
+  private builtin: BuiltinGlyphRenderer | null = null;
   private colorPixels: Uint8Array | null = null;
   private readonly rasterCanvas = document.createElement("canvas");
   private readonly rasterContext: CanvasRenderingContext2D;
@@ -145,6 +153,7 @@ export class WebGlGlyphAtlas {
 
   get cpuByteSize(): number {
     return (
+      (this.builtin?.byteSize ?? 0) +
       this.coverage.byteLength +
       (this.colorPixels?.byteLength ?? 0) +
       (this.disposed ? 0 : RASTER_SIZE * RASTER_SIZE * 4)
@@ -178,6 +187,16 @@ export class WebGlGlyphAtlas {
   ): WebGlGlyphEntry {
     this.assertLive();
     if (codepoint === 0 || codepoint === 32) return NULL_GLYPH;
+    if (grapheme === null && isBuiltinGlyph(codepoint)) {
+      const key = codepoint * 4;
+      const cached = this.simpleGlyphs.get(key);
+      if (cached) return cached;
+      const entry = this.rasterizeBuiltin(codepoint);
+      if (entry) {
+        this.simpleGlyphs.set(key, entry);
+        return entry;
+      }
+    }
     const style = flags & (CellFlags.BOLD | CellFlags.ITALIC);
     if (grapheme === null) {
       const key = codepoint * 4 + style;
@@ -269,6 +288,7 @@ export class WebGlGlyphAtlas {
     this.complexGlyphs.clear();
     this.coverage = new Uint8Array(0);
     this.colorPixels = null;
+    this.builtin = null;
     this.rasterCanvas.width = 1;
     this.rasterCanvas.height = 1;
     this.coverageDirty = null;
@@ -295,14 +315,14 @@ export class WebGlGlyphAtlas {
     const measurement = context.measureText(text);
     const left = Math.max(0, Math.ceil(measurement.actualBoundingBoxLeft || 0));
     const right = Math.ceil(
-      measurement.actualBoundingBoxRight || this.metrics.cellWidth * this.scale,
+      measurement.actualBoundingBoxRight || this.metrics.deviceCellWidth,
     );
     const ascent = Math.ceil(
-      measurement.actualBoundingBoxAscent || this.metrics.baseline * this.scale,
+      measurement.actualBoundingBoxAscent || this.metrics.deviceBaseline,
     );
     const descent = Math.ceil(
       measurement.actualBoundingBoxDescent ||
-        (this.metrics.cellHeight - this.metrics.baseline) * this.scale,
+        this.metrics.deviceCellHeight - this.metrics.deviceBaseline,
     );
     const width = Math.min(
       RASTER_SIZE,
@@ -368,8 +388,7 @@ export class WebGlGlyphAtlas {
 
     return {
       originOffsetX: -left - GLYPH_PADDING,
-      originOffsetY:
-        this.metrics.baseline * this.scale - ascent - GLYPH_PADDING,
+      originOffsetY: this.metrics.deviceBaseline - ascent - GLYPH_PADDING,
       width,
       height,
       uvMinX: region.x / atlasSize,
@@ -377,6 +396,51 @@ export class WebGlGlyphAtlas {
       uvMaxX: (region.x + width) / atlasSize,
       uvMaxY: (region.y + height) / atlasSize,
       intrinsicColor,
+    };
+  }
+
+  /** A procedurally drawn glyph that fills its whole cell, or null. */
+  private rasterizeBuiltin(codepoint: number): WebGlGlyphEntry | null {
+    this.builtin ??= new BuiltinGlyphRenderer({
+      width: this.metrics.deviceCellWidth,
+      height: this.metrics.deviceCellHeight,
+      thickness: builtinLineThickness(this.metrics.font.size * this.scale),
+    });
+    const renderer = this.builtin;
+    const mask = renderer.render(codepoint);
+    if (!mask) return null;
+    const { width, height } = renderer.spec;
+    let region = this.coverageAllocator.allocate(width, height);
+    if (!region) {
+      this.reset();
+      region = this.coverageAllocator.allocate(width, height);
+    }
+    if (!region) {
+      throw new Error(`Glyph exceeds the ${ATLAS_SIZE}px atlas budget`);
+    }
+    for (let row = 0; row < height; row += 1) {
+      this.coverage.set(
+        mask.subarray(row * width, (row + 1) * width),
+        (region.y + row) * ATLAS_SIZE + region.x,
+      );
+    }
+    this.coverageDirty = mergeDirty(
+      this.coverageDirty,
+      region.x,
+      region.y,
+      width,
+      height,
+    );
+    return {
+      originOffsetX: 0,
+      originOffsetY: 0,
+      width,
+      height,
+      uvMinX: region.x / ATLAS_SIZE,
+      uvMinY: region.y / ATLAS_SIZE,
+      uvMaxX: (region.x + width) / ATLAS_SIZE,
+      uvMaxY: (region.y + height) / ATLAS_SIZE,
+      intrinsicColor: false,
     };
   }
 

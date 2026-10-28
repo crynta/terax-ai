@@ -6,6 +6,9 @@ use serde::Serialize;
 use tauri::Emitter;
 use tempfile::NamedTempFile;
 
+use super::blocking;
+use super::index::FileIndexState;
+use super::mutate::note_changed;
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
 const MAX_READ_BYTES: u64 = 10 * 1024 * 1024; // 10 MB
@@ -60,8 +63,11 @@ pub async fn fs_read_file(
     workspace: Option<WorkspaceEnv>,
     force: Option<bool>,
 ) -> Result<ReadResult, String> {
-    let workspace = WorkspaceEnv::from_option(workspace);
-    read_file_sync(&resolve_path(&path, &workspace), force.unwrap_or(false))
+    blocking(move || {
+        let workspace = WorkspaceEnv::from_option(workspace);
+        read_file_sync(&resolve_path(&path, &workspace), force.unwrap_or(false))
+    })
+    .await
 }
 
 fn read_file_sync(p: &Path, force: bool) -> Result<ReadResult, String> {
@@ -131,28 +137,29 @@ pub async fn fs_write_file(
     workspace: Option<WorkspaceEnv>,
     source: Option<String>,
     app: tauri::AppHandle,
+    index: tauri::State<'_, FileIndexState>,
 ) -> Result<u64, String> {
-    let workspace = WorkspaceEnv::from_option(workspace);
-    let target = resolve_path(&path, &workspace);
-    let original_permissions = fs::metadata(&target).ok().map(|m| m.permissions());
-    write_atomic(&target, content.as_bytes()).map_err(|e| {
-        log::warn!("fs_write_file({}) failed: {e}", target.display());
-        e.to_string()
-    })?;
+    let index = index.inner().clone();
+    let (path, mtime) = blocking(move || {
+        let workspace = WorkspaceEnv::from_option(workspace);
+        let target = resolve_path(&path, &workspace);
+        let original = fs::metadata(&target).ok();
+        write_atomic(&target, content.as_bytes()).map_err(|e| {
+            log::warn!("fs_write_file({}) failed: {e}", target.display());
+            e.to_string()
+        })?;
 
-    if let Some(perms) = original_permissions {
-        let _ = fs::set_permissions(&target, perms);
-    }
-    let mtime = fs::metadata(&target)
-        .map(|m| mtime_millis(&m))
-        .unwrap_or(0);
-    let _ = app.emit(
-        "fs:file-written",
-        FileWrittenEvent {
-            path: path.clone(),
-            source,
-        },
-    );
+        if let Some(perms) = original.as_ref().map(|m| m.permissions()) {
+            let _ = fs::set_permissions(&target, perms);
+        }
+        if original.is_none() {
+            note_changed(&index, &target);
+        }
+        let mtime = fs::metadata(&target).map(|m| mtime_millis(&m)).unwrap_or(0);
+        Ok((path, mtime))
+    })
+    .await?;
+    let _ = app.emit("fs:file-written", FileWrittenEvent { path, source });
 
     Ok(mtime)
 }
@@ -162,14 +169,21 @@ pub async fn fs_canonicalize(
     path: String,
     workspace: Option<WorkspaceEnv>,
 ) -> Result<String, String> {
-    let workspace = WorkspaceEnv::from_option(workspace);
-    let p = resolve_path(&path, &workspace);
-    let canon = std::fs::canonicalize(&p).map_err(|e| e.to_string())?;
-    Ok(super::to_canon(&canon))
+    blocking(move || {
+        let workspace = WorkspaceEnv::from_option(workspace);
+        let p = resolve_path(&path, &workspace);
+        let canon = std::fs::canonicalize(&p).map_err(|e| e.to_string())?;
+        Ok(super::to_canon(&canon))
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn fs_stat(path: String, workspace: Option<WorkspaceEnv>) -> Result<FileStat, String> {
+    blocking(move || stat_path(path, workspace)).await
+}
+
+fn stat_path(path: String, workspace: Option<WorkspaceEnv>) -> Result<FileStat, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
     let p = resolve_path(&path, &workspace);
     let meta = std::fs::metadata(&p).map_err(|e| e.to_string())?;

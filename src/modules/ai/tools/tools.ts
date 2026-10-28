@@ -40,5 +40,3 @@ export function buildTools(ctx: import("./context").ToolContext) {
     ...buildManagedAgentTools(ctx),
   } as const;
 }
-
-export type ChatTools = ReturnType<typeof buildTools>;

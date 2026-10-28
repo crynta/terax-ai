@@ -1,9 +1,13 @@
-use ignore::WalkBuilder;
+use std::path::Path;
+
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
 use serde::Serialize;
+use tauri::State;
 
-use super::to_canon;
+use super::index::{FileIndexState, IndexKey, Packed};
+use super::supersede::Supersede;
+use super::{blocking, display_path};
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
 #[derive(Serialize, Clone)]
@@ -22,129 +26,146 @@ pub struct SearchResult {
     pub hits: Vec<SearchHit>,
     /// True if the scan stopped early (entry budget or hit cap reached).
     pub truncated: bool,
+    /// A newer query from the same caller replaced this one; `hits` is empty.
+    pub cancelled: bool,
 }
 
-/// Hard cap on entries the walker is allowed to visit before bailing. Protects
-/// against pathological roots like $HOME where there's no .gitignore and the
-/// tree is effectively unbounded.
-const MAX_SCANNED: usize = 50_000;
+impl SearchResult {
+    fn empty() -> Self {
+        Self {
+            hits: Vec::new(),
+            truncated: false,
+            cancelled: false,
+        }
+    }
 
-/// Directory names pruned unconditionally — they're rarely useful in a
-/// file-explorer search and they dominate scan time when present.
-const PRUNE_DIRS: &[&str] = &[
-    "node_modules",
-    ".git",
-    "target",
-    "dist",
-    "build",
-    ".next",
-    ".turbo",
-    ".cache",
-    ".venv",
-    "__pycache__",
-];
+    fn cancelled() -> Self {
+        Self {
+            cancelled: true,
+            ..Self::empty()
+        }
+    }
+}
 
+/// Ranking checks for supersession this often; a full pass over 50k entries is
+/// a few milliseconds, so this only matters for pathological roots.
+const CANCEL_CHECK_EVERY: usize = 2048;
+const DEFAULT_SEARCH_LIMIT: usize = 200;
+const MAX_SEARCH_LIMIT: usize = 1000;
+
+/// Fuzzy file search over the cached file list of `root`.
 #[tauri::command]
-pub fn fs_search(
+#[allow(clippy::too_many_arguments)]
+pub async fn fs_search(
+    index: State<'_, FileIndexState>,
+    supersede: State<'_, Supersede>,
     root: String,
     query: String,
     limit: Option<usize>,
     workspace: Option<WorkspaceEnv>,
     show_hidden: Option<bool>,
+    request_key: Option<String>,
+) -> Result<SearchResult, String> {
+    let ticket = request_key.as_deref().map(|key| supersede.begin(key));
+    let index = index.inner().clone();
+    blocking(move || {
+        let cancelled = || ticket.as_ref().is_some_and(|t| t.is_superseded());
+        run_search(
+            &index,
+            root,
+            query,
+            limit,
+            workspace,
+            show_hidden,
+            &cancelled,
+        )
+    })
+    .await
+}
+
+pub fn run_search(
+    index: &FileIndexState,
+    root: String,
+    query: String,
+    limit: Option<usize>,
+    workspace: Option<WorkspaceEnv>,
+    show_hidden: Option<bool>,
+    cancelled: &dyn Fn() -> bool,
 ) -> Result<SearchResult, String> {
     let q = query.trim();
     if q.is_empty() {
-        return Ok(SearchResult {
-            hits: Vec::new(),
-            truncated: false,
-        });
+        return Ok(SearchResult::empty());
     }
-    let cap = limit.unwrap_or(200).min(1000);
-    let show_hidden = show_hidden.unwrap_or(false);
+    let cap = limit.unwrap_or(DEFAULT_SEARCH_LIMIT).min(MAX_SEARCH_LIMIT);
     let workspace = WorkspaceEnv::from_option(workspace);
     let root_path = resolve_path(&root, &workspace);
     if !root_path.is_dir() {
         return Err(format!("not a directory: {root}"));
     }
-
-    let mut cands: Vec<SearchHit> = Vec::new();
-    let mut scanned: usize = 0;
-    let mut truncated = false;
-
-    let walker = WalkBuilder::new(&root_path)
-        .hidden(!show_hidden)
-        .git_ignore(true)
-        .git_global(true)
-        .git_exclude(true)
-        .ignore(true)
-        .parents(true)
-        .follow_links(false)
-        .filter_entry(|dent| {
-            // Prune known-heavy dirs even when no .gitignore is present (e.g.
-            // searching from $HOME).
-            if dent.depth() == 0 {
-                return true;
-            }
-            match dent.file_name().to_str() {
-                Some(name) => !PRUNE_DIRS.contains(&name),
-                None => true,
-            }
-        })
-        .build();
-
-    for dent in walker.flatten() {
-        scanned += 1;
-        if scanned > MAX_SCANNED {
-            truncated = true;
-            break;
-        }
-        let path = dent.path();
-        if path == root_path {
-            continue;
-        }
-        let rel = match path.strip_prefix(&root_path) {
-            Ok(r) => to_canon(r),
-            Err(_) => continue,
-        };
-        let name = path
-            .file_name()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        let is_dir = dent.file_type().map(|t| t.is_dir()).unwrap_or(false);
-        cands.push(SearchHit {
-            path: display_path(path, &root_path, &root, &workspace),
-            rel,
-            name,
-            is_dir,
-        });
+    if cancelled() {
+        return Ok(SearchResult::cancelled());
     }
 
-    let hits = rank_fuzzy(cands, q, cap);
-    Ok(SearchResult { hits, truncated })
+    let key = IndexKey {
+        root: root_path.clone(),
+        show_hidden: show_hidden.unwrap_or(false),
+        max_depth: None,
+    };
+    let file_index = index.get_or_build(&key);
+    let Some(ranked) = rank_fuzzy(&file_index.entries, q, cap, cancelled) else {
+        return Ok(SearchResult::cancelled());
+    };
+
+    let hits = ranked
+        .into_iter()
+        .map(|i| {
+            let (rel, is_dir) = file_index.entries.get(i);
+            SearchHit {
+                path: abs_path(rel, &root_path, &root, &workspace),
+                rel: rel.to_string(),
+                name: rel.rsplit('/').next().unwrap_or(rel).to_string(),
+                is_dir,
+            }
+        })
+        .collect();
+    Ok(SearchResult {
+        hits,
+        truncated: file_index.truncated,
+        cancelled: false,
+    })
 }
 
-/// Fuzzy-rank candidates against the query (path-aware, smart-case), keeping
-/// the top `cap`. Ties break toward shorter relative paths.
-fn rank_fuzzy(cands: Vec<SearchHit>, query: &str, cap: usize) -> Vec<SearchHit> {
+fn abs_path(rel: &str, root_path: &Path, root_display: &str, workspace: &WorkspaceEnv) -> String {
+    display_path(&root_path.join(rel), root_path, root_display, workspace)
+}
+
+/// Fuzzy-rank candidates against the query (path-aware, smart-case), returning
+/// the indices of the top `cap`. Ties break toward shorter relative paths, then
+/// walk order. `None` means the query was superseded while ranking.
+fn rank_fuzzy(
+    entries: &Packed,
+    query: &str,
+    cap: usize,
+    cancelled: &dyn Fn() -> bool,
+) -> Option<Vec<usize>> {
     let mut matcher = Matcher::new(Config::DEFAULT.match_paths());
     let pattern = Pattern::parse(query, CaseMatching::Smart, Normalization::Smart);
     let mut buf = Vec::new();
 
-    let mut scored = Vec::with_capacity(cands.len());
-    for (i, c) in cands.iter().enumerate() {
-        if let Some(s) = pattern.score(Utf32Str::new(&c.rel, &mut buf), &mut matcher) {
-            scored.push((s, i));
+    let mut scored: Vec<(u32, usize)> = Vec::new();
+    for (i, (rel, _)) in entries.iter().enumerate() {
+        if i % CANCEL_CHECK_EVERY == 0 && cancelled() {
+            return None;
+        }
+        if let Some(score) = pattern.score(Utf32Str::new(rel, &mut buf), &mut matcher) {
+            scored.push((score, i));
         }
     }
     scored.sort_by(|a, b| {
         b.0.cmp(&a.0)
-            .then_with(|| cands[a.1].rel.len().cmp(&cands[b.1].rel.len()))
+            .then_with(|| entries.get(a.1).0.len().cmp(&entries.get(b.1).0.len()))
     });
-    scored
-        .into_iter()
-        .take(cap)
-        .map(|(_, i)| cands[i].clone())
-        .collect()
+    Some(scored.into_iter().take(cap).map(|(_, i)| i).collect())
 }
 
 #[derive(Serialize)]
@@ -154,7 +175,20 @@ pub struct ListFilesResult {
 }
 
 #[tauri::command]
-pub fn fs_list_files(
+pub async fn fs_list_files(
+    index: State<'_, FileIndexState>,
+    root: String,
+    limit: Option<usize>,
+    max_depth: Option<usize>,
+    workspace: Option<WorkspaceEnv>,
+    show_hidden: Option<bool>,
+) -> Result<ListFilesResult, String> {
+    let index = index.inner().clone();
+    blocking(move || run_list_files(&index, root, limit, max_depth, workspace, show_hidden)).await
+}
+
+pub fn run_list_files(
+    index: &FileIndexState,
     root: String,
     limit: Option<usize>,
     max_depth: Option<usize>,
@@ -168,117 +202,118 @@ pub fn fs_list_files(
 
     let cap = limit.unwrap_or(DEFAULT_LIMIT).clamp(1, HARD_LIMIT);
     let depth = max_depth.unwrap_or(DEFAULT_DEPTH).clamp(1, HARD_DEPTH);
-    let show_hidden = show_hidden.unwrap_or(false);
     let workspace = WorkspaceEnv::from_option(workspace);
     let root_path = resolve_path(&root, &workspace);
     if !root_path.is_dir() {
         return Err(format!("not a directory: {root}"));
     }
 
-    let walker = WalkBuilder::new(&root_path)
-        .hidden(!show_hidden)
-        .git_ignore(true)
-        .git_global(true)
-        .git_exclude(true)
-        .ignore(true)
-        .parents(true)
-        .follow_links(false)
-        .max_depth(Some(depth))
-        .filter_entry(|dent| {
-            if dent.depth() == 0 {
-                return true;
-            }
-            match dent.file_name().to_str() {
-                Some(name) => !PRUNE_DIRS.contains(&name),
-                None => true,
-            }
-        })
-        .build();
-
-    let mut files: Vec<String> = Vec::with_capacity(cap.min(256));
-    let mut scanned: usize = 0;
-    let mut truncated = false;
-
-    for dent in walker.flatten() {
-        scanned += 1;
-        if scanned > MAX_SCANNED {
-            truncated = true;
-            break;
-        }
-        let is_file = dent.file_type().map(|t| t.is_file()).unwrap_or(false);
-        if !is_file {
-            continue;
-        }
-        let path = dent.path();
-        let rel = match path.strip_prefix(&root_path) {
-            Ok(r) => to_canon(r),
-            Err(_) => continue,
-        };
-        if rel.is_empty() {
-            continue;
-        }
-        files.push(rel);
-        if files.len() >= cap {
-            truncated = true;
-            break;
-        }
-    }
-
-    files.sort_by_key(|a| a.to_lowercase());
-    Ok(ListFilesResult { files, truncated })
-}
-
-fn display_path(
-    path: &std::path::Path,
-    root_path: &std::path::Path,
-    root_display: &str,
-    workspace: &WorkspaceEnv,
-) -> String {
-    if workspace.is_wsl() {
-        if let Ok(rel) = path.strip_prefix(root_path) {
-            let rel = to_canon(rel);
-            return if rel.is_empty() {
-                root_display.to_string()
-            } else if root_display.ends_with('/') {
-                format!("{root_display}{rel}")
-            } else {
-                format!("{root_display}/{rel}")
-            };
-        }
-    }
-    to_canon(path)
+    let key = IndexKey {
+        root: root_path,
+        show_hidden: show_hidden.unwrap_or(false),
+        max_depth: Some(depth),
+    };
+    let file_index = index.get_or_build(&key);
+    let mut files = file_index.entries.iter().filter(|(_, is_dir)| !is_dir);
+    let mut listed: Vec<String> = files
+        .by_ref()
+        .take(cap)
+        .map(|(rel, _)| rel.to_string())
+        .collect();
+    let truncated = file_index.truncated || files.next().is_some();
+    listed.sort_by_cached_key(|rel| rel.to_lowercase());
+    Ok(ListFilesResult {
+        files: listed,
+        truncated,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn hit(rel: &str) -> SearchHit {
-        SearchHit {
-            path: rel.to_string(),
-            rel: rel.to_string(),
-            name: rel.rsplit('/').next().unwrap_or(rel).to_string(),
-            is_dir: false,
+    fn packed(paths: &[&str]) -> Packed {
+        let mut out = Packed::default();
+        for path in paths {
+            assert!(out.push(path, false));
         }
+        out
+    }
+
+    fn ranked(paths: &[&str], query: &str, cap: usize) -> Vec<String> {
+        let entries = packed(paths);
+        rank_fuzzy(&entries, query, cap, &|| false)
+            .unwrap()
+            .into_iter()
+            .map(|i| entries.get(i).0.to_string())
+            .collect()
     }
 
     #[test]
     fn rank_fuzzy_prefers_name_and_shorter_path() {
-        let cands = vec![
-            hit("src/deeply/nested/config.rs"),
-            hit("config.rs"),
-            hit("src/main.rs"),
-        ];
-        let out = rank_fuzzy(cands, "config", 10);
-        assert_eq!(out[0].rel, "config.rs");
-        assert!(!out.iter().any(|h| h.rel == "src/main.rs"));
+        let out = ranked(
+            &["src/deeply/nested/config.rs", "config.rs", "src/main.rs"],
+            "config",
+            10,
+        );
+        assert_eq!(out[0], "config.rs");
+        assert!(!out.iter().any(|h| h == "src/main.rs"));
     }
 
     #[test]
     fn rank_fuzzy_matches_subsequence() {
-        let cands = vec![hit("CommandPalette.tsx"), hit("readme.md")];
-        let out = rank_fuzzy(cands, "cmdp", 10);
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0].rel, "CommandPalette.tsx");
+        let out = ranked(&["CommandPalette.tsx", "readme.md"], "cmdp", 10);
+        assert_eq!(out, vec!["CommandPalette.tsx".to_string()]);
+    }
+
+    #[test]
+    fn rank_fuzzy_stops_when_superseded() {
+        let entries = packed(&["a.rs", "b.rs"]);
+        assert!(rank_fuzzy(&entries, "rs", 10, &|| true).is_none());
+    }
+
+    #[test]
+    fn a_superseded_search_returns_a_cancelled_marker_without_walking() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.rs"), "").unwrap();
+        let state = FileIndexState::default();
+        let out = run_search(
+            &state,
+            dir.path().to_string_lossy().into_owned(),
+            "a".into(),
+            None,
+            None,
+            None,
+            &|| true,
+        )
+        .unwrap();
+        assert!(out.cancelled);
+        assert!(out.hits.is_empty());
+    }
+
+    #[test]
+    fn repeated_queries_reuse_one_walk_and_see_new_files_after_a_change_event() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("alpha.rs"), "").unwrap();
+        let root = dir.path().to_string_lossy().into_owned();
+        let state = FileIndexState::default();
+        let search = |q: &str| {
+            run_search(&state, root.clone(), q.into(), None, None, None, &|| false)
+                .unwrap()
+                .hits
+                .len()
+        };
+        assert_eq!(search("alpha"), 1);
+
+        std::fs::write(dir.path().join("alphabet.rs"), "").unwrap();
+        assert_eq!(
+            search("alpha"),
+            1,
+            "cached list does not see the new file yet"
+        );
+
+        let canonical = std::fs::canonicalize(dir.path()).unwrap();
+        state.note_change(&crate::modules::fs::to_canon(canonical));
+        assert_eq!(search("alpha"), 2);
     }
 }

@@ -8,7 +8,6 @@
 
 import {
   CellFlags,
-  type Cursor,
   DirtyState,
   GHOSTTY_CONFIG_SIZE,
   type GhosttyCell,
@@ -19,7 +18,6 @@ import {
   type KeyEvent,
   type KittyKeyFlags,
   type PackedViewport,
-  type RGB,
   type RenderStateColors,
   type RenderStateCursor,
   type TerminalHandle,
@@ -28,13 +26,11 @@ import {
 // Re-export types for convenience
 export {
   CellFlags,
-  type Cursor,
   DirtyState,
   type GhosttyCell,
   type GhosttyTerminalConfig,
   type GhosttyTerminalEvent,
   KeyEncoderOption,
-  type RGB,
   type RenderStateColors,
   type RenderStateCursor,
 };

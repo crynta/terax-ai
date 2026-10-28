@@ -1,4 +1,4 @@
-export type RemoteWebHost = "github" | "gitlab" | "bitbucket";
+type RemoteWebHost = "github" | "gitlab" | "bitbucket";
 
 export type RemoteWebInfo = {
   host: RemoteWebHost;

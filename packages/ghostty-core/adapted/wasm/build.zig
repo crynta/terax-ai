@@ -32,6 +32,13 @@ pub fn build(b: *std.Build) void {
 
     exe.entry = .disabled;
     exe.rdynamic = true;
+    if (target.result.cpu.arch.isWasm()) {
+        // Each terminal owns an instance, so the shadow stack is paid once per
+        // terminal. The stack is placed first in linear memory: an overflow
+        // traps on an out-of-bounds access instead of corrupting data.
+        const stack_kib = b.option(u32, "wasm-stack-kib", "WebAssembly shadow stack size in KiB") orelse 96;
+        exe.stack_size = @as(u64, stack_kib) * 1024;
+    }
 
     const ghostty_dep = b.dependency("ghostty", .{
         .target = target,

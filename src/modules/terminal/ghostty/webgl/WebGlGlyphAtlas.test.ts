@@ -1,3 +1,4 @@
+import { CellFlags } from "@terax/ghostty-core/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { hasIntrinsicColor, WebGlGlyphAtlas } from "./WebGlGlyphAtlas";
 
@@ -59,9 +60,58 @@ describe("WebGlGlyphAtlas uploads", () => {
   });
 });
 
+describe("WebGlGlyphAtlas procedural glyphs", () => {
+  it("draws box characters at the cell size with no bearing and ignores styles", () => {
+    const fillText = vi.fn();
+    const gl = createWebGlHarness(vi.fn(), vi.fn(), fillText);
+    const atlas = new WebGlGlyphAtlas(gl, METRICS, 1);
+    const regular = atlas.glyph(0x253c, null, 0);
+    const bold = atlas.glyph(0x253c, null, CellFlags.BOLD | CellFlags.ITALIC);
+    expect(bold).toBe(regular);
+    expect(regular.width).toBe(METRICS.deviceCellWidth);
+    expect(regular.height).toBe(METRICS.deviceCellHeight);
+    expect(regular.originOffsetX).toBe(0);
+    expect(regular.originOffsetY).toBe(0);
+    expect(regular.intrinsicColor).toBe(false);
+    expect(regular.uvMaxX - regular.uvMinX).toBeCloseTo(8 / 1_024, 9);
+    expect(regular.uvMaxY - regular.uvMinY).toBeCloseTo(16 / 1_024, 9);
+    expect(fillText).not.toHaveBeenCalled();
+    expect(atlas.glyphCount).toBe(1);
+    // Text and combined sequences still come from the font.
+    atlas.glyph(65, null, 0);
+    atlas.glyph(0x253c, "\u253c\u0301", 0);
+    expect(fillText).toHaveBeenCalledTimes(2);
+    atlas.bindAndUpload();
+    expect(atlas.uploadedBytes).toBeGreaterThan(0);
+    atlas.dispose();
+  });
+
+  it("stores the shared mask in the coverage atlas at its allocated rectangle", () => {
+    const texSubImage2D = vi.fn();
+    const gl = createWebGlHarness(texSubImage2D, vi.fn());
+    const atlas = new WebGlGlyphAtlas(gl, METRICS, 1);
+    const glyph = atlas.glyph(0x2588, null, 0);
+    atlas.bindAndUpload();
+    const [, , x, y, width, height, , , pixels] = texSubImage2D.mock.calls[0];
+    expect(x).toBe(glyph.uvMinX * 1_024);
+    expect(y).toBe(glyph.uvMinY * 1_024);
+    expect(width).toBeGreaterThanOrEqual(8);
+    expect(height).toBeGreaterThanOrEqual(16);
+    const atlasPixels = pixels as Uint8Array;
+    // Every pixel of the full block is full coverage.
+    for (let row = 0; row < 16; row += 1) {
+      for (let column = 0; column < 8; column += 1) {
+        expect(atlasPixels[(y + row) * 1_024 + x + column]).toBe(255);
+      }
+    }
+    atlas.dispose();
+  });
+});
+
 function createWebGlHarness(
   texSubImage2D: ReturnType<typeof vi.fn>,
   pixelStorei: ReturnType<typeof vi.fn>,
+  fillText: ReturnType<typeof vi.fn> = vi.fn(),
 ): WebGL2RenderingContext {
   const pixels = new Uint8ClampedArray(12 * 16 * 4);
   for (let offset = 0; offset < pixels.length; offset += 4) {
@@ -76,7 +126,7 @@ function createWebGlHarness(
       height: 0,
       getContext: vi.fn(() => ({
         clearRect: vi.fn(),
-        fillText: vi.fn(),
+        fillText,
         getImageData: vi.fn(() => ({ data: pixels })),
         measureText: vi.fn(() => ({
           actualBoundingBoxLeft: 0,
@@ -128,6 +178,10 @@ const METRICS = {
     letterSpacing: 0,
     weight: "400",
   },
+  scale: 1,
+  deviceCellWidth: 8,
+  deviceCellHeight: 16,
+  deviceBaseline: 12,
   cellWidth: 8,
   cellHeight: 16,
   baseline: 12,

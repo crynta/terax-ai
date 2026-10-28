@@ -8,6 +8,17 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Loading indicators tick instead of animating every display frame. An
+ * infinite smooth animation keeps the compositor producing frames at the
+ * display rate for as long as it is on screen; `steps()` caps that at a
+ * handful of repaints per second, which is all a spinner or placeholder pulse
+ * needs to read as "working". Spinner: 1 turn = 12 ticks. Pulse: each of the
+ * two half-cycles = 4 ticks (4 fps). */
+@theme {
+  --animate-spin: spin 1s steps(12, end) infinite;
+  --animate-pulse: pulse 2s steps(4, end) infinite;
+}
+
 @theme inline {
     --font-heading: var(--font-sans);
     --font-sans: 'Inter Variable', sans-serif;
@@ -232,6 +243,22 @@ html[data-vibrancy="on"] {
 
 html[data-chrome="borderless"] .terax-bg-surface {
   border-radius: 12px;
+}
+/* Window drag (macOS WebKit): while `data-live-resize` is set (see
+ * modules/theme/livePageResize) the document is given an invisible size rounded
+ * up to the tile quantum, so the page tile does not change size at every step.
+ * WebKit allocates a new viewport-sized IOSurface per step otherwise (hundreds
+ * of MiB for a drag) and frees them only after it ends. Hidden and
+ * non-interactive: nothing paints or hit-tests there. */
+html[data-live-resize] body::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: round(up, 100vw, 512px);
+  height: round(up, 100vh, 512px);
+  visibility: hidden;
+  pointer-events: none;
 }
 .zoom-content {
   zoom: var(--app-zoom);
@@ -469,6 +496,25 @@ html *::-webkit-scrollbar {
   animation: terax-tab-in var(--dur-base) var(--ease-premium);
 }
 
+/* Long AI chats: older messages skip layout and paint while off screen.
+ * `auto` in contain-intrinsic-size makes the browser remember each message's
+ * last rendered height, so the inline estimate only applies to messages that
+ * have never been on screen. The newest messages opt out (see AiChat). */
+.terax-chat-item {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 96px;
+}
+
+/* File icons load lazily; a slot that was blank at mount fades its icon in. */
+@keyframes terax-icon-in {
+  from {
+    opacity: 0;
+  }
+}
+.terax-icon-in {
+  animation: terax-icon-in var(--dur-fast) var(--ease-soft);
+}
+
 @keyframes terax-pill-in {
   from {
     opacity: 0;
@@ -509,7 +555,40 @@ html *::-webkit-scrollbar {
       var(--color-muted-foreground),
       var(--color-muted-foreground)
     );
-  animation: terax-shimmer var(--shimmer-duration, 2s) linear infinite;
+  /* 40 ticks per sweep (20 fps at the 2s default) rather than 60+ repaints/s. */
+  animation: terax-shimmer var(--shimmer-duration, 2s) steps(40, end) infinite;
+}
+
+/* Recording indicator: a hard on/off blink, two repaints per cycle. */
+@keyframes terax-blink {
+  50% {
+    opacity: 0.2;
+  }
+}
+.terax-blink {
+  animation: terax-blink 1.2s steps(1, end) infinite;
+}
+
+/* Draws the eye to a pending prompt for a few beats, then settles to a static
+ * dot: a waiting approval must not animate for as long as it sits there. */
+@keyframes terax-attention {
+  50% {
+    opacity: 0.3;
+  }
+}
+.terax-attention-pulse {
+  animation: terax-attention 1.6s steps(8, end) 3;
+}
+
+/* A window that is unfocused, hidden or occluded shows nothing the user is
+ * watching, so no animation should keep producing frames for it.
+ * `data-window-inactive` is maintained on <html> by modules/theme/windowActivity
+ * (window focus + document visibility + native occlusion). Paused animations
+ * resume where they stopped when the window comes back. */
+html[data-window-inactive] *,
+html[data-window-inactive] *::before,
+html[data-window-inactive] *::after {
+  animation-play-state: paused !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -524,5 +603,9 @@ html *::-webkit-scrollbar {
   .terax-shimmer {
     animation: none;
     background-position: 0% center;
+  }
+  .terax-blink,
+  .terax-attention-pulse {
+    animation: none;
   }
 }

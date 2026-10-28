@@ -1,25 +1,58 @@
 mod common;
 
 use common::{git_available, FsFixture, GitRepoFixture};
-use terax_lib::modules::fs::grep::{fs_glob, fs_grep};
-use terax_lib::modules::fs::search::{fs_list_files, fs_search};
-use terax_lib::modules::fs::tree::{fs_read_dir, list_subdirs, EntryKind};
+use terax_lib::modules::fs::grep::{run_glob as fs_glob, run_grep as fs_grep};
+use terax_lib::modules::fs::index::FileIndexState;
+use terax_lib::modules::fs::search::{run_list_files, run_search};
+use terax_lib::modules::fs::tree::{
+    read_dir_entries as fs_read_dir, subdirs as list_subdirs, EntryKind,
+};
+
+fn fs_search(
+    root: String,
+    query: String,
+    limit: Option<usize>,
+    workspace: Option<terax_lib::modules::workspace::WorkspaceEnv>,
+    show_hidden: Option<bool>,
+) -> Result<terax_lib::modules::fs::search::SearchResult, String> {
+    run_search(
+        &FileIndexState::default(),
+        root,
+        query,
+        limit,
+        workspace,
+        show_hidden,
+        &|| false,
+    )
+}
+
+fn fs_list_files(
+    root: String,
+    limit: Option<usize>,
+    max_depth: Option<usize>,
+    workspace: Option<terax_lib::modules::workspace::WorkspaceEnv>,
+    show_hidden: Option<bool>,
+) -> Result<terax_lib::modules::fs::search::ListFilesResult, String> {
+    run_list_files(
+        &FileIndexState::default(),
+        root,
+        limit,
+        max_depth,
+        workspace,
+        show_hidden,
+    )
+}
 
 #[test]
 fn grep_finds_matches_and_returns_relative_paths() {
     let fx = FsFixture::new();
-    fx.write("src/main.rs", "fn main() {\n    println!(\"hello world\");\n}\n");
+    fx.write(
+        "src/main.rs",
+        "fn main() {\n    println!(\"hello world\");\n}\n",
+    );
     fx.write("src/lib.rs", "pub fn greet() {}\n");
 
-    let res = fs_grep(
-        "hello".into(),
-        fx.root_str(),
-        None,
-        None,
-        None,
-        None,
-    )
-    .expect("grep");
+    let res = fs_grep("hello".into(), fx.root_str(), None, None, None, None).expect("grep");
 
     assert_eq!(res.hits.len(), 1);
     let hit = &res.hits[0];
@@ -35,12 +68,11 @@ fn grep_case_insensitive_finds_mixed_case() {
     let fx = FsFixture::new();
     fx.write("a.txt", "Hello World\n");
 
-    let strict = fs_grep("hello".into(), fx.root_str(), None, Some(false), None, None)
-        .expect("grep");
+    let strict =
+        fs_grep("hello".into(), fx.root_str(), None, Some(false), None, None).expect("grep");
     assert!(strict.hits.is_empty());
 
-    let loose = fs_grep("hello".into(), fx.root_str(), None, Some(true), None, None)
-        .expect("grep");
+    let loose = fs_grep("hello".into(), fx.root_str(), None, Some(true), None, None).expect("grep");
     assert_eq!(loose.hits.len(), 1);
 }
 
@@ -71,8 +103,7 @@ fn grep_max_results_truncates() {
         fx.write(&format!("f{i}.txt"), "needle\n");
     }
 
-    let res = fs_grep("needle".into(), fx.root_str(), None, None, Some(3), None)
-        .expect("grep");
+    let res = fs_grep("needle".into(), fx.root_str(), None, None, Some(3), None).expect("grep");
 
     assert!(res.hits.len() <= 3);
     assert!(res.truncated);
@@ -105,8 +136,7 @@ fn grep_respects_ignore_file() {
     fx.write("ignored.txt", "secret\n");
     fx.write("visible.txt", "secret\n");
 
-    let res = fs_grep("secret".into(), fx.root_str(), None, None, None, None)
-        .expect("grep");
+    let res = fs_grep("secret".into(), fx.root_str(), None, None, None, None).expect("grep");
 
     let rels: Vec<&str> = res.hits.iter().map(|h| h.rel.as_str()).collect();
     assert!(rels.contains(&"visible.txt"));

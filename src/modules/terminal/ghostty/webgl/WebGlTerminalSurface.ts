@@ -7,12 +7,21 @@ import {
 } from "@/modules/terminal/ghostty/windowPresentation";
 import type { WindowPresentation } from "@/modules/terminal/ghostty/WindowPresentationPolicy";
 import type { TerminalSurface } from "@/modules/terminal/backend/contracts";
+import { noteTerminalHostResize } from "@/modules/terminal/lib/terminalResizeGesture";
 import {
   subscribeTerminalResizeInteraction,
   terminalResizeInteractionActive,
 } from "@/modules/terminal/lib/terminalResizeInteraction";
+import { TerminalResizeSync } from "@/modules/terminal/lib/terminalResizeSync";
 import type { GhosttyTerminalModelApi } from "../GhosttyTerminalModel";
+import type { GestureGrowth } from "../gpu/CanvasBackingStore";
 import { DevicePixelRatioMonitor } from "../gpu/DevicePixelRatioMonitor";
+import {
+  type CssSize,
+  gestureBackingBound,
+  measureGestureBackingEnvironment,
+  windowInnerSize,
+} from "../gpu/GestureBacking";
 import { fitTerminalViewport } from "../gpu/TerminalFit";
 import {
   TerminalFitQueue,
@@ -22,7 +31,12 @@ import type {
   TerminalFontMetrics,
   TerminalGpuTheme,
 } from "../gpu/terminalVisuals";
-import { rgbToCss } from "../gpu/terminalVisuals";
+import {
+  devicePixelScale,
+  metricsEqual,
+  metricsForScale,
+  rgbToCss,
+} from "../gpu/terminalVisuals";
 import { GhosttySearchController } from "../search/GhosttySearchController";
 import { TerminalSelectionController } from "../selection/TerminalSelectionController";
 import {
@@ -38,6 +52,8 @@ import type {
 const CURSOR_BLINK_MS = 600;
 const TEXT_BLINK_MS = 600;
 const MAX_SURFACE_CELLS = 262_144;
+/** Safe on every WebGL2 implementation Terax runs on (MAX_TEXTURE_SIZE is at least 8192 there). */
+const WEBGL_MAX_BACKING_DIMENSION = 8192;
 
 export type WebGlTerminalSurfaceOptions = {
   readonly model: GhosttyTerminalModelApi;
@@ -83,18 +99,20 @@ export class WebGlTerminalSurface
   private readonly runtime: WebGlTerminalRuntime;
   private readonly pixelRatioMonitor: DevicePixelRatioMonitor;
   private readonly fitQueue = new TerminalFitQueue();
+  private readonly resizeSync: TerminalResizeSync;
   private renderer: WebGlCellRenderer | null = null;
   private metrics: TerminalFontMetrics;
   private theme: TerminalGpuTheme;
   private host: HTMLElement | null = null;
   private scale = 1;
   private visible = true;
-  private synchronizedScrollTop: number | null = null;
   private readonly scrollbarSync = new TerminalScrollbarSync();
   private scrollbarViewportHeight = 0;
   private focused = false;
   private documentSuspended = !terminalWindowPresentation().visible;
   private resizeInteractionActive = terminalResizeInteractionActive();
+  /** The window's inner size when the current gesture began; a change means the window is the one moving. */
+  private gestureStartInner: CssSize = windowInnerSize();
   private compactAfterResize = false;
   private nativeCursorVisible = false;
   private windowFocused = terminalWindowFocused();
@@ -126,6 +144,25 @@ export class WebGlTerminalSurface
       } catch (error) {
         this.handleRendererError(toError(error));
       }
+    });
+    this.resizeSync = new TerminalResizeSync({
+      model: {
+        get cols() {
+          return options.model.cols;
+        },
+        get rows() {
+          return options.model.rows;
+        },
+        resize: (cols, rows) => {
+          this.applyingFit = true;
+          try {
+            options.model.resize(cols, rows);
+          } finally {
+            this.applyingFit = false;
+          }
+        },
+      },
+      notify: options.onResize,
     });
     this.theme = options.theme;
     this.cursorBlinking = options.cursorBlink;
@@ -173,6 +210,7 @@ export class WebGlTerminalSurface
 
     this.resizeObserver = new ResizeObserver((entries) => {
       const bounds = entries[entries.length - 1]?.contentRect;
+      if (bounds) noteTerminalHostResize(this);
       this.queueFit(bounds);
     });
     this.unsubscribeDamage = options.model.subscribeDamage(() => {
@@ -186,9 +224,15 @@ export class WebGlTerminalSurface
     this.unsubscribeResizeInteraction = subscribeTerminalResizeInteraction(
       (active) => {
         this.resizeInteractionActive = active;
-        if (active) return;
+        if (active) {
+          this.gestureStartInner = windowInnerSize();
+          return;
+        }
+        // The gesture is over: the grid follows the final size once and the backing shrinks
+        // to fit it.
         this.compactAfterResize = true;
-        this.queueFit();
+        this.fitQueue.request();
+        this.runtime.schedule(this);
       },
     );
     this.root.addEventListener("pointerdown", this.handlePointerDown);
@@ -208,7 +252,8 @@ export class WebGlTerminalSurface
     if (this.host) this.detach();
     this.host = container;
     container.appendChild(this.root);
-    this.scale = Math.max(1, window.devicePixelRatio || 1);
+    this.syncScale();
+    this.scrollbarSync.forget();
     this.pixelRatioMonitor.start();
     this.resizeObserver.observe(container);
     if (this.visible && !this.documentSuspended) {
@@ -265,7 +310,7 @@ export class WebGlTerminalSurface
     if (visible) {
       if (!this.documentSuspended) this.search.resume();
       if (this.host && !this.renderer && !this.documentSuspended) {
-        this.scale = Math.max(1, window.devicePixelRatio || 1);
+        this.syncScale();
         try {
           this.acquireRenderer();
           this.resizeToHost();
@@ -310,8 +355,9 @@ export class WebGlTerminalSurface
   }
 
   setFontMetrics(metrics: TerminalFontMetrics): void {
-    if (fontMetricsKey(this.metrics) === fontMetricsKey(metrics)) return;
-    this.metrics = metrics;
+    const next = metricsForScale(metrics, this.scale);
+    if (metricsEqual(this.metrics, next)) return;
+    this.metrics = next;
     if (this.renderer && this.host && !this.documentSuspended) {
       try {
         this.acquireRenderer();
@@ -327,6 +373,11 @@ export class WebGlTerminalSurface
 
   cellSize(): { readonly width: number; readonly height: number } {
     return { width: this.metrics.cellWidth, height: this.metrics.cellHeight };
+  }
+
+  /** The fallback draws its grid top-anchored during a gesture: nothing is shifted. */
+  gridShiftY(): number {
+    return 0;
   }
 
   setCursorEnabled(enabled: boolean): void {
@@ -474,6 +525,7 @@ export class WebGlTerminalSurface
     this.unsubscribeResizeInteraction();
     this.search.dispose();
     this.selection.dispose();
+    this.scrollbarSync.dispose();
     this.unsubscribeInteraction();
     this.root.removeEventListener("pointerdown", this.handlePointerDown);
     this.root.removeEventListener("mousemove", this.handleLinkMouseMove);
@@ -537,7 +589,7 @@ export class WebGlTerminalSurface
     if (!wasSuspended || !this.visible || !this.host) return;
     this.search.resume();
     try {
-      this.scale = Math.max(1, window.devicePixelRatio || 1);
+      this.syncScale();
       this.acquireRenderer();
       this.resizeToHost();
       this.renderer?.requestPresentation();
@@ -555,10 +607,12 @@ export class WebGlTerminalSurface
 
   private readonly handleScroll = (): void => {
     if (!this.host || !this.visible || this.documentSuspended) return;
-    if (this.scrollbar.scrollTop === this.synchronizedScrollTop) return;
+    const scrollTop = this.scrollbar.scrollTop;
+    if (scrollTop === this.scrollbarSync.writtenScrollTop) return;
     this.scrollbarSync.invalidate();
+    this.scrollbarSync.observe(scrollTop);
     const { history, offset } = this.options.model.scrollPosition();
-    const line = Math.round(this.scrollbar.scrollTop / this.metrics.cellHeight);
+    const line = Math.round(scrollTop / this.metrics.cellHeight);
     if (history - line !== offset) {
       this.handleInteraction();
       this.options.model.scrollTo(history - line);
@@ -635,7 +689,9 @@ export class WebGlTerminalSurface
     const bounds = this.fitQueue.take(
       () => this.host?.getBoundingClientRect() ?? { width: 0, height: 0 },
     );
-    if (bounds) this.resizeToHost(bounds, false);
+    if (bounds) {
+      this.resizeToHost(bounds, false, true);
+    }
     if (this.compactAfterResize && !this.resizeInteractionActive) {
       this.compactAfterResize = false;
       this.options.model.compactPresentationResources();
@@ -643,15 +699,21 @@ export class WebGlTerminalSurface
     }
   }
 
+  /**
+   * Fits the grid to the host. `observed` fits come from the host changing size: while a resize
+   * gesture is live they keep the grid, the PTY and the renderer as they are (the host clips
+   * or pads the canvas) and the final size is applied once when the gesture ends (see
+   * `TerminalResizeSync`). Every other caller applies at once.
+   */
   private resizeToHost(
     measuredBounds?: Pick<DOMRectReadOnly, "width" | "height">,
     scheduleRender = true,
+    observed = false,
   ): void {
     if (!this.host || !this.renderer || this.documentSuspended) return;
     this.fitQueue.clear();
-    const nextScale = Math.max(1, window.devicePixelRatio || 1);
-    if (nextScale !== this.scale) {
-      this.scale = nextScale;
+    if (devicePixelScale() !== this.scale) {
+      this.syncScale();
       this.runtime.release(this);
       this.acquireRenderer();
     }
@@ -659,12 +721,7 @@ export class WebGlTerminalSurface
     const bounds = measuredBounds ?? this.host.getBoundingClientRect();
     this.scrollbarSync.invalidate();
     this.scrollbarViewportHeight = Math.round(bounds.height);
-    const fit = fitTerminalViewport(
-      bounds.width,
-      bounds.height,
-      this.metrics,
-      this.scale,
-    );
+    const fit = fitTerminalViewport(bounds.width, bounds.height, this.metrics);
     if (!fit) return;
     const { cols, rows, pixelWidth, pixelHeight } = fit;
     if (cols * rows > MAX_SURFACE_CELLS) {
@@ -676,35 +733,51 @@ export class WebGlTerminalSurface
       return;
     }
 
-    const changed =
-      cols !== this.options.model.cols || rows !== this.options.model.rows;
-    if (changed) {
-      this.applyingFit = true;
-      try {
-        this.options.model.resize(cols, rows);
-      } finally {
-        this.applyingFit = false;
-      }
+    if (observed && this.resizeInteractionActive) {
+      return;
     }
+    const outcome = this.resizeSync.request(cols, rows);
+    const changed = outcome === "applied";
     if (changed) this.selection.reconcile();
     const rendererChanged = this.renderer.resize(
       cols,
       rows,
       this.resizeInteractionActive,
+      this.gestureGrowth(),
     );
     if (changed || rendererChanged) {
       this.options.model.setPixelSize(pixelWidth, pixelHeight);
     }
-    if (changed) this.options.onResize(cols, rows);
     this.updateScrollbar();
     if (scheduleRender && (changed || rendererChanged)) {
       this.runtime.schedule(this);
     }
   }
 
+  /** Inside a drag the backing never shrinks and grows once, to the bound the drag cannot exceed. */
+  private gestureGrowth(): GestureGrowth | undefined {
+    const host = this.host;
+    if (!this.resizeInteractionActive || !host) return undefined;
+    return () =>
+      gestureBackingBound(
+        measureGestureBackingEnvironment(
+          host,
+          this.gestureStartInner,
+          this.scale,
+          WEBGL_MAX_BACKING_DIMENSION,
+        ),
+      );
+  }
+
+  /** Adopts the current ratio and re-measures the font at it. */
+  private syncScale(): void {
+    this.scale = devicePixelScale();
+    this.metrics = metricsForScale(this.metrics, this.scale);
+  }
+
   private updateScrollbar(): void {
     if (!this.host || !this.visible || this.documentSuspended) return;
-    this.synchronizedScrollTop = this.scrollbarSync.sync(
+    this.scrollbarSync.sync(
       this.scrollbarViewportHeight,
       this.scrollbar,
       this.scrollbarContent,
@@ -786,19 +859,6 @@ export class WebGlTerminalSurface
   private assertLive(): void {
     if (this.disposed) throw new Error("WebGL terminal surface is disposed");
   }
-}
-
-function fontMetricsKey(metrics: TerminalFontMetrics): string {
-  return [
-    metrics.font.family,
-    metrics.font.size,
-    metrics.font.lineHeight,
-    metrics.font.letterSpacing,
-    metrics.font.weight,
-    metrics.cellWidth,
-    metrics.cellHeight,
-    metrics.baseline,
-  ].join("|");
 }
 
 function toError(error: unknown): Error {

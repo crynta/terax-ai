@@ -292,7 +292,7 @@ export function AiComposerInput() {
         <div data-state={voiceRow.state} className="terax-reveal">
           <div className="flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground">
             {c.voice.recording ? (
-              <span className="size-1.5 animate-pulse rounded-full bg-destructive" />
+              <span className="size-1.5 terax-blink rounded-full bg-destructive" />
             ) : (
               <Spinner className="size-3" />
             )}

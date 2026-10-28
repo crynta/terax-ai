@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { terminalResizeInteractionActive } from "@/modules/terminal/lib/terminalResizeInteraction";
 import {
   subscribeWindowPresentation,
   terminalWindowPresentation,
@@ -135,5 +136,63 @@ describe("window presentation bridge", () => {
     expect(h.unlisten).toHaveBeenCalledOnce();
     expect(bridge.invoke).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("publishes the native live resize as a resize gesture without touching visibility", async () => {
+    const h = harness();
+    const { listener } = h.subscribe();
+    await Promise.resolve();
+    h.native({ revision: 1, occluded: false, sleeping: false });
+    expect(terminalResizeInteractionActive()).toBe(false);
+
+    listener.mockClear();
+    h.native({
+      revision: 2,
+      occluded: false,
+      sleeping: false,
+      liveResize: true,
+    });
+    expect(terminalResizeInteractionActive()).toBe(true);
+    expect(terminalWindowPresentation().visible).toBe(true);
+    expect(listener).not.toHaveBeenCalled();
+
+    h.native({
+      revision: 3,
+      occluded: false,
+      sleeping: false,
+      liveResize: false,
+    });
+    expect(terminalResizeInteractionActive()).toBe(false);
+  });
+
+  it("ends a native gesture whose end event never arrives when the last consumer leaves", async () => {
+    const h = harness();
+    const subscriber = h.subscribe();
+    await Promise.resolve();
+    h.native({
+      revision: 1,
+      occluded: false,
+      sleeping: false,
+      liveResize: true,
+    });
+    expect(terminalResizeInteractionActive()).toBe(true);
+
+    subscriber.stop();
+
+    expect(terminalResizeInteractionActive()).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("ignores a malformed live resize flag", async () => {
+    const h = harness();
+    h.subscribe();
+    await Promise.resolve();
+    h.native({
+      revision: 1,
+      occluded: false,
+      sleeping: false,
+      liveResize: "yes",
+    });
+    expect(terminalResizeInteractionActive()).toBe(false);
   });
 });

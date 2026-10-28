@@ -160,10 +160,3 @@ function formatEnvBlock(live: LiveSnapshot): string | null {
   if (lines.length === 0) return null;
   return `<env>\n${lines.join("\n")}\n</env>`;
 }
-
-export const CONTEXT_BLOCK_RE =
-  /^<terminal-context[^>]*>[\s\S]*?<\/terminal-context>\n*/;
-
-export function stripContextBlock(text: string): string {
-  return text.replace(CONTEXT_BLOCK_RE, "");
-}

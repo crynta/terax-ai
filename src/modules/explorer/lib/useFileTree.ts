@@ -19,6 +19,7 @@ import {
   type FsMoveResult,
 } from "./batchMove";
 import { listenFsChanged, watchAdd, watchRemove } from "./watch";
+import { createWatchRegistry, planVisibilityEdge } from "./watchRegistry";
 
 export type DirEntry = {
   name: string;
@@ -48,7 +49,7 @@ export function joinPath(parent: string, name: string): string {
   return `${parent}/${name}`;
 }
 
-export function dirname(path: string): string {
+function dirname(path: string): string {
   const i = path.lastIndexOf("/");
   if (i <= 0) return "/";
   return path.slice(0, i);
@@ -98,6 +99,12 @@ type Options = {
   onPathRenamed?: (from: string, to: string) => void;
   onPathsDeleted?: (paths: string[]) => void;
   canReplacePath?: (path: string) => boolean;
+  /**
+   * The explorer is on screen (default true). While false it holds no native
+   * watchers, ignores `fs:changed` and skips reloads; showing it again
+   * re-registers its watchers and reloads every loaded directory once.
+   */
+  active?: boolean;
 };
 
 export function useFileTree(rootPath: string | null, options?: Options) {
@@ -114,12 +121,20 @@ export function useFileTree(rootPath: string | null, options?: Options) {
   );
   const [renaming, setRenaming] = useState<string | null>(null);
 
+  const active = options?.active ?? true;
+  const activeRef = useRef(active);
+  // Loaded data may predate changes nobody was watching for: reload on show.
+  const staleRef = useRef(false);
+  const rootPathRef = useRef(rootPath);
+  const [watches] = useState(() =>
+    createWatchRegistry({ add: watchAdd, remove: watchRemove }, active),
+  );
   const expandedRef = useRef(expanded);
   const nodesRef = useRef(nodes);
-  const watchedRef = useRef<Set<string>>(new Set());
   const optionsRef = useRef(options);
   const scopeKey = `${workspaceKey}\u0000${rootPath ?? ""}`;
   const scopeKeyRef = useRef(scopeKey);
+  const scopeGenerationRef = useRef(0);
   const conflictPromptsRef = useRef<Map<string | number, () => void>>(
     new Map(),
   );
@@ -134,13 +149,22 @@ export function useFileTree(rootPath: string | null, options?: Options) {
   }, [options]);
 
   useLayoutEffect(() => {
-    if (scopeKeyRef.current !== scopeKey) cancelConflictPrompts();
+    activeRef.current = active;
+    rootPathRef.current = rootPath;
+  }, [active, rootPath]);
+
+  useLayoutEffect(() => {
+    if (scopeKeyRef.current !== scopeKey) {
+      cancelConflictPrompts();
+      scopeGenerationRef.current += 1;
+    }
     scopeKeyRef.current = scopeKey;
   }, [scopeKey, cancelConflictPrompts]);
 
   useEffect(
     () => () => {
       scopeKeyRef.current = "";
+      scopeGenerationRef.current += 1;
       cancelConflictPrompts();
     },
     [cancelConflictPrompts],
@@ -162,81 +186,84 @@ export function useFileTree(rootPath: string | null, options?: Options) {
     nodesRef.current = nodes;
   }, [nodes]);
 
-  const addWatch = useCallback((path: string) => {
-    if (watchedRef.current.has(path)) return;
-    watchedRef.current.add(path);
-    watchAdd([path]);
-  }, []);
+  const addWatch = watches.add;
+  const removeWatch = watches.remove;
 
-  const removeWatch = useCallback((path: string) => {
-    if (!watchedRef.current.delete(path)) return;
-    watchRemove([path]);
-  }, []);
-
-  const fetchChildren = useCallback(async (path: string) => {
-    if (nodesRef.current[path]?.status !== "loaded") {
-      setNodes((s) => ({ ...s, [path]: { status: "loading" } }));
-    }
-    try {
-      const entries = await invoke<DirEntry[]>("fs_read_dir", {
-        path,
-        showHidden: showHiddenRef.current,
-        gitDecorations: gitDecorationsRef.current,
-        workspace: currentWorkspaceEnv(),
-      });
-
-      const prev = nodesRef.current[path];
-      if (prev?.status === "loaded" && sameDirListing(prev.entries, entries)) {
-        return;
+  const fetchChildren = useCallback(
+    async (path: string) => {
+      if (scopeKeyRef.current !== scopeKey) return false;
+      const generation = scopeGenerationRef.current;
+      const isCurrent = () => generation === scopeGenerationRef.current;
+      if (nodesRef.current[path]?.status !== "loaded") {
+        setNodes((s) => ({ ...s, [path]: { status: "loading" } }));
       }
-
-      const liveDirs = new Set(
-        entries
-          .filter((e) => e.kind === "dir")
-          .map((e) => joinPath(path, e.name)),
-      );
-      const removedRoots: string[] = [];
-      for (const key of Object.keys(nodesRef.current)) {
-        if (dirname(key) === path && !liveDirs.has(key)) removedRoots.push(key);
-      }
-      const dead = new Set<string>();
-      if (removedRoots.length > 0) {
-        const candidates = new Set<string>([
-          ...Object.keys(nodesRef.current),
-          ...expandedRef.current,
-          ...watchedRef.current,
-        ]);
-        for (const k of candidates) {
-          if (removedRoots.some((r) => isUnder(k, r))) dead.add(k);
-        }
-      }
-
-      setNodes((s) => {
-        const next: TreeState = {};
-        for (const [k, v] of Object.entries(s)) if (!dead.has(k)) next[k] = v;
-        next[path] = { status: "loaded", entries };
-        return next;
-      });
-
-      if (dead.size > 0) {
-        setExpanded((c) => {
-          let changed = false;
-          const n = new Set(c);
-          for (const d of dead) if (n.delete(d)) changed = true;
-          return changed ? n : c;
+      try {
+        const entries = await invoke<DirEntry[]>("fs_read_dir", {
+          path,
+          showHidden: showHiddenRef.current,
+          gitDecorations: gitDecorationsRef.current,
+          workspace,
         });
-        const toUnwatch: string[] = [];
-        for (const d of dead)
-          if (watchedRef.current.delete(d)) toUnwatch.push(d);
-        watchRemove(toUnwatch);
+        if (!isCurrent()) return false;
+
+        const prev = nodesRef.current[path];
+        if (
+          prev?.status === "loaded" &&
+          sameDirListing(prev.entries, entries)
+        ) {
+          return true;
+        }
+
+        const liveDirs = new Set(
+          entries
+            .filter((e) => e.kind === "dir")
+            .map((e) => joinPath(path, e.name)),
+        );
+        const removedRoots: string[] = [];
+        for (const key of Object.keys(nodesRef.current)) {
+          if (dirname(key) === path && !liveDirs.has(key))
+            removedRoots.push(key);
+        }
+        const dead = new Set<string>();
+        if (removedRoots.length > 0) {
+          const candidates = new Set<string>([
+            ...Object.keys(nodesRef.current),
+            ...expandedRef.current,
+            ...watches.paths(),
+          ]);
+          for (const k of candidates) {
+            if (removedRoots.some((r) => isUnder(k, r))) dead.add(k);
+          }
+        }
+
+        setNodes((s) => {
+          const next: TreeState = {};
+          for (const [k, v] of Object.entries(s)) if (!dead.has(k)) next[k] = v;
+          next[path] = { status: "loaded", entries };
+          return next;
+        });
+
+        if (dead.size > 0) {
+          setExpanded((c) => {
+            let changed = false;
+            const n = new Set(c);
+            for (const d of dead) if (n.delete(d)) changed = true;
+            return changed ? n : c;
+          });
+          watches.removeMany([...dead]);
+        }
+        return true;
+      } catch (e) {
+        if (!isCurrent()) return false;
+        setNodes((s) => ({
+          ...s,
+          [path]: { status: "error", message: String(e) },
+        }));
+        return false;
       }
-    } catch (e) {
-      setNodes((s) => ({
-        ...s,
-        [path]: { status: "error", message: String(e) },
-      }));
-    }
-  }, []);
+    },
+    [scopeKey, workspace, watches],
+  );
 
   // Root change → restore the cached expansion for this root, re-scope watches,
   // and persist the outgoing root's expansion on the way out.
@@ -261,22 +288,45 @@ export function useFileTree(rootPath: string | null, options?: Options) {
     // changes rapidly (e.g. switching folders in quick succession).
     nodesRef.current = {};
 
-    const toWatch = [rootPath, ...restored];
-    void fetchChildren(rootPath);
-    for (const d of restored) void fetchChildren(d);
-    for (const p of toWatch) watchedRef.current.add(p);
-    watchAdd(toWatch);
+    // The desired watch set is always tracked; it only reaches the native
+    // watcher while the explorer is on screen.
+    watches.addMany([rootPath, ...restored]);
+    if (activeRef.current) {
+      void fetchChildren(rootPath);
+      for (const d of restored) void fetchChildren(d);
+    } else {
+      staleRef.current = true;
+    }
 
     return () => {
       rememberExpansion(rootPath, expandedRef.current);
-      if (watchedRef.current.size > 0) {
-        watchRemove([...watchedRef.current]);
-        watchedRef.current.clear();
-      }
+      watches.clear();
     };
-  }, [rootPath, fetchChildren]);
+  }, [rootPath, fetchChildren, watches]);
+
+  // Visibility edge: release the native watchers while hidden, and on show
+  // re-register them and reload everything that is loaded (or should be) once.
+  useEffect(() => {
+    const plan = planVisibilityEdge({
+      active,
+      stale: staleRef.current,
+      hasRoot: rootPathRef.current !== null,
+    });
+    staleRef.current = plan.stale;
+    if (plan.arm) watches.arm();
+    else watches.disarm();
+    if (!plan.resync) return;
+    const targets = new Set(watches.paths());
+    for (const [path, state] of Object.entries(nodesRef.current)) {
+      if (state.status === "loaded") targets.add(path);
+    }
+    for (const path of targets) void fetchChildren(path);
+  }, [active, watches, fetchChildren]);
 
   useEffect(() => {
+    // No subscription while hidden: nothing would be shown, and the show edge
+    // above reloads whatever changed in the meantime.
+    if (!active) return;
     let alive = true;
     let unlisten: (() => void) | undefined;
     void listenFsChanged((paths) => {
@@ -296,19 +346,22 @@ export function useFileTree(rootPath: string | null, options?: Options) {
       alive = false;
       unlisten?.();
     };
-  }, [fetchChildren]);
+  }, [active, fetchChildren]);
 
+  // Re-list loaded directories when the visibility or git-decoration prefs
+  // change. Keyed on the prefs only: a root change already loads its own
+  // tree, and re-reading the *previous* root's directories would be wasted IPC.
+  // While hidden the change is just remembered; the show edge reloads.
   useEffect(() => {
-    if (!rootPath) return;
-    const loadedPaths = Object.entries(nodes)
-      .filter(([, state]) => state.status === "loaded")
-      .map(([path]) => path);
-    for (const path of loadedPaths) void fetchChildren(path);
-    // Re-list loaded directories when visibility or git-decoration prefs change.
-    // `nodes` is intentionally omitted so ordinary tree edits don't refetch
-    // every expanded directory.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showHidden, gitDecorations, rootPath, fetchChildren]);
+    if (!rootPathRef.current) return;
+    if (!activeRef.current) {
+      staleRef.current = true;
+      return;
+    }
+    for (const [path, state] of Object.entries(nodesRef.current)) {
+      if (state.status === "loaded") void fetchChildren(path);
+    }
+  }, [showHidden, gitDecorations, fetchChildren]);
 
   const toggle = useCallback(
     (path: string) => {
@@ -347,10 +400,15 @@ export function useFileTree(rootPath: string | null, options?: Options) {
   );
 
   const refresh = useCallback(
-    (path: string) => {
-      void fetchChildren(path);
+    (path: string, reveal = false) => {
+      if (scopeKeyRef.current !== scopeKey) return Promise.resolve(false);
+      if (reveal && path !== rootPath && !expandedRef.current.has(path)) {
+        setExpanded((curr) => new Set(curr).add(path));
+        addWatch(path);
+      }
+      return fetchChildren(path);
     },
-    [fetchChildren],
+    [fetchChildren, addWatch, rootPath, scopeKey],
   );
 
   // --- mutations ---

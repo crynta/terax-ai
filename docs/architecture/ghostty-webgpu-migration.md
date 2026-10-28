@@ -221,10 +221,13 @@ coalesces until credit returns. Staging buffers and replaced atlas textures stay
 owned through submission and are released deterministically.
 
 macOS native window occlusion and sleep notifications augment DOM visibility.
-Rendering pauses immediately, presentation is retained for short transitions,
-and continuous invisibility reclaims it after two seconds. Sleep requests
-immediate reclamation. Device recovery is deferred while hidden. Details and
-measurement limits are in [resource efficiency](ghostty-resource-efficiency.md).
+WebGPU rendering pauses immediately and releases nothing: a presented WebGPU
+canvas is never destroyed, because WebKit keeps its swapchain (about 30 MiB at
+2000x1300) in the WebContent process afterwards. Device recovery is deferred
+while hidden and reconfigures the existing canvas elements. The WebGL fallback
+still reclaims its renderer after two seconds of occlusion. Details and
+measurement limits are in [resource efficiency](ghostty-resource-efficiency.md)
+and [renderer v2](terminal-renderer-v2.md#canvas-lifecycle).
 
 ## Current vertical-slice status
 

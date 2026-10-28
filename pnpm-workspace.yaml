@@ -3,6 +3,11 @@ packages:
 
 minimumReleaseAge: 4320
 minimumReleaseAgeStrict: true
+catalog:
+  '@lezer/highlight': 1.2.5
+overrides:
+  # Parsers and themes must share Lezer's highlighting metadata identity.
+  '@lezer/highlight': 'catalog:'
 allowBuilds:
   esbuild: true
   msgpackr-extract: false

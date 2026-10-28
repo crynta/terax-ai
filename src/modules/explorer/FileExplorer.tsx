@@ -4,6 +4,7 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import {
@@ -26,6 +27,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { IS_MAC } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { ExplorerSearch, type ExplorerSearchHandle } from "./ExplorerSearch";
 import {
@@ -41,7 +43,14 @@ import {
   relativePath,
   revealInFinder,
 } from "./lib/contextActions";
-import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
+import { FileIcon, FolderIcon } from "./FileIcon";
+import {
+  isPasteShortcut,
+  pasteClipboardFiles,
+  pasteTargetDir,
+  parentDir as parentOf,
+} from "./lib/clipboardPaste";
+import { useWorkspaceEnvStore } from "@/modules/workspace";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
 import { useExplorerDnd } from "./lib/useExplorerDnd";
 import { useExplorerFileDrop } from "./lib/useExplorerFileDrop";
@@ -72,6 +81,12 @@ type Props = {
   onAttachToAgent?: (path: string) => void;
   pathDropTarget?: TerminalPathDropTarget;
   gitStatus?: GitStatusSnapshot | null;
+  /**
+   * The explorer is on screen (default true). It stays mounted when the sidebar
+   * collapses to keep its tree and selection, but while hidden it holds no fs
+   * watchers or drop listener and does no reloads; showing it resyncs once.
+   */
+  visible?: boolean;
 };
 
 type Row =
@@ -106,16 +121,12 @@ type Row =
     };
 
 const ROW_HEIGHT = 24;
+const PASTE_HINT = IS_MAC ? "⌘V" : "Ctrl+V";
 const OVERSCAN = 8;
 
 function basename(path: string): string {
   const parts = path.split(/[\\/]/).filter(Boolean);
   return parts.length ? parts[parts.length - 1] : path;
-}
-
-function parentOf(path: string, fallback: string): string {
-  const i = path.lastIndexOf("/");
-  return i > 0 ? path.slice(0, i) : fallback;
 }
 
 function buildRows(
@@ -213,6 +224,7 @@ export const FileExplorer = memo(
       onAttachToAgent,
       pathDropTarget,
       gitStatus,
+      visible = true,
     },
     ref,
   ) {
@@ -220,6 +232,7 @@ export const FileExplorer = memo(
       onPathRenamed,
       onPathsDeleted,
       canReplacePath,
+      active: visible,
     });
     const gitDecorations = usePreferencesStore((s) => s.explorerGitDecorations);
     const { lookup: lookupGitStatus } = useGitStatus(
@@ -231,6 +244,19 @@ export const FileExplorer = memo(
       () => new Set(),
     );
     const [anchorPath, setAnchorPath] = useState<string | null>(null);
+    const workspace = useWorkspaceEnvStore((s) => s.env);
+    const pasteBusyRef = useRef(false);
+    const pasteScopeRef = useRef({ rootPath, workspace });
+    const [pastedSelection, setPastedSelection] = useState<{
+      scope: typeof pasteScopeRef.current;
+      paths: string[];
+    } | null>(null);
+    useLayoutEffect(() => {
+      pasteScopeRef.current = { rootPath, workspace };
+      return () => {
+        pasteScopeRef.current = { rootPath: null, workspace };
+      };
+    }, [rootPath, workspace]);
     const selectedPathsRef = useRef(selectedPaths);
     useLayoutEffect(() => {
       selectedPathsRef.current = selectedPaths;
@@ -358,6 +384,7 @@ export const FileExplorer = memo(
 
     const fileDrop = useExplorerFileDrop({
       rootPath,
+      enabled: visible,
       isDir: isDirAt,
       onCopied: tree.refresh,
     });
@@ -372,7 +399,40 @@ export const FileExplorer = memo(
       return () => window.clearTimeout(id);
     }, [dropTargetDir, rootPath, tree.expanded, tree.expand]);
 
+    const pasteInto = useCallback(
+      async (destDir: string) => {
+        if (!rootPath || pasteBusyRef.current) return;
+        pasteBusyRef.current = true;
+        const scope = pasteScopeRef.current;
+        const isCurrent = () => pasteScopeRef.current === scope;
+        try {
+          const paths = await pasteClipboardFiles(destDir, {
+            root: rootPath,
+            workspace,
+            isCurrent,
+            refresh: (path) => tree.refresh(path, true),
+          });
+          if (isCurrent() && paths.length > 0)
+            setPastedSelection({ scope, paths });
+        } finally {
+          pasteBusyRef.current = false;
+        }
+      },
+      [rootPath, workspace, tree.refresh],
+    );
+
     useEffect(() => {
+      if (pastedSelection) {
+        setPastedSelection(null);
+        if (pastedSelection.scope === pasteScopeRef.current) {
+          const visible = pastedSelection.paths.filter((path) =>
+            entryIndexByPath.has(path),
+          );
+          setSelectedPaths(new Set(visible));
+          setAnchorPath(visible[visible.length - 1] ?? null);
+          return;
+        }
+      }
       setSelectedPaths((curr) => {
         let changed = false;
         const next = new Set(curr);
@@ -385,7 +445,7 @@ export const FileExplorer = memo(
         return changed ? next : curr;
       });
       if (anchorPath && !entryIndexByPath.has(anchorPath)) setAnchorPath(null);
-    }, [entryIndexByPath, anchorPath]);
+    }, [entryIndexByPath, anchorPath, pastedSelection]);
 
     const virtualizer = useVirtualizer({
       count: rows.length,
@@ -488,6 +548,13 @@ export const FileExplorer = memo(
         target.isContentEditable
       )
         return;
+
+      if (isPasteShortcut(e, IS_MAC)) {
+        e.preventDefault();
+        void pasteInto(pasteTargetDir(anchorPath, isDirAt, rootPath));
+        return;
+      }
+
       if (entryPaths.length === 0) return;
 
       if (e.key === "Escape" && selectedPaths.size > 1) {
@@ -614,9 +681,8 @@ export const FileExplorer = memo(
             className="flex flex-1 items-center truncate text-xs font-medium text-foreground/80"
             title={rootPath}
           >
-            <img
-              src={folderIconUrl(basename(rootPath), false)}
-              alt=""
+            <FolderIcon
+              name={basename(rootPath)}
               height={15}
               width={15}
               className="mx-1.5"
@@ -726,15 +792,17 @@ export const FileExplorer = memo(
                     style={{ paddingLeft: 6 }}
                   >
                     <span className="size-3.5 shrink-0" />
-                    <img
-                      src={
-                        pendingAtRoot.kind === "dir"
-                          ? folderIconUrl("", false)
-                          : fileIconUrl("untitled")
-                      }
-                      alt=""
-                      className="size-4 shrink-0 opacity-70"
-                    />
+                    {pendingAtRoot.kind === "dir" ? (
+                      <FolderIcon
+                        name=""
+                        className="size-4 shrink-0 opacity-70"
+                      />
+                    ) : (
+                      <FileIcon
+                        name="untitled"
+                        className="size-4 shrink-0 opacity-70"
+                      />
+                    )}
                     <InlineInput
                       initial=""
                       placeholder={
@@ -880,6 +948,19 @@ export const FileExplorer = memo(
                   >
                     New Folder
                   </ContextMenuItem>
+                  <ContextMenuItem
+                    className={COMPACT_ITEM}
+                    onSelect={() =>
+                      void pasteInto(
+                        menuTarget.isDir
+                          ? menuTarget.path
+                          : parentOf(menuTarget.path, rootPath),
+                      )
+                    }
+                  >
+                    Paste
+                    <ContextMenuShortcut>{PASTE_HINT}</ContextMenuShortcut>
+                  </ContextMenuItem>
                   <ContextMenuSeparator />
                   <ContextMenuItem
                     className={COMPACT_ITEM}
@@ -966,6 +1047,13 @@ export const FileExplorer = memo(
                     onSelect={() => tree.beginCreate(rootPath, "dir")}
                   >
                     New Folder
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    className={COMPACT_ITEM}
+                    onSelect={() => void pasteInto(rootPath)}
+                  >
+                    Paste
+                    <ContextMenuShortcut>{PASTE_HINT}</ContextMenuShortcut>
                   </ContextMenuItem>
                   <ContextMenuSeparator />
                   <ContextMenuItem

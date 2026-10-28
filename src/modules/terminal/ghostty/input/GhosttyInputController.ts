@@ -9,6 +9,7 @@ import {
 import type { GhosttyTerminalModelApi } from "../GhosttyTerminalModel";
 import { encodeTerminalPaste } from "./terminalInputEncoding";
 
+import { TerminalInputProxy } from "@/modules/terminal/ghostty/input/TerminalInputProxy";
 import { TerminalNativeSelection } from "@/modules/terminal/ghostty/input/TerminalNativeSelection";
 
 const DUPLICATE_INPUT_WINDOW_MS = 75;
@@ -135,6 +136,8 @@ export type GhosttyInputControllerOptions = {
   readonly input: HTMLTextAreaElement;
   readonly pointerTarget: HTMLElement;
   readonly cellSize: () => { width: number; height: number };
+  /** CSS pixels the drawn grid is moved up inside the pointer target; zero when absent. */
+  readonly gridShiftY?: () => number;
   readonly onData: (bytes: Uint8Array) => void;
   readonly onCopy: () => boolean;
   readonly getSelection?: () => string | null;
@@ -143,11 +146,14 @@ export type GhosttyInputControllerOptions = {
   readonly onKeyDown?: (event: KeyboardEvent) => boolean;
   readonly macOptionIsMeta?: boolean;
   readonly isMac?: boolean;
+  /** Selected-placeholder input proxy (a macOS WebKit fix); defaults to `isMac`. */
+  readonly inputPlaceholder?: boolean;
 };
 
 export class GhosttyInputController {
   private readonly encoder = new TextEncoder();
   private readonly isMac: boolean;
+  private readonly proxy: TerminalInputProxy;
   private readonly nativeSelection: TerminalNativeSelection | null;
   private readonly pressedKeys = new Map<string, KeyEvent>();
   private composing = false;
@@ -161,8 +167,12 @@ export class GhosttyInputController {
 
   constructor(private readonly options: GhosttyInputControllerOptions) {
     this.isMac = options.isMac ?? /Mac|iPhone|iPad/.test(navigator.userAgent);
+    this.proxy = new TerminalInputProxy(options.input, {
+      placeholder: options.inputPlaceholder ?? this.isMac,
+    });
     this.nativeSelection = options.getSelection
       ? new TerminalNativeSelection({
+          proxy: this.proxy,
           input: options.input,
           target: options.pointerTarget,
           getSelection: options.getSelection,
@@ -204,6 +214,7 @@ export class GhosttyInputController {
     if (this.disposed) return;
     this.disposed = true;
     this.nativeSelection?.dispose();
+    this.proxy.dispose();
     this.pressedKeys.clear();
     const { input, pointerTarget } = this.options;
     input.removeEventListener("keydown", this.handleKeyDown);
@@ -367,7 +378,7 @@ export class GhosttyInputController {
       event.inputType === "insertText" ||
         event.inputType === "insertReplacementText",
     );
-    this.options.input.value = "";
+    this.proxy.arm();
   };
 
   private readonly handleCompositionStart = (): void => {
@@ -377,7 +388,7 @@ export class GhosttyInputController {
   private readonly handleCompositionEnd = (event: CompositionEvent): void => {
     this.composing = false;
     if (event.data) this.emitText(event.data, "composition", true, true, true);
-    this.options.input.value = "";
+    this.proxy.arm();
   };
 
   private readonly handlePaste = (event: ClipboardEvent): void => {
@@ -504,7 +515,10 @@ export class GhosttyInputController {
         1,
         Math.min(
           this.options.model.rows,
-          Math.floor((event.clientY - rect.top) / cell.height) + 1,
+          Math.floor(
+            (event.clientY - rect.top + (this.options.gridShiftY?.() ?? 0)) /
+              cell.height,
+          ) + 1,
         ),
       ),
     };

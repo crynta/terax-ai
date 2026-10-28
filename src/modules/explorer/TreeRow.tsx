@@ -6,7 +6,7 @@ import { memo } from "react";
 import { InlineInput } from "./InlineInput";
 import { explorerGitTextClass } from "./lib/gitStatusColor";
 import type { GitStatusCode } from "./lib/gitStatusUtils";
-import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
+import { FileIcon, FolderIcon } from "./FileIcon";
 
 export type SelectModifiers = { shift: boolean; mod: boolean };
 
@@ -56,7 +56,6 @@ function EntryRowImpl(props: EntryRowProps) {
     gitignored = false,
   } = props;
 
-  const iconUrl = isDir ? folderIconUrl(name, isExpanded) : fileIconUrl(name);
   const paddingLeft = 6 + depth * 12;
 
   if (isRenaming) {
@@ -66,10 +65,14 @@ function EntryRowImpl(props: EntryRowProps) {
         style={{ paddingLeft }}
       >
         <span className="size-3.5 shrink-0" />
-        {iconUrl ? (
-          <img src={iconUrl} alt="" className="size-4 shrink-0" />
+        {isDir ? (
+          <FolderIcon
+            name={name}
+            expanded={isExpanded}
+            className="size-4 shrink-0"
+          />
         ) : (
-          <span className="size-4 shrink-0" />
+          <FileIcon name={name} className="size-4 shrink-0" />
         )}
         <InlineInput
           initial={name}
@@ -123,10 +126,14 @@ function EntryRowImpl(props: EntryRowProps) {
           />
         ) : null}
       </span>
-      {iconUrl ? (
-        <img src={iconUrl} alt="" className="size-4 shrink-0" />
+      {isDir ? (
+        <FolderIcon
+          name={name}
+          expanded={isExpanded}
+          className="size-4 shrink-0"
+        />
       ) : (
-        <span className="size-4 shrink-0" />
+        <FileIcon name={name} className="size-4 shrink-0" />
       )}
       <span
         className={cn(
@@ -164,13 +171,11 @@ export function PendingRow({
       style={{ paddingLeft: 6 + depth * 12 }}
     >
       <span className="size-3.5 shrink-0" />
-      <img
-        src={
-          kind === "dir" ? folderIconUrl("", false) : fileIconUrl("untitled")
-        }
-        alt=""
-        className="size-4 shrink-0 opacity-70"
-      />
+      {kind === "dir" ? (
+        <FolderIcon name="" className="size-4 shrink-0 opacity-70" />
+      ) : (
+        <FileIcon name="untitled" className="size-4 shrink-0 opacity-70" />
+      )}
       <InlineInput
         initial=""
         placeholder={kind === "dir" ? "New folder" : "New file"}

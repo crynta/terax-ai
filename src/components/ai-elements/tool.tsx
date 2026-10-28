@@ -566,7 +566,9 @@ function renderToolOutput(toolName: string, output: unknown): ReactNode | null {
     return (
       <div className="space-y-0.5 font-mono text-[11px]">
         <div className="flex items-center gap-1.5">
-          <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          {/* Static: this output persists in history and says nothing about
+              whether the process is still alive, so it must not animate. */}
+          <span className="size-1.5 rounded-full bg-emerald-500" />
           {handle ? <span className="text-foreground">{handle}</span> : null}
           <span className="text-muted-foreground">running</span>
         </div>

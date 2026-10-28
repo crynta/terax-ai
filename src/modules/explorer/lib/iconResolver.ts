@@ -1,111 +1,53 @@
-import catppuccinIcons from "@iconify-json/catppuccin/icons.json";
-import { EXT_TO_LANGUAGE_ID } from "./constants";
-import * as fileIconsMod from "./fileIcons";
-import * as folderIconsMod from "./folderIcons";
+// Startup-safe face of the file-icon system. The ~360 kB icon set lives in
+// `iconEngine.ts` and is fetched on first demand, so a window that never draws
+// a file icon (terminal-only, explorer closed) pays nothing for it. Until the
+// engine arrives every lookup returns "" and callers render a same-size blank
+// slot; once it has loaded, lookups are synchronous and subscribers re-render.
+import type { IconEngine } from "./iconEngine";
 
-const catFileNames = fileIconsMod.fileNames as Record<string, string>;
-const catFileExtensions = fileIconsMod.fileExtensions as Record<string, string>;
-const catLanguageIds = fileIconsMod.languageIds as Record<string, string>;
-const catFolderNames = folderIconsMod.folderNames as Record<string, string>;
+let engine: IconEngine | null = null;
+let loading: Promise<void> | null = null;
+const listeners = new Set<() => void>();
 
-type IconifySet = {
-  icons: Record<string, { body: string }>;
-  aliases?: Record<string, { parent: string }>;
-  width?: number;
-  height?: number;
-};
-
-const cat = catppuccinIcons as unknown as IconifySet;
-const CAT_W = cat.width ?? 16;
-const CAT_H = cat.height ?? 16;
-
-const DEFAULT_FILE = "file";
-const DEFAULT_FOLDER = "folder";
-const DEFAULT_FOLDER_OPEN = "folder-open";
-
-const dataUrlCache = new Map<string, string>();
-
-// Catppuccin's manifest emits names like `folder_src`/`typescript-react`, but
-// the iconify export normalizes everything to hyphenated slugs.
-function toIconifySlug(name: string): string {
-  return name.replace(/_/g, "-");
+/** Starts (once) loading the icon set. Resolves when icons are synchronous. */
+export function preloadFileIcons(): Promise<void> {
+  if (engine) return Promise.resolve();
+  loading ??= import("./iconEngine").then(
+    (mod) => {
+      engine = mod.iconEngine;
+      loading = null;
+      for (const listener of [...listeners]) listener();
+    },
+    (error: unknown) => {
+      // Allow a retry on the next demand instead of caching the failure.
+      loading = null;
+      console.warn("[terax] file icons failed to load:", error);
+    },
+  );
+  return loading;
 }
 
-function catBody(iconName: string): string | null {
-  const slug = toIconifySlug(iconName);
-  const direct = cat.icons[slug];
-  if (direct) return direct.body;
-  const alias = cat.aliases?.[slug];
-  if (alias) {
-    const parent = cat.icons[alias.parent];
-    if (parent) return parent.body;
-  }
-  return null;
+/**
+ * `useSyncExternalStore` subscription. Subscribing is what asks for the icon
+ * set (in the commit phase, never during render); once it is loaded there is
+ * nothing left to notify about, so late subscribers cost no listener slot.
+ */
+export function subscribeFileIcons(listener: () => void): () => void {
+  if (engine) return noop;
+  listeners.add(listener);
+  void preloadFileIcons();
+  return () => {
+    listeners.delete(listener);
+  };
 }
 
-function buildDataUrl(iconName: string): string | null {
-  const cached = dataUrlCache.get(iconName);
-  if (cached !== undefined) return cached || null;
-  const body = catBody(iconName);
-  if (!body) {
-    dataUrlCache.set(iconName, "");
-    return null;
-  }
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${CAT_W} ${CAT_H}">${body}</svg>`;
-  const url = `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-  dataUrlCache.set(iconName, url);
-  return url;
+function noop(): void {}
+
+/** Pure read of the current icon URL: "" until the icon set has loaded. */
+export function peekFileIconUrl(name: string): string {
+  return engine ? engine.fileIconUrl(name) : "";
 }
 
-function extOf(name: string): string {
-  const lower = name.toLowerCase();
-  const dot = lower.indexOf(".");
-  if (dot === -1 || dot === lower.length - 1) return "";
-  return lower.slice(dot + 1);
-}
-
-export function fileIconUrl(name: string): string {
-  const lower = name.toLowerCase();
-
-  const byName = catFileNames[lower];
-  if (byName) {
-    const url = buildDataUrl(byName);
-    if (url) return url;
-  }
-
-  let ext = extOf(lower);
-  while (ext) {
-    const iconName = catFileExtensions[ext];
-    if (iconName) {
-      const url = buildDataUrl(iconName);
-      if (url) return url;
-    }
-    const langId = EXT_TO_LANGUAGE_ID[ext];
-    if (langId) {
-      const iconByLang = catLanguageIds[langId];
-      if (iconByLang) {
-        const url = buildDataUrl(iconByLang);
-        if (url) return url;
-      }
-    }
-    const nextDot = ext.indexOf(".");
-    if (nextDot === -1) break;
-    ext = ext.slice(nextDot + 1);
-  }
-
-  return buildDataUrl(DEFAULT_FILE) ?? "";
-}
-
-export function folderIconUrl(name: string, expanded: boolean): string {
-  const lower = name.toLowerCase();
-
-  const mapped = catFolderNames[lower];
-  if (mapped) {
-    const slug = toIconifySlug(mapped);
-    const target = expanded ? `${slug}-open` : slug;
-    const url = buildDataUrl(target);
-    if (url) return url;
-  }
-
-  return buildDataUrl(expanded ? DEFAULT_FOLDER_OPEN : DEFAULT_FOLDER) ?? "";
+export function peekFolderIconUrl(name: string, expanded: boolean): string {
+  return engine ? engine.folderIconUrl(name, expanded) : "";
 }

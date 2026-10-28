@@ -2,7 +2,7 @@ import { useCallback, useSyncExternalStore } from "react";
 import { BlockOverlay } from "@/modules/terminal/block/BlockOverlay";
 import { BlockWatermark } from "@/modules/terminal/block/BlockWatermark";
 import { ensureGhosttyBlocks } from "@/modules/terminal/ghostty/ghosttyBlockSessions";
-import { ghosttyBlockGeometry } from "@/modules/terminal/ghostty/useGhosttyTerminalSession";
+import { ghosttyBlockCellHeight } from "@/modules/terminal/ghostty/useGhosttyTerminalSession";
 import {
   focusLeafInput,
   submitToLeaf,
@@ -13,14 +13,16 @@ export default function GhosttyBlockOverlay({ leafId }: { leafId: number }) {
   const mode = useSyncExternalStore(state.subscribeMode, state.getMode);
   const getVisible = useCallback(
     () =>
-      state.controller?.visibleBlocks(
-        ghosttyBlockGeometry(leafId)?.height ?? 0,
-      ) ?? { blocks: [], sticky: null, generation: 0 },
+      state.controller?.visibleBlocks(ghosttyBlockCellHeight(leafId)) ?? {
+        blocks: [],
+        sticky: null,
+        generation: 0,
+      },
     [leafId, state],
   );
   return (
     <>
-      <BlockWatermark leafId={leafId} subscribe={state.subscribeViewport} />
+      <BlockWatermark leafId={leafId} subscribe={state.subscribeContent} />
       <BlockOverlay
         subscribe={state.subscribeViewport}
         getVisible={getVisible}

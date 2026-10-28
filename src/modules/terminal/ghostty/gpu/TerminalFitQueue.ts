@@ -1,6 +1,12 @@
 export type TerminalFitBounds = {
+  /** Host content box in CSS pixels. */
   readonly width: number;
   readonly height: number;
+  /** Exact device-pixel content box when the engine reports one. */
+  readonly device?: { readonly width: number; readonly height: number };
+  /** Layout origin of the canvas container, for device pixel snapping. */
+  readonly left?: number;
+  readonly top?: number;
 };
 
 export type TerminalFitQueueDiagnostics = {
@@ -26,9 +32,7 @@ export class TerminalFitQueue {
     this.requestCount += 1;
     if (this.pendingValue) this.coalescedCount += 1;
     this.pendingValue = true;
-    this.bounds = bounds
-      ? { width: bounds.width, height: bounds.height }
-      : null;
+    this.bounds = bounds ?? null;
   }
 
   take(measure: () => TerminalFitBounds): TerminalFitBounds | null {

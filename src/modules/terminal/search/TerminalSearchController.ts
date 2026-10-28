@@ -1,4 +1,4 @@
-export type TerminalSearchOptions = {
+type TerminalSearchOptions = {
   readonly incremental?: boolean;
   readonly decorations?: {
     readonly matchBackground?: string;

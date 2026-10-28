@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { setNativeLiveResize } from "@/modules/terminal/lib/terminalResizeGesture";
 import {
   WindowPresentationPolicy,
   type WindowPresentation,
@@ -9,6 +10,8 @@ type NativePresentation = {
   revision: number;
   occluded: boolean;
   sleeping: boolean;
+  /** The user is dragging the window edge (macOS NSWindow live resize); absent elsewhere. */
+  liveResize?: boolean;
 };
 const listeners = new Set<(state: WindowPresentation) => void>();
 let policy: WindowPresentationPolicy | null = null;
@@ -41,6 +44,7 @@ export function subscribeWindowPresentation(
     policy?.dispose();
     policy = null;
     native = { revision: -1, occluded: false, sleeping: false };
+    setNativeLiveResize(false);
   };
 }
 
@@ -72,10 +76,13 @@ function connect(): void {
       !Number.isSafeInteger(value.revision) ||
       value.revision < native.revision ||
       typeof value.occluded !== "boolean" ||
-      typeof value.sleeping !== "boolean"
+      typeof value.sleeping !== "boolean" ||
+      (value.liveResize !== undefined && typeof value.liveResize !== "boolean")
     )
       return;
     native = value;
+    // Not part of the visibility policy: only renderers sizing their canvases care.
+    setNativeLiveResize(value.liveResize === true);
     sync();
   };
   document.addEventListener("visibilitychange", sync);

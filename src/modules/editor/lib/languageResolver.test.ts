@@ -1,7 +1,9 @@
-import { syntaxTree } from "@codemirror/language";
+import { highlightingFor, syntaxTree } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
+import { highlightTree } from "@lezer/highlight";
 import { describe, expect, it } from "vitest";
 import { resolveDisplayName, resolveLanguage } from "./languageResolver";
+import { EDITOR_THEME_EXT } from "./themes";
 
 describe("resolveDisplayName", () => {
   it("resolves real extensions", () => {
@@ -72,4 +74,59 @@ describe("resolveDisplayName", () => {
     expect(resolveDisplayName(null)).toBe("Plain Text");
     expect(resolveDisplayName("")).toBe("Plain Text");
   });
+});
+
+describe("JavaScript and TypeScript highlighting", () => {
+  const cases = [
+    { ext: "js", code: 'const answer = "hello"; // comment' },
+    { ext: "cjs", code: 'const answer = "hello"; // comment' },
+    { ext: "mjs", code: 'const answer = "hello"; // comment' },
+    { ext: "ts", code: 'const answer: string = "hello"; // comment' },
+    { ext: "cts", code: 'const answer: string = "hello"; // comment' },
+    { ext: "mts", code: 'const answer: string = "hello"; // comment' },
+    {
+      ext: "jsx",
+      code: 'const App = () => <div title="hello" />; // comment',
+    },
+    {
+      ext: "tsx",
+      code: 'const App = (name: string) => <div title="hello" />; // comment',
+    },
+  ];
+
+  for (const [theme, themeExt] of Object.entries(EDITOR_THEME_EXT)) {
+    it.each(cases)(
+      `highlights $ext tokens with ${theme}`,
+      async ({ ext, code }) => {
+        const result = await resolveLanguage(`/project/file.${ext}`);
+        expect(result).not.toBeNull();
+        if (!result) throw new Error(`Missing language for ${ext}`);
+
+        const state = EditorState.create({
+          doc: code,
+          extensions: [result.ext, themeExt],
+        });
+        const spans: { from: number; to: number; classes: string }[] = [];
+        highlightTree(
+          syntaxTree(state),
+          { style: (tags) => highlightingFor(state, tags) },
+          (from, to, classes) => spans.push({ from, to, classes }),
+        );
+
+        const styleAt = (token: string): string | undefined => {
+          const pos = code.indexOf(token);
+          return spans.find((span) => span.from <= pos && span.to > pos)
+            ?.classes;
+        };
+        expect(styleAt("const")).toBeTruthy();
+        expect(styleAt('"hello"')).toBeTruthy();
+        expect(styleAt("// comment")).toBeTruthy();
+        expect(styleAt("const")).not.toBe(styleAt('"hello"'));
+        if (ext.endsWith("x")) expect(styleAt("div")).toBeTruthy();
+        if (code.includes(": string")) {
+          expect(syntaxTree(state).toString()).toContain("TypeAnnotation");
+        }
+      },
+    );
+  }
 });

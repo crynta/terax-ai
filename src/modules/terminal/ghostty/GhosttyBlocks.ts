@@ -48,6 +48,7 @@ export class GhosttyBlocks {
   private sequence = 0;
   private metadataUnits = 0;
   private clearGeneration = 0;
+  private entryRevision = 0;
 
   constructor(model: GhosttyTerminalModelApi) {
     requireBlockModel(model);
@@ -64,6 +65,15 @@ export class GhosttyBlocks {
     return this.entries.length > 0;
   }
 
+  /**
+   * Bumps whenever the set of blocks or any block's metadata can have changed
+   * (start, finish, clear). Lets callers skip `visibleBlocks` while it, the
+   * viewport and the mode are all unchanged.
+   */
+  get revision(): number {
+    return this.entryRevision;
+  }
+
   diagnostics(): { blocks: number; metadataBytes: number } {
     return {
       blocks: this.entries.length,
@@ -77,6 +87,13 @@ export class GhosttyBlocks {
   }
 
   handle(event: GhosttyTerminalEvent, cwd: string): void {
+    if (
+      event.type === "end-of-input" ||
+      event.type === "end-of-command" ||
+      event.type === "screen-cleared" ||
+      event.type === "overflow"
+    )
+      this.entryRevision++;
     if (event.type === "prompt-end") {
       this.integrated = true;
       this.blockInputDisabled = event.blockInput === false;
@@ -142,6 +159,7 @@ export class GhosttyBlocks {
   private clearMetadata(): void {
     this.clearSelection();
     this.clearGeneration++;
+    this.entryRevision++;
     this.entries = [];
     this.metadataUnits = 0;
     this.live = null;
@@ -375,7 +393,7 @@ export class GhosttyBlocks {
   }
 }
 
-export function decodeBlockCommand(raw: string): string {
+function decodeBlockCommand(raw: string): string {
   if (raw.startsWith("cmdline_url=")) {
     try {
       return decodeURIComponent(raw.slice(12).split(";")[0]);

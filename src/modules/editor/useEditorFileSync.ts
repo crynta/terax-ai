@@ -63,15 +63,27 @@ export function useEditorFileSync({ tabs, tabsRef, editorRefs }: Params) {
   }, [tabsRef, editorRefs]);
 
   const editorWatchRef = useRef<Set<string>>(new Set());
+  const editorFilesRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    const want = new Set<string>();
-    for (const t of tabs) if (t.kind === "editor") want.add(parentDir(t.path));
-    const prev = editorWatchRef.current;
-    const toAdd = [...want].filter((d) => !prev.has(d));
-    const toRemove = [...prev].filter((d) => !want.has(d));
-    watchAdd(toAdd);
-    watchRemove(toRemove);
-    editorWatchRef.current = want;
+    const wantDirs = new Set<string>();
+    const wantFiles = new Set<string>();
+    for (const t of tabs) {
+      if (t.kind !== "editor") continue;
+      wantDirs.add(parentDir(t.path));
+      wantFiles.add(t.path);
+    }
+    const prevDirs = editorWatchRef.current;
+    const prevFiles = editorFilesRef.current;
+    watchAdd(
+      [...wantDirs].filter((d) => !prevDirs.has(d)),
+      [...wantFiles].filter((f) => !prevFiles.has(f)),
+    );
+    watchRemove(
+      [...prevDirs].filter((d) => !wantDirs.has(d)),
+      [...prevFiles].filter((f) => !wantFiles.has(f)),
+    );
+    editorWatchRef.current = wantDirs;
+    editorFilesRef.current = wantFiles;
   }, [tabs]);
 
   useEffect(() => {

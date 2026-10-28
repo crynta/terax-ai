@@ -1,7 +1,5 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc;
 use std::sync::Mutex;
-use std::thread;
 use std::time::Duration;
 
 use serde::Serialize;
@@ -63,6 +61,7 @@ impl ShellSession {
         self.cwd.lock().unwrap().clone()
     }
 
+    /// Blocks until the command exits or times out; call from the blocking pool.
     pub fn run(
         &self,
         command: String,
@@ -87,17 +86,7 @@ impl ShellSession {
         let effective_workspace = workspace_hint.unwrap_or_else(|| self.workspace.clone());
         let wrapped = wrap_with_sentinel(&trimmed, &effective_workspace, &self.sentinel);
 
-        let (tx, rx) = mpsc::channel::<Result<super::CommandOutput, String>>();
-        let cwd_for_thread = cwd.clone();
-        thread::spawn(move || {
-            let _ = tx.send(run_blocking_inner(
-                wrapped,
-                Some(cwd_for_thread),
-                effective_workspace,
-                timeout,
-            ));
-        });
-        let raw = rx.recv().map_err(|e| e.to_string())??;
+        let raw = run_blocking_inner(wrapped, Some(cwd.clone()), effective_workspace, timeout)?;
         self.pristine.store(false, Ordering::Release);
 
         let (stdout_clean, cwd_after) = strip_cwd_sentinel(&raw.stdout, &cwd, &self.sentinel);
@@ -175,7 +164,10 @@ mod tests {
         let stdout = format!("{attacker}{trailer}");
         let (clean, cwd) = strip_cwd_sentinel(&stdout, "/fallback", &s.sentinel);
         assert_eq!(cwd.as_deref(), Some("/real"));
-        assert!(clean.contains(attacker), "attacker payload survives in stdout");
+        assert!(
+            clean.contains(attacker),
+            "attacker payload survives in stdout"
+        );
     }
 
     #[test]

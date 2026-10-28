@@ -287,7 +287,14 @@ mod serde_shape_tests {
         };
         let json = serde_json::to_value(&change).unwrap();
         assert_eq!(json["originalPath"], serde_json::Value::Null);
-        for key in ["path", "status", "statusLabel", "added", "removed", "isBinary"] {
+        for key in [
+            "path",
+            "status",
+            "statusLabel",
+            "added",
+            "removed",
+            "isBinary",
+        ] {
             assert!(json.get(key).is_some(), "missing key {key}");
         }
     }

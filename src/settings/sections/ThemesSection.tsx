@@ -33,7 +33,11 @@ import {
   deleteCustomTheme,
   saveCustomTheme,
 } from "@/modules/theme/customThemes";
-import { deleteThemeFile, emitThemeEdit } from "@/modules/theme/themeFiles";
+import {
+  deleteThemeFile,
+  handOffThemeEdit,
+  type ThemeEditRequest,
+} from "@/modules/theme/themeFiles";
 import { listBuiltinThemes } from "@/modules/theme/themes";
 import { DEFAULT_THEME_ID } from "@/modules/theme/types";
 import { validateTheme } from "@/modules/theme/validateTheme";
@@ -65,15 +69,12 @@ export function ThemesSection() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const bgInputRef = useRef<HTMLInputElement | null>(null);
 
-  const onCreateTheme = () => {
-    void emitThemeEdit({ action: "create" });
-    void getCurrentWindow().hide();
-  };
-
-  const onEditTheme = (id: string) => {
-    void emitThemeEdit({ action: "edit", id });
-    void getCurrentWindow().hide();
-  };
+  // Editing happens in the main window's code editor, so Settings closes
+  // (destroying its WebContent process) rather than hiding and staying resident.
+  const startThemeEdit = (req: ThemeEditRequest) =>
+    void handOffThemeEdit(req, () => getCurrentWindow().close());
+  const onCreateTheme = () => startThemeEdit({ action: "create" });
+  const onEditTheme = (id: string) => startThemeEdit({ action: "edit", id });
 
   const editorThemePref = usePreferencesStore((s) => s.editorTheme);
   const backgroundKind = usePreferencesStore((s) => s.backgroundKind);

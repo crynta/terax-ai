@@ -19,7 +19,7 @@
 
 use std::sync::Mutex;
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 #[cfg(target_os = "linux")]
 use std::collections::HashMap;
@@ -27,8 +27,6 @@ use std::collections::HashMap;
 use std::fs;
 #[cfg(target_os = "linux")]
 use std::path::PathBuf;
-#[cfg(target_os = "linux")]
-use tauri::Manager;
 
 #[derive(Default)]
 pub struct SecretsState {
@@ -112,23 +110,45 @@ fn entry(service: &str, account: &str) -> Result<keyring::Entry, String> {
     keyring::Entry::new(service, account).map_err(|e| e.to_string())
 }
 
+// The keychain and the Linux file store both block (a locked keychain can wait
+// on the user), so every command runs on the blocking pool.
+fn blocking_secret<T: Send + 'static>(
+    app: AppHandle,
+    work: impl FnOnce(&AppHandle, &SecretsState) -> Result<T, String> + Send + 'static,
+) -> impl std::future::Future<Output = Result<T, String>> {
+    crate::modules::fs::blocking(move || {
+        let state = app.state::<SecretsState>();
+        work(&app, &state)
+    })
+}
+
 #[tauri::command]
 pub async fn secrets_get(
     app: AppHandle,
-    state: tauri::State<'_, SecretsState>,
     service: String,
     account: String,
 ) -> Result<Option<String>, String> {
+    blocking_secret(app, move |app, state| {
+        get_secret(app, state, &service, &account)
+    })
+    .await
+}
+
+fn get_secret(
+    app: &AppHandle,
+    state: &SecretsState,
+    service: &str,
+    account: &str,
+) -> Result<Option<String>, String> {
     #[cfg(target_os = "linux")]
     {
-        let _ = state; // capture
-        let key = key(&service, &account);
-        with_store(&app, &state, |m| m.get(&key).cloned())
+        let key = key(service, account);
+        with_store(app, state, |m| m.get(&key).cloned())
     }
     #[cfg(not(target_os = "linux"))]
     {
         let _ = (app, state);
-        let e = entry(&service, &account)?;
+        let e = entry(service, account)?;
         match e.get_password() {
             Ok(v) => Ok(Some(v)),
             Err(keyring::Error::NoEntry) => Ok(None),
@@ -140,27 +160,39 @@ pub async fn secrets_get(
 #[tauri::command]
 pub async fn secrets_set(
     app: AppHandle,
-    state: tauri::State<'_, SecretsState>,
     service: String,
     account: String,
     password: String,
 ) -> Result<(), String> {
+    blocking_secret(app, move |app, state| {
+        set_secret(app, state, &service, &account, password)
+    })
+    .await
+}
+
+fn set_secret(
+    app: &AppHandle,
+    state: &SecretsState,
+    service: &str,
+    account: &str,
+    password: String,
+) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
-        let key = key(&service, &account);
-        with_store(&app, &state, |m| {
+        let key = key(service, account);
+        with_store(app, state, |m| {
             m.insert(key, password);
         })?;
         let snapshot = {
             let guard = state.cache.lock().map_err(|e| e.to_string())?;
             guard.as_ref().cloned().unwrap_or_default()
         };
-        write_store(&app, &snapshot)
+        write_store(app, &snapshot)
     }
     #[cfg(not(target_os = "linux"))]
     {
         let _ = (app, state);
-        let e = entry(&service, &account)?;
+        let e = entry(service, account)?;
         e.set_password(&password).map_err(|e| e.to_string())
     }
 }
@@ -168,26 +200,37 @@ pub async fn secrets_set(
 #[tauri::command]
 pub async fn secrets_delete(
     app: AppHandle,
-    state: tauri::State<'_, SecretsState>,
     service: String,
     account: String,
 ) -> Result<(), String> {
+    blocking_secret(app, move |app, state| {
+        delete_secret(app, state, &service, &account)
+    })
+    .await
+}
+
+fn delete_secret(
+    app: &AppHandle,
+    state: &SecretsState,
+    service: &str,
+    account: &str,
+) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
-        let key = key(&service, &account);
-        with_store(&app, &state, |m| {
+        let key = key(service, account);
+        with_store(app, state, |m| {
             m.remove(&key);
         })?;
         let snapshot = {
             let guard = state.cache.lock().map_err(|e| e.to_string())?;
             guard.as_ref().cloned().unwrap_or_default()
         };
-        write_store(&app, &snapshot)
+        write_store(app, &snapshot)
     }
     #[cfg(not(target_os = "linux"))]
     {
         let _ = (app, state);
-        let e = entry(&service, &account)?;
+        let e = entry(service, account)?;
         match e.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
             Err(err) => Err(err.to_string()),
@@ -245,7 +288,10 @@ mod tests {
         write_store_at(&p, &HashMap::new()).unwrap();
 
         let tmp_path = p.with_extension("json.tmp");
-        assert!(!tmp_path.exists(), "tmp file must be renamed away on success");
+        assert!(
+            !tmp_path.exists(),
+            "tmp file must be renamed away on success"
+        );
     }
 
     #[test]
@@ -279,16 +325,27 @@ mod tests {
 #[tauri::command]
 pub async fn secrets_get_all(
     app: AppHandle,
-    state: tauri::State<'_, SecretsState>,
     service: String,
+    accounts: Vec<String>,
+) -> Result<Vec<Option<String>>, String> {
+    blocking_secret(app, move |app, state| {
+        get_all_secrets(app, state, &service, accounts)
+    })
+    .await
+}
+
+fn get_all_secrets(
+    app: &AppHandle,
+    state: &SecretsState,
+    service: &str,
     accounts: Vec<String>,
 ) -> Result<Vec<Option<String>>, String> {
     #[cfg(target_os = "linux")]
     {
-        with_store(&app, &state, |m| {
+        with_store(app, state, |m| {
             accounts
                 .iter()
-                .map(|a| m.get(&key(&service, a)).cloned())
+                .map(|a| m.get(&key(service, a)).cloned())
                 .collect()
         })
     }
@@ -298,7 +355,7 @@ pub async fn secrets_get_all(
         Ok(accounts
             .into_iter()
             .map(|a| {
-                keyring::Entry::new(&service, &a)
+                keyring::Entry::new(service, &a)
                     .ok()
                     .and_then(|e| e.get_password().ok())
             })

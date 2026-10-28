@@ -28,6 +28,22 @@ describe.each([
   });
 
   describe("Terax Ghostty WASM adaptation", () => {
+    it("repairs a wide character split by an alternate-screen resize before editing that row", () => {
+      const terminal = ghostty.createTerminal(132, 4);
+      const write = (text: string) =>
+        terminal.write(new TextEncoder().encode(text));
+      try {
+        write("\x1b[?47h\x1b[1;80H一");
+        write("\x1b[?47l");
+        terminal.resize(80, 4);
+        write("\x1b[?47h\x1b[1;80H\x1b[@\x1b[2;1Hsurvived");
+        terminal.updateRenderState();
+        expect(terminal.readTextRange(0, 0).trim()).toBe("");
+        expect(terminal.readTextRange(1, 1).trim()).toBe("survived");
+      } finally {
+        terminal.dispose();
+      }
+    });
     it("reports when a shell requires direct terminal input", () => {
       const terminal = ghostty.createTerminal(16, 4);
       try {
@@ -143,7 +159,7 @@ describe.each([
     });
     it("pins the audited Ghostty and Restty sources", () => {
       expect(ADAPTED_GHOSTTY_COMMIT).toBe(
-        "f426f6f181ba95f45d33f683fb754b6359d9e04f",
+        "ad97d331459a0762f7aea5f56fe86748e03b860f",
       );
       expect(ADAPTED_RESTTY_COMMIT).toBe(
         "7700b14a7643ba9240818209ef1e0aa90d83ad77",
@@ -288,6 +304,20 @@ describe.each([
             "\x1b]10;rgb:cdcd/d6d6/f4f4\x07" +
             "\x1b]11;rgb:1111/1111/1b1b\x07" +
             "\x1b]12;rgb:f9f9/e2e2/afaf\x07",
+        );
+      } finally {
+        terminal.dispose();
+      }
+    });
+
+    it("answers DECXCPR and screen-size reports", () => {
+      const terminal = ghostty.createTerminal(80, 24);
+      try {
+        terminal.write(
+          new TextEncoder().encode("\x1b[3;5H\x1b[6n\x1b[?6n\x1b[19t"),
+        );
+        expect(new TextDecoder().decode(terminal.drainOutputBytes())).toBe(
+          "\x1b[3;5R\x1b[?3;5;1R\x1b[9;24;80t",
         );
       } finally {
         terminal.dispose();
@@ -537,6 +567,8 @@ describe.each([
       const terminal = ghostty.createTerminal(20, 4);
       try {
         terminal.write(new TextEncoder().encode("first"));
+        // A private instance can still be growing while its buffers warm up.
+        terminal.updateRenderState();
         const first = terminal.updateRenderState();
         const second = terminal.updateRenderState();
         expect(second.codepoints).toBe(first.codepoints);
@@ -544,7 +576,7 @@ describe.each([
 
         terminal.resize(30, 5);
         const resized = terminal.updateRenderState();
-        expect(resized.codepoints).not.toBe(first.codepoints);
+        expect(Object.is(resized.codepoints, first.codepoints)).toBe(false);
         expect(resized.cellCount).toBe(150);
       } finally {
         terminal.dispose();
@@ -657,19 +689,53 @@ describe.each([
       }
     });
 
-    it("reuses shared WASM memory across multi-tab lifecycle cycles", () => {
-      runLifecycleCycle();
-      const warmBytes = ghostty.getMemoryBytes();
-      runLifecycleCycle();
-      const secondBytes = ghostty.getMemoryBytes();
-      runLifecycleCycle();
-      const thirdBytes = ghostty.getMemoryBytes();
+    it("reports held page bytes and prunes history only when a limit drops below them", () => {
+      const terminal = ghostty.createTerminal(80, 24, {
+        maxScrollbackBytes: 8 * 1024 * 1024,
+        maxScrollbackLines: 10_000,
+      });
+      try {
+        const slice = new TextEncoder().encode(
+          `${"x".repeat(78)}\r\n`.repeat(300),
+        );
+        for (let written = 0; written < 6_000; written += 300) {
+          terminal.write(slice);
+        }
+        const held = terminal.scrollbackPageBytes();
+        const total = terminal.scrollbar().total;
+        expect(held).toBeGreaterThan(2 * 1024 * 1024);
+        expect(held).toBeLessThan(8 * 1024 * 1024);
 
-      expect(secondBytes - warmBytes).toBeLessThanOrEqual(64 * 1024);
-      expect(thirdBytes - secondBytes).toBeLessThanOrEqual(64 * 1024);
+        terminal.setScrollbackLimits(held, 10_000);
+        terminal.setScrollbackLimits(4 * 1024 * 1024, 10_000);
+        expect(terminal.scrollbar().total).toBe(total);
+        expect(terminal.scrollbackPageBytes()).toBe(held);
+
+        terminal.setScrollbackLimits(held / 2, 10_000);
+        expect(terminal.scrollbar().total).toBeLessThan(total);
+        expect(terminal.scrollbackPageBytes()).toBeLessThanOrEqual(held / 2);
+        const last = terminal.scrollbar().total - 2;
+        expect(terminal.readTextRange(last, last)).toBe("x".repeat(78));
+
+        terminal.setScrollbackLimits(8 * 1024 * 1024, 100_000);
+        for (let written = 0; written < 3_000; written += 300) {
+          terminal.write(slice);
+        }
+        expect(terminal.scrollbackPageBytes()).toBeGreaterThan(held / 2);
+      } finally {
+        terminal.dispose();
+      }
     });
 
-    it("keeps five fresh terminals within the shared WASM page budget", async () => {
+    it("returns every byte of linear memory when multi-tab lifecycle cycles end", () => {
+      for (let cycle = 0; cycle < 3; cycle += 1) {
+        runLifecycleCycle();
+        expect(ghostty.getMemoryBytes()).toBe(0);
+        expect(ghostty.memoryStats().instanceCount).toBe(0);
+      }
+    });
+
+    it("keeps five fresh terminals within the per-instance page budget", async () => {
       const isolated = await TeraxGhostty.loadBytes(wasmBytes.slice(0));
       const baseline = isolated.getMemoryBytes();
       const terminals = Array.from({ length: 5 }, () =>
@@ -680,7 +746,7 @@ describe.each([
       );
       try {
         expect(isolated.getMemoryBytes() - baseline).toBeLessThanOrEqual(
-          4 * 1024 * 1024,
+          5 * 1280 * 1024,
         );
       } finally {
         for (const terminal of terminals) terminal.dispose();

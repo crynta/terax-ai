@@ -30,13 +30,15 @@ The commands registered in `src-tauri/src/lib.rs` are grouped below by module. N
 Long-lived interactive terminal sessions.
 
 - `pty_open` - create a new PTY session
+- `pty_stream_open` - open the window's multiplexed output stream and receive its token
+- `pty_set_presentation` - report which terminals are focused, visible, hidden or occluded (numbered, so a late report cannot undo a newer one)
 - `pty_write` - send input bytes (text or control sequences)
 - `pty_resize` - resize the PTY
 - `pty_close` / `pty_close_all` - destroy one or all sessions
 - `pty_has_foreground_process` / `pty_has_foreground_job` - detect whether a command is running
 - `pty_shell_name` / `pty_list_shells` - shell detection and enumeration
 
-Output streams from `pty_open` via a Tauri `Channel<PtyEvent>`.
+Output streams over the `terax-pty` custom URI scheme (one held `poll` request per window), not through `pty_open`; see `pty-transport-v2.md`.
 
 ### File system (`src-tauri/src/modules/fs/`)
 
@@ -59,7 +61,7 @@ Output streams from `pty_open` via a Tauri `Channel<PtyEvent>`.
 
 #### Watch
 
-- `fs_watch_add` / `fs_watch_remove` - filesystem change notifications
+- `fs_watch_add` / `fs_watch_remove` - directory change notifications (`fs:changed`): directories to watch plus the files whose own size or mtime should be reported. macOS uses one FSEvents stream over the covering roots with directory-level events and 0.1 s coalescing; Linux and Windows use non-recursive notify watches. Events are debounced 150 ms, at most 1 s.
 
 #### Search
 
@@ -101,7 +103,7 @@ Three distinct surfaces:
 
 ### Network (`src-tauri/src/modules/net.rs`)
 
-- `ai_http_request` / `ai_http_stream` - AI HTTP proxy with SSRF guard
+- `ai_http_stream` / `ai_http_cancel` / `ai_http_ack` - AI HTTP proxy with SSRF guard
 - `lm_ping` - local-model ping
 
 ### Secrets (`src-tauri/src/modules/secrets.rs`)

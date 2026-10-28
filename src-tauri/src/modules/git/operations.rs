@@ -5,17 +5,16 @@ use crate::modules::git::errors::{GitError, Result};
 use crate::modules::git::parser::parse_porcelain_v2;
 use crate::modules::git::process::{
     ensure_git_available, ensure_success, git_show_text, git_stdout_line_opt, git_stdout_lines,
-    read_text_file, run_git,
+    read_text_file, run_git, run_git_capped,
 };
 use crate::modules::git::types::{
     DiscardEntry, GitBranchEntry, GitBranchListResult, GitCommitFileChange, GitCommitResult,
-    GitDiffContentResult, GitDiffResult, GitLogEntry, GitOutput, GitPanelSnapshot,
-    GitPushResult, GitRepoInfo, GitStatusSnapshot, TextSource, DEFAULT_TIMEOUT_SECS,
-    NETWORK_TIMEOUT_SECS,
+    GitDiffContentResult, GitDiffResult, GitLogEntry, GitOutput, GitPanelSnapshot, GitPushResult,
+    GitRepoInfo, GitStatusSnapshot, TextSource, DEFAULT_TIMEOUT_SECS, NETWORK_TIMEOUT_SECS,
 };
+use crate::modules::git::untracked;
 use crate::modules::git::utils::{
-    authorized_repo_root, canonical_dir, resolve_within_repo, split_upstream,
-    ResolvedGitDirectory,
+    authorized_repo_root, canonical_dir, resolve_within_repo, split_upstream, ResolvedGitDirectory,
 };
 use crate::modules::workspace::{WorkspaceEnv, WorkspaceRegistry};
 
@@ -137,7 +136,7 @@ fn status_inner(repo_root: &ResolvedGitDirectory) -> Result<GitStatusSnapshot> {
             "--porcelain=v2",
             "--branch",
             "-z",
-            "--untracked-files=all",
+            "--untracked-files=normal",
         ],
         DEFAULT_TIMEOUT_SECS,
     )?;
@@ -145,6 +144,9 @@ fn status_inner(repo_root: &ResolvedGitDirectory) -> Result<GitStatusSnapshot> {
 
     let stdout = std::str::from_utf8(&output.stdout).unwrap_or("");
     let parsed = parse_porcelain_v2(stdout);
+    let files = untracked::expand_untracked_dirs(parsed.files, |dir, budget| {
+        list_untracked_in(repo_root, dir, budget)
+    });
 
     Ok(GitStatusSnapshot {
         repo_root: repo_root.git_path.clone(),
@@ -154,8 +156,42 @@ fn status_inner(repo_root: &ResolvedGitDirectory) -> Result<GitStatusSnapshot> {
         behind: parsed.behind,
         is_detached: parsed.is_detached,
         truncated: output.truncated,
-        changed_files: parsed.files,
+        changed_files: files,
     })
+}
+
+/// Files git reports as untracked (and not ignored) under `dir`, or `None` when
+/// there are more than `budget` or the listing fails. The walk is abandoned as
+/// soon as the output exceeds what `budget` entries could need.
+fn list_untracked_in(
+    repo_root: &ResolvedGitDirectory,
+    dir: &str,
+    budget: usize,
+) -> Option<Vec<String>> {
+    let output = run_git_capped(
+        &repo_root.workspace,
+        Some(&repo_root.git_path),
+        [
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "-z",
+            "--full-name",
+            "--",
+            dir,
+        ],
+        DEFAULT_TIMEOUT_SECS,
+        untracked::LISTING_CAP_BYTES,
+    )
+    .ok()?;
+    if output.truncated || output.timed_out {
+        return None;
+    }
+    // A listing that was cut short by the cap above reports exit failure.
+    if output.exit_code != Some(0) {
+        return None;
+    }
+    untracked::parse_listing(&output.stdout, budget)
 }
 
 pub fn diff(
@@ -315,12 +351,7 @@ pub fn unstage(
     if !looks_like_no_head(&output) {
         return ensure_success(&output, "git reset failed");
     }
-    let mut rm_args: Vec<OsString> = vec![
-        "rm".into(),
-        "--cached".into(),
-        "-r".into(),
-        "--".into(),
-    ];
+    let mut rm_args: Vec<OsString> = vec!["rm".into(), "--cached".into(), "-r".into(), "--".into()];
     for p in &resolved {
         rm_args.push(p.clone().into());
     }
@@ -1078,10 +1109,7 @@ pub fn list_branches(
                 && !existing.is_head;
             if should_replace {
                 let is_head = existing.is_head || b.is_head;
-                deduped[existing_idx] = GitBranchEntry {
-                    is_head,
-                    ..b
-                };
+                deduped[existing_idx] = GitBranchEntry { is_head, ..b };
             } else if b.is_head && !existing.is_head {
                 let mut updated = deduped[existing_idx].clone();
                 updated.is_head = true;
@@ -1113,7 +1141,11 @@ fn push_worktree(
         b.clone()
     } else if let Some(ref sha) = head_sha {
         // if detached HEAD with no branch — show shortened SHA as name
-        let short = if sha.len() >= 7 { &sha[..7] } else { sha.as_str() };
+        let short = if sha.len() >= 7 {
+            &sha[..7]
+        } else {
+            sha.as_str()
+        };
         format!("(detached @ {})", short)
     } else {
         return;

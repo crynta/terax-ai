@@ -145,7 +145,7 @@ export function AiStatusBarControls() {
           )}
         >
           {c.voice.recording ? (
-            <span className="size-2 animate-pulse rounded-full bg-destructive" />
+            <span className="size-2 terax-blink rounded-full bg-destructive" />
           ) : c.voice.transcribing ? (
             <Spinner className="size-3" />
           ) : (

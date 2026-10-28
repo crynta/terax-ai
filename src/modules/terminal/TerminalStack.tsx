@@ -77,7 +77,17 @@ export function TerminalStack({
   }, [terminals]);
 
   return (
-    <div className="relative h-full w-full">
+    <div data-terminal-stack="" className="relative h-full w-full">
+      {/*
+        The one canvas every WebGPU pane of this window draws into (WebGpuWindowCanvas). It is
+        exempt from the app zoom like the panes, so its CSS pixels are real pixels, and it clips
+        the canvas to the area. Tabs and panes above it are transparent where it shows through.
+      */}
+      <div
+        data-terminal-area=""
+        aria-hidden="true"
+        className="zoom-exempt pointer-events-none absolute inset-0 overflow-hidden"
+      />
       {terminals.map((t) => {
         const tabVisible = t.id === activeId;
         return (

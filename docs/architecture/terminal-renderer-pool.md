@@ -8,9 +8,13 @@ context cannot reset the parser, scrollback, selection, search, or command block
 
 ## Presentation resources
 
-`ghostty/gpu/WebGpuTerminalRuntime.ts` owns the window's device, pipelines, atlas
-leases, and damage scheduler. Each frame uses one encoder/submission for eligible
-surfaces. Per-pane deadlines bound focused, background-pane, and unfocused-window
+`ghostty/gpu/WebGpuTerminalRuntime.ts` owns the window's device, pipelines, glyph
+atlases (one per font and display ratio, shared by every surface that uses it),
+and damage scheduler, and one `WebGpuWindowCanvas` per terminal area: every visible
+WebGPU pane draws into its device-pixel rectangle of that shared canvas, and a
+presented canvas is never destroyed or resized by a tab switch, split or divider
+drag. Each frame uses one encoder/submission and one render pass for all panes.
+Per-pane deadlines bound focused, background-pane, and unfocused-window
 cadences to 60, 30, and 15 fps. At most two submissions await GPU completion.
 
 `ghostty/webgl/WebGlTerminalRuntime.ts` pools at most five WebGL2 renderer slots.
@@ -19,11 +23,11 @@ dirty-row information as WebGPU. One idle slot stays warm for up to 30 seconds.
 The adapted renderer retains its upstream MIT attribution; no xterm runtime or
 addon is installed or shipped.
 
-Hidden tabs release presentation immediately. A window that becomes invisible
-pauses rendering, blink, search, and selection work immediately, retaining GPU
-resources for two seconds to avoid repeated allocation during desktop switches.
-Longer invisibility releases those resources. Native macOS sleep requests immediate
-reclamation. Models keep parsing until their leaves close.
+Hidden tabs leave the window canvas immediately (their cell buffers and atlas lease are
+released); the canvas itself is never destroyed or resized by tab switches, because WebKit
+retains destroyed or retired WebGPU swapchains. An occluded, sleeping or hidden window pauses
+rendering, blink, search and selection work and keeps its GPU resources. WebGL slots (per pane)
+are still released on long invisibility. Models keep parsing until their leaves close.
 
 ## Blocks and accessibility
 
@@ -43,6 +47,6 @@ before disposing the previous presentation. A failed WebGL fallback displays a
 retry action while preserving the live model and PTY. Never serialize, replay,
 clear, or respawn a terminal to repair presentation.
 
-Read [resource efficiency](ghostty-resource-efficiency.md) for ownership limits,
-measurements, and limitations, and [release readiness](ghostty-release-readiness.md)
-for the platform and packaged application validation still required.
+See [renderer v2](terminal-renderer-v2.md) for the window canvas and its lifecycle,
+[resource efficiency](ghostty-resource-efficiency.md) for budgets and measurement, and
+[release readiness](ghostty-release-readiness.md) for the validation still required.

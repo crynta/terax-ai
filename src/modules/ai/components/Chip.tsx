@@ -3,7 +3,7 @@ import { Cancel01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { ReactNode } from "react";
 
-export type ChipTone =
+type ChipTone =
   | "neutral"
   | "blue"
   | "violet"

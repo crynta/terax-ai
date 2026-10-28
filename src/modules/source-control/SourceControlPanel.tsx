@@ -42,7 +42,7 @@ import {
   copyToClipboard,
   revealInFinder,
 } from "@/modules/explorer/lib/contextActions";
-import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
+import { FileIcon } from "@/modules/explorer/FileIcon";
 import {
   COMPACT_CONTENT,
   COMPACT_ITEM,
@@ -1207,7 +1207,6 @@ const EntryRow = memo(function EntryRow({
   const entry = row.entry;
   const isSelected = selectedPath === entry.path;
   const fileName = basename(entry.path);
-  const iconUrl = fileIconUrl(fileName);
   const pathLabel = entryPathLabel(entry);
   const showDiscard = entry.unstaged;
   const isStageBusy =
@@ -1259,11 +1258,7 @@ const EntryRow = memo(function EntryRow({
             }}
             className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
           >
-            {iconUrl ? (
-              <img src={iconUrl} alt="" className="size-4 shrink-0" />
-            ) : (
-              <span className="size-4 shrink-0" />
-            )}
+            <FileIcon name={fileName} className="size-4 shrink-0" />
             <div className="flex min-w-0 flex-1 items-baseline gap-1.5 leading-none">
               <span
                 className={cn(
@@ -1469,11 +1464,11 @@ function CommitFeedback({
   return (
     <div
       className={cn(
-        "pointer-events-none absolute inset-x-3 top-[calc(100%-0.25rem)] z-20 flex min-w-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] leading-snug shadow-lg shadow-black/15 backdrop-blur transition-all duration-200",
+        "pointer-events-none absolute inset-x-3 top-[calc(100%-0.25rem)] z-20 flex min-w-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] leading-snug shadow-lg shadow-black/15 transition-all duration-200",
         isVisible ? "translate-y-0 opacity-100" : "-translate-y-1 opacity-0",
         isError
-          ? "border-destructive/30 bg-card/95 text-destructive"
-          : "border-border/70 bg-card/95 text-muted-foreground",
+          ? "border-destructive/30 bg-card text-destructive"
+          : "border-border/70 bg-card text-muted-foreground",
       )}
     >
       <span

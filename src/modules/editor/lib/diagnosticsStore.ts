@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type DiagnosticCounts = { errors: number; warnings: number };
+type DiagnosticCounts = { errors: number; warnings: number };
 
 type State = {
   byPath: Record<string, DiagnosticCounts>;

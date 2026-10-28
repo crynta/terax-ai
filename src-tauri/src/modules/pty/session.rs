@@ -1,177 +1,46 @@
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use portable_pty::{native_pty_system, ChildKiller, MasterPty, PtySize};
-use tauri::ipc::{Channel, Response};
+use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use tauri::{AppHandle, Emitter, Manager};
+use tokio::sync::{mpsc, oneshot};
 
-use super::agent_detect::AgentDetector;
+use super::agent_detect::{AgentDetector, AgentSignal};
 use super::da_filter::DaFilter;
-use super::output::{OutputCredit, MAX_BUFFERED_BYTES};
+use super::hub::{Command, Hub};
+use super::presentation::PresentationClass;
+use super::queue::{OutputQueue, QueueDiagnostics};
 use super::shell_init;
 use crate::modules::workspace::WorkspaceEnv;
 
 const AGENT_EVENT: &str = "terax:agent-signal";
 
-// Sparse output keeps low interactive latency. Sustained output is aligned to
-// the display cadence so IPC cannot outpace useful terminal presentation.
-const FLUSH_INTERACTIVE_COALESCE: Duration = Duration::from_millis(4);
-const FLUSH_SUSTAINED_COALESCE: Duration = Duration::from_millis(16);
-const FLUSH_SUSTAINED_WINDOW: Duration = Duration::from_millis(40);
-const FLUSH_IMMEDIATE_BYTES: usize = 64 * 1024;
 const READ_BUF: usize = 16 * 1024;
 const EXIT_ACK_TIMEOUT: Duration = Duration::from_secs(30);
-struct OutputQueueState {
-    pending: Vec<u8>,
-    credit: OutputCredit,
-    closed: bool,
-    reader_done: bool,
-    reader_failed: bool,
-    exit_ack_deadline: Option<(Instant, Duration)>,
-    drain_timed_out: bool,
-}
+/// Writes queued ahead of the writer thread; a full queue applies async
+/// backpressure to `pty_write` instead of growing without bound.
+const INPUT_QUEUE: usize = 64;
+// Three small threads per PTY: keep their stacks small. The reader calls
+// Tauri's event emit, so it keeps a little more than the others.
+const READER_STACK: usize = 256 * 1024;
+const WRITER_STACK: usize = 128 * 1024;
+const WAITER_STACK: usize = 256 * 1024;
 
-struct OutputQueue {
-    state: Mutex<OutputQueueState>,
-    changed: Condvar,
-}
-
-impl OutputQueue {
-    fn new() -> Self {
-        Self {
-            state: Mutex::new(OutputQueueState {
-                pending: Vec::with_capacity(READ_BUF),
-                credit: OutputCredit::default(),
-                closed: false,
-                reader_done: false,
-                reader_failed: false,
-                exit_ack_deadline: None,
-                drain_timed_out: false,
-            }),
-            changed: Condvar::new(),
-        }
-    }
-
-    fn acknowledge(&self, bytes: u64) -> Result<(), String> {
-        let mut state = self.state.lock().unwrap();
-        if state.credit.acknowledge(bytes)? {
-            if let Some((deadline, timeout)) = &mut state.exit_ack_deadline {
-                *deadline = Instant::now() + *timeout;
-            }
-            self.changed.notify_all();
-        }
-        Ok(())
-    }
-
-    fn close(&self) {
-        let mut state = self.state.lock().unwrap();
-        state.closed = true;
-        state.pending = Vec::new();
-        self.changed.notify_all();
-    }
-
-    fn finish_reading(&self) {
-        let mut state = self.state.lock().unwrap();
-        state.reader_done = true;
-        self.changed.notify_all();
-    }
-
-    fn begin_exit(&self, timeout: Duration) {
-        let mut state = self.state.lock().unwrap();
-        state.exit_ack_deadline = Some((Instant::now() + timeout, timeout));
-        self.changed.notify_all();
-    }
-
-    fn wait_change<'a>(
-        &'a self,
-        mut state: MutexGuard<'a, OutputQueueState>,
-    ) -> MutexGuard<'a, OutputQueueState> {
-        if let Some((deadline, _)) = state.exit_ack_deadline {
-            if state.credit.in_flight_chunks() > 0 {
-                let remaining = deadline.saturating_duration_since(Instant::now());
-                if remaining.is_zero() {
-                    log::error!("PTY output drain timed out after shell exit: {} bytes unacknowledged, {} bytes pending", state.credit.in_flight_bytes(), state.pending.len());
-                    state.drain_timed_out = true;
-                    state.closed = true;
-                    state.pending = Vec::new();
-                    self.changed.notify_all();
-                    return state;
-                }
-                return self.changed.wait_timeout(state, remaining).unwrap().0;
-            }
-        }
-        self.changed.wait(state).unwrap()
-    }
-
-    fn push(&self, bytes: &[u8]) -> bool {
-        let mut state = self.state.lock().unwrap();
-        while !state.closed
-            && state.pending.len() + state.credit.in_flight_bytes() + bytes.len()
-                > MAX_BUFFERED_BYTES
-        {
-            state = self.wait_change(state);
-        }
-        if state.closed {
-            return false;
-        }
-        state.pending.extend_from_slice(bytes);
-        self.changed.notify_all();
-        true
-    }
-
-    fn wait_pending(&self) -> Option<usize> {
-        let mut state = self.state.lock().unwrap();
-        while state.pending.is_empty() && !state.closed {
-            if state.reader_done && state.credit.in_flight_chunks() == 0 {
-                return None;
-            }
-            state = self.wait_change(state);
-        }
-        if state.closed {
-            None
-        } else {
-            Some(state.pending.len())
-        }
-    }
-
-    fn take(&self) -> Option<Vec<u8>> {
-        let mut state = self.state.lock().unwrap();
-        while !state.closed && !state.credit.can_send() {
-            state = self.wait_change(state);
-        }
-        if state.closed {
-            return None;
-        }
-        let chunk = std::mem::replace(&mut state.pending, Vec::with_capacity(READ_BUF));
-        if !chunk.is_empty() {
-            if state.credit.in_flight_chunks() == 0 {
-                if let Some((deadline, timeout)) = &mut state.exit_ack_deadline {
-                    *deadline = Instant::now() + *timeout;
-                }
-            }
-            state.credit.sent(chunk.len());
-        }
-        Some(chunk)
-    }
+struct InputMessage {
+    bytes: Vec<u8>,
+    /// Receives the write result; absent for fire-and-forget terminal replies.
+    done: Option<oneshot::Sender<Result<(), String>>>,
 }
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct OutputDiagnostics {
     shell_pid: u32,
-    sent_bytes: u64,
-    acknowledged_bytes: u64,
-    pending_bytes: usize,
-    pending_capacity: usize,
-    in_flight_bytes: usize,
-    in_flight_chunks: usize,
-    reader_done: bool,
-    closed: bool,
-    drain_timed_out: bool,
-    reader_failed: bool,
+    #[serde(flatten)]
+    queue: QueueDiagnostics,
 }
 
 pub struct Session {
@@ -183,8 +52,12 @@ pub struct Session {
     _job: Option<crate::modules::proc::job::ProcessJob>,
     /// PID of the shell process. 0 means unknown; callers must skip checks when 0.
     pub shell_pid: u32,
+    /// Label of the webview that opened this PTY and receives its output.
+    pub owner: Arc<str>,
     pub killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
-    pub writer: Arc<Mutex<Box<dyn Write + Send>>>,
+    /// Feeds the per-session writer thread, which keeps input ordered and off
+    /// every async worker.
+    input: mpsc::Sender<InputMessage>,
     pub master: Arc<Mutex<Option<Box<dyn MasterPty + Send>>>>,
     output: Arc<OutputQueue>,
     // Set only after output drains, so registration cannot reap a live queue.
@@ -197,7 +70,7 @@ impl Drop for Session {
         #[cfg(unix)]
         self.reader_control.cancel();
         // If the session Arc is dropped without an explicit pty_close (e.g.
-        // frontend disconnected, window crashed, dev HMR), the reader/flusher
+        // frontend disconnected, window crashed, dev HMR), the reader/waiter
         // threads would otherwise stay alive forever holding the child. Kill
         // the child here so the reader hits EOF and the threads unwind.
         if let Ok(mut k) = self.killer.lock() {
@@ -208,20 +81,15 @@ impl Drop for Session {
 
 impl Session {
     pub(super) fn diagnostics(&self) -> OutputDiagnostics {
-        let state = self.output.state.lock().unwrap();
         OutputDiagnostics {
             shell_pid: self.shell_pid,
-            sent_bytes: state.credit.sent_bytes(),
-            acknowledged_bytes: state.credit.acknowledged_bytes(),
-            pending_bytes: state.pending.len(),
-            pending_capacity: state.pending.capacity(),
-            in_flight_bytes: state.credit.in_flight_bytes(),
-            in_flight_chunks: state.credit.in_flight_chunks(),
-            reader_done: state.reader_done,
-            closed: state.closed,
-            drain_timed_out: state.drain_timed_out,
-            reader_failed: state.reader_failed,
+            queue: self.output.diagnostics(),
         }
+    }
+
+    #[cfg(all(test, unix))]
+    pub(super) fn queue_closed(&self) -> bool {
+        self.output.is_closed()
     }
 
     pub(super) fn close_output(&self) {
@@ -239,19 +107,62 @@ impl Session {
             .map_err(|e| e.to_string())
     }
 
-    pub(super) fn acknowledge_output(&self, bytes: u64) -> Result<(), String> {
-        self.output.acknowledge(bytes)
+    /// Queues `bytes` for the writer thread and resolves with the result of
+    /// the actual pipe write, so callers still see real I/O errors in order.
+    pub(super) async fn write(&self, bytes: Vec<u8>) -> Result<(), String> {
+        let (done, result) = oneshot::channel();
+        self.input
+            .send(InputMessage {
+                bytes,
+                done: Some(done),
+            })
+            .await
+            .map_err(|_| "PTY input is closed".to_string())?;
+        result
+            .await
+            .map_err(|_| "PTY input is closed".to_string())?
     }
 }
+
 // Serializes ConPTY create and close: overlapping pseudoconsole lifecycle
 // calls corrupt the new console so its shell never pumps output (issue #356).
+// Holders must not wait on anything that depends on the frontend: every
+// terminal opened or closed meanwhile waits behind them.
 #[cfg(windows)]
 static CONPTY_LIFECYCLE_LOCK: Mutex<()> = Mutex::new(());
 
+/// A panic inside a lifecycle call must not make every later terminal panic.
+#[cfg(any(windows, test))]
+fn lock_lifecycle(lock: &Mutex<()>) -> std::sync::MutexGuard<'_, ()> {
+    lock.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 pub(super) fn drop_session(session: Arc<Session>) {
     #[cfg(windows)]
-    let _guard = CONPTY_LIFECYCLE_LOCK.lock().unwrap();
+    let _guard = lock_lifecycle(&CONPTY_LIFECYCLE_LOCK);
     drop(session);
+}
+
+/// What conhost can still hold when its console is closed is a final frame or
+/// two; a megabyte of headroom is far more than that.
+#[cfg(any(windows, test))]
+const CLOSE_OVERDRAFT: usize = 1024 * 1024;
+
+/// Runs `close`, the drop of the ConPTY handle, under the lifecycle lock.
+///
+/// Closing a pseudoconsole blocks until conhost has written everything it
+/// holds into the output pipe and the reader has taken it. A reader that is
+/// waiting for credit (the frontend has not caught up on a backlog) would keep
+/// `close`, and with it the lock that every `pty_open` needs, waiting for the
+/// frontend for as long as the 30 second drain deadline. So the reader is made
+/// unable to block on credit first, outside the lock; the lock then covers
+/// only the close, which was its purpose.
+#[cfg(any(windows, test))]
+fn close_pseudoconsole(output: &OutputQueue, lifecycle: &Mutex<()>, close: impl FnOnce()) {
+    output.allow_overdraft(CLOSE_OVERDRAFT);
+    let _guard = lock_lifecycle(lifecycle);
+    close();
 }
 
 struct ChildKillGuard {
@@ -278,10 +189,25 @@ impl Drop for ChildKillGuard {
     }
 }
 
+/// Everything a PTY needs from the host that is not the shell itself.
+pub(super) struct Host {
+    pub id: u32,
+    pub owner: Arc<str>,
+    pub hub: Hub,
+    pub class: PresentationClass,
+    /// Agent detector transitions (an app event in production).
+    pub signal: Arc<dyn Fn(AgentSignal) + Send + Sync>,
+    /// Runs on the waiter thread once the exit frame was delivered.
+    pub reap: Box<dyn FnOnce() + Send>,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn spawn(
     id: u32,
     app: AppHandle,
+    owner: Arc<str>,
+    hub: Hub,
+    class: PresentationClass,
     cols: u16,
     rows: u16,
     cwd: Option<String>,
@@ -289,22 +215,55 @@ pub fn spawn(
     blocks: bool,
     shell: Option<String>,
     control: Option<crate::modules::control::ShellControlEnv>,
-    on_data: Channel<Response>,
-    on_exit: Channel<i32>,
-) -> Result<(Arc<Session>, PtySize), String> {
-    #[cfg(windows)]
-    let _spawn_guard = CONPTY_LIFECYCLE_LOCK.lock().unwrap();
+) -> Result<Arc<Session>, String> {
+    let emitter = app.clone();
+    spawn_with(
+        Host {
+            id,
+            owner,
+            hub,
+            class,
+            signal: Arc::new(move |signal| {
+                let _ = emitter.emit(AGENT_EVENT, signal);
+            }),
+            reap: Box::new(move || {
+                if let Some(state) = app.try_state::<super::PtyState>() {
+                    if let Some(s) = state.take(id) {
+                        drop_session(s);
+                    }
+                }
+            }),
+        },
+        PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        },
+        move || shell_init::build_command(cwd, workspace, blocks, shell, control),
+    )
+}
 
+pub(super) fn spawn_with(
+    host: Host,
+    size: PtySize,
+    build_command: impl FnOnce() -> Result<CommandBuilder, String>,
+) -> Result<Arc<Session>, String> {
+    #[cfg(windows)]
+    let _spawn_guard = lock_lifecycle(&CONPTY_LIFECYCLE_LOCK);
+
+    let Host {
+        id,
+        owner,
+        hub,
+        class,
+        signal,
+        reap,
+    } = host;
     let pty_system = native_pty_system();
-    let size = PtySize {
-        rows,
-        cols,
-        pixel_width: 0,
-        pixel_height: 0,
-    };
     let pair = pty_system.openpty(size).map_err(|e| e.to_string())?;
 
-    let cmd = shell_init::build_command(cwd, workspace, blocks, shell, control)?;
+    let cmd = build_command()?;
     let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);
 
@@ -317,9 +276,7 @@ pub fn spawn(
     #[cfg(unix)]
     let (mut reader, reader_control) =
         super::unix_reader::UnixPtyReader::new(pair.master.as_ref()).map_err(|e| e.to_string())?;
-    let writer: Arc<Mutex<Box<dyn Write + Send>>> = Arc::new(Mutex::new(
-        pair.master.take_writer().map_err(|e| e.to_string())?,
-    ));
+    let mut writer = pair.master.take_writer().map_err(|e| e.to_string())?;
     guard.disarm();
 
     let shell_pid = child.process_id().unwrap_or(0);
@@ -337,7 +294,22 @@ pub fn spawn(
     };
 
     let finished = Arc::new(AtomicBool::new(false));
-    let output = Arc::new(OutputQueue::new());
+    let output = Arc::new(OutputQueue::new(Some(hub.wake())));
+    let (input, mut input_rx) = mpsc::channel::<InputMessage>(INPUT_QUEUE);
+
+    hub.submit(Command::Register {
+        id,
+        label: owner.clone(),
+        queue: output.clone(),
+        class,
+    });
+    // Until the threads below exist, a failure must not leave the hub holding
+    // a queue nobody will ever drain.
+    let registration = Registration {
+        hub: hub.clone(),
+        id,
+        armed: true,
+    };
 
     let session = Arc::new(Session {
         #[cfg(unix)]
@@ -345,58 +317,88 @@ pub fn spawn(
         #[cfg(windows)]
         _job: job,
         shell_pid,
+        owner,
         killer: Mutex::new(killer),
-        writer: writer.clone(),
+        input: input.clone(),
         master: Arc::new(Mutex::new(Some(pair.master))),
         output: output.clone(),
         finished: finished.clone(),
     });
 
+    // The writer thread owns the PTY input: one ordered queue for keystrokes,
+    // pastes and terminal replies, with no per-write task or lock.
+    let spawn_error =
+        |what: &str, e: std::io::Error| format!("could not start PTY {what} thread: {e}");
+    thread::Builder::new()
+        .name("terax-pty-writer".into())
+        .stack_size(WRITER_STACK)
+        .spawn(move || {
+            while let Some(message) = input_rx.blocking_recv() {
+                let result = writer.write_all(&message.bytes).map_err(|e| {
+                    log::debug!("pty write failed: {e}");
+                    e.to_string()
+                });
+                if let Some(done) = message.done {
+                    let _ = done.send(result);
+                }
+            }
+        })
+        .map_err(|e| spawn_error("writer", e))?;
+
     let spawn_at = Instant::now();
-
-    let first_byte = Arc::new(AtomicBool::new(false));
-
     let output_r = output.clone();
-    let writer_for_da = writer.clone();
-    let app_reader = app.clone();
-    let first_byte_r = first_byte;
     let reader_thread = thread::Builder::new()
         .name("terax-pty-reader".into())
+        .stack_size(READER_STACK)
         .spawn(move || {
             let mut buf = [0u8; READ_BUF];
+            // Reused for every filtered read: no per-chunk allocation.
             let mut filtered: Vec<u8> = Vec::with_capacity(READ_BUF);
             let mut da_filter = DaFilter::new();
             let mut agent_detect = AgentDetector::new();
+            let mut first_byte = false;
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        if output_r.state.lock().unwrap().closed {
+                        if output_r.is_closed() {
                             #[cfg(windows)]
                             continue;
                             #[cfg(not(windows))]
                             break;
                         }
-                        if !first_byte_r.load(Ordering::Relaxed) {
-                            first_byte_r.store(true, Ordering::Release);
+                        if !first_byte {
+                            first_byte = true;
                             log::debug!(
                                 "pty first byte after {}ms",
                                 spawn_at.elapsed().as_millis()
                             );
                         }
-                        agent_detect.process(&buf[..n], |t| {
-                            let _ = app_reader.emit(AGENT_EVENT, t.into_signal(id));
-                        });
-                        filtered.clear();
-                        da_filter.process(&buf[..n], &mut filtered, |reply| {
-                            if let Ok(mut w) = writer_for_da.lock() {
-                                let _ = w.write_all(reply);
-                            }
-                        });
-                        if filtered.is_empty() {
+                        let read = &buf[..n];
+                        agent_detect.process(read, |t| signal(t.into_signal(id)));
+                        let chunk: &[u8] = if da_filter.passes_through(read) {
+                            read
+                        } else {
+                            filtered.clear();
+                            da_filter.process(read, &mut filtered, |reply| {
+                                // Replies share the ordered input queue; a full
+                                // queue drops one rather than stalling output.
+                                if input
+                                    .try_send(InputMessage {
+                                        bytes: reply.to_vec(),
+                                        done: None,
+                                    })
+                                    .is_err()
+                                {
+                                    log::debug!("pty terminal reply dropped: input queue is full");
+                                }
+                            });
+                            &filtered
+                        };
+                        if chunk.is_empty() {
                             continue;
                         }
-                        if !output_r.push(&filtered) {
+                        if !output_r.push(chunk) {
                             #[cfg(windows)]
                             continue;
                             #[cfg(not(windows))]
@@ -406,7 +408,7 @@ pub fn spawn(
                     Err(e) => {
                         #[cfg(unix)]
                         {
-                            output_r.state.lock().unwrap().reader_failed = true;
+                            output_r.fail_reading();
                             log::error!("pty reader failed: {e}");
                         }
                         #[cfg(windows)]
@@ -415,57 +417,18 @@ pub fn spawn(
                     }
                 }
             }
-            agent_detect.finish(|t| {
-                let _ = app_reader.emit(AGENT_EVENT, t.into_signal(id));
-            });
+            agent_detect.finish(|t| signal(t.into_signal(id)));
             output_r.finish_reading();
         })
-        .expect("spawn pty reader thread");
-
-    let on_data_flush = on_data;
-    let output_f = output.clone();
-    #[cfg(unix)]
-    let reader_control_f = reader_control.clone();
-    let flusher_thread = thread::Builder::new()
-        .name("terax-pty-flusher".into())
-        .spawn(move || {
-            let mut last_flush_at: Option<Instant> = None;
-            loop {
-                let Some(pending_bytes) = output_f.wait_pending() else {
-                    return;
-                };
-                let now = Instant::now();
-                let since_last_flush =
-                    last_flush_at.map(|last| now.saturating_duration_since(last));
-                let delay = flush_coalesce_delay(since_last_flush, pending_bytes);
-                if !delay.is_zero() {
-                    thread::sleep(delay);
-                }
-                let Some(chunk) = output_f.take() else {
-                    return;
-                };
-                if chunk.is_empty() {
-                    continue;
-                }
-                if let Err(e) = on_data_flush.send(Response::new(chunk)) {
-                    output_f.close();
-                    #[cfg(unix)]
-                    reader_control_f.cancel();
-                    log::debug!("pty flusher exiting, channel closed: {e}");
-                    break;
-                }
-                last_flush_at = Some(Instant::now());
-            }
-        })
-        .expect("spawn pty flusher thread");
+        .map_err(|e| spawn_error("reader", e))?;
 
     let output_e = output;
-    let app_waiter = app;
     let finished_w = finished;
     #[cfg(windows)]
     let master_e = session.master.clone();
     thread::Builder::new()
         .name("terax-pty-waiter".into())
+        .stack_size(WAITER_STACK)
         .spawn(move || {
             let code = match child.wait() {
                 Ok(status) => status.exit_code() as i32,
@@ -474,7 +437,7 @@ pub fn spawn(
                     -1
                 }
             };
-            // Arm before ConPTY close and either join: both can depend on credit.
+            // Arm before ConPTY close and the join: both can depend on credit.
             output_e.begin_exit(EXIT_ACK_TIMEOUT);
             #[cfg(unix)]
             reader_control.finish();
@@ -482,287 +445,438 @@ pub fn spawn(
             {
                 // Closing ConPTY can emit a final frame. Keep the reader alive until EOF.
                 let master = master_e.lock().unwrap().take();
-                let _guard = CONPTY_LIFECYCLE_LOCK.lock().unwrap();
-                drop(master);
+                close_pseudoconsole(&output_e, &CONPTY_LIFECYCLE_LOCK, move || drop(master));
             }
             if let Err(e) = reader_thread.join() {
                 log::error!("pty reader thread panicked: {e:?}");
-                output_e.close();
+                output_e.fail_reading();
+                output_e.finish_reading();
             }
-            if let Err(e) = flusher_thread.join() {
-                log::error!("pty flusher thread panicked: {e:?}");
-            }
-            let delivery_failed = {
-                let state = output_e.state.lock().unwrap();
-                state.drain_timed_out || state.reader_failed
-            };
-            let code = if delivery_failed { -1 } else { code };
-            if let Err(e) = on_exit.send(code) {
-                log::debug!("pty exit send failed (channel closed): {e}");
-            }
+            // The hub sends the exit frame once the reader drained and every
+            // data frame was acknowledged (or the drain deadline passed).
+            output_e.set_exit_code(code);
+            output_e.wait_finished();
             finished_w.store(true, Ordering::Release);
-            if let Some(state) = app_waiter.try_state::<super::PtyState>() {
-                if let Some(s) = state.take(id) {
-                    drop_session(s);
-                }
-            }
+            reap();
         })
-        .expect("spawn pty waiter thread");
+        .map_err(|e| spawn_error("waiter", e))?;
 
-    Ok((session, size))
+    registration.disarm();
+    Ok(session)
 }
 
-fn flush_coalesce_delay(since_last_flush: Option<Duration>, pending_bytes: usize) -> Duration {
-    if pending_bytes >= FLUSH_IMMEDIATE_BYTES {
-        return Duration::ZERO;
-    }
-    if since_last_flush.is_some_and(|elapsed| elapsed <= FLUSH_SUSTAINED_WINDOW) {
-        FLUSH_SUSTAINED_COALESCE
-    } else {
-        FLUSH_INTERACTIVE_COALESCE
+/// Unregisters a PTY from the hub unless the spawn completed.
+struct Registration {
+    hub: Hub,
+    id: u32,
+    armed: bool,
+}
+
+impl Registration {
+    fn disarm(mut self) {
+        self.armed = false;
     }
 }
 
-#[cfg(test)]
-mod flow_control_tests {
-    use super::*;
-    use std::sync::mpsc;
-
-    #[test]
-    fn shell_exit_releases_both_workers_when_frontend_stops_acknowledging() {
-        let output = Arc::new(OutputQueue::new());
-        for _ in 0..2 {
-            output.push(&vec![0; MAX_BUFFERED_BYTES / 2]);
-            output.take().unwrap();
+impl Drop for Registration {
+    fn drop(&mut self) {
+        if self.armed {
+            self.hub.submit(Command::Unregister { id: self.id });
         }
-        let (sent, received) = mpsc::channel();
-        let reader_output = output.clone();
-        let reader_sent = sent.clone();
-        let reader = thread::spawn(move || {
-            reader_sent.send(!reader_output.push(&[1])).unwrap();
-        });
-        let flusher_output = output.clone();
-        let flusher = thread::spawn(move || {
-            sent.send(flusher_output.take().is_none()).unwrap();
-        });
-        output.begin_exit(Duration::from_millis(30));
-        assert!(received.recv_timeout(Duration::from_secs(1)).unwrap());
-        assert!(received.recv_timeout(Duration::from_secs(1)).unwrap());
-        reader.join().unwrap();
-        flusher.join().unwrap();
-        assert!(output.state.lock().unwrap().drain_timed_out);
-    }
-
-    #[test]
-    fn final_unacknowledged_chunk_times_out_after_reader_eof() {
-        let output = OutputQueue::new();
-        output.push(&[1]);
-        output.take().unwrap();
-        output.finish_reading();
-        output.begin_exit(Duration::ZERO);
-        assert_eq!(output.wait_pending(), None);
-        assert!(output.state.lock().unwrap().drain_timed_out);
-    }
-
-    #[test]
-    fn progressing_exit_drain_preserves_tail_and_renews_deadline() {
-        let output = OutputQueue::new();
-        output.push(&[1]);
-        output.take().unwrap();
-        output.begin_exit(Duration::from_secs(1));
-        output.state.lock().unwrap().exit_ack_deadline =
-            Some((Instant::now(), Duration::from_secs(1)));
-        output.acknowledge(1).unwrap();
-        assert!(output.state.lock().unwrap().exit_ack_deadline.unwrap().0 > Instant::now());
-        output.push(&[2]);
-        assert_eq!(output.take().unwrap(), vec![2]);
-        output.finish_reading();
-        output.acknowledge(2).unwrap();
-        assert_eq!(output.wait_pending(), None);
-        assert!(!output.state.lock().unwrap().drain_timed_out);
-    }
-
-    #[test]
-    fn reader_backpressure_releases_only_after_valid_cumulative_credit() {
-        let output = Arc::new(OutputQueue::new());
-        assert!(output.push(&vec![1; MAX_BUFFERED_BYTES]));
-        assert_eq!(output.take().unwrap().len(), MAX_BUFFERED_BYTES);
-        let (sent, received) = mpsc::channel();
-        let reader_output = output.clone();
-        let reader = thread::spawn(move || {
-            sent.send(reader_output.push(&[2])).unwrap();
-        });
-        assert!(received.recv_timeout(Duration::from_millis(20)).is_err());
-        assert!(output.acknowledge(1).is_err());
-        assert!(received.recv_timeout(Duration::from_millis(20)).is_err());
-        output.acknowledge(MAX_BUFFERED_BYTES as u64).unwrap();
-        assert!(received.recv_timeout(Duration::from_secs(1)).unwrap());
-        reader.join().unwrap();
-        assert_eq!(output.take().unwrap(), vec![2]);
-    }
-
-    #[test]
-    fn eof_does_not_bypass_chunk_limit_or_final_parser_acknowledgement() {
-        let output = Arc::new(OutputQueue::new());
-        for byte in [1, 2] {
-            assert!(output.push(&[byte]));
-            assert_eq!(output.take().unwrap(), vec![byte]);
-        }
-        assert!(output.push(&[3]));
-        output.finish_reading();
-        let (sent, received) = mpsc::channel();
-        let flusher_output = output.clone();
-        let flusher = thread::spawn(move || {
-            sent.send(flusher_output.take()).unwrap();
-            sent.send(flusher_output.wait_pending().map(|_| Vec::new()))
-                .unwrap();
-        });
-        assert!(received.recv_timeout(Duration::from_millis(20)).is_err());
-        output.acknowledge(2).unwrap();
-        assert_eq!(
-            received.recv_timeout(Duration::from_secs(1)).unwrap(),
-            Some(vec![3])
-        );
-        output.acknowledge(2).unwrap();
-        assert!(received.recv_timeout(Duration::from_millis(20)).is_err());
-        output.acknowledge(3).unwrap();
-        assert_eq!(received.recv_timeout(Duration::from_secs(1)).unwrap(), None);
-        flusher.join().unwrap();
-    }
-
-    #[test]
-    fn close_releases_a_reader_and_flusher_waiting_on_lost_credit() {
-        let output = Arc::new(OutputQueue::new());
-        for _ in 0..2 {
-            assert!(output.push(&vec![0; MAX_BUFFERED_BYTES / 2]));
-            output.take().unwrap();
-        }
-        let (sent, received) = mpsc::channel();
-        let reader_output = output.clone();
-        let reader_sent = sent.clone();
-        let reader = thread::spawn(move || {
-            reader_sent.send(!reader_output.push(&[1])).unwrap();
-        });
-        let flusher_output = output.clone();
-        let flusher = thread::spawn(move || {
-            sent.send(flusher_output.take().is_none()).unwrap();
-        });
-        output.close();
-        assert!(received.recv_timeout(Duration::from_secs(1)).unwrap());
-        assert!(received.recv_timeout(Duration::from_secs(1)).unwrap());
-        reader.join().unwrap();
-        flusher.join().unwrap();
     }
 }
 
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
-    use portable_pty::CommandBuilder;
+    use crate::modules::pty::hub::{Endpoint, Reply};
+    use crate::modules::pty::wire::{decode_frames, Ack, Frame, StreamRequest};
+    use std::sync::mpsc as std_mpsc;
 
-    #[test]
-    fn pty_output_coalescing_preserves_latency_and_bounds_sustained_ipc() {
-        assert_eq!(flush_coalesce_delay(None, 1), FLUSH_INTERACTIVE_COALESCE);
-        assert_eq!(
-            flush_coalesce_delay(Some(Duration::from_millis(100)), 1),
-            FLUSH_INTERACTIVE_COALESCE,
-        );
-        assert_eq!(
-            flush_coalesce_delay(Some(Duration::from_millis(10)), 1),
-            FLUSH_SUSTAINED_COALESCE,
-        );
-        assert_eq!(
-            flush_coalesce_delay(Some(Duration::from_millis(10)), FLUSH_IMMEDIATE_BYTES),
-            Duration::ZERO,
-        );
+    struct ChannelReply(std_mpsc::Sender<(u16, Vec<u8>)>);
+
+    impl Reply for ChannelReply {
+        fn send(self: Box<Self>, status: u16, body: Vec<u8>) {
+            let _ = self.0.send((status, body));
+        }
+    }
+
+    /// A stand-in for the frontend: opens a stream, polls, acknowledges what
+    /// it received after every response, and records what arrived.
+    struct Frontend {
+        hub: Hub,
+        label: Arc<str>,
+        token: u64,
+        received: Vec<u8>,
+        acked: u64,
+        exit: Option<i32>,
+        max_in_flight: u64,
+        frames_after_exit: usize,
+    }
+
+    impl Frontend {
+        fn open(hub: &Hub, label: &str) -> Self {
+            let (tx, rx) = std_mpsc::channel();
+            let label: Arc<str> = Arc::from(label);
+            hub.submit(Command::OpenStream {
+                label: label.clone(),
+                reply: Box::new(move |token| tx.send(token).unwrap()),
+            });
+            Self {
+                hub: hub.clone(),
+                label,
+                token: rx.recv_timeout(Duration::from_secs(5)).unwrap().unwrap(),
+                received: Vec::new(),
+                acked: 0,
+                exit: None,
+                max_in_flight: 0,
+                frames_after_exit: 0,
+            }
+        }
+
+        fn poll_once(&mut self, id: u32, acks: Vec<Ack>) -> Vec<Vec<u8>> {
+            let (tx, rx) = std_mpsc::channel();
+            self.hub.submit(Command::Request {
+                label: self.label.clone(),
+                endpoint: Endpoint::Poll,
+                request: StreamRequest {
+                    token: self.token,
+                    acks,
+                },
+                reply: Box::new(ChannelReply(tx)),
+            });
+            let (status, body) = rx
+                .recv_timeout(Duration::from_secs(10))
+                .expect("a response within 10 s");
+            assert_eq!(status, 200);
+            let mut payloads = Vec::new();
+            for frame in decode_frames(&body).unwrap() {
+                match frame {
+                    Frame::Data {
+                        id: i,
+                        offset,
+                        payload,
+                    } if i == id => {
+                        assert_eq!(self.exit, None, "no data after the exit frame");
+                        assert_eq!(offset, self.received.len() as u64, "gapless stream");
+                        self.received.extend_from_slice(payload);
+                        payloads.push(payload.to_vec());
+                    }
+                    Frame::Exit { id: i, code } if i == id => self.exit = Some(code),
+                    Frame::Sync { .. } => {}
+                    other => panic!("unexpected frame {other:?}"),
+                }
+                if self.exit.is_some() {
+                    self.frames_after_exit += 1;
+                }
+            }
+            payloads
+        }
+
+        /// Polls (acknowledging everything received so far) until exit.
+        fn run_until_exit(&mut self, id: u32, session: &Session) {
+            let mut acks = vec![Ack { id, bytes: 0 }];
+            while self.exit.is_none() {
+                self.poll_once(id, std::mem::take(&mut acks));
+                let in_flight = session.output.diagnostics().in_flight_bytes as u64;
+                self.max_in_flight = self.max_in_flight.max(in_flight);
+                let end = self.received.len() as u64;
+                if end > self.acked {
+                    self.acked = end;
+                    acks.push(Ack { id, bytes: end });
+                }
+            }
+        }
+    }
+
+    fn host(id: u32, hub: &Hub) -> (Host, std_mpsc::Receiver<()>) {
+        let (reaped, reaped_rx) = std_mpsc::channel();
+        (
+            Host {
+                id,
+                owner: Arc::from("main"),
+                hub: hub.clone(),
+                class: PresentationClass::Focused,
+                signal: Arc::new(|_| {}),
+                reap: Box::new(move || {
+                    let _ = reaped.send(());
+                }),
+            },
+            reaped_rx,
+        )
+    }
+
+    fn sh(script: &str) -> CommandBuilder {
+        let mut command = CommandBuilder::new("/bin/sh");
+        command.arg("-c");
+        command.arg(script);
+        command
+    }
+
+    fn start(script: &str) -> (Hub, Arc<Session>, Frontend, std_mpsc::Receiver<()>) {
+        let hub = Hub::new();
+        let frontend = Frontend::open(&hub, "main");
+        let (host, reaped) = host(1, &hub);
+        let session = spawn_with(host, PtySize::default(), || Ok(sh(script))).unwrap();
+        (hub, session, frontend, reaped)
     }
 
     #[test]
-    fn drop_kills_child_process() {
-        let pty_system = native_pty_system();
-        let size = PtySize {
-            rows: 24,
-            cols: 80,
-            pixel_width: 0,
-            pixel_height: 0,
-        };
-        let pair = pty_system.openpty(size).expect("openpty");
-
-        let mut cmd = CommandBuilder::new("/bin/sh");
-        cmd.arg("-c");
-        cmd.arg("sleep 30");
-        let mut child = pair.slave.spawn_command(cmd).expect("spawn");
-        drop(pair.slave);
-
-        let killer = child.clone_killer();
-        let writer: Arc<Mutex<Box<dyn Write + Send>>> =
-            Arc::new(Mutex::new(pair.master.take_writer().expect("writer")));
-
-        let session = Arc::new(Session {
-            reader_control: super::super::unix_reader::UnixPtyReader::new(pair.master.as_ref())
-                .unwrap()
-                .1,
-            shell_pid: child.process_id().unwrap_or(0),
-            killer: Mutex::new(killer),
-            writer,
-            master: Arc::new(Mutex::new(Some(pair.master))),
-            output: Arc::new(OutputQueue::new()),
-            finished: Arc::new(AtomicBool::new(false)),
-        });
-
-        assert!(
-            child.try_wait().unwrap().is_none(),
-            "child must be alive before drop",
+    fn output_arrives_in_order_and_the_exit_frame_follows_every_data_frame() {
+        let (_hub, session, mut frontend, reaped) =
+            start("printf hello; sleep 0.05; printf ' world'; exit 7");
+        frontend.run_until_exit(1, &session);
+        assert_eq!(frontend.exit, Some(7));
+        assert_eq!(String::from_utf8_lossy(&frontend.received), "hello world");
+        assert_eq!(
+            frontend.frames_after_exit, 1,
+            "nothing follows the exit frame"
         );
+        reaped.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(session.finished.load(Ordering::Acquire));
+    }
 
+    #[test]
+    fn a_four_mebibyte_flood_is_flow_controlled_and_complete() {
+        let (_hub, session, mut frontend, reaped) =
+            start("dd if=/dev/zero bs=65536 count=64 2>/dev/null");
+        frontend.run_until_exit(1, &session);
+        assert_eq!(frontend.exit, Some(0));
+        assert_eq!(frontend.received.len(), 4 * 1024 * 1024);
+        assert!(frontend.received.iter().all(|byte| *byte == 0));
+        assert!(
+            frontend.max_in_flight <= super::super::output::MAX_IN_FLIGHT_BYTES as u64,
+            "in flight {}",
+            frontend.max_in_flight
+        );
+        reaped.recv_timeout(Duration::from_secs(5)).unwrap();
+    }
+
+    #[test]
+    fn output_before_the_receiver_attaches_is_held_not_dropped() {
+        let (_hub, session, mut frontend, reaped) = start("printf early; exit 0");
+        // The shell is long gone before the frontend announces itself.
+        thread::sleep(Duration::from_millis(300));
+        assert!(frontend.received.is_empty());
+        assert!(!session.finished.load(Ordering::Acquire));
+        frontend.run_until_exit(1, &session);
+        assert_eq!(String::from_utf8_lossy(&frontend.received), "early");
+        assert_eq!(frontend.exit, Some(0));
+        reaped.recv_timeout(Duration::from_secs(5)).unwrap();
+    }
+
+    #[test]
+    fn a_stalled_parser_cannot_pin_a_flood_forever_when_the_session_is_closed() {
+        let (_hub, session, mut frontend, reaped) = start("yes");
+        // Attach and read one response, then stop acknowledging entirely.
+        frontend.poll_once(1, vec![Ack { id: 1, bytes: 0 }]);
+        thread::sleep(Duration::from_millis(200));
+        let diagnostics = session.output.diagnostics();
+        assert!(diagnostics.in_flight_bytes > 0);
+        assert!(
+            diagnostics.in_flight_bytes + diagnostics.pending_bytes
+                <= super::super::output::MAX_BUFFERED_BYTES,
+            "backpressure bounds the queue: {} + {}",
+            diagnostics.in_flight_bytes,
+            diagnostics.pending_bytes
+        );
+        // What `pty_close` does: close output, kill, then drop the session.
+        // Dropping the master hangs up the terminal, which also frees a child
+        // blocked on a full output buffer that SIGHUP alone cannot reach.
+        session.close_output();
+        let _ = session.killer.lock().unwrap().kill();
         drop(session);
+        reaped.recv_timeout(Duration::from_secs(10)).unwrap();
+    }
 
-        let deadline = Instant::now() + Duration::from_secs(2);
+    #[test]
+    fn writes_are_ordered_through_the_single_writer_thread() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        let (_hub, session, mut frontend, reaped) = start("stty raw -echo; printf ready; cat");
+        let mut acks = vec![Ack { id: 1, bytes: 0 }];
+        let poll = |frontend: &mut Frontend, acks: &mut Vec<Ack>| {
+            frontend.poll_once(1, std::mem::take(acks));
+            acks.push(Ack {
+                id: 1,
+                bytes: frontend.received.len() as u64,
+            });
+        };
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while frontend.received != b"ready" && Instant::now() < deadline {
+            poll(&mut frontend, &mut acks);
+        }
+        // Concurrent callers each wait for their own completion; the writer
+        // thread applies them in submission order.
+        runtime.block_on(async {
+            for chunk in [&b"one "[..], b"two ", b"three"] {
+                session.write(chunk.to_vec()).await.unwrap();
+            }
+        });
+        while frontend.received.len() < "readyone two three".len() && Instant::now() < deadline {
+            poll(&mut frontend, &mut acks);
+        }
+        assert_eq!(
+            String::from_utf8_lossy(&frontend.received),
+            "readyone two three"
+        );
+        session.close_output();
+        let _ = session.killer.lock().unwrap().kill();
+        reaped.recv_timeout(Duration::from_secs(10)).unwrap();
+    }
+
+    #[test]
+    fn terminal_replies_use_the_ordered_input_queue() {
+        let (_hub, session, mut frontend, reaped) = start(
+            "stty raw -echo; printf '\\033[c'; dd bs=1 count=7 2>/dev/null | od -An -c; exit 0",
+        );
+        frontend.run_until_exit(1, &session);
+        let text = String::from_utf8_lossy(&frontend.received).to_string();
+        // The DA1 query is answered, not displayed; the reply reached stdin.
+        assert!(!text.contains('\u{1b}'), "{text:?}");
+        assert!(text.contains('?') && text.contains('c'), "{text:?}");
+        reaped.recv_timeout(Duration::from_secs(5)).unwrap();
+    }
+
+    #[test]
+    fn dropping_the_session_kills_the_child() {
+        let hub = Hub::new();
+        let (host, _reaped) = host(2, &hub);
+        let session = spawn_with(host, PtySize::default(), || Ok(sh("sleep 30"))).unwrap();
+        let pid = session.shell_pid as i32;
+        assert!(pid > 0);
+        assert_eq!(unsafe { libc::kill(pid, 0) }, 0, "child alive before drop");
+        drop(session);
+        let deadline = Instant::now() + Duration::from_secs(5);
         let mut exited = false;
         while Instant::now() < deadline {
-            if child.try_wait().unwrap().is_some() {
+            let mut status = 0;
+            let waited = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
+            // The waiter thread may have reaped it first (ECHILD) or we did.
+            if waited == pid || (waited == -1 && unsafe { libc::kill(pid, 0) } != 0) {
                 exited = true;
                 break;
             }
             thread::sleep(Duration::from_millis(20));
         }
-        assert!(exited, "child still running 2s after Session drop");
+        assert!(exited, "child still running 5 s after Session drop");
     }
 
     #[test]
-    fn drop_session_succeeds_after_child_already_exited() {
-        let pty_system = native_pty_system();
-        let size = PtySize {
-            rows: 24,
-            cols: 80,
-            pixel_width: 0,
-            pixel_height: 0,
-        };
-        let pair = pty_system.openpty(size).expect("openpty");
-
-        let mut cmd = CommandBuilder::new("/bin/sh");
-        cmd.arg("-c");
-        cmd.arg("exit 0");
-        let mut child = pair.slave.spawn_command(cmd).expect("spawn");
-        drop(pair.slave);
-        let _ = child.wait();
-
-        let killer = child.clone_killer();
-        let writer: Arc<Mutex<Box<dyn Write + Send>>> =
-            Arc::new(Mutex::new(pair.master.take_writer().expect("writer")));
-
-        let session = Arc::new(Session {
-            reader_control: super::super::unix_reader::UnixPtyReader::new(pair.master.as_ref())
-                .unwrap()
-                .1,
-            shell_pid: 0,
-            killer: Mutex::new(killer),
-            writer,
-            master: Arc::new(Mutex::new(Some(pair.master))),
-            output: Arc::new(OutputQueue::new()),
-            finished: Arc::new(AtomicBool::new(false)),
-        });
-
+    fn a_shell_that_exits_instantly_is_reaped_after_delivery() {
+        let (_hub, session, mut frontend, reaped) = start("exit 0");
+        thread::sleep(Duration::from_millis(100));
+        assert!(
+            !session.finished.load(Ordering::Acquire),
+            "exit is held for the frontend"
+        );
+        frontend.run_until_exit(1, &session);
+        assert_eq!(frontend.exit, Some(0));
+        reaped.recv_timeout(Duration::from_secs(5)).unwrap();
         drop_session(session);
+    }
+
+    /// A reader parked in `push` because the frontend has not caught up.
+    fn blocked_reader(
+        output: &Arc<OutputQueue>,
+    ) -> (thread::JoinHandle<()>, std_mpsc::Receiver<bool>) {
+        use crate::modules::pty::output::MAX_IN_FLIGHT_BYTES;
+        assert!(output.push(&vec![0; MAX_IN_FLIGHT_BYTES]));
+        let mut sent = Vec::new();
+        output
+            .take_into(&mut sent, usize::MAX, Instant::now())
+            .unwrap();
+        assert!(output.push(&vec![0; MAX_IN_FLIGHT_BYTES]));
+        let (done, pushed) = std_mpsc::channel();
+        let output = output.clone();
+        let reader = thread::spawn(move || {
+            done.send(output.push(&[1; 4096])).unwrap();
+        });
+        assert!(
+            pushed.recv_timeout(Duration::from_millis(100)).is_err(),
+            "the reader must be waiting for credit"
+        );
+        (reader, pushed)
+    }
+
+    #[test]
+    fn closing_the_console_does_not_wait_for_the_frontend_while_holding_the_lifecycle_lock() {
+        let output = Arc::new(OutputQueue::new(None));
+        let (reader, pushed) = blocked_reader(&output);
+        let lifecycle = Arc::new(Mutex::new(()));
+        // Stands in for ClosePseudoConsole: it returns only once the reader has
+        // taken what conhost still holds. No acknowledgement ever arrives.
+        let (closed, closed_rx) = std_mpsc::channel();
+        let closer = {
+            let (output, lifecycle) = (output.clone(), lifecycle.clone());
+            thread::spawn(move || {
+                close_pseudoconsole(&output, &lifecycle, || {
+                    let drained = pushed.recv_timeout(Duration::from_secs(5)).is_ok();
+                    closed.send(drained).unwrap();
+                });
+            })
+        };
+        assert_eq!(
+            closed_rx.recv_timeout(Duration::from_secs(10)),
+            Ok(true),
+            "the close waited on a reader that was blocked on credit"
+        );
+        closer.join().unwrap();
+        reader.join().unwrap();
+        // The lock is free again right away for the next terminal.
+        let started = Instant::now();
+        drop(lock_lifecycle(&lifecycle));
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn the_reader_is_released_before_the_lifecycle_lock_is_taken() {
+        let output = Arc::new(OutputQueue::new(None));
+        let (reader, pushed) = blocked_reader(&output);
+        let lifecycle = Arc::new(Mutex::new(()));
+        // Another terminal is mid-spawn and holds the lock.
+        let spawning = lock_lifecycle(&lifecycle);
+        let closer = {
+            let (output, lifecycle) = (output.clone(), lifecycle.clone());
+            thread::spawn(move || close_pseudoconsole(&output, &lifecycle, || {}))
+        };
+        assert_eq!(
+            pushed.recv_timeout(Duration::from_secs(5)),
+            Ok(true),
+            "the reader stays blocked while the closer queues for the lock"
+        );
+        assert!(!closer.is_finished(), "the close still waits its turn");
+        drop(spawning);
+        closer.join().unwrap();
+        reader.join().unwrap();
+    }
+
+    #[test]
+    fn the_close_runs_exactly_once_and_under_the_lock() {
+        let output = OutputQueue::new(None);
+        let lifecycle = Mutex::new(());
+        let mut ran = 0;
+        close_pseudoconsole(&output, &lifecycle, || {
+            ran += 1;
+            assert!(lifecycle.try_lock().is_err(), "the close holds the lock");
+        });
+        assert_eq!(ran, 1);
+        assert!(lifecycle.try_lock().is_ok(), "released afterwards");
+    }
+
+    #[test]
+    fn a_panic_during_a_close_does_not_poison_later_terminals() {
+        let output = OutputQueue::new(None);
+        let lifecycle = Mutex::new(());
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            close_pseudoconsole(&output, &lifecycle, || panic!("conhost vanished"));
+        }));
+        assert!(panicked.is_err());
+        assert!(lifecycle.is_poisoned());
+        let mut ran = false;
+        close_pseudoconsole(&output, &lifecycle, || ran = true);
+        assert!(ran);
+        drop(lock_lifecycle(&lifecycle));
     }
 }

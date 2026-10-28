@@ -2,7 +2,7 @@ import { create } from "zustand";
 
 export type LspSessionStatus = "starting" | "running" | "error";
 
-export type LspRuntimeSession = {
+type LspRuntimeSession = {
   key: string;
   presetId: string;
   root: string;

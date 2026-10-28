@@ -1,3 +1,11 @@
+/**
+ * How long a window must stay occluded before `reclaim` is published.
+ *
+ * Every renderer pauses on `visible: false` at once. `reclaim` is only an offer to release
+ * more: the WebGL fallback takes it (its dropped canvases are garbage collected, measured), but
+ * the WebGPU renderer ignores it, because WebKit never gives back the swapchain of a WebGPU
+ * canvas that was destroyed or shrunk (see WebGpuCanvasPool).
+ */
 export const PRESENTATION_RECLAIM_DELAY_MS = 2_000;
 
 export type WindowPresentation = {

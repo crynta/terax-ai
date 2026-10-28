@@ -132,6 +132,7 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     #[cfg(any(target_os = "linux", target_os = "windows"))]
     let builder = builder.decorations(false).transparent(true);
 
+    #[cfg_attr(windows, allow(unused_variables))]
     let window = builder.build().map_err(|e| e.to_string())?;
 
     // Some Linux compositors (GNOME/Mutter with CSD-by-default) ignore the
@@ -178,6 +179,8 @@ pub fn run() {
         }
     }
 
+    modules::runtime::install();
+
     let launch = parse_launch_target();
     let cli_dir = launch.dir.clone();
     workspace::init_launch_cwd(cli_dir.as_deref());
@@ -211,7 +214,21 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())
+        // One async scheme multiplexes every terminal's output; see pty/hub.rs.
+        .register_asynchronous_uri_scheme_protocol("terax-pty", pty::stream_protocol)
+        .on_page_load(|webview, payload| {
+            if matches!(payload.event(), tauri::webview::PageLoadEvent::Started) {
+                if let Some(state) = webview.try_state::<net::AiStreamState>() {
+                    state.cancel_window(webview.window().label());
+                }
+                if let Some(state) = webview.try_state::<pty::PtyState>() {
+                    state.reset_webview(webview.label());
+                }
+            }
+        })
         .setup(move |_app| {
+            #[cfg(feature = "bench")]
+            modules::bench::guard(_app.handle())?;
             #[cfg(target_os = "macos")]
             modules::window_presentation::macos::install(_app.handle());
             if let Err(error) = control::start(_app.handle().clone(), control_for_setup.clone()) {
@@ -232,6 +249,8 @@ pub fn run() {
             Ok(())
         })
         .manage(pty::PtyState::default())
+        .manage(net::AiStreamState::default())
+        .manage(modules::ai_sessions::SessionFilesState::default())
         .manage(modules::window_presentation::WindowPresentationState::default())
         .manage(control_state)
         .manage(shell::ShellState::default())
@@ -239,7 +258,8 @@ pub fn run() {
         .manage(fs::watch::FsWatchState::default())
         .manage(history::HistoryState::default())
         .manage(lsp::LspState::default())
-        .manage(fs::grep::ContentSearchState::default())
+        .manage(fs::supersede::Supersede::default())
+        .manage(fs::index::FileIndexState::default())
         .manage({
             let registry = workspace::WorkspaceRegistry::default();
             workspace::bootstrap_registry(&registry);
@@ -253,7 +273,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             pty::pty_open,
             pty::pty_write,
-            pty::pty_ack_output,
+            pty::pty_stream_open,
+            pty::pty_set_presentation,
             pty::pty_diagnostics,
             pty::pty_resize,
             pty::pty_close,
@@ -274,7 +295,8 @@ pub fn run() {
             fs::mutate::fs_move,
             fs::mutate::fs_delete,
             fs::mutate::fs_delete_batch,
-            fs::mutate::fs_copy,
+            fs::copy::fs_copy,
+            fs::clipboard::fs_clipboard_paths,
             fs::watch::fs_watch_add,
             fs::watch::fs_watch_remove,
             lsp::lsp_detect,
@@ -317,7 +339,7 @@ pub fn run() {
             shell::shell_bg_list,
             workspace::wsl_list_distros,
             workspace::wsl_default_distro,
-            workspace::wsl_home,
+            workspace::ipc::wsl_home,
             workspace::workspace_authorize,
             workspace::workspace_current_dir,
             control::control_frontend_ready,
@@ -333,8 +355,14 @@ pub fn run() {
             secrets::secrets_delete,
             secrets::secrets_get_all,
             net::lm_ping,
-            net::ai_http_request,
             net::ai_http_stream,
+            net::ai_http_cancel,
+            net::ai_http_ack,
+            modules::ai_sessions::ai_session_load,
+            modules::ai_sessions::ai_session_save,
+            modules::ai_sessions::ai_session_delete,
+            modules::ai_sessions::ai_session_finish_migration,
+            modules::ai_sessions::ai_session_prune_backup,
             history::history_suggest,
             history::history_commands,
             history::history_record,
@@ -342,11 +370,29 @@ pub fn run() {
             vibrancy::window_backdrop_kind,
             vibrancy::window_set_backdrop,
             modules::window_presentation::window_presentation_state,
+            #[cfg(feature = "bench")]
+            modules::bench::bench_config,
+            #[cfg(feature = "bench")]
+            modules::bench::bench_window,
+            #[cfg(feature = "bench")]
+            modules::bench::bench_exit,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
             match event {
+                tauri::RunEvent::WindowEvent {
+                    label,
+                    event: tauri::WindowEvent::Destroyed,
+                    ..
+                } => {
+                    if let Some(state) = app.try_state::<net::AiStreamState>() {
+                        state.cancel_window(&label);
+                    }
+                    if let Some(state) = app.try_state::<pty::PtyState>() {
+                        state.destroy_webview(&label);
+                    }
+                }
                 // Servers exit on stdin EOF, but destructors are not guaranteed
                 // on process exit; kill explicitly.
                 tauri::RunEvent::Exit => {

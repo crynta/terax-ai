@@ -1,3 +1,5 @@
+use memchr::{memchr, memchr2};
+
 const ESC: u8 = 0x1b;
 const LBRACKET: u8 = 0x5b;
 const FINAL_C: u8 = 0x63;
@@ -37,32 +39,43 @@ impl DaFilter {
         }
     }
 
+    /// True when `input` would be copied through unchanged: no escape
+    /// sequence is in progress and none starts here. Lets the reader forward
+    /// its read buffer as-is, skipping the copy `process` would make.
+    pub fn passes_through(&mut self, input: &[u8]) -> bool {
+        if matches!(self.state, State::Idle) && memchr(ESC, input).is_none() {
+            if !input.is_empty() {
+                self.saw_output = true;
+            }
+            return true;
+        }
+        false
+    }
+
     pub fn process<F: FnMut(&[u8])>(
         &mut self,
         input: &[u8],
         out: &mut Vec<u8>,
         mut respond: F,
     ) {
-        if matches!(self.state, State::Idle) && !input.contains(&ESC) {
-            out.extend_from_slice(input);
-            if !input.is_empty() {
-                self.saw_output = true;
-            }
-            return;
-        }
-
-        for &b in input {
+        let mut i = 0;
+        while i < input.len() {
             match self.state {
                 State::Idle => {
-                    if b == ESC {
-                        self.state = State::AfterEsc;
-                        self.hold.clear();
-                        self.hold.push(b);
-                    } else {
-                        out.push(b);
-                    }
+                    // Plain text is copied in one run up to the next ESC.
+                    let Some(run) = memchr(ESC, &input[i..]) else {
+                        out.extend_from_slice(&input[i..]);
+                        break;
+                    };
+                    out.extend_from_slice(&input[i..i + run]);
+                    self.state = State::AfterEsc;
+                    self.hold.clear();
+                    self.hold.push(ESC);
+                    i += run + 1;
                 }
                 State::AfterEsc => {
+                    let b = input[i];
+                    i += 1;
                     if b == LBRACKET {
                         self.state = State::InsideCsi;
                         self.hold.push(b);
@@ -78,12 +91,13 @@ impl DaFilter {
                     }
                 }
                 State::InsideCsi => {
+                    let b = input[i];
+                    i += 1;
                     self.hold.push(b);
                     if (0x40..=0x7e).contains(&b) {
                         if b == FINAL_C {
                             let middle = &self.hold[2..self.hold.len() - 1];
-                            let is_response =
-                                middle.contains(&b'?') || middle.contains(&b';');
+                            let is_response = memchr2(b'?', b';', middle).is_some();
                             let is_startup_query = !self.saw_output && out.is_empty();
                             let prefix = middle.first().copied().unwrap_or(0);
                             if is_response || !is_startup_query {

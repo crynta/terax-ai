@@ -1,5 +1,6 @@
 import { cn, isMarkdownPath } from "@/lib/utils";
 import { MarkdownViewToggle } from "@/modules/markdown";
+import { useWindowInactive } from "@/modules/theme/WindowActivityBridge";
 import type { EditorTab, Tab } from "@/modules/tabs";
 import { useEffect, useRef } from "react";
 import { EditorPane, type EditorPaneHandle } from "./EditorPane";
@@ -88,6 +89,8 @@ export function EditorStack({
     }
   }, [editors]);
 
+  const windowInactive = useWindowInactive();
+
   if (editors.length === 0) return null;
   return (
     <div className="relative h-full w-full">
@@ -117,6 +120,7 @@ export function EditorStack({
                 overrideLanguage={t.overrideLanguage}
                 onDirtyChange={getDirtyCallback(t.id)}
                 onClose={getCloseCallback(t.id)}
+                mediaActive={visible && !windowInactive}
               />
             </div>
           </div>

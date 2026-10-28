@@ -28,7 +28,7 @@ function openDb(): Promise<IDBDatabase> {
   return p;
 }
 
-export async function putBgImage(id: string, blob: Blob): Promise<void> {
+async function putBgImage(id: string, blob: Blob): Promise<void> {
   const db = await openDb();
   try {
     await new Promise<void>((resolve, reject) => {

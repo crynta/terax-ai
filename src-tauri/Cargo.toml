@@ -1,6 +1,6 @@
 [package]
 name = "terax"
-version = "0.9.0-beta"
+version = "0.9.0"
 description = "Terax — an open-source AI-native terminal emulator"
 authors = ["crynta"]
 license = "Apache-2.0"
@@ -13,11 +13,16 @@ default-members = [".", "crates/terax-cli", "crates/terax-control-protocol"]
 resolver = "2"
 
 [workspace.package]
-version = "0.9.0-beta"
+version = "0.9.0"
 edition = "2021"
 license = "Apache-2.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+# Real-application benchmark ("app lab", scripts/app-lab). Never part of a shipped build: it adds
+# the bench-only commands in modules/bench.rs and refuses to run under the product identifier.
+bench = []
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
@@ -37,15 +42,15 @@ tauri-plugin-opener = "2"
 tauri-plugin-clipboard-manager = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-getrandom = "0.3"
+getrandom = "0.4"
+memchr = "2"
 terax-control-protocol = { path = "crates/terax-control-protocol" }
 portable-pty = "0.9"
-dirs = "6"
+dirs = "7"
 log = "0.4"
 ignore = "0.4"
 grep-regex = "0.1"
 grep-searcher = "0.1"
-grep-matcher = "0.1"
 globset = "0.4"
 nucleo-matcher = "0.3"
 shared_child = "1"
@@ -54,52 +59,73 @@ tauri-plugin-os = "2"
 tauri-plugin-store = "2"
 tauri-plugin-process = "2"
 tauri-plugin-notification = "2"
-reqwest = { version = "0.12", default-features = false, features = [
-	"rustls-tls",
+# One reqwest for the whole app: tauri-plugin-updater already pulls 0.13 with
+# the platform verifier. `rustls-no-provider` + the explicit ring provider below
+# keep it to a single TLS stack and no aws-lc.
+reqwest = { version = "0.13", default-features = false, features = [
+	"rustls-no-provider",
+	"http2",
 	"stream",
 ] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 bytes = "1"
 futures-util = "0.3"
-tokio = { version = "1", default-features = false, features = ["rt"] }
+tokio = { version = "1", default-features = false, features = ["macros", "rt", "rt-multi-thread", "sync", "time"] }
 tempfile = "3"
-notify = "8.2.0"
 which = "8.0.4"
 
 [dev-dependencies]
 proptest = "1"
+tokio = { version = "1", features = ["macros", "rt", "test-util", "time"] }
 tempfile = "3"
-wasmparser = { version = "=0.244.0", default-features = false, features = ["std", "validate", "features", "simd"] }
+wasmparser = { version = "=0.261.0", default-features = false, features = ["std", "validate", "features", "simd"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# inotify (Linux) and ReadDirectoryChangesW (Windows). macOS drives FSEvents
+# directly (see fs/watch/macos.rs), which keeps notify out of that build.
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+notify = "8.2.0"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3.6", default-features = false, features = [
 	"apple-native",
 ] }
-objc2 = "0.6"
+objc2 = { version = "0.6", features = ["exception"] }
 block2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWindow", "NSWorkspace", "NSEvent", "NSResponder"] }
-objc2-foundation = { version = "0.3", features = ["NSString", "NSUserDefaults"] }
-window-vibrancy = "0.8"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSColor", "NSPasteboard", "NSPasteboardItem", "NSWindow", "NSWorkspace", "NSEvent", "NSResponder"] }
+objc2-foundation = { version = "0.3", features = ["NSArray", "NSURL", "NSString", "NSUserDefaults", "NSValue"] }
+fsevent-sys = "4.1"
+window-vibrancy = "0.6"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3.6", default-features = false, features = [
 	"windows-native",
 ] }
-window-vibrancy = "0.8"
+window-vibrancy = "0.6"
+# The OS-level proxy setting (registry) is read by reqwest only with this
+# feature, and the previous reqwest honoured it unconditionally on Windows.
+reqwest = { version = "0.13", default-features = false, features = ["system-proxy"] }
 windows-sys = { version = "0.61", features = [
 	"Wdk_System_SystemServices",
 	"Win32_Foundation",
 	"Win32_Security",
 	"Win32_Storage_FileSystem",
 	"Win32_System_Console",
+	"Win32_System_DataExchange",
 	"Win32_System_JobObjects",
+	"Win32_System_Ole",
 	"Win32_System_SystemInformation",
 	"Win32_System_ProcessStatus",
 	"Win32_System_Threading",
 	"Win32_System_Diagnostics_ToolHelp",
+	"Win32_UI_Shell",
 ] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Already in the tree via tauri; used directly for the file clipboard.
+gtk = "0.18"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-autostart = "2"

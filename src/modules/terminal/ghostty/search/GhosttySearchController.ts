@@ -21,7 +21,10 @@ type Scheduler = {
 export class GhosttySearchController implements TerminalSearchController {
   private query = "";
   private status: GhosttySearchStatus = emptyStatus();
-  private viewportMask = new Uint8Array(0);
+  private viewportMask: Uint8Array = new Uint8Array(0);
+  private scratchMask: Uint8Array = new Uint8Array(0);
+  private maskCells = 0;
+  private maskRevisionValue = 0;
   private pendingDirection: Direction | null = null;
   private scheduledStep: number | null = null;
   private disposed = false;
@@ -70,14 +73,27 @@ export class GhosttySearchController implements TerminalSearchController {
     this.pendingDirection = null;
     this.model.clearSearch();
     this.status = emptyStatus();
-    this.viewportMask.fill(0);
+    this.commitMask(new Uint8Array(0), 0);
     this.onChange();
   }
 
   refreshOverlay(): void {
     if (this.disposed || this.suspended || this.query) return;
     if (this.model.blockSearchActive?.()) this.rebuildViewportMask();
-    else if (this.viewportMask.length) this.viewportMask = new Uint8Array(0);
+    else if (this.viewportMask.length) this.commitMask(new Uint8Array(0), 0);
+  }
+
+  /** Increments only when the set of highlighted cells actually changes. */
+  get maskRevision(): number {
+    return this.maskRevisionValue;
+  }
+
+  /**
+   * One byte per viewport cell (0 none, 1 match, 2 selected match), row-major,
+   * or null when nothing is highlighted. Borrowed: valid until the next change.
+   */
+  viewportMaskBytes(): Uint8Array | null {
+    return this.maskCells > 0 ? this.viewportMask : null;
   }
 
   refresh(): void {
@@ -113,6 +129,9 @@ export class GhosttySearchController implements TerminalSearchController {
     this.disposed = true;
     this.cancelStep();
     this.viewportMask = new Uint8Array(0);
+    this.scratchMask = new Uint8Array(0);
+    this.maskCells = 0;
+    this.maskRevisionValue += 1;
   }
 
   private find(query: string, direction: Direction): boolean {
@@ -147,21 +166,39 @@ export class GhosttySearchController implements TerminalSearchController {
 
   private rebuildViewportMask(): void {
     const length = this.model.cols * this.model.rows;
-    if (this.viewportMask.length !== length) {
-      this.viewportMask = new Uint8Array(length);
+    if (this.scratchMask.length !== length) {
+      this.scratchMask = new Uint8Array(length);
     } else {
-      this.viewportMask.fill(0);
+      this.scratchMask.fill(0);
     }
+    let cells = 0;
     for (const match of this.model.searchViewportMatches()) {
       if (match.row < 0 || match.row >= this.model.rows) continue;
       const start = Math.max(0, Math.min(this.model.cols, match.startColumn));
       const end = Math.max(start, Math.min(this.model.cols, match.endColumn));
-      this.viewportMask.fill(
+      this.scratchMask.fill(
         match.selected ? 2 : 1,
         match.row * this.model.cols + start,
         match.row * this.model.cols + end,
       );
+      cells += end - start;
     }
+    this.commitMask(this.scratchMask, cells);
+  }
+
+  /** Installs `next` when it differs; returns true if `next` was adopted. */
+  private commitMask(next: Uint8Array, cells: number): boolean {
+    const current = this.viewportMask;
+    let same = next.length === current.length;
+    for (let index = 0; same && index < next.length; index += 1) {
+      same = next[index] === current[index];
+    }
+    if (same) return false;
+    if (next === this.scratchMask) this.scratchMask = current;
+    this.viewportMask = next;
+    this.maskCells = cells;
+    this.maskRevisionValue += 1;
+    return true;
   }
 
   private scheduleStep(): void {

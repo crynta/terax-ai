@@ -7,7 +7,28 @@ type CanvasTarget = {
   };
 };
 
+/** Device pixels the store may grow to while a resize gesture runs; read only when it must grow. */
+export type GestureGrowth = () => {
+  readonly width: number;
+  readonly height: number;
+};
+
+/**
+ * Stages and commits a canvas backing store whose CSS size is always exactly
+ * `backing / scale`, so one canvas pixel is one device pixel. Nearby required
+ * sizes reuse a slightly larger store instead of reallocating the swapchain on
+ * every drag step; renderers draw into the exact sub-rectangle (a viewport)
+ * and the surplus is cleared to the background and clipped by the host.
+ *
+ * During a resize gesture (`gesture` given to `stage`) the store never shrinks and any slack
+ * is acceptable: a smaller requirement keeps the current backing, and a larger one allocates
+ * once, to the bound the gesture cannot exceed. The first `stage` after the gesture, without
+ * `gesture`, compacts to the usual nearby size. Every reallocation of a WebGPU canvas leaves a
+ * retired swapchain that WebKit keeps until the drag ends, so a drag must cost one allocation,
+ * not one per step.
+ */
 export class CanvasBackingStore {
+  private presented = false;
   private targetWidth: number;
   private targetHeight: number;
   private targetCssWidth: string;
@@ -32,13 +53,34 @@ export class CanvasBackingStore {
   stage(
     pixelWidth: number,
     pixelHeight: number,
-    cssWidth: number,
-    cssHeight: number,
+    scale: number,
+    gesture?: GestureGrowth,
   ): boolean {
-    const nextTargetWidth = positivePixelSize(pixelWidth);
-    const nextTargetHeight = positivePixelSize(pixelHeight);
-    const targetCssWidth = `${positiveCssSize(cssWidth)}px`;
-    const targetCssHeight = `${positiveCssSize(cssHeight)}px`;
+    const requiredWidth = positivePixelSize(pixelWidth);
+    const requiredHeight = positivePixelSize(pixelHeight);
+    const ratio = Number.isFinite(scale) && scale > 0 ? scale : 1;
+    let nextTargetWidth = requiredWidth;
+    let nextTargetHeight = requiredHeight;
+    if (this.presented && gesture) {
+      const grows =
+        requiredWidth > this.targetWidth || requiredHeight > this.targetHeight;
+      const bound = grows ? gesture() : null;
+      nextTargetWidth = gestureDimension(
+        this.targetWidth,
+        requiredWidth,
+        bound?.width,
+      );
+      nextTargetHeight = gestureDimension(
+        this.targetHeight,
+        requiredHeight,
+        bound?.height,
+      );
+    } else if (this.presented) {
+      nextTargetWidth = reusableDimension(this.targetWidth, requiredWidth);
+      nextTargetHeight = reusableDimension(this.targetHeight, requiredHeight);
+    }
+    const targetCssWidth = `${nextTargetWidth / ratio}px`;
+    const targetCssHeight = `${nextTargetHeight / ratio}px`;
     const changed =
       this.targetWidth !== nextTargetWidth ||
       this.targetHeight !== nextTargetHeight ||
@@ -53,6 +95,7 @@ export class CanvasBackingStore {
 
   commit(): boolean {
     if (!this.pending) return false;
+    this.presented = true;
     if (this.canvas.style.width !== this.targetCssWidth) {
       this.canvas.style.width = this.targetCssWidth;
     }
@@ -68,18 +111,32 @@ export class CanvasBackingStore {
     return true;
   }
 
-  release(): void {
-    if (this.canvas.width !== 1) this.canvas.width = 1;
-    if (this.canvas.height !== 1) this.canvas.height = 1;
+  /** The backing size (device pixels) the canvas holds right now. */
+  get size(): { readonly width: number; readonly height: number } {
+    return { width: this.canvas.width, height: this.canvas.height };
   }
+}
+
+// Nearby sizes reuse storage instead of accumulating retired presentation buffers.
+function reusableDimension(current: number, required: number): number {
+  const alignment = required < 256 ? 32 : 128;
+  if (required <= current && current - required < alignment * 2) return current;
+  return Math.ceil(required / alignment) * alignment;
+}
+
+// Inside a gesture the backing only ever grows. When it must, every axis goes to the bound at
+// once: the axes outgrow their backing at different moments, and one allocation per gesture is
+// the point.
+function gestureDimension(
+  current: number,
+  required: number,
+  bound: number | undefined,
+): number {
+  if (bound === undefined) return current;
+  return Math.max(current, required, positivePixelSize(bound));
 }
 
 function positivePixelSize(value: number): number {
   if (!Number.isFinite(value)) return 1;
   return Math.max(1, Math.round(value));
-}
-
-function positiveCssSize(value: number): number {
-  if (!Number.isFinite(value)) return 0;
-  return Math.max(0, value);
 }

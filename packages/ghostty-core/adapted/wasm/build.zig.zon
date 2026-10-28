@@ -6,8 +6,8 @@
     .paths = .{""},
     .dependencies = .{
         .ghostty = .{
-            .url = "https://github.com/ghostty-org/ghostty/archive/f426f6f181ba95f45d33f683fb754b6359d9e04f.tar.gz",
-            .hash = "ghostty-1.3.2-dev-5UdBC4i9bwV84Nac8vu_NQ7Skyouuz5dgRW0OfTrOcG5",
+            .url = "https://github.com/ghostty-org/ghostty/archive/ad97d331459a0762f7aea5f56fe86748e03b860f.tar.gz",
+            .hash = "ghostty-1.3.2-dev-5UdBC8RaewWXxNoW1McNciOrmX8kUX0OUgZwDcJkmg2M",
         },
     },
 }

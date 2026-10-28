@@ -7,12 +7,12 @@ import { applyVibrancy } from "./vibrancy";
 export function WindowVibrancyBridge() {
   const enabled = usePreferencesStore((s) => s.windowVibrancy);
   const hydrated = usePreferencesStore((s) => s.hydrated);
-  const { resolvedMode } = useTheme();
+  const { resolvedMode, activeTheme } = useTheme();
 
   useEffect(() => {
     if (!hydrated) return;
-    void applyVibrancy(enabled, resolvedMode === "dark");
-  }, [enabled, hydrated, resolvedMode]);
+    void applyVibrancy(enabled, resolvedMode === "dark", activeTheme.id);
+  }, [enabled, hydrated, resolvedMode, activeTheme.id]);
 
   return null;
 }

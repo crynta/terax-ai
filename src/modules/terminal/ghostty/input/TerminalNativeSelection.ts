@@ -1,4 +1,7 @@
+import type { TerminalInputProxy } from "./TerminalInputProxy";
+
 type Options = {
+  readonly proxy: Pick<TerminalInputProxy, "expose" | "release">;
   readonly input: HTMLTextAreaElement;
   readonly target: HTMLElement;
   readonly getSelection: () => string | null;
@@ -22,7 +25,7 @@ export class TerminalNativeSelection {
     if (this.originalStyle === null) return;
     this.options.input.style.cssText = this.originalStyle;
     this.originalStyle = null;
-    this.options.input.value = "";
+    this.options.proxy.release();
   };
 
   dispose(): void {
@@ -67,15 +70,17 @@ export class TerminalNativeSelection {
     input.style.zIndex = "20";
     input.style.pointerEvents = "auto";
     input.style.userSelect = "text";
-    input.value = this.options.getSelection() ?? "";
+    this.options.proxy.expose(this.options.getSelection() ?? "");
     input.focus({ preventScroll: true });
     input.select();
   }
 
   private readonly copy = (event: ClipboardEvent): void => {
+    // The proxy's placeholder is selected whenever there is no terminal text:
+    // native Copy/Cut must not put it on the clipboard.
+    event.preventDefault();
     const text = this.options.getSelection();
     if (!text || !event.clipboardData) return;
-    event.preventDefault();
     event.clipboardData.setData("text/plain", text);
   };
 }

@@ -21,35 +21,35 @@ pub struct PtyState {
 
 IDs start at 1 and monotonically increase; they are never reused so the frontend can treat `0` as unset.
 
-`pty_open` (`mod.rs:44`) spawns a session on a blocking thread, inserts it into the map, and returns the id. Output streams through a `Channel<Response>`; exit codes stream through a separate `Channel<i32>`. `pty_write` accepts raw bytes with an `x-pty-id` header and performs pipe writes on a blocking worker so a full input pipe cannot block acknowledgment IPC.
+`pty_open` spawns a session on a blocking thread, registers it with the PTY hub under the calling webview's label, inserts it into the map, and returns the id. Output and exit codes travel over the multiplexed `terax-pty` stream (see `pty-transport-v2.md`), not per-PTY channels. `pty_write` accepts raw bytes with an `x-pty-id` header and queues them to the session's writer thread, so a full input pipe cannot block other IPC and write order and I/O errors are preserved.
 
-## Reader / flusher / waiter threads
+## Reader / writer / waiter threads, and the hub
 
-`session::spawn` (`session.rs:102`) starts three threads per session:
+`session::spawn_with` starts three small-stack threads per session:
 
-1. **Reader** - reads bytes from the PTY master, runs the DA filter and agent detector, and pushes filtered bytes into a pending buffer.
-2. **Flusher** - adaptively coalesces output and sends it to the frontend over the data channel.
-3. **Waiter** - waits for the child process to exit, drains the flusher, and emits the exit code.
+1. **Reader** - reads bytes from the PTY master, runs the DA filter and agent detector (both `memchr`-driven), and pushes filtered bytes into the session's `OutputQueue`. It checks an atomic `closed` flag, not the queue mutex.
+2. **Writer** - owns the PTY input. `pty_write` and terminal replies (DA/CPR) share one bounded queue, so input stays ordered and no task is spawned per keystroke.
+3. **Waiter** - waits for the child process to exit, joins the reader, hands the exit status to the hub, and waits until the exit frame was delivered.
+
+Delivery belongs to one process-wide **hub thread** (`pty/hub.rs`), not a flusher per PTY. It holds the webview's outstanding `poll` and answers when a terminal is due for its presentation class; see `pty-transport-v2.md` for the wire format, classes and credit.
 
 Output delivery is lossless and credit-based. The frontend acknowledges a
 chunk only after Ghostty has synchronously parsed it.
-Native pending plus in-flight data is capped at 2 MiB, and at most two chunks
-may be in flight. When either limit is reached, the reader stops draining the
+Native pending plus in-flight data is capped at 2 MiB per terminal, with at most
+1 MiB (128 chunks) in flight. When either limit is reached, the reader stops draining the
 PTY and lets the operating system apply backpressure. No terminal bytes or
 partial escape sequences are discarded during normal delivery or acknowledgment retries.
 
-`pty_ack_output({ id, bytes })` carries a cumulative count of successfully parsed
-bytes, not a credit delta. Rust validates the count against sent chunk boundaries.
-Duplicate and stale counts do nothing; invalid or future boundaries are rejected.
-The frontend retains unconfirmed progress, retries rejected calls with capped
-backoff, and bounds unresolved acknowledgment calls to two. A stuck call or
-parser is visible after five seconds. If the entire IPC connection remains
-unresponsive, delivery stays paused with retained state rather than accumulating
-requests. A parser error never returns credit for unconsumed bytes.
+Acknowledgements are cumulative parsed-byte offsets, not credit deltas, and
+ride on the next `poll`. Rust validates them against delivered chunk boundaries.
+Duplicate and stale counts do nothing; an invalid boundary fails that terminal.
+The frontend retains unconfirmed progress and resends it after a failed request
+with capped backoff. A stuck parser is visible after five seconds. A parser error
+never returns credit for unconsumed bytes.
 
 Reader completion and queue wakeups share the same mutex, preventing missed
 EOF notifications. Neither child exit nor EOF bypasses the byte or message
-limits. The exit channel is sent only after the final parser acknowledgment;
+limits. The exit frame is sent only after the final parser acknowledgment;
 registration checks completed draining rather than mere child exit.
 
 On Windows the waiter closes the ConPTY master on its own thread while the
@@ -99,7 +99,9 @@ Fish 4.0 writes its own OSC 133 prompt markers. To avoid doubling, Terax sets `f
 
 ### `CONPTY_LIFECYCLE_LOCK`
 
-`openpty + spawn_command` and the corresponding close are serialized by a static mutex in `session.rs:71`. Concurrent ConPTY lifecycle calls corrupt the new console so its shell never pumps output.
+`openpty + spawn_command` and the corresponding close are serialized by a static mutex in `session.rs`. Concurrent ConPTY lifecycle calls corrupt the new console so its shell never pumps output.
+
+`ClosePseudoConsole` blocks until the reader has taken everything conhost still holds, and the reader can be waiting for output credit the frontend has not granted yet. Holding the lock through that wait would stall every other `pty_open` for up to the 30 s drain deadline. `close_pseudoconsole` therefore lets the reader overdraft its queue by 1 MiB first, outside the lock, and only then takes the lock around the close itself.
 
 ### Job Object
 
@@ -124,6 +126,7 @@ Terminal input sends `\r` (CR), not `\n` (LF). PowerShell on Windows requires CR
 ## Invariants
 
 - Do not remove `CONPTY_LIFECYCLE_LOCK` without verifying first-tab stability under fast tab spam.
+- Never hold `CONPTY_LIFECYCLE_LOCK` across a wait that depends on the frontend (credit, acknowledgements).
 - Do not disable the Job Object without a replacement orphan guard on Windows.
 - Keep platform-specific shell logic in the matching `#[cfg(unix)]` or `#[cfg(windows)]` arm of `shell_init.rs`.
 - cwd passed to ConPTY must use backslashes; OSC 7 cwd arriving at the frontend is forward-slash canonical.

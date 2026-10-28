@@ -111,8 +111,34 @@ export function starterTheme(): Theme {
   };
 }
 
-export function emitThemeEdit(req: ThemeEditRequest): Promise<void> {
+function emitThemeEdit(req: ThemeEditRequest): Promise<void> {
   return emit(THEME_EDIT_EVENT, req);
+}
+
+/**
+ * Hands a theme-edit request to the main window and then closes the caller
+ * (the Settings window). Closing, not hiding, releases the second WebContent
+ * process; Settings is rebuilt on demand by `open_settings_window`. The emit
+ * is awaited first so the request is on the event bus before the window goes
+ * away, and a failed emit leaves Settings open instead of dropping the edit.
+ */
+export async function handOffThemeEdit(
+  req: ThemeEditRequest,
+  closeWindow: () => Promise<void>,
+  emitRequest: (req: ThemeEditRequest) => Promise<void> = emitThemeEdit,
+): Promise<boolean> {
+  try {
+    await emitRequest(req);
+  } catch (error) {
+    console.error("[terax] theme edit request failed:", error);
+    return false;
+  }
+  try {
+    await closeWindow();
+  } catch (error) {
+    console.error("[terax] could not close settings window:", error);
+  }
+  return true;
 }
 
 export function onThemeEdit(
