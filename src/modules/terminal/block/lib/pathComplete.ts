@@ -1,8 +1,6 @@
+import { escapeForShell, unescapeForShell } from "@/lib/shellQuote";
 import { currentWorkspaceEnv } from "@/modules/workspace";
-import {
-  type Completion,
-  startCompletion,
-} from "@codemirror/autocomplete";
+import { type Completion, startCompletion } from "@codemirror/autocomplete";
 import { invoke } from "@tauri-apps/api/core";
 
 type DirEntry = {
@@ -21,13 +19,32 @@ function joinRel(cwd: string, rel: string): string {
 }
 
 function resolveDir(dirPart: string, cwd: string): string | null {
-  if (dirPart.startsWith("~")) return null; // home expansion not handled yet
-  if (dirPart.startsWith("/")) return dirPart || "/";
-  return joinRel(cwd, dirPart);
+  // Home expansion is not handled yet. Only a typed `~` counts as home; a
+  // completed `\~name/` is a real relative name and reaches the join below.
+  if (dirPart.startsWith("~")) return null;
+  const dir = unescapeForShell(dirPart);
+  if (dir.startsWith("/")) return dir || "/";
+  return joinRel(cwd, dir);
+}
+
+// The label is what accept inserts, so the popup filters against the same text
+// the shell word holds (`My\ F` keeps matching `My Folder/`). An escaped name
+// still displays unescaped: the list stays readable and typing `My F` matches.
+function nameOption(
+  display: string,
+  insert: string,
+  type: Completion["type"],
+): Completion {
+  return display === insert
+    ? { label: insert, type }
+    : { label: insert, displayLabel: display, type };
 }
 
 // Completes the argument token against the terminal's live cwd. Directories get
 // a trailing slash and re-trigger completion so the next level opens on accept.
+// Shell syntax is escaped as it is inserted (`My\ Folder`), because the line is
+// handed to the shell as typed; what was already typed is unescaped before it
+// is matched and read, so a partly typed `My\ Fol` still completes.
 export async function pathCompletions(
   token: string,
   cwd: string,
@@ -49,18 +66,17 @@ export async function pathCompletions(
     return null;
   }
 
-  const lower = base.toLowerCase();
+  const lower = unescapeForShell(base).toLowerCase();
   const dirs: Completion[] = [];
   const files: Completion[] = [];
   for (const e of entries) {
     if (lower && !e.name.toLowerCase().startsWith(lower)) continue;
-    const isDir = e.kind === "dir";
-    if (isDir) {
+    const escaped = escapeForShell(e.name);
+    if (e.kind === "dir") {
+      const insert = `${escaped}/`;
       dirs.push({
-        label: `${e.name}/`,
-        type: "type",
+        ...nameOption(`${e.name}/`, insert, "type"),
         apply: (view, _c, from, to) => {
-          const insert = `${e.name}/`;
           view.dispatch({
             changes: { from, to, insert },
             selection: { anchor: from + insert.length },
@@ -69,7 +85,7 @@ export async function pathCompletions(
         },
       });
     } else {
-      files.push({ label: e.name, type: "variable" });
+      files.push(nameOption(e.name, escaped, "variable"));
     }
     if (dirs.length + files.length >= 200) break;
   }
