@@ -1,4 +1,4 @@
-import { isMarkdownPath } from "@/lib/utils";
+import { isRenderablePath } from "@/lib/utils";
 import {
   type AgentInstanceCount,
   createAgentPanePlan,
@@ -170,6 +170,33 @@ type CloseTabsPlanResult = {
   disposeLeafIds: number[];
   nextActiveId: number;
 };
+
+export function applyRenderedView(t: Tab, mode: "rendered" | "raw"): Tab {
+  if (!isRenderablePath((t as { path?: string }).path ?? "")) return t;
+  if (mode === "raw" && t.kind === "markdown") {
+    return {
+      ...t,
+      kind: "editor" as const,
+      dirty: false,
+      preview: false,
+      overrideLanguage:
+        (t as { overrideLanguage?: string | null }).overrideLanguage ?? null,
+    };
+  }
+  if (mode === "rendered" && t.kind === "editor") {
+    if (t.dirty) return t;
+    return {
+      id: t.id,
+      kind: "markdown" as const,
+      spaceId: t.spaceId,
+      cold: t.cold,
+      title: t.title,
+      path: t.path,
+      overrideLanguage: t.overrideLanguage ?? null,
+    } as MarkdownTab;
+  }
+  return t;
+}
 
 export function planMarkdownTabOpen(
   tabs: Tab[],
@@ -1000,37 +1027,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   const setMarkdownView = useCallback(
     (id: number, mode: "rendered" | "raw") => {
       setTabs((curr) =>
-        curr.map((t) => {
-          if (
-            t.id !== id ||
-            !isMarkdownPath((t as { path?: string }).path ?? "")
-          )
-            return t;
-          if (mode === "raw" && t.kind === "markdown") {
-            return {
-              ...t,
-              kind: "editor" as const,
-              dirty: false,
-              preview: false,
-              overrideLanguage:
-                (t as { overrideLanguage?: string | null }).overrideLanguage ??
-                null,
-            };
-          }
-          if (mode === "rendered" && t.kind === "editor") {
-            if (t.dirty) return t;
-            return {
-              id: t.id,
-              kind: "markdown" as const,
-              spaceId: t.spaceId,
-              cold: t.cold,
-              title: t.title,
-              path: t.path,
-              overrideLanguage: t.overrideLanguage ?? null,
-            };
-          }
-          return t;
-        }),
+        curr.map((t) => (t.id === id ? applyRenderedView(t, mode) : t)),
       );
     },
     [],
