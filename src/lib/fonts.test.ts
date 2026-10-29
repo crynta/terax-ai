@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { resolveFontFamily } from "./fonts";
+import { primaryFamily, resolveFontFamily } from "./fonts";
 
 const FALLBACK = '"JetBrains Mono", SFMono-Regular, Menlo, monospace';
 
@@ -89,5 +89,72 @@ describe("resolveFontFamily", () => {
   it("falls back to the mono chain for empty input", () => {
     expect(resolveFontFamily("")).toBe(FALLBACK);
     expect(resolveFontFamily("   ")).toBe(FALLBACK);
+  });
+});
+
+describe("primaryFamily", () => {
+  it("returns the first unquoted family of a stack", () => {
+    expect(primaryFamily('"MesloLGS NF", "JetBrains Mono", monospace')).toBe(
+      "MesloLGS NF",
+    );
+  });
+
+  it("returns a single bare family", () => {
+    expect(primaryFamily("Hack Nerd Font Mono")).toBe("Hack Nerd Font Mono");
+  });
+
+  it("returns null for blank input", () => {
+    expect(primaryFamily("   ")).toBeNull();
+  });
+});
+
+describe("ensureInstalledFontLoaded", () => {
+  it("skips the font lookup on platforms other than macOS", async () => {
+    vi.resetModules();
+    vi.doMock("./platform", () => ({ IS_MAC: false }));
+    const invoke = vi.fn(async () => new ArrayBuffer(8));
+    vi.doMock("@tauri-apps/api/core", () => ({ invoke }));
+    const { ensureInstalledFontLoaded } = await import("./fonts");
+
+    await ensureInstalledFontLoaded('"Linux Only Font", monospace');
+
+    expect(invoke).not.toHaveBeenCalled();
+    vi.doUnmock("./platform");
+    vi.doUnmock("@tauri-apps/api/core");
+  });
+
+  it("resolves and keeps other faces when one face cannot be constructed", async () => {
+    vi.resetModules();
+    vi.doMock("./platform", () => ({ IS_MAC: true }));
+    vi.doMock("@tauri-apps/api/core", () => ({
+      invoke: vi.fn(async () => new ArrayBuffer(8)),
+    }));
+    let constructed = 0;
+    class FakeFontFace {
+      constructor(
+        readonly family: string,
+        _data: ArrayBuffer,
+        readonly descriptors: { weight: string },
+      ) {
+        constructed += 1;
+        if (constructed === 1) throw new Error("bad font data");
+      }
+      async load() {}
+    }
+    const add = vi.fn();
+    vi.stubGlobal("FontFace", FakeFontFace);
+    vi.stubGlobal("document", { fonts: { add, load: vi.fn() } });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { ensureInstalledFontLoaded } = await import("./fonts");
+
+    await expect(
+      ensureInstalledFontLoaded('"Broken Test Font", monospace'),
+    ).resolves.toBeUndefined();
+
+    expect(add).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+    vi.doUnmock("./platform");
+    vi.doUnmock("@tauri-apps/api/core");
   });
 });
