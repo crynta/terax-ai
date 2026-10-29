@@ -2,6 +2,7 @@ import { escapeForShell, unescapeForShell } from "@/lib/shellQuote";
 import { currentWorkspaceEnv } from "@/modules/workspace";
 import { type Completion, startCompletion } from "@codemirror/autocomplete";
 import { invoke } from "@tauri-apps/api/core";
+import { usesWindowsShell } from "./shellSyntax";
 
 type DirEntry = {
   name: string;
@@ -18,11 +19,15 @@ function joinRel(cwd: string, rel: string): string {
   return clean ? `${base}/${clean}` : base;
 }
 
-function resolveDir(dirPart: string, cwd: string): string | null {
+function resolveDir(
+  dirPart: string,
+  cwd: string,
+  windows: boolean,
+): string | null {
   // Home expansion is not handled yet. Only a typed `~` counts as home; a
   // completed `\~name/` is a real relative name and reaches the join below.
   if (dirPart.startsWith("~")) return null;
-  const dir = unescapeForShell(dirPart);
+  const dir = unescapeForShell(dirPart, windows);
   if (dir.startsWith("/")) return dir || "/";
   return joinRel(cwd, dir);
 }
@@ -52,7 +57,10 @@ export async function pathCompletions(
   const slash = token.lastIndexOf("/");
   const dirPart = slash >= 0 ? token.slice(0, slash + 1) : "";
   const base = slash >= 0 ? token.slice(slash + 1) : token;
-  const dir = resolveDir(dirPart, cwd);
+  // A WSL workspace runs a POSIX shell even on a Windows host, so escape the
+  // line for the shell the workspace reads, not for the platform.
+  const windows = usesWindowsShell();
+  const dir = resolveDir(dirPart, cwd, windows);
   if (!dir) return null;
 
   let entries: DirEntry[];
@@ -66,12 +74,12 @@ export async function pathCompletions(
     return null;
   }
 
-  const lower = unescapeForShell(base).toLowerCase();
+  const lower = unescapeForShell(base, windows).toLowerCase();
   const dirs: Completion[] = [];
   const files: Completion[] = [];
   for (const e of entries) {
     if (lower && !e.name.toLowerCase().startsWith(lower)) continue;
-    const escaped = escapeForShell(e.name);
+    const escaped = escapeForShell(e.name, windows);
     if (e.kind === "dir") {
       const insert = `${escaped}/`;
       dirs.push({

@@ -138,6 +138,11 @@ describe("unescapeForShell", () => {
     expect(unescapeForShell("C:\\a\\c.ts", true)).toBe("C:\\a\\c.ts");
   });
 
+  it("strips the leading quote of a segment still being typed", () => {
+    expect(unescapeForShell("'My Fol", true)).toBe("My Fol");
+    expect(unescapeForShell("'My Folder'/su", true)).toBe("My Folder/su");
+  });
+
   it("round-trips what escapeForShell writes", () => {
     for (const name of [
       "My Folder",

@@ -46,11 +46,14 @@ export function unescapeForShell(
   if (isWindows) {
     return text
       .split("/")
-      .map((segment) =>
-        segment.length > 1 && segment.startsWith("'") && segment.endsWith("'")
-          ? segment.slice(1, -1).replace(/''/g, "'")
-          : segment,
-      )
+      .map((segment) => {
+        if (!segment.startsWith("'")) return segment;
+        // Completion in progress may still be missing the closing quote.
+        const body = segment.endsWith("'")
+          ? segment.slice(1, -1)
+          : segment.slice(1);
+        return body.replace(/''/g, "'");
+      })
       .join("/");
   }
   return text.replace(/\\([\s\S])/g, "$1");

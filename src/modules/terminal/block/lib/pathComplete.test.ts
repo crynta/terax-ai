@@ -1,12 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
+const { invoke, platform, workspace } = vi.hoisted(() => ({
+  invoke: vi.fn(),
+  platform: { IS_WINDOWS: false },
+  workspace: {
+    env: { kind: "local" } as { kind: "local" } | { kind: "wsl"; distro: string },
+  },
+}));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@/modules/workspace", () => ({
-  currentWorkspaceEnv: () => ({ kind: "local" }),
+  currentWorkspaceEnv: () => workspace.env,
 }));
-vi.mock("@/lib/platform", () => ({ IS_WINDOWS: false }));
+vi.mock("@/lib/platform", () => ({
+  get IS_WINDOWS() {
+    return platform.IS_WINDOWS;
+  },
+}));
 
 import type { Completion } from "@codemirror/autocomplete";
 import { pathCompletions } from "./pathComplete";
@@ -21,12 +31,26 @@ function mockDir(entries: ReturnType<typeof entry>[]) {
   invoke.mockResolvedValue(entries);
 }
 
+function useWsl() {
+  platform.IS_WINDOWS = true;
+  (workspace.env as any) = { kind: "wsl", distro: "Ubuntu" };
+}
+
+function useLocalWindows() {
+  platform.IS_WINDOWS = true;
+  (workspace.env as any) = { kind: "local" };
+}
+
 async function complete(token: string) {
   const result = await pathCompletions(token, CWD);
   return result?.options ?? [];
 }
 
-beforeEach(() => vi.resetAllMocks());
+beforeEach(() => {
+  vi.resetAllMocks();
+  platform.IS_WINDOWS = false;
+  workspace.env = { kind: "local" };
+});
 
 describe("pathCompletions", () => {
   it("lists a spaced directory with its name escaped for the shell", async () => {
@@ -128,5 +152,59 @@ describe("pathCompletions", () => {
   it("leaves home expansion alone", async () => {
     expect(await pathCompletions("~/Doc", CWD)).toBeNull();
     expect(invoke).not.toHaveBeenCalled();
+  });
+});
+
+describe("pathCompletions on Windows", () => {
+  it("uses a PowerShell literal for a local Windows workspace", async () => {
+    useLocalWindows();
+    mockDir([entry("My Folder", "dir")]);
+
+    const [option] = await complete("My");
+
+    expect(option.label).toBe("'My Folder'/");
+    expect(option.displayLabel).toBe("My Folder/");
+  });
+
+  it("reads the directory a quoted Windows path points at", async () => {
+    useLocalWindows();
+    mockDir([entry("sub dir", "dir")]);
+
+    await complete("'My Folder'/sub");
+
+    expect(invoke).toHaveBeenCalledWith(
+      "fs_read_dir",
+      expect.objectContaining({ path: "/work/My Folder" }),
+    );
+  });
+
+  it("matches a quote that is still being typed", async () => {
+    useLocalWindows();
+    mockDir([entry("My Folder", "dir")]);
+
+    const options = await complete("'My Fol");
+
+    expect(options.map((o) => o.label)).toEqual(["'My Folder'/"]);
+  });
+
+  it("keeps POSIX escaping in a WSL workspace even on a Windows host", async () => {
+    useWsl();
+    mockDir([entry("My Folder", "dir")]);
+
+    const [option] = await complete("My");
+
+    expect(option.label).toBe("My\\ Folder/");
+  });
+
+  it("unescapes backslashes before reading a WSL workspace directory", async () => {
+    useWsl();
+    mockDir([entry("sub dir", "dir")]);
+
+    await complete("My\\ Folder/sub");
+
+    expect(invoke).toHaveBeenCalledWith(
+      "fs_read_dir",
+      expect.objectContaining({ path: "/work/My Folder" }),
+    );
   });
 });

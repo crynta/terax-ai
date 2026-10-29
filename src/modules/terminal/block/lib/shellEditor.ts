@@ -39,7 +39,8 @@ import { completionIcon } from "./completionIcons";
 import { historyOpen, historyPopover } from "./historyPopover";
 import { inlineSuggestion } from "./inlineSuggest";
 import { pathCompletions } from "./pathComplete";
-import { SHELL_WORD_RE } from "./shellWord";
+import { usesWindowsShell } from "./shellSyntax";
+import { shellWordBefore } from "./shellWord";
 
 const shellLanguage = StreamLanguage.define(shell);
 
@@ -246,13 +247,15 @@ function makeCompletionSource(
 ) {
   return async (ctx: CompletionContext): Promise<CompletionResult | null> => {
     if (historyOpen(ctx.state)) return null;
-    const word = ctx.matchBefore(SHELL_WORD_RE);
-    if (!word || (word.from === word.to && !ctx.explicit)) return null;
-    const line = ctx.state.doc.lineAt(word.from);
-    const before = ctx.state.doc.sliceString(line.from, word.from);
+    const line = ctx.state.doc.lineAt(ctx.pos);
+    const typed = ctx.state.doc.sliceString(line.from, ctx.pos);
+    const word = shellWordBefore(typed, usesWindowsShell());
+    const from = line.from + word.start;
+    if (from === ctx.pos && !ctx.explicit) return null;
+    const before = typed.slice(0, word.start);
     if (SEGMENT_START.test(before)) {
       return {
-        from: word.from,
+        from,
         options: commandOptions(word.text, getCommands),
         validFor: VALID_FOR,
       };
@@ -262,14 +265,14 @@ function makeCompletionSource(
       const res = await pathCompletions(word.text, cwd);
       if (res?.options.length) {
         return {
-          from: word.from + res.fromOffset,
+          from: from + res.fromOffset,
           options: res.options,
           validFor: PATH_VALID_FOR,
         };
       }
     }
     return {
-      from: word.from,
+      from,
       options: docWordOptions(ctx, word.text),
       validFor: VALID_FOR,
     };

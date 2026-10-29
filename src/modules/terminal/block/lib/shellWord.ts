@@ -1,11 +1,41 @@
-import { IS_WINDOWS } from "@/lib/platform";
+/** How far back a word may start, matching CodeMirror's own match window. */
+const MAX_WORD_SCAN = 250;
+/** Characters completion treats as part of a word; the rest separate words. */
+const WORD_CHAR = /[\w./+-]/;
+
+export type ShellWord = { start: number; text: string };
 
 /**
- * A shell word ends at whitespace, except where shell syntax that belongs to
- * the name keeps it together: a backslash escape (`My\ Folder`) as completion
- * writes it on POSIX, or a quoted run (`'My Folder'`) as it does on Windows.
- * Without this a just-completed `My\ Folder/` would be re-read as `Folder/`.
+ * The shell word the cursor sits in, given the text from the start of the line
+ * up to the cursor. A word ends at whitespace or shell punctuation unless a
+ * backslash escape keeps it together (`My\ Folder`). On Windows completion
+ * writes quoted names instead (`'My Folder'/`), so a quoted run concatenates
+ * into the word exactly as the shell reads it — a closed run plus the tail
+ * after it, or a still-open run that reaches the cursor.
  */
-export const SHELL_WORD_RE = IS_WINDOWS
-  ? /(?:[\w./+-]|\\[\s\S]|'[^'\n]*'?|"[^"\n]*"?)*/
-  : /(?:[\w./+-]|\\[\s\S])*/;
+export function shellWordBefore(
+  lineBeforeCursor: string,
+  windows: boolean,
+): ShellWord {
+  const from = Math.max(0, lineBeforeCursor.length - MAX_WORD_SCAN);
+  let start = from;
+  let quote: string | null = null;
+  for (let i = from; i < lineBeforeCursor.length; i++) {
+    const c = lineBeforeCursor[i];
+    if (quote) {
+      if (c === quote) quote = null;
+      continue;
+    }
+    if (c === "\\") {
+      i++; // the escaped character belongs to this word
+      continue;
+    }
+    if (windows && (c === "'" || c === '"')) {
+      quote = c;
+      continue;
+    }
+    if (WORD_CHAR.test(c)) continue;
+    start = i + 1;
+  }
+  return { start, text: lineBeforeCursor.slice(start) };
+}
