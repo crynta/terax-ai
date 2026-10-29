@@ -404,6 +404,14 @@ export const LANGUAGES: LanguageDefinition[] = [
       ),
   },
   {
+    name: "Luau",
+    extensions: ["luau"],
+    loader: () =>
+      defineLanguage(
+        import("@codemirror/legacy-modes/mode/lua").then((m) => m.lua),
+      ),
+  },
+  {
     name: "PowerShell",
     extensions: ["ps1", "psm1", "psd1"],
     loader: () =>
