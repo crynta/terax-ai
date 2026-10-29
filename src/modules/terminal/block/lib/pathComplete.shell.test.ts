@@ -51,11 +51,10 @@ for (const shell of ["bash", "zsh", "pwsh", "powershell"]) {
         );
         expect(JSON.parse(result.replace(/^\uFEFF/, ""))).toEqual([name]);
       } else {
-        const result = execFileSync(
-          shell,
-          ["-c", `printf '%s\\0' ${escaped}`],
-          { encoding: "utf8" },
-        );
+        const result = execFileSync(shell, ["-s"], {
+          input: `printf '%s\\0' ${escaped}\n`,
+          encoding: "utf8",
+        });
         expect(result).toBe(`${name}\0`);
       }
     });
