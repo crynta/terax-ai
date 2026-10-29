@@ -143,6 +143,21 @@ describe("unescapeForShell", () => {
     expect(unescapeForShell("'My Folder'/su", true)).toBe("My Folder/su");
   });
 
+  it("decodes quotes that span a separator before splitting", () => {
+    expect(unescapeForShell("'My Folder/sub'", true)).toBe("My Folder/sub");
+  });
+
+  it("does not leave a stray apostrophe after an appended separator", () => {
+    expect(unescapeForShell("'My Folder'/", true)).toBe("My Folder/");
+  });
+
+  it("round-trips a copied Windows quoted path followed by /fi", () => {
+    const quoted = escapeForShell("C:\\a\\My Folder\\c.ts", true);
+    expect(unescapeForShell(quoted + "/fi", true)).toBe(
+      "C:\\a\\My Folder\\c.ts/fi",
+    );
+  });
+
   it("round-trips what escapeForShell writes", () => {
     for (const name of [
       "My Folder",

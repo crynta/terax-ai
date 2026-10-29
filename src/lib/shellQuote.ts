@@ -44,17 +44,43 @@ export function unescapeForShell(
 ): string {
   if (!text) return text;
   if (isWindows) {
-    return text
-      .split("/")
-      .map((segment) => {
-        if (!segment.startsWith("'")) return segment;
-        // Completion in progress may still be missing the closing quote.
-        const body = segment.endsWith("'")
-          ? segment.slice(1, -1)
-          : segment.slice(1);
-        return body.replace(/''/g, "'");
-      })
-      .join("/");
+    // Decode quoted runs before splitting on separators. Splitting first
+    // breaks quotes that span a separator (`'My Folder/sub'`) and leaves a
+    // stray apostrophe behind; decoding whole runs first unescapes the name
+    // intact. Completion in progress may still be missing the closing quote,
+    // so a still-open run keeps everything after its opening quote.
+    const segments: string[] = [];
+    let segment = "";
+    let quote: string | null = null;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (quote) {
+        if (c === quote) {
+          if (text[i + 1] === quote) {
+            // Escaped quote inside a quoted literal.
+            segment += quote;
+            i++;
+          } else {
+            quote = null;
+          }
+        } else {
+          segment += c;
+        }
+        continue;
+      }
+      if (c === "'") {
+        quote = "'";
+        continue;
+      }
+      if (c === "/") {
+        segments.push(segment);
+        segment = "";
+        continue;
+      }
+      segment += c;
+    }
+    segments.push(segment);
+    return segments.join("/");
   }
   return text.replace(/\\([\s\S])/g, "$1");
 }
