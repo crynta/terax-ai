@@ -1721,8 +1721,9 @@ function checkResult(code: number, operation: string): void {
 }
 
 function decodeCursorStyle(value: number): "block" | "underline" | "bar" {
-  if (value === 1) return "underline";
-  if (value === 2) return "bar";
+  // Render-state ABI (cursorStyleToAbi), distinct from setCursorOptions input.
+  if (value === 1) return "bar";
+  if (value === 2) return "underline";
   return "block";
 }
 
