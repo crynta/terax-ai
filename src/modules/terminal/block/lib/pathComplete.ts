@@ -1,102 +1,142 @@
 import { escapeForShell, unescapeForShell } from "@/lib/shellQuote";
 import { currentWorkspaceEnv } from "@/modules/workspace";
-import { type Completion, startCompletion } from "@codemirror/autocomplete";
+import {
+  type Completion,
+  type CompletionContext,
+  type CompletionResult,
+  startCompletion,
+} from "@codemirror/autocomplete";
 import { invoke } from "@tauri-apps/api/core";
 import { usesWindowsShell } from "./shellSyntax";
+import { shellWordAt, type ShellWord } from "./shellWord";
 
-type DirEntry = {
-  name: string;
-  kind: "file" | "dir" | "symlink";
-  size: number;
-  mtime: number;
+type DirEntry = { name: string; kind: "file" | "dir" | "symlink" };
+type PathParts = { directory: string; prefix: string };
+export type PathResult = {
+  options: Completion[];
+  prefix: string;
+  update: (token: string) => PathResult | null;
 };
 
-export type PathResult = { fromOffset: number; options: Completion[] };
-
-function joinRel(cwd: string, rel: string): string {
-  const base = cwd.endsWith("/") ? cwd.slice(0, -1) : cwd;
-  const clean = rel.replace(/\/$/, "");
-  return clean ? `${base}/${clean}` : base;
+function pathParts(token: string, windows: boolean): PathParts | null {
+  let path = unescapeForShell(token, windows);
+  if (path === null) return null;
+  if (windows) path = path.replace(/\\/g, "/");
+  const slash = path.lastIndexOf("/");
+  return { directory: path.slice(0, slash + 1), prefix: path.slice(slash + 1) };
 }
 
 function resolveDir(
-  dirPart: string,
+  directory: string,
   cwd: string,
   windows: boolean,
 ): string | null {
-  // Home expansion is not handled yet. Only a typed `~` counts as home; a
-  // completed `\~name/` is a real relative name and reaches the join below.
-  if (dirPart.startsWith("~")) return null;
-  const dir = unescapeForShell(dirPart, windows);
-  if (dir.startsWith("/")) return dir || "/";
-  return joinRel(cwd, dir);
+  if (windows && /^[a-z]:/i.test(directory)) {
+    return /^[a-z]:\//i.test(directory) ? directory : null;
+  }
+  if (directory.startsWith("/")) return directory;
+  return directory ? `${cwd.replace(/\/$/, "")}/${directory}` : cwd;
 }
 
-// The label is what accept inserts, so the popup filters against the same text
-// the shell word holds (`My\ F` keeps matching `My Folder/`). An escaped name
-// still displays unescaped: the list stays readable and typing `My F` matches.
-function nameOption(
-  display: string,
-  insert: string,
-  type: Completion["type"],
-): Completion {
-  return display === insert
-    ? { label: insert, type }
-    : { label: insert, displayLabel: display, type };
-}
-
-// Completes the argument token against the terminal's live cwd. Directories get
-// a trailing slash and re-trigger completion so the next level opens on accept.
-// Shell syntax is escaped as it is inserted (`My\ Folder`), because the line is
-// handed to the shell as typed; what was already typed is unescaped before it
-// is matched and read, so a partly typed `My\ Fol` still completes.
 export async function pathCompletions(
   token: string,
   cwd: string,
 ): Promise<PathResult | null> {
-  const slash = token.lastIndexOf("/");
-  const dirPart = slash >= 0 ? token.slice(0, slash + 1) : "";
-  const base = slash >= 0 ? token.slice(slash + 1) : token;
-  // A WSL workspace runs a POSIX shell even on a Windows host, so escape the
-  // line for the shell the workspace reads, not for the platform.
+  const workspace = currentWorkspaceEnv();
   const windows = usesWindowsShell();
-  const dir = resolveDir(dirPart, cwd, windows);
+  const parts = pathParts(token, windows);
+  if (!parts) return null;
+  const dir = resolveDir(parts.directory, cwd, windows);
   if (!dir) return null;
-
   let entries: DirEntry[];
   try {
     entries = await invoke<DirEntry[]>("fs_read_dir", {
       path: dir,
-      showHidden: base.startsWith("."),
-      workspace: currentWorkspaceEnv(),
+      showHidden: parts.prefix.startsWith("."),
+      workspace,
     });
   } catch {
     return null;
   }
-
-  const lower = unescapeForShell(base, windows).toLowerCase();
-  const dirs: Completion[] = [];
-  const files: Completion[] = [];
-  for (const e of entries) {
-    if (lower && !e.name.toLowerCase().startsWith(lower)) continue;
-    const escaped = escapeForShell(e.name, windows);
-    if (e.kind === "dir") {
-      const insert = `${escaped}/`;
-      dirs.push({
-        ...nameOption(`${e.name}/`, insert, "type"),
-        apply: (view, _c, from, to) => {
-          view.dispatch({
-            changes: { from, to, insert },
-            selection: { anchor: from + insert.length },
-          });
-          startCompletion(view);
-        },
-      });
-    } else {
-      files.push(nameOption(e.name, escaped, "variable"));
+  if (currentWorkspaceEnv() !== workspace) return null;
+  const initialPrefix = parts.prefix.toLowerCase();
+  const matches: DirEntry[] = [];
+  let truncated = false;
+  for (const entry of entries) {
+    if (!entry.name.toLowerCase().startsWith(initialPrefix)) continue;
+    if (matches.length === 200) {
+      truncated = true;
+      break;
     }
-    if (dirs.length + files.length >= 200) break;
+    matches.push(entry);
   }
+  matches.sort((a, b) => Number(b.kind === "dir") - Number(a.kind === "dir"));
 
-  return { fromOffset: dirPart.length, options: [...dirs, ...files] };
+  const build = (next: PathParts): PathResult => ({
+    prefix: next.prefix,
+    options: matches
+      .filter((e) => e.name.toLowerCase().startsWith(next.prefix.toLowerCase()))
+      .map((e) => {
+        const isDir = e.kind === "dir";
+        const label = e.name + (isDir ? "/" : "");
+        const insert = escapeForShell(next.directory + label, windows);
+        return {
+          label,
+          type: isDir ? "type" : "variable",
+          apply: isDir
+            ? (view, _completion, from, to) => {
+                view.dispatch({
+                  changes: { from, to, insert },
+                  selection: { anchor: from + insert.length },
+                });
+                startCompletion(view);
+              }
+            : insert,
+        };
+      }),
+    update: (nextToken) => {
+      const nextParts = pathParts(nextToken, windows);
+      if (
+        !nextParts ||
+        currentWorkspaceEnv() !== workspace ||
+        nextParts.directory !== parts.directory ||
+        nextParts.prefix.startsWith(".") !== parts.prefix.startsWith(".") ||
+        !nextParts.prefix.toLowerCase().startsWith(initialPrefix) ||
+        (truncated && nextParts.prefix !== parts.prefix)
+      )
+        return null;
+      return build(nextParts);
+    },
+  });
+  return build(parts);
+}
+
+export function pathCompletionResult(
+  word: ShellWord,
+  paths: PathResult,
+  windows: boolean,
+  isCurrent: () => boolean = () => true,
+): CompletionResult {
+  return {
+    from: word.start,
+    to: word.end,
+    options: paths.options,
+    filter: false,
+    getMatch: () => (paths.prefix ? [0, paths.prefix.length] : []),
+    update: (_result, from, _to, ctx: CompletionContext) => {
+      const doc = ctx.state.doc.toString();
+      const nextWord = shellWordAt(doc, ctx.pos, windows);
+      if (
+        !isCurrent() ||
+        nextWord.start !== from ||
+        unescapeForShell(doc.slice(nextWord.start, nextWord.end), windows) ===
+          null
+      )
+        return null;
+      const next = paths.update(nextWord.text);
+      return next
+        ? pathCompletionResult(nextWord, next, windows, isCurrent)
+        : null;
+    },
+  };
 }

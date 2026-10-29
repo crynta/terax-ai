@@ -1,9 +1,9 @@
 import { IS_WINDOWS } from "./platform";
 
 /** Characters a POSIX shell treats as syntax when a path is pasted unquoted. */
-const POSIX_SHELL_SPECIAL = /([\\\s"'$`!&;|<>()[\]{}*?#~])/g;
-/** Windows paths made only of these characters paste as-is in cmd/PowerShell. */
-const WINDOWS_UNQUOTED_SAFE = /^[A-Za-z0-9_.:\\/~+-]+$/;
+const POSIX_SHELL_SPECIAL = /([\\\s"'$`!&;|<>()[\]{}*?#~=])/g;
+/** Literal characters in PowerShell argument mode. */
+const WINDOWS_UNQUOTED_SAFE = /^[A-Za-z0-9_.:\\/+-]+$/;
 
 export function quoteShellArg(value: string, windows = IS_WINDOWS): string {
   if (windows) {
@@ -12,75 +12,67 @@ export function quoteShellArg(value: string, windows = IS_WINDOWS): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
-/**
- * Neutralize shell syntax in a path so it survives a paste into the terminal
- * as a single argument (`My Folder` would otherwise split into two).
- * POSIX shells take a backslash escape. Windows treats `\` as a separator, so
- * it gets a single-quoted literal instead: PowerShell is the default Windows
- * shell here and expands `$`/backtick inside double quotes, while a
- * single-quoted string is entirely literal apart from a doubled `'`.
- */
-export function escapeForShell(
-  path: string,
-  isWindows: boolean = IS_WINDOWS,
-): string {
+export function escapeForShell(path: string, windows = IS_WINDOWS): string {
   if (!path) return path;
-  if (isWindows) {
+  if (windows) {
     return WINDOWS_UNQUOTED_SAFE.test(path)
       ? path
-      : `'${path.replace(/'/g, "''")}'`;
+      : `'${path.replace(/['‘’]/g, "$&$&")}'`;
   }
+  // Backslash-newline is a line continuation, not a literal newline.
+  if (path.includes("\n")) return quoteShellArg(path, false);
   return path.replace(POSIX_SHELL_SPECIAL, "\\$1");
 }
 
-/**
- * Inverse of `escapeForShell` for text that was escaped a segment at a time
- * (path completion emits one escaped name per segment), so completion matches
- * the entry names on disk and reads the directory they actually name.
- */
+export function shellQuoteChar(c: string, windows: boolean): string {
+  if (c === "'" || (windows && /[‘’]/.test(c))) return "'";
+  if (c === '"' || (windows && /[“”]/.test(c))) return '"';
+  return "";
+}
+
+/** Decode a literal argument, including an unfinished quote; never expand shell expressions. */
 export function unescapeForShell(
   text: string,
-  isWindows: boolean = IS_WINDOWS,
-): string {
-  if (!text) return text;
-  if (isWindows) {
-    // Decode quoted runs before splitting on separators. Splitting first
-    // breaks quotes that span a separator (`'My Folder/sub'`) and leaves a
-    // stray apostrophe behind; decoding whole runs first unescapes the name
-    // intact. Completion in progress may still be missing the closing quote,
-    // so a still-open run keeps everything after its opening quote.
-    const segments: string[] = [];
-    let segment = "";
-    let quote: string | null = null;
-    for (let i = 0; i < text.length; i++) {
-      const c = text[i];
-      if (quote) {
-        if (c === quote) {
-          if (text[i + 1] === quote) {
-            // Escaped quote inside a quoted literal.
-            segment += quote;
-            i++;
-          } else {
-            quote = null;
-          }
-        } else {
-          segment += c;
-        }
-        continue;
+  windows = IS_WINDOWS,
+): string | null {
+  let value = "";
+  let quote = "";
+  const escapeChar = windows ? "`" : "\\";
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    const delimiter = shellQuoteChar(c, windows);
+    if (quote && delimiter === quote) {
+      if (windows && shellQuoteChar(text[i + 1] ?? "", windows) === quote) {
+        value += c;
+        i++;
+      } else {
+        quote = "";
       }
-      if (c === "'") {
-        quote = "'";
-        continue;
+    } else if (quote === "'") {
+      value += c;
+    } else if (c === escapeChar) {
+      const next = text[i + 1];
+      if (next === undefined) return null;
+      if (!windows && quote === '"' && !'$`"\\\n'.includes(next)) {
+        value += c;
+      } else {
+        if (windows && /[0abefnrtuvx]/i.test(next)) return null;
+        if (next !== "\n") value += next;
+        i++;
       }
-      if (c === "/") {
-        segments.push(segment);
-        segment = "";
-        continue;
-      }
-      segment += c;
+    } else if (!quote && delimiter) {
+      quote = delimiter;
+    } else if (c === "$" || (!windows && (c === "`" || c === "!"))) {
+      return null;
+    } else if (!quote && /[\s;&|<>(){}*?[\]]/.test(c)) {
+      return null;
+    } else if (!quote && windows && (c === "," || (i === 0 && c === "@"))) {
+      return null;
+    } else if (!quote && i === 0 && /[~#=]/.test(c)) {
+      return null;
+    } else {
+      value += c;
     }
-    segments.push(segment);
-    return segments.join("/");
   }
-  return text.replace(/\\([\s\S])/g, "$1");
+  return value;
 }

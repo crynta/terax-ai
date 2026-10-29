@@ -1,13 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { CompletionContext, type Completion } from "@codemirror/autocomplete";
+import { EditorState } from "@codemirror/state";
 
 const { invoke, platform, workspace } = vi.hoisted(() => ({
   invoke: vi.fn(),
   platform: { IS_WINDOWS: false },
   workspace: {
-    env: { kind: "local" } as { kind: "local" } | { kind: "wsl"; distro: string },
+    env: { kind: "local" } as
+      | { kind: "local" }
+      | { kind: "wsl"; distro: string },
   },
 }));
-
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@/modules/workspace", () => ({
   currentWorkspaceEnv: () => workspace.env,
@@ -17,194 +20,209 @@ vi.mock("@/lib/platform", () => ({
     return platform.IS_WINDOWS;
   },
 }));
+import { pathCompletionResult, pathCompletions } from "./pathComplete";
+import { shellWordAt } from "./shellWord";
 
-import type { Completion } from "@codemirror/autocomplete";
-import { pathCompletions } from "./pathComplete";
-
-const CWD = "/work";
-
-function entry(name: string, kind: "file" | "dir" = "file") {
-  return { name, kind, size: 0, mtime: 0 };
+function entry(name: string, kind = "file") {
+  return { name, kind };
 }
-
-function mockDir(entries: ReturnType<typeof entry>[]) {
-  invoke.mockResolvedValue(entries);
+function inserted(option: Completion) {
+  if (typeof option.apply === "string") return option.apply;
+  const view = { state: { field: () => ({}) }, dispatch: vi.fn() };
+  (option.apply as (v: unknown, c: Completion, f: number, t: number) => void)(
+    view,
+    option,
+    3,
+    8,
+  );
+  return view.dispatch.mock.calls[0][0].changes.insert;
 }
-
-function useWsl() {
-  platform.IS_WINDOWS = true;
-  (workspace.env as any) = { kind: "wsl", distro: "Ubuntu" };
-}
-
-function useLocalWindows() {
-  platform.IS_WINDOWS = true;
-  (workspace.env as any) = { kind: "local" };
-}
-
-async function complete(token: string) {
-  const result = await pathCompletions(token, CWD);
-  return result?.options ?? [];
-}
-
 beforeEach(() => {
   vi.resetAllMocks();
   platform.IS_WINDOWS = false;
   workspace.env = { kind: "local" };
 });
 
-describe("pathCompletions", () => {
-  it("lists a spaced directory with its name escaped for the shell", async () => {
-    mockDir([entry("My Folder", "dir")]);
+describe("path completion", () => {
+  it.each([
+    ["My", "My Folder", "My\\ Folder/"],
+    ["My\\ Fol", "My Folder", "My\\ Folder/"],
+    ['"My Fol', "My Folder", "My\\ Folder/"],
+    ["'My Fol'", "My Folder", "My\\ Folder/"],
+    ["\\$", "$HOME & c", "\\$HOME\\ \\&\\ c/"],
+    ["caf", "café", "café/"],
+    ["\\~", "~name", "\\~name/"],
+    ["\\=", "=ls", "\\=ls/"],
+  ])(
+    "inserts a literal whole argument for %s",
+    async (token, name, escaped) => {
+      invoke.mockResolvedValue([entry(name, "dir")]);
+      const result = await pathCompletions(token, "/work");
+      expect(required(result).options.map((o) => o.label)).toEqual([
+        `${name}/`,
+      ]);
+      expect(inserted(required(result).options[0])).toBe(escaped);
+    },
+  );
 
-    const options = await complete("My");
-
-    expect(options).toHaveLength(1);
-    expect(options[0].label).toBe("My\\ Folder/");
-    expect(options[0].displayLabel).toBe("My Folder/");
-  });
-
-  it("escapes shell syntax so a name is one literal argument", async () => {
-    mockDir([entry("$HOME & c.txt")]);
-
-    const [option] = await complete("$");
-
-    expect(option.label).toBe("\\$HOME\\ \\&\\ c.txt");
-    expect(option.displayLabel).toBe("$HOME & c.txt");
-  });
-
-  it("leaves a plain name alone so the popup can highlight the match", async () => {
-    mockDir([entry("notes.txt")]);
-
-    const [option] = await complete("no");
-
-    expect(option).toEqual({ label: "notes.txt", type: "variable" });
-  });
-
-  it("matches a prefix that was typed already escaped", async () => {
-    mockDir([entry("My Folder", "dir")]);
-
-    const options = await complete("My\\ Fol");
-
-    expect(options.map((o) => o.label)).toEqual(["My\\ Folder/"]);
-  });
-
-  it("reads the directory a completed name actually points at", async () => {
-    mockDir([entry("sub dir", "dir")]);
-
-    await complete("My\\ Folder/sub");
-
-    expect(invoke).toHaveBeenCalledWith(
-      "fs_read_dir",
-      expect.objectContaining({ path: "/work/My Folder" }),
+  it.each([
+    "My\\ Folder/no",
+    "'My Folder/no",
+    '"My Folder/no"',
+    "'My Folder'/no",
+  ])("decodes quotes spanning a directory in %s", async (token) => {
+    invoke.mockResolvedValue([entry("notes file.txt")]);
+    const result = await pathCompletions(token, "/work");
+    expect(invoke).toHaveBeenCalledWith("fs_read_dir", {
+      path: "/work/My Folder/",
+      showHidden: false,
+      workspace: workspace.env,
+    });
+    expect(inserted(required(result).options[0])).toBe(
+      "My\\ Folder/notes\\ file.txt",
     );
   });
 
-  it("keeps completing inside a directory it just escaped", async () => {
-    mockDir([entry("My Folder", "dir")]);
-    const [dir] = await complete("My");
-    mockDir([entry("notes file.txt")]);
-
-    const options = await complete(dir.label);
-
-    expect(invoke).toHaveBeenLastCalledWith(
-      "fs_read_dir",
-      expect.objectContaining({ path: "/work/My Folder" }),
+  it("keeps completing inside the argument it just inserted", async () => {
+    invoke.mockResolvedValueOnce([entry("My Folder", "dir")]);
+    const first = await pathCompletions("My", "/work");
+    invoke.mockResolvedValueOnce([entry("notes file.txt")]);
+    const second = await pathCompletions(
+      inserted(required(first).options[0]),
+      "/work",
     );
-    expect(options.map((o) => o.label)).toEqual(["notes\\ file.txt"]);
-  });
-
-  it("inserts an escaped directory and reopens completion on accept", async () => {
-    mockDir([entry("My Folder", "dir")]);
-    const [option] = await complete("My");
-    const view = { state: { field: () => ({}) }, dispatch: vi.fn() };
-
-    (option.apply as (v: unknown, c: Completion, f: number, t: number) => void)(
-      view,
-      option,
-      3,
-      5,
-    );
-
-    expect(view.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        changes: { from: 3, to: 5, insert: "My\\ Folder/" },
-      }),
+    expect(inserted(required(second).options[0])).toBe(
+      "My\\ Folder/notes\\ file.txt",
     );
   });
 
-  it("puts directories before files and caps the list", async () => {
-    const many = Array.from({ length: 260 }, (_, i) => entry(`f${i}.txt`));
-    mockDir([entry("a file.txt"), entry("a dir", "dir"), ...many]);
-
-    const options = await complete("");
-
-    expect(options.length).toBe(200);
-    expect(options[0].label).toBe("a\\ dir/");
-    expect(options[1].label).toBe("a\\ file.txt");
+  it("returns directories first and caps the retained candidates", async () => {
+    invoke.mockResolvedValue([
+      entry("a file"),
+      entry("a dir", "dir"),
+      ...Array.from({ length: 260 }, (_, i) => entry(`f${i}`)),
+    ]);
+    const result = await pathCompletions("", "/work");
+    expect(required(result).options).toHaveLength(200);
+    expect(required(result).options[0].label).toBe("a dir/");
+    expect(required(result).update("f2")).toBeNull();
   });
+
+  it("refilters cached entries without filesystem calls and refreshes when the context changes", async () => {
+    invoke.mockResolvedValue([entry("My Folder"), entry("My File")]);
+    const result = await pathCompletions("My", "/work");
+    expect(
+      required(required(result).update('"My Fol')).options.map((o) => o.label),
+    ).toEqual(["My Folder"]);
+    for (const token of ["M", "My Folder/", ".", "$HOME", "My next"])
+      expect(required(result).update(token)).toBeNull();
+    workspace.env = { kind: "wsl", distro: "Ubuntu" };
+    expect(required(result).update("My F")).toBeNull();
+    expect(invoke).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not expose stale results after a workspace switch during the read", async () => {
+    invoke.mockImplementation(async () => {
+      workspace.env = { kind: "wsl", distro: "Ubuntu" };
+      return [entry("file")];
+    });
+    expect(await pathCompletions("f", "/work")).toBeNull();
+  });
+
+  it.each(["~/Doc", "$HOME/Doc", "$(pwd)/Doc", "*.txt", "`pwd`/", "a\\"])(
+    "leaves expansion or unfinished escapes alone: %s",
+    async (token) => {
+      expect(await pathCompletions(token, "/work")).toBeNull();
+      expect(invoke).not.toHaveBeenCalled();
+    },
+  );
 
   it("returns nothing when the directory cannot be read", async () => {
-    invoke.mockRejectedValue(new Error("nope"));
-
-    expect(await pathCompletions("x", CWD)).toBeNull();
+    invoke.mockRejectedValue(new Error("unreadable"));
+    expect(await pathCompletions("x", "/work")).toBeNull();
   });
 
-  it("leaves home expansion alone", async () => {
-    expect(await pathCompletions("~/Doc", CWD)).toBeNull();
-    expect(invoke).not.toHaveBeenCalled();
+  it("includes hidden files for a quoted dot prefix", async () => {
+    invoke.mockResolvedValue([entry(".git", "dir")]);
+    await pathCompletions("'.g", "/work");
+    expect(invoke.mock.calls[0][1].showHidden).toBe(true);
+  });
+
+  it("replaces a whole quoted argument and refilters with CodeMirror's update contract", async () => {
+    invoke.mockResolvedValue([entry("My Folder"), entry("My File")]);
+    const doc = 'cat "My" next';
+    const word = shellWordAt(doc, 7, false);
+    const result = pathCompletionResult(
+      word,
+      required(await pathCompletions(word.text, "/work")),
+      false,
+    );
+    const option = result.options[0];
+    expect(
+      doc.slice(0, result.from) + inserted(option) + doc.slice(result.to),
+    ).toBe("cat My\\ Folder next");
+    expect(result.filter).toBe(false);
+    const nextDoc = 'cat "My Fol" next';
+    const ctx = new CompletionContext(
+      EditorState.create({ doc: nextDoc }),
+      11,
+      false,
+    );
+    const updated = required(
+      required(result.update)(result, result.from, 12, ctx),
+    );
+    expect(updated.options.map((o) => o.label)).toEqual(["My Folder"]);
+    expect(required(updated.getMatch)(updated.options[0])).toEqual([0, 6]);
+    expect(invoke).toHaveBeenCalledTimes(1);
   });
 });
 
-describe("pathCompletions on Windows", () => {
-  it("uses a PowerShell literal for a local Windows workspace", async () => {
-    useLocalWindows();
-    mockDir([entry("My Folder", "dir")]);
-
-    const [option] = await complete("My");
-
-    expect(option.label).toBe("'My Folder'/");
-    expect(option.displayLabel).toBe("My Folder/");
+describe("Windows and WSL", () => {
+  beforeEach(() => {
+    platform.IS_WINDOWS = true;
   });
-
-  it("reads the directory a quoted Windows path points at", async () => {
-    useLocalWindows();
-    mockDir([entry("sub dir", "dir")]);
-
-    await complete("'My Folder'/sub");
-
-    expect(invoke).toHaveBeenCalledWith(
-      "fs_read_dir",
-      expect.objectContaining({ path: "/work/My Folder" }),
+  it.each([
+    "'My Folder/no",
+    '"My Folder/no"',
+    "My Folder/no",
+    "'My Folder'/no",
+  ])("inserts one PowerShell literal for %s", async (token) => {
+    if (token === "My Folder/no") token = "My` Folder/no";
+    invoke.mockResolvedValue([entry("notes file.txt")]);
+    const result = await pathCompletions(token, "C:/work");
+    expect(inserted(required(result).options[0])).toBe(
+      "'My Folder/notes file.txt'",
     );
+    expect(invoke.mock.calls[0][1].path).toBe("C:/work/My Folder/");
   });
-
-  it("matches a quote that is still being typed", async () => {
-    useLocalWindows();
-    mockDir([entry("My Folder", "dir")]);
-
-    const options = await complete("'My Fol");
-
-    expect(options.map((o) => o.label)).toEqual(["'My Folder'/"]);
+  it.each(["C:\\work\\My", "C:/work/My", "'C:/work/My"])(
+    "recognizes drive paths in %s",
+    async (token) => {
+      invoke.mockResolvedValue([entry("My Folder", "dir")]);
+      const result = await pathCompletions(token, "D:/elsewhere");
+      expect(invoke.mock.calls[0][1].path).toBe("C:/work/");
+      expect(inserted(required(result).options[0])).toBe(
+        "'C:/work/My Folder/'",
+      );
+    },
+  );
+  it("recognizes UNC paths", async () => {
+    invoke.mockResolvedValue([entry("file")]);
+    await pathCompletions("\\\\server\\share\\fi", "C:/work");
+    expect(invoke.mock.calls[0][1].path).toBe("//server/share/");
   });
-
-  it("keeps POSIX escaping in a WSL workspace even on a Windows host", async () => {
-    useWsl();
-    mockDir([entry("My Folder", "dir")]);
-
-    const [option] = await complete("My");
-
-    expect(option.label).toBe("My\\ Folder/");
-  });
-
-  it("unescapes backslashes before reading a WSL workspace directory", async () => {
-    useWsl();
-    mockDir([entry("sub dir", "dir")]);
-
-    await complete("My\\ Folder/sub");
-
-    expect(invoke).toHaveBeenCalledWith(
-      "fs_read_dir",
-      expect.objectContaining({ path: "/work/My Folder" }),
+  it("uses POSIX escapes and preserves literal backslashes in WSL", async () => {
+    workspace.env = { kind: "wsl", distro: "Ubuntu" };
+    invoke.mockResolvedValue([entry("it's here", "dir")]);
+    const result = await pathCompletions("My\\ Folder/a\\\\b/it", "/work");
+    expect(invoke.mock.calls[0][1].path).toBe("/work/My Folder/a\\b/");
+    expect(inserted(required(result).options[0])).toBe(
+      "My\\ Folder/a\\\\b/it\\'s\\ here/",
     );
   });
 });
+
+function required<T>(value: T | null | undefined): T {
+  if (value == null) throw new Error("Expected a completion result");
+  return value;
+}

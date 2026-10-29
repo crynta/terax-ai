@@ -112,7 +112,7 @@ describe("escapeForShell", () => {
 
 describe("unescapeForShell", () => {
   it("leaves plain text untouched", () => {
-    expect(unescapeForShell("My Folder", false)).toBe("My Folder");
+    expect(unescapeForShell("MyFolder", false)).toBe("MyFolder");
     expect(unescapeForShell("C:\\a\\b", true)).toBe("C:\\a\\b");
   });
 
@@ -153,7 +153,7 @@ describe("unescapeForShell", () => {
 
   it("round-trips a copied Windows quoted path followed by /fi", () => {
     const quoted = escapeForShell("C:\\a\\My Folder\\c.ts", true);
-    expect(unescapeForShell(quoted + "/fi", true)).toBe(
+    expect(unescapeForShell(`${quoted}/fi`, true)).toBe(
       "C:\\a\\My Folder\\c.ts/fi",
     );
   });
@@ -175,4 +175,53 @@ describe("unescapeForShell", () => {
   it("keeps empty input empty", () => {
     expect(unescapeForShell("", false)).toBe("");
   });
+});
+
+describe("literal shell words", () => {
+  it.each([
+    ["'My Folder'/sub", "My Folder/sub"],
+    ['"My Folder/sub', "My Folder/sub"],
+    ["'it'\\''s here'", "it's here"],
+    ['"a\\ b"', "a\\ b"],
+    ['"a\\$b"', "a$b"],
+    ["a\\\nb", "ab"],
+    ["'a\nb'", "a\nb"],
+  ])("decodes the POSIX word %s", (token, expected) => {
+    expect(unescapeForShell(token, false)).toBe(expected);
+  });
+  it.each([
+    "$HOME",
+    '"$HOME"',
+    "$(pwd)",
+    "`pwd`",
+    "~user/a",
+    "*.txt",
+    "a\\",
+    "a b",
+  ])("does not reinterpret %s as a literal path", (token) => {
+    expect(unescapeForShell(token, false)).toBeNull();
+  });
+  it.each([
+    ["'it''s here'", "it's here"],
+    ["'it’’s here'", "it’s here"],
+    ["‘a b’", "a b"],
+    ['"a"" b"', 'a" b'],
+    ["My` Folder", "My Folder"],
+    ['"a\\b"', "a\\b"],
+  ])("decodes the PowerShell word %s", (token, expected) => {
+    expect(unescapeForShell(token, true)).toBe(expected);
+  });
+  it.each(["line\nbreak", "it's\na file", "=ls", "it’s here", "‘quoted’"])(
+    "round trips literal %s",
+    (name) => {
+      for (const windows of [false, true])
+        expect(unescapeForShell(escapeForShell(name, windows), windows)).toBe(
+          name,
+        );
+    },
+  );
+});
+
+it.each(["@args", "a,b"])("preserves PowerShell expression %s", (token) => {
+  expect(unescapeForShell(token, true)).toBeNull();
 });

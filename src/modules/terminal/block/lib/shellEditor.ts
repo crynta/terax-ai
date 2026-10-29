@@ -1,5 +1,6 @@
 import "@/modules/terminal/block/block.css";
 
+import { unescapeForShell } from "@/lib/shellQuote";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
 import {
   acceptCompletion,
@@ -38,9 +39,9 @@ import { tags as t } from "@lezer/highlight";
 import { completionIcon } from "./completionIcons";
 import { historyOpen, historyPopover } from "./historyPopover";
 import { inlineSuggestion } from "./inlineSuggest";
-import { pathCompletions } from "./pathComplete";
+import { pathCompletionResult, pathCompletions } from "./pathComplete";
 import { usesWindowsShell } from "./shellSyntax";
-import { shellWordBefore } from "./shellWord";
+import { shellWordAt } from "./shellWord";
 
 const shellLanguage = StreamLanguage.define(shell);
 
@@ -239,18 +240,16 @@ function docWordOptions(ctx: CompletionContext, current: string): Completion[] {
   return out;
 }
 
-const PATH_VALID_FOR = /^[^/]*$/;
-
-function makeCompletionSource(
+export function makeCompletionSource(
   getCommands: () => string[],
   getCwd: () => string | null,
 ) {
   return async (ctx: CompletionContext): Promise<CompletionResult | null> => {
     if (historyOpen(ctx.state)) return null;
-    const line = ctx.state.doc.lineAt(ctx.pos);
-    const typed = ctx.state.doc.sliceString(line.from, ctx.pos);
-    const word = shellWordBefore(typed, usesWindowsShell());
-    const from = line.from + word.start;
+    const typed = ctx.state.doc.toString();
+    const windows = usesWindowsShell();
+    const word = shellWordAt(typed, ctx.pos, windows);
+    const from = word.start;
     if (from === ctx.pos && !ctx.explicit) return null;
     const before = typed.slice(0, word.start);
     if (SEGMENT_START.test(before)) {
@@ -262,13 +261,12 @@ function makeCompletionSource(
     }
     const cwd = getCwd();
     if (cwd) {
+      if (unescapeForShell(typed.slice(word.start, word.end), windows) === null)
+        return null;
       const res = await pathCompletions(word.text, cwd);
+      if (getCwd() !== cwd) return null;
       if (res?.options.length) {
-        return {
-          from: from + res.fromOffset,
-          options: res.options,
-          validFor: PATH_VALID_FOR,
-        };
+        return pathCompletionResult(word, res, windows, () => getCwd() === cwd);
       }
     }
     return {

@@ -1,4 +1,3 @@
-import { escapeForShell } from "@/lib/shellQuote";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
 export async function copyToClipboard(text: string): Promise<void> {
@@ -7,11 +6,6 @@ export async function copyToClipboard(text: string): Promise<void> {
   } catch {
     // Best-effort; ignore in environments without clipboard permission.
   }
-}
-
-/** Copy a path in a form that pastes into the terminal as typed. */
-export async function copyPathToClipboard(path: string): Promise<void> {
-  await copyToClipboard(escapeForShell(path));
 }
 
 export function relativePath(rootPath: string, path: string): string {

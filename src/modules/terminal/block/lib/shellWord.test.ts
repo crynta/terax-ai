@@ -1,82 +1,66 @@
 import { describe, expect, it } from "vitest";
-import { shellWordBefore } from "./shellWord";
+import { shellWordAt } from "./shellWord";
 
-const posix = (line: string) => shellWordBefore(line, false);
-const windows = (line: string) => shellWordBefore(line, true);
+for (const windows of [false, true]) {
+  describe(windows ? "PowerShell words" : "POSIX words", () => {
+    it.each([
+      ["cd src/te", "src/te"],
+      ["cat 'a b' c", "c"],
+      ['cat "a b" c', "c"],
+      ["cd 'My Fol", "'My Fol"],
+      ["cd 'My Folder/sub", "'My Folder/sub"],
+      ["cd 'My Folder'/su", "'My Folder'/su"],
+      ["echo hi; cd 'My F", "'My F"],
+      ["ls 'a'|'b c", "'b c"],
+      ["cat café/a,b.txt", "café/a,b.txt"],
+      ["cd C:/work", "C:/work"],
+      ["cd ", ""],
+      ["cat 'line\nbreak", "'line\nbreak"],
+    ])("finds the complete argument in %s", (line, word) => {
+      expect(shellWordAt(line, line.length, windows)).toEqual({
+        start: line.length - word.length,
+        end: line.length,
+        text: word,
+      });
+    });
 
-describe("shellWordBefore (posix)", () => {
-  it("matches a plain argument", () => {
-    expect(posix("cd src/te")).toEqual({ start: 3, text: "src/te" });
+    it("includes the closing quote and suffix when the cursor is inside a word", () => {
+      const line = 'cat "My Folder/notes" next';
+      expect(shellWordAt(line, 7, windows)).toEqual({
+        start: 4,
+        end: 21,
+        text: '"My',
+      });
+    });
+
+    it("does not truncate a long path in the middle of a quote", () => {
+      const token = `'${"a".repeat(300)} folder'/sub`;
+      const line = `cd ${token}`;
+      expect(shellWordAt(line, line.length, windows).text).toBe(token);
+    });
   });
+}
 
-  it("keeps a backslash-escaped name in one word", () => {
-    expect(posix("cd My\\ Fol").text).toBe("My\\ Fol");
-    expect(posix("ls My\\ Folder/ne").text).toBe("My\\ Folder/ne");
-  });
-
-  it("keeps an escaped space inside a completed path in one word", () => {
-    expect(posix("cat My\\ Folder/").text).toBe("My\\ Folder/");
-  });
-
-  it("stops at an unescaped space", () => {
-    expect(posix("cd My ")).toEqual({ start: 6, text: "" });
-    expect(posix("git status ")).toEqual({ start: 11, text: "" });
-  });
-
-  it("treats an escaped backslash as one character", () => {
-    expect(posix("cd a\\\\b").text).toBe("a\\\\b");
-  });
-
-  it("still completes the argument after a command separator", () => {
-    expect(posix("echo hi; cd My\\ F")).toEqual({ start: 12, text: "My\\ F" });
-  });
-
-  it("treats quotes as ordinary separators, since it writes backslash escapes", () => {
-    expect(posix("cd 'My Folder'")).toEqual({ start: 14, text: "" });
-  });
+it.each(["My\\ Fol", "a\\\\b", "My\\ Folder/ne", "a\\;b", 'a\\"b'])(
+  "keeps POSIX escapes in %s",
+  (token) => {
+    expect(shellWordAt(`cd ${token}`, token.length + 3, false).text).toBe(
+      token,
+    );
+  },
+);
+it("treats Windows backslashes as separators, not escapes", () => {
+  expect(shellWordAt("cat dir\\ next", 13, true).text).toBe("next");
 });
-
-describe("shellWordBefore (windows)", () => {
-  it("matches a plain argument", () => {
-    expect(windows("cd src\\te")).toEqual({ start: 3, text: "src\\te" });
-  });
-
-  it("keeps a backslash-escaped name in one word", () => {
-    expect(windows("cd My\\ Folder/ne").text).toBe("My\\ Folder/ne");
-  });
-
-  it("keeps a completed quoted path together", () => {
-    expect(windows("cd 'My Folder'/su").text).toBe("'My Folder'/su");
-    expect(windows("cd 'My Folder'").text).toBe("'My Folder'");
-  });
-
-  it("keeps a still-open quoted path together", () => {
-    expect(windows("cd 'My Fol")).toEqual({ start: 3, text: "'My Fol" });
-    expect(windows("cd 'My Folder/sub").text).toBe("'My Folder/sub");
-  });
-
-  it("keeps a quoted segment after a slash together", () => {
-    expect(windows("cd dir/'My Fol")).toEqual({
-      start: 3,
-      text: "dir/'My Fol",
-    });
-  });
-
-  it("does not swallow the next argument after a complete quoted word", () => {
-    expect(windows("cat 'a b' c")).toEqual({ start: 10, text: "c" });
-    expect(windows('cat "a b" c')).toEqual({ start: 10, text: "c" });
-    expect(windows("a 'b c' d")).toEqual({ start: 8, text: "d" });
-  });
-
-  it("stops at a command separator even inside a closed quote run", () => {
-    expect(windows("echo 'a' && cat 'b c")).toEqual({
-      start: 16,
-      text: "'b c",
-    });
-    expect(windows("ls 'a'|'b c")).toEqual({ start: 7, text: "'b c" });
-  });
-
-  it("stops at an unescaped space", () => {
-    expect(windows("cd My ")).toEqual({ start: 6, text: "" });
-  });
+it("keeps PowerShell escaped spaces and doubled quotes together", () => {
+  for (const token of [
+    "My` Folder",
+    "'it''s here'",
+    "‘it’’s here’",
+    '"a"" b"',
+  ]) {
+    expect(shellWordAt(`cat ${token}`, token.length + 4, true).text).toBe(
+      token,
+    );
+  }
 });
