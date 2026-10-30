@@ -388,6 +388,9 @@ export function useSourceControlPanel(
   const openrouterModelId = usePreferencesStore(
     (state) => state.openrouterModelId,
   );
+  const requestyModelId = usePreferencesStore(
+    (state) => state.requestyModelId,
+  );
   const [panelState, setPanelState] = useState<PanelState>("closed");
   const [repo, setRepo] = useState<GitRepoInfo | null>(null);
   const [status, setStatus] = useState<GitStatusSnapshot | null>(null);
@@ -498,6 +501,9 @@ export function useSourceControlPanel(
     if (selectedModel.id === "openrouter-custom" && !openrouterModelId.trim()) {
       return "Connect an AI provider to generate commit messages";
     }
+    if (selectedModel.id === "requesty-custom" && !requestyModelId.trim()) {
+      return "Connect an AI provider to generate commit messages";
+    }
     return null;
   }, [
     hasApiKeyForSelected,
@@ -507,6 +513,7 @@ export function useSourceControlPanel(
     openaiCompatibleBaseURL,
     openaiCompatibleModelId,
     openrouterModelId,
+    requestyModelId,
     selectedModel,
     stagedEntries.length,
   ]);
@@ -891,6 +898,7 @@ export function useSourceControlPanel(
           openaiCompatibleBaseURL,
           openaiCompatibleModelId,
           openrouterModelId,
+          requestyModelId,
         },
       );
       const result = await generateText({
@@ -932,6 +940,7 @@ export function useSourceControlPanel(
     openaiCompatibleBaseURL,
     openaiCompatibleModelId,
     openrouterModelId,
+    requestyModelId,
     repo,
     selectedModelId,
     selectedModelSupportsTemperature,
