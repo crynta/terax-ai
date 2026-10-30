@@ -30,12 +30,12 @@ The comparison surface normalizes paths: backslashes to forward slashes, strips 
 
 ## Workspace authorization registry
 
-`WorkspaceRegistry` (`src-tauri/src/modules/workspace.rs:20`) tracks directories that PTY spawn, git commands, and AI tools are allowed to operate in.
+`WorkspaceRegistry` (`src-tauri/src/modules/workspace.rs`) tracks directories that PTY spawn, git commands, and AI tools are allowed to operate in.
 
 - `workspace_authorize` adds a directory.
 - `authorize_spawn_cwd` rejects a spawn cwd outside an authorized root.
 - `authorize_user_spawn_cwd` registers the user's chosen cwd as a new root instead of rejecting it.
-- The registry is bootstrapped with the launch directory and the user's home directory (`workspace.rs:135`).
+- The registry is bootstrapped with the launch directory and the user's home directory (`bootstrap_registry`).
 
 This is the allow side of the file-system boundary. Any new feature that spawns a shell or mutates files outside the current workspace must interact with this registry.
 
@@ -44,7 +44,7 @@ This is the allow side of the file-system boundary. Any new feature that spawns 
 In `src/modules/ai/tools/tools.ts`:
 
 - Read-only tools (`read_file`, `list_directory`, `grep`, `glob`) auto-execute after passing the deny-list.
-- Mutating tools (`write_file`, `edit`, `multi_edit`, `create_directory`, `run_command`, `shell_session_run`, `shell_bg_spawn`) set `needsApproval: true`. The AI SDK pauses and surfaces a `tool-approval-request` part rendered as a confirmation card.
+- Mutating tools (`write_file`, `edit`, `multi_edit`, `create_directory`, `bash_run`, `bash_background`) and the coding-agent tools (`spawn_coding_agent`, `send_to_agent`) set `needsApproval: true`. The AI SDK pauses and surfaces a `tool-approval-request` part rendered as a confirmation card.
 - `edit` / `multi_edit` enforce a read-before-edit invariant: the model must have read the file earlier in the session.
 
 Auto-send after approval uses `lastAssistantMessageIsCompleteWithApprovalResponses`.
