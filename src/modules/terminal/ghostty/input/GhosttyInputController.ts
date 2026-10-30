@@ -233,11 +233,19 @@ export class GhosttyInputController {
 
   private readonly handleKeyDown = (event: KeyboardEvent): void => {
     this.nativeSelection?.reset();
+    // WKWebView can tag Option arrows as 229 without an active composition.
     if (
       event.defaultPrevented ||
       this.composing ||
       event.isComposing ||
-      event.keyCode === 229 ||
+      (event.keyCode === 229 &&
+        !(
+          this.isMac &&
+          event.altKey &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          (event.key === "ArrowLeft" || event.key === "ArrowRight")
+        )) ||
       event.key === "Dead" ||
       event.key === "Process"
     )

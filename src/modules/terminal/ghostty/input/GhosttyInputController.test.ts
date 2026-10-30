@@ -27,6 +27,69 @@ describe("terminalMouseModifiers", () => {
 });
 
 describe("GhosttyInputController", () => {
+  it.each([false, true])(
+    "routes macOS Option arrows tagged 229 (alternate: %s)",
+    (alternateScreen) => {
+      const input = new FakeTextArea();
+      const onData = vi.fn();
+      const base = inputModel();
+      const encodeKey = vi.fn(() => new Uint8Array([27, 91, 68]));
+      const controller = new GhosttyInputController({
+        model: {
+          ...base,
+          modes: () => ({ ...base.modes(), alternateScreen }),
+          encodeKey,
+        },
+        input: input as unknown as HTMLTextAreaElement,
+        pointerTarget: new FakeElement() as unknown as HTMLElement,
+        cellSize: () => ({ width: 10, height: 20 }),
+        isMac: true,
+        onCopy: () => false,
+        onData,
+      });
+      try {
+        for (const [key, sequence] of [
+          ["ArrowLeft", "\x1bb"],
+          ["ArrowRight", "\x1bf"],
+        ]) {
+          const event = keyboardEvent({
+            key,
+            code: key,
+            altKey: true,
+            keyCode: 229,
+          });
+          input.dispatchEvent(event);
+          expect(event.defaultPrevented).toBe(true);
+          expect(new TextDecoder().decode(onData.mock.lastCall?.[0])).toBe(
+            alternateScreen ? "\x1b[D" : sequence,
+          );
+        }
+        expect(encodeKey).toHaveBeenCalledTimes(alternateScreen ? 2 : 0);
+        onData.mockClear();
+        for (const values of [
+          { key: "a", code: "KeyA" },
+          { key: "Process", code: "ArrowLeft" },
+          { key: "ArrowLeft", code: "ArrowLeft", isComposing: true },
+        ])
+          input.dispatchEvent(
+            keyboardEvent({ ...values, altKey: true, keyCode: 229 }),
+          );
+        input.dispatchEvent(new Event("compositionstart"));
+        input.dispatchEvent(
+          keyboardEvent({
+            key: "ArrowLeft",
+            code: "ArrowLeft",
+            altKey: true,
+            keyCode: 229,
+          }),
+        );
+        expect(onData).not.toHaveBeenCalled();
+      } finally {
+        controller.dispose();
+      }
+    },
+  );
+
   it.each(["ghostty-vt.wasm", "ghostty-vt-scalar.wasm"])(
     "leaves macOS Command shortcuts to the application in legacy and Kitty modes (%s)",
     async (artifact) => {
