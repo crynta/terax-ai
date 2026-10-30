@@ -11,6 +11,7 @@ import { encodeTerminalPaste } from "./terminalInputEncoding";
 
 import { TerminalInputProxy } from "@/modules/terminal/ghostty/input/TerminalInputProxy";
 import { TerminalNativeSelection } from "@/modules/terminal/ghostty/input/TerminalNativeSelection";
+import { ClipboardInputQueue } from "@/modules/terminal/ghostty/input/ClipboardInputQueue";
 
 const DUPLICATE_INPUT_WINDOW_MS = 75;
 
@@ -138,7 +139,9 @@ export type GhosttyInputControllerOptions = {
   readonly cellSize: () => { width: number; height: number };
   /** CSS pixels the drawn grid is moved up inside the pointer target; zero when absent. */
   readonly gridShiftY?: () => number;
-  readonly onData: (bytes: Uint8Array) => void;
+  readonly onData:
+    | ((bytes: Uint8Array) => boolean)
+    | ((bytes: Uint8Array) => void);
   readonly onCopy: () => boolean;
   readonly getSelection?: () => string | null;
   readonly onPaste?: (text: string) => boolean;
@@ -146,6 +149,8 @@ export type GhosttyInputControllerOptions = {
   readonly onKeyDown?: (event: KeyboardEvent) => boolean;
   readonly macOptionIsMeta?: boolean;
   readonly isMac?: boolean;
+  readonly isWindows?: boolean;
+  readonly onClipboardError?: (error: unknown) => void;
   /** Selected-placeholder input proxy (a macOS WebKit fix); defaults to `isMac`. */
   readonly inputPlaceholder?: boolean;
 };
@@ -153,6 +158,8 @@ export type GhosttyInputControllerOptions = {
 export class GhosttyInputController {
   private readonly encoder = new TextEncoder();
   private readonly isMac: boolean;
+  private readonly isWindows: boolean;
+  private readonly clipboard: ClipboardInputQueue;
   private readonly proxy: TerminalInputProxy;
   private readonly nativeSelection: TerminalNativeSelection | null;
   private readonly pressedKeys = new Map<string, KeyEvent>();
@@ -164,9 +171,17 @@ export class GhosttyInputController {
   private wheelRemainder = 0;
   private lastMouseMotion: string | null = null;
   private disposed = false;
+  private pasteEventPending = false;
 
   constructor(private readonly options: GhosttyInputControllerOptions) {
     this.isMac = options.isMac ?? /Mac|iPhone|iPad/.test(navigator.userAgent);
+    this.isWindows = options.isWindows ?? /Windows/.test(navigator.userAgent);
+    this.clipboard = new ClipboardInputQueue({
+      read: readTerminalClipboard,
+      paste: (text) => this.paste(text),
+      send: (bytes) => options.onData(bytes) !== false,
+      error: (error) => options.onClipboardError?.(error),
+    });
     this.proxy = new TerminalInputProxy(options.input, {
       placeholder: options.inputPlaceholder ?? this.isMac,
     });
@@ -199,11 +214,13 @@ export class GhosttyInputController {
     });
   }
 
-  paste(text: string): void {
-    if (this.disposed || !text) return;
+  paste(text: string): boolean {
+    if (this.disposed) return false;
+    if (!text) return true;
     this.nativeSelection?.reset();
-    if (this.options.onPaste?.(text)) return;
-    this.emitText(
+    this.clearSelection();
+    if (this.options.onPaste?.(text)) return true;
+    return this.emitText(
       encodeTerminalPaste(text, this.options.model.modes().bracketedPaste),
       "paste",
       false,
@@ -214,6 +231,7 @@ export class GhosttyInputController {
     if (this.disposed) return;
     this.disposed = true;
     this.nativeSelection?.dispose();
+    this.clipboard.dispose();
     this.proxy.dispose();
     this.pressedKeys.clear();
     const { input, pointerTarget } = this.options;
@@ -243,15 +261,28 @@ export class GhosttyInputController {
     )
       return;
 
-    if (isPasteShortcut(event, this.isMac)) {
+    if (isPasteShortcut(event, this.isMac, this.isWindows)) {
       consume(event);
-      void readTerminalClipboard().then((text) => this.paste(text));
+      if (!event.repeat) this.clipboard.paste();
       return;
     }
-    if (isCopyShortcut(event, this.isMac) && this.options.onCopy()) {
+    if (
+      isCopyShortcut(event, this.isMac, this.isWindows) &&
+      ((event.repeat && this.options.model.trackedSelection?.()) ||
+        this.options.onCopy())
+    ) {
       consume(event);
       return;
     }
+
+    if (
+      event.ctrlKey &&
+      !event.altKey &&
+      !event.metaKey &&
+      !event.shiftKey &&
+      event.code === "KeyC"
+    )
+      this.clipboard.cancel();
 
     if (this.options.onKeyDown?.(event)) {
       consume(event);
@@ -308,8 +339,9 @@ export class GhosttyInputController {
     const encoded = this.encodeKeyDown(event, key);
     if (encoded.byteLength > 0) {
       consume(event);
+      this.clearSelection();
       this.options.model.scrollToBottom();
-      this.options.onData(encoded);
+      this.clipboard.send(encoded);
     }
   };
 
@@ -339,7 +371,7 @@ export class GhosttyInputController {
     });
     if (encoded.byteLength > 0) {
       consume(event);
-      this.options.onData(encoded);
+      this.clipboard.send(encoded);
     }
   };
 
@@ -362,8 +394,12 @@ export class GhosttyInputController {
         data = "\x1b[3~";
         break;
       case "insertFromPaste":
-        if (event.data) this.paste(event.data);
         consume(event);
+        if (!this.pasteEventPending) {
+          const text = event.dataTransfer?.getData("text/plain") ?? event.data;
+          if (text) this.paste(text);
+          else this.clipboard.paste();
+        }
         return;
       default:
         return;
@@ -392,10 +428,14 @@ export class GhosttyInputController {
   };
 
   private readonly handlePaste = (event: ClipboardEvent): void => {
-    const text = event.clipboardData?.getData("text/plain") ?? "";
-    if (!text) return;
     consume(event);
-    this.paste(text);
+    this.pasteEventPending = true;
+    queueMicrotask(() => {
+      this.pasteEventPending = false;
+    });
+    const text = event.clipboardData?.getData("text/plain") ?? "";
+    if (text) this.paste(text);
+    else this.clipboard.paste();
   };
 
   private readonly handleFocus = (): void => {
@@ -560,8 +600,8 @@ export class GhosttyInputController {
     scrollToBottom = true,
     editableText = false,
     keyEvent?: KeyboardEvent,
-  ): void {
-    if (this.disposed) return;
+  ): boolean {
+    if (this.disposed) return false;
     const now = performance.now();
     if (
       deduplicate &&
@@ -571,17 +611,23 @@ export class GhosttyInputController {
     ) {
       this.lastData = "";
       this.lastSource = null;
-      return;
+      return true;
     }
     this.lastData = data;
     this.lastSource = source;
     this.lastDataAt = now;
-    if (editableText && this.options.onText?.(data)) return;
+    if (scrollToBottom) this.clearSelection();
+    if (editableText && this.options.onText?.(data)) return true;
     if (scrollToBottom) this.options.model.scrollToBottom();
     const bytes = keyEvent
       ? this.encodeKeyDown(keyEvent, KEY_MAP[keyEvent.code])
       : this.encoder.encode(data);
-    if (bytes.byteLength > 0) this.options.onData(bytes);
+    return bytes.byteLength === 0 || this.clipboard.send(bytes);
+  }
+
+  private clearSelection(): void {
+    if (this.options.model.trackedSelection?.())
+      this.options.model.setSelection?.(null);
   }
 }
 
@@ -639,7 +685,11 @@ function modifiers(event: KeyboardEvent): Mods {
   return result;
 }
 
-function isCopyShortcut(event: KeyboardEvent, isMac: boolean): boolean {
+function isCopyShortcut(
+  event: KeyboardEvent,
+  isMac: boolean,
+  isWindows: boolean,
+): boolean {
   if (isMac) {
     return (
       event.metaKey && !event.ctrlKey && !event.altKey && event.code === "KeyC"
@@ -647,25 +697,30 @@ function isCopyShortcut(event: KeyboardEvent, isMac: boolean): boolean {
   }
   return (
     event.ctrlKey &&
-    event.shiftKey &&
     !event.altKey &&
     !event.metaKey &&
-    event.code === "KeyC"
+    ((event.code === "KeyC" && (event.shiftKey || isWindows)) ||
+      (event.code === "Insert" && !event.shiftKey))
   );
 }
 
-function isPasteShortcut(event: KeyboardEvent, isMac: boolean): boolean {
+function isPasteShortcut(
+  event: KeyboardEvent,
+  isMac: boolean,
+  isWindows: boolean,
+): boolean {
   if (isMac) {
     return (
       event.metaKey && !event.ctrlKey && !event.altKey && event.code === "KeyV"
     );
   }
   return (
-    event.ctrlKey &&
-    event.shiftKey &&
     !event.altKey &&
     !event.metaKey &&
-    event.code === "KeyV"
+    ((event.ctrlKey &&
+      event.code === "KeyV" &&
+      (event.shiftKey || isWindows)) ||
+      (event.shiftKey && !event.ctrlKey && event.code === "Insert"))
   );
 }
 

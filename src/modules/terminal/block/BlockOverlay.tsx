@@ -84,7 +84,9 @@ function fmtTime(ms: number): string {
 function copy(text: string, message: string) {
   void writeTerminalClipboard(text)
     .then(() => toast.success(message))
-    .catch(() => {});
+    .catch(() =>
+      toast.error("Unable to copy to clipboard", { id: "terminal-copy" }),
+    );
 }
 
 function sameBlock(

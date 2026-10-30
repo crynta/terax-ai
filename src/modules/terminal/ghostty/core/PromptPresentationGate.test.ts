@@ -7,6 +7,25 @@ import {
 afterEach(() => vi.useRealTimers());
 
 describe("PromptPresentationGate", () => {
+  it("does not extend the deadline when prompt starts repeat", () => {
+    vi.useFakeTimers();
+    const release = vi.fn();
+    const gate = new PromptPresentationGate(release);
+    gate.observe({ type: "prompt-start" });
+    for (let index = 0; index < 9; index++) {
+      vi.advanceTimersByTime(100);
+      gate.observe({ type: "prompt-start" });
+    }
+    expect(release).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(100);
+    expect(release).toHaveBeenCalledOnce();
+    expect(gate.suppressed).toBe(false);
+    gate.observe({ type: "prompt-start" });
+    expect(gate.suppressed).toBe(true);
+    gate.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("holds a multi-chunk prompt until OSC 133 reports prompt end", () => {
     vi.useFakeTimers();
     const release = vi.fn();
