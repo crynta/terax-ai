@@ -1,8 +1,24 @@
 import type { ProviderKeys } from "./keyring";
 
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
-const STT_TIMEOUT_GROQ_MS = 30_000;
-const STT_TIMEOUT_WHISPERCPP_MS = 180_000;
+
+export const STT_TIMEOUT_FLOOR_MS = 30_000;
+export const STT_TIMEOUT_CEIL_MS = 300_000;
+export const STT_TIMEOUT_MS_PER_MB = 90_000;
+export const STT_TIMEOUT_WHISPERCPP_FLOOR_MS = 180_000;
+export const STT_TIMEOUT_WHISPERCPP_CEIL_MS = 900_000;
+
+const BYTES_PER_MB = 1024 * 1024;
+
+export function sttTimeoutMs(
+  byteLength: number,
+  floorMs: number = STT_TIMEOUT_FLOOR_MS,
+  ceilMs: number = STT_TIMEOUT_CEIL_MS,
+  msPerMb: number = STT_TIMEOUT_MS_PER_MB,
+): number {
+  const scaled = Math.ceil((Math.max(0, byteLength) / BYTES_PER_MB) * msPerMb);
+  return Math.min(ceilMs, Math.max(floorMs, scaled));
+}
 
 async function fetchWithTimeout(
   input: RequestInfo | URL,
@@ -44,11 +60,11 @@ async function transcribeViaRest(
   const headers: Record<string, string> = {};
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
-  const res = await fetchWithTimeout(`${baseURL}/audio/transcriptions`, {
-    method: "POST",
-    headers,
-    body: form,
-  }, STT_TIMEOUT_GROQ_MS);
+  const res = await fetchWithTimeout(
+    `${baseURL}/audio/transcriptions`,
+    { method: "POST", headers, body: form },
+    sttTimeoutMs(blob.size),
+  );
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new Error(
@@ -109,10 +125,15 @@ async function transcribeWhisperCpp(
   form.append("file", wav, "audio.wav");
   form.append("response_format", "text");
 
-  const res = await fetchWithTimeout(`${baseURL}/inference`, {
-    method: "POST",
-    body: form,
-  }, STT_TIMEOUT_WHISPERCPP_MS);
+  const res = await fetchWithTimeout(
+    `${baseURL}/inference`,
+    { method: "POST", body: form },
+    sttTimeoutMs(
+      wav.size,
+      STT_TIMEOUT_WHISPERCPP_FLOOR_MS,
+      STT_TIMEOUT_WHISPERCPP_CEIL_MS,
+    ),
+  );
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new Error(

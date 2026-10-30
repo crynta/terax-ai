@@ -11,6 +11,7 @@ import {
   KeyboardIcon,
   LayoutTwoColumnIcon,
   LayoutTwoRowIcon,
+  Mic01Icon,
   PaintBoardIcon,
   Search01Icon,
   Settings01Icon,
@@ -55,6 +56,8 @@ export type CommandPaletteActionContext = {
   toggleHiddenFiles: () => void;
   toggleAi: () => void;
   askAiSelection: () => void;
+  toggleVoice: () => void;
+  cancelVoice: () => void;
   openSettings: () => void;
   openKeyboardShortcuts: () => void;
   spaces: { id: string; name: string }[];
@@ -301,6 +304,24 @@ export function createCommandItems(
       icon: SparklesIcon,
       shortcutId: "ai.askSelection",
       run: ctx.askAiSelection,
+    },
+    {
+      id: "voice.toggle",
+      title: "Toggle voice dictation",
+      group: "AI",
+      keywords: ["voice", "dictate", "speech", "microphone", "transcribe"],
+      icon: Mic01Icon,
+      shortcutId: "voice.toggle",
+      run: ctx.toggleVoice,
+    },
+    {
+      id: "voice.cancel",
+      title: "Cancel voice dictation",
+      group: "AI",
+      keywords: ["voice", "dictate", "discard", "microphone", "stop"],
+      icon: Cancel01Icon,
+      shortcutId: "voice.cancel",
+      run: ctx.cancelVoice,
     },
   ];
 }

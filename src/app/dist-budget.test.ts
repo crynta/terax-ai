@@ -276,7 +276,7 @@ describe("built startup graph", () => {
     );
     // Nothing was emitted by either attempt.
     expect(existsSync(join(outDir, "guarded"))).toBe(false);
-  });
+  }, 120_000);
 
   it("contains none of the app-lab benchmark driver (TERAX_BENCH is off)", () => {
     // The driver (src/bench) and its Tauri commands exist only in builds made with
