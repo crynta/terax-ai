@@ -254,7 +254,12 @@ export function SpaceSwitcher({
           />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" sideOffset={6} className="w-[20rem] p-1.5">
+      <PopoverContent
+        align="start"
+        sideOffset={6}
+        className="w-[20rem] p-1.5"
+        onOpenAutoFocus={(event) => event.preventDefault()}
+      >
         <div className="flex items-center justify-between px-1.5 pb-1.5 pt-0.5">
           <span className="text-xs font-semibold text-foreground">Spaces</span>
           {shortcut && (
