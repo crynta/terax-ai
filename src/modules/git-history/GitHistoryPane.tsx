@@ -335,14 +335,15 @@ export function GitHistoryPane({
   const loadMore = useCallback(async () => {
     if (inflightMoreRef.current || endReached) return;
     if (loadStatus !== "idle") return;
-    const last = commits[commits.length - 1];
-    if (!last) return;
+    const anchor = commits[0];
+    if (!anchor) return;
     inflightMoreRef.current = true;
     setLoadStatus("more");
     try {
       const entries = await native.gitLog(repoRoot, {
         limit: PAGE_SIZE,
-        beforeSha: last.sha,
+        skip: commits.length,
+        anchorSha: anchor.sha,
       });
       setCommits((prev) => {
         const seen = new Set(prev.map((c) => c.sha));

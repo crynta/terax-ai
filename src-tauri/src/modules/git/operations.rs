@@ -508,20 +508,25 @@ pub fn log(
     registry: &WorkspaceRegistry,
     repo_root: &str,
     limit: u32,
-    before_sha: Option<&str>,
+    skip: u32,
+    anchor_sha: Option<&str>,
     workspace: &WorkspaceEnv,
 ) -> Result<Vec<GitLogEntry>> {
     let repo_root = authorized_repo_root(registry, repo_root, workspace)?;
     ensure_git_available(&repo_root.workspace)?;
     let bounded = limit.clamp(1, MAX_LOG_LIMIT);
     let count_arg = format!("--max-count={bounded}");
+    let skip_arg = format!("--skip={skip}");
     let format_arg = format!("--format={LOG_FORMAT}");
-    let cursor = match before_sha {
+    // Pages are slices of `git log` from a fixed commit. The history reachable
+    // from it never changes, so paging stays exact even if HEAD moves, and
+    // commits that only a merge's second parent reaches are not skipped.
+    let anchor = match anchor_sha {
         Some(sha) if !sha.is_empty() => {
             if !sha_is_safe(sha) {
-                return Err(GitError::command("git log", "invalid cursor sha"));
+                return Err(GitError::command("git log", "invalid anchor sha"));
             }
-            Some(format!("{sha}^"))
+            Some(sha)
         }
         _ => None,
     };
@@ -530,10 +535,11 @@ pub fn log(
         OsStr::new("--no-color"),
         OsStr::new("--shortstat"),
         OsStr::new(&count_arg),
+        OsStr::new(&skip_arg),
         OsStr::new(&format_arg),
     ];
-    if let Some(spec) = cursor.as_deref() {
-        args.push(OsStr::new(spec));
+    if let Some(sha) = anchor {
+        args.push(OsStr::new(sha));
     }
     let output = run_git(
         &repo_root.workspace,
@@ -555,7 +561,7 @@ pub fn log(
         }
         return ensure_success(&output, "git log failed").map(|_| Vec::new());
     }
-    let stdout = std::str::from_utf8(&output.stdout).unwrap_or("");
+    let stdout = String::from_utf8_lossy(&output.stdout);
     let mut entries: Vec<GitLogEntry> = Vec::with_capacity(bounded as usize);
     // Lines we get back interleave:
     //   <sha>\x1f<author>\x1f<email>\x1f<ts>\x1f<parents>\x1f<subject>
