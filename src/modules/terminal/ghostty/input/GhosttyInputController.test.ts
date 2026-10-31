@@ -1,5 +1,6 @@
 import type { GhosttyTerminalModelApi } from "@/modules/terminal/ghostty/GhosttyTerminalModel";
 import { readFile } from "node:fs/promises";
+import { Key, Mods } from "@terax/ghostty-core";
 import { TeraxGhostty } from "@terax/ghostty-core/adapted";
 import { describe, expect, it, vi } from "vitest";
 import { FakeElement, FakeTextArea } from "./fakeTextArea";
@@ -33,7 +34,11 @@ describe("GhosttyInputController", () => {
       const input = new FakeTextArea();
       const onData = vi.fn();
       const base = inputModel();
-      const encodeKey = vi.fn(() => new Uint8Array([27, 91, 68]));
+      const encodeKey = vi.fn<GhosttyTerminalModelApi["encodeKey"]>((event) =>
+        new TextEncoder().encode(
+          event.key === Key.LEFT ? "\x1b[1;3D" : "\x1b[1;3C",
+        ),
+      );
       const controller = new GhosttyInputController({
         model: {
           ...base,
@@ -48,10 +53,10 @@ describe("GhosttyInputController", () => {
         onData,
       });
       try {
-        for (const [key, sequence] of [
-          ["ArrowLeft", "\x1bb"],
-          ["ArrowRight", "\x1bf"],
-        ]) {
+        for (const [key, sequence, encodedKey, alternateSequence] of [
+          ["ArrowLeft", "\x1bb", Key.LEFT, "\x1b[1;3D"],
+          ["ArrowRight", "\x1bf", Key.RIGHT, "\x1b[1;3C"],
+        ] as const) {
           const event = keyboardEvent({
             key,
             code: key,
@@ -61,8 +66,12 @@ describe("GhosttyInputController", () => {
           input.dispatchEvent(event);
           expect(event.defaultPrevented).toBe(true);
           expect(new TextDecoder().decode(onData.mock.lastCall?.[0])).toBe(
-            alternateScreen ? "\x1b[D" : sequence,
+            alternateScreen ? alternateSequence : sequence,
           );
+          if (alternateScreen)
+            expect(encodeKey).toHaveBeenLastCalledWith(
+              expect.objectContaining({ key: encodedKey, mods: Mods.ALT }),
+            );
         }
         expect(encodeKey).toHaveBeenCalledTimes(alternateScreen ? 2 : 0);
         onData.mockClear();
@@ -89,6 +98,112 @@ describe("GhosttyInputController", () => {
       }
     },
   );
+
+  it.each(["ghostty-vt.wasm", "ghostty-vt-scalar.wasm"])(
+    "encodes both Option-arrow directions with the shipped core (%s)",
+    async (artifact) => {
+      const bytes = await readFile(
+        new URL(
+          `../../../../../packages/ghostty-core/adapted/${artifact}`,
+          import.meta.url,
+        ),
+      );
+      const core = await TeraxGhostty.loadBytes(Uint8Array.from(bytes).buffer);
+      const terminal = core.createTerminal(80, 24);
+      const input = new FakeTextArea();
+      const onData = vi.fn();
+      const controller = new GhosttyInputController({
+        model: {
+          ...inputModel(),
+          modes: () => terminal.modes(),
+          encodeKey: (event) => terminal.encodeKey(event),
+        },
+        input: input as unknown as HTMLTextAreaElement,
+        pointerTarget: new FakeElement() as unknown as HTMLElement,
+        cellSize: () => ({ width: 10, height: 20 }),
+        isMac: true,
+        onCopy: () => false,
+        onData,
+      });
+      try {
+        for (const alternateScreen of [false, true]) {
+          terminal.write(
+            new TextEncoder().encode(
+              alternateScreen ? "\x1b[?1049h" : "\x1b[?1049l",
+            ),
+          );
+          for (const [mode, eventType] of [
+            [0, ""],
+            [1, ""],
+            [11, ":1"],
+            [31, ":1"],
+          ] as const) {
+            terminal.write(new TextEncoder().encode(`\x1b[=${mode}u`));
+            for (const [key, normal, suffix] of [
+              ["ArrowLeft", "\x1bb", "D"],
+              ["ArrowRight", "\x1bf", "C"],
+            ]) {
+              onData.mockClear();
+              const event = keyboardEvent({
+                key,
+                code: key,
+                altKey: true,
+                keyCode: 229,
+              });
+              input.dispatchEvent(event);
+              expect(event.defaultPrevented).toBe(true);
+              expect(onData).toHaveBeenCalledOnce();
+              expect(new TextDecoder().decode(onData.mock.calls[0][0])).toBe(
+                alternateScreen ? `\x1b[1;3${eventType}${suffix}` : normal,
+              );
+            }
+          }
+        }
+      } finally {
+        controller.dispose();
+        terminal.dispose();
+      }
+    },
+  );
+
+  it.each([
+    { isMac: false },
+    { ctrlKey: true },
+    { metaKey: true },
+    { altKey: false },
+    { key: "ArrowUp", code: "ArrowUp" },
+    { key: "Dead" },
+    { key: "Process" },
+    { isComposing: true },
+  ])("retains the 229 guard for %j", ({ isMac = true, ...values }) => {
+    const input = new FakeTextArea();
+    const onData = vi.fn();
+    const encodeKey = vi.fn(() => Uint8Array.of(27, 91, 68));
+    const controller = new GhosttyInputController({
+      model: { ...inputModel(), encodeKey },
+      input: input as unknown as HTMLTextAreaElement,
+      pointerTarget: new FakeElement() as unknown as HTMLElement,
+      cellSize: () => ({ width: 10, height: 20 }),
+      isMac,
+      onCopy: () => false,
+      onData,
+    });
+    try {
+      const event = keyboardEvent({
+        key: "ArrowLeft",
+        code: "ArrowLeft",
+        altKey: true,
+        keyCode: 229,
+        ...values,
+      });
+      input.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+      expect(onData).not.toHaveBeenCalled();
+      expect(encodeKey).not.toHaveBeenCalled();
+    } finally {
+      controller.dispose();
+    }
+  });
 
   it.each(["ghostty-vt.wasm", "ghostty-vt-scalar.wasm"])(
     "leaves macOS Command shortcuts to the application in legacy and Kitty modes (%s)",
