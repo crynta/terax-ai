@@ -97,13 +97,13 @@ block2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSColor", "NSPasteboard", "NSPasteboardItem", "NSWindow", "NSWorkspace"] }
 objc2-foundation = { version = "0.3", features = ["NSArray", "NSURL", "NSString", "NSUserDefaults", "NSValue"] }
 fsevent-sys = "4.1"
-window-vibrancy = "0.6"
+window-vibrancy = "0.8"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3.6", default-features = false, features = [
 	"windows-native",
 ] }
-window-vibrancy = "0.6"
+window-vibrancy = "0.8"
 # The OS-level proxy setting (registry) is read by reqwest only with this
 # feature, and the previous reqwest honoured it unconditionally on Windows.
 reqwest = { version = "0.13", default-features = false, features = ["system-proxy"] }
