@@ -78,7 +78,7 @@ which = "8.0.4"
 proptest = "1"
 tokio = { version = "1", features = ["macros", "rt", "test-util", "time"] }
 tempfile = "3"
-wasmparser = { version = "=0.261.0", default-features = false, features = ["std", "validate", "features", "simd"] }
+wasmparser = { version = "=0.262.0", default-features = false, features = ["std", "validate", "features", "simd"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
