@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolveFontFamily } from "./fonts";
 
-const FALLBACK = '"JetBrains Mono", SFMono-Regular, Menlo, monospace';
+const FALLBACK =
+  '"JetBrains Mono", "Terax Terminal Symbols", SFMono-Regular, Menlo, monospace';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -48,7 +49,7 @@ describe("terminal font availability", () => {
     expect(context.measureText).toHaveBeenCalledTimes(calls);
   });
 
-  it("loads text fonts before canvas rasterization, only once per window", async () => {
+  it("loads text and symbol fonts before rasterization, only once per window", async () => {
     const load = vi.fn(async () => []);
     vi.stubGlobal("document", { fonts: { load } });
     const { ensureMonoFontsLoaded } = await import("./fonts");
@@ -57,7 +58,43 @@ describe("terminal font availability", () => {
     await first;
     expect(load).toHaveBeenCalledWith('400 14px "JetBrains Mono"');
     expect(load).toHaveBeenCalledWith('700 14px "JetBrains Mono"');
-    expect(load).toHaveBeenCalledTimes(2);
+    expect(load).toHaveBeenCalledWith(
+      '400 14px "Terax Terminal Symbols"',
+      "\ue0a0\ue718\u{f024b}",
+    );
+    expect(load).toHaveBeenCalledTimes(3);
+  });
+
+  it("waits for the symbol font before allowing canvas rasterization", async () => {
+    let resolveSymbols: () => void = () => undefined;
+    const load = vi.fn((font: string) =>
+      font.includes("Terax Terminal Symbols")
+        ? new Promise<void>((resolve) => {
+            resolveSymbols = resolve;
+          })
+        : Promise.resolve([]),
+    );
+    vi.stubGlobal("document", { fonts: { load } });
+    const { ensureMonoFontsLoaded } = await import("./fonts");
+    const ready = ensureMonoFontsLoaded();
+    const complete = vi.fn();
+    void ready.then(complete);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(complete).not.toHaveBeenCalled();
+    resolveSymbols();
+    await ready;
+    expect(complete).toHaveBeenCalledOnce();
+  });
+
+  it("allows rasterization if the symbol font cannot be loaded", async () => {
+    const load = vi.fn((font: string) =>
+      font.includes("Terax Terminal Symbols")
+        ? Promise.reject(new Error("Font unavailable"))
+        : Promise.resolve([]),
+    );
+    vi.stubGlobal("document", { fonts: { load } });
+    const { ensureMonoFontsLoaded } = await import("./fonts");
+    await expect(ensureMonoFontsLoaded()).resolves.toBeUndefined();
   });
 });
 
