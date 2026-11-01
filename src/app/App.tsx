@@ -97,6 +97,7 @@ import {
   useAgentActivityStore,
   useTerminalFileDrop,
   whenSessionReady,
+  pasteIntoSession,
   writeToSession,
 } from "@/modules/terminal";
 import type { TerminalSearchController } from "@/modules/terminal/search/TerminalSearchController";
@@ -110,6 +111,7 @@ import {
   WindowVibrancyBridge,
 } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
+import { usePushToTalk, useVoiceStore, VoiceRuntime } from "@/modules/voice";
 import {
   useWorkspaceEnvStore,
   type WorkspaceEnv,
@@ -369,6 +371,43 @@ export default function App() {
 
   useEditorFileSync({ tabs, tabsRef, editorRefs });
   useThemeFileEditing({ tabsRef, openFileTab });
+
+  const resolveVoiceTarget = useCallback((): ((text: string) => void) => {
+    const active = document.activeElement;
+    const aiFocused =
+      panelOpen && !!active?.closest('[data-voice-target="ai"]');
+    const editorHandle = isEditorTab
+      ? (editorRefs.current.get(activeId) ?? null)
+      : null;
+    if (!aiFocused && editorHandle) {
+      return (text) => editorHandle.insertText(text);
+    }
+    if (!aiFocused && isTerminalTab && activeLeafId !== null) {
+      const leafId = activeLeafId;
+      return (text) => void pasteIntoSession(leafId, text);
+    }
+    if (hasComposer) {
+      return (text) => {
+        openPanel();
+        window.dispatchEvent(
+          new CustomEvent<string>("terax:ai-voice-insert", { detail: text }),
+        );
+        focusInput(null);
+      };
+    }
+    return () => {};
+  }, [
+    panelOpen,
+    isEditorTab,
+    activeId,
+    isTerminalTab,
+    activeLeafId,
+    hasComposer,
+    openPanel,
+    focusInput,
+  ]);
+
+  usePushToTalk();
 
   const { explorerRoot, inheritedCwdForNewTab } = useWorkspaceCwd(
     activeTab,
@@ -941,6 +980,8 @@ export default function App() {
         toggleMini();
       },
       "ai.askSelection": onAskFromSelection,
+      "voice.toggle": () => useVoiceStore.getState().toggle(),
+      "voice.cancel": () => useVoiceStore.getState().requestCancel(),
       "agent.focusAttention": () => {
         const t = nextAttentionTarget();
         if (t) activateAgentTarget(t.tabId, t.leafId);
@@ -1279,6 +1320,8 @@ export default function App() {
             toggleHiddenFiles,
             toggleAi: togglePanelAndFocus,
             askAiSelection: askFromSelection,
+            toggleVoice: () => useVoiceStore.getState().toggle(),
+            cancelVoice: () => useVoiceStore.getState().requestCancel(),
             openSettings: () => void openSettingsWindow(),
             openKeyboardShortcuts: () => void openSettingsWindow("shortcuts"),
             spaces: useSpaces.getState().spaces,
@@ -1665,5 +1708,10 @@ export default function App() {
     </ThemeProvider>
   );
 
-  return <AiComposerProvider>{shell}</AiComposerProvider>;
+  return (
+    <AiComposerProvider>
+      {shell}
+      <VoiceRuntime resolveTarget={resolveVoiceTarget} />
+    </AiComposerProvider>
+  );
 }
