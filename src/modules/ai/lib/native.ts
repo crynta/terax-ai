@@ -332,11 +332,15 @@ export const native = {
       repoRoot,
       workspace: currentWorkspaceEnv(),
     }),
-  gitLog: (repoRoot: string, options?: { limit?: number; beforeSha?: string }) =>
+  gitLog: (
+    repoRoot: string,
+    options?: { limit?: number; skip?: number; anchorSha?: string },
+  ) =>
     invoke<GitLogEntry[]>("git_log", {
       repoRoot,
       limit: options?.limit ?? null,
-      beforeSha: options?.beforeSha ?? null,
+      skip: options?.skip ?? null,
+      anchorSha: options?.anchorSha ?? null,
       workspace: currentWorkspaceEnv(),
     }),
   gitShowCommit: (repoRoot: string, sha: string) =>

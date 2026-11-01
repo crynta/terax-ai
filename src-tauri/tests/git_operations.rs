@@ -192,7 +192,7 @@ fn stage_then_commit_produces_log_entry() {
     assert_eq!(commit.commit_sha.len(), 40);
 
     let entries =
-        operations::log(&fx.registry, &fx.repo_str(), 10, None, &fx.workspace).expect("log");
+        operations::log(&fx.registry, &fx.repo_str(), 10, 0, None, &fx.workspace).expect("log");
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].sha, commit.commit_sha);
     assert_eq!(entries[0].subject, "add a");
@@ -257,7 +257,7 @@ fn log_on_empty_repo_returns_empty_list() {
     }
     let fx = GitRepoFixture::new();
     let entries =
-        operations::log(&fx.registry, &fx.repo_str(), 10, None, &fx.workspace).expect("log");
+        operations::log(&fx.registry, &fx.repo_str(), 10, 0, None, &fx.workspace).expect("log");
     assert!(entries.is_empty());
 }
 
@@ -389,7 +389,8 @@ fn show_commit_diff_returns_patch_for_known_sha() {
     fx.run_git(&["add", "a.txt"]);
     fx.run_git(&["commit", "-q", "-m", "seed"]);
 
-    let entries = operations::log(&fx.registry, &fx.repo_str(), 10, None, &fx.workspace).unwrap();
+    let entries =
+        operations::log(&fx.registry, &fx.repo_str(), 10, 0, None, &fx.workspace).unwrap();
     let sha = &entries[0].sha;
 
     let diff = operations::show_commit_diff(&fx.registry, &fx.repo_str(), sha, &fx.workspace)
@@ -412,7 +413,7 @@ fn show_commit_diff_rejects_invalid_sha() {
 }
 
 #[test]
-fn log_paginates_with_before_sha_cursor() {
+fn log_paginates_with_skip_from_anchor_sha() {
     if skip_if_no_git() {
         return;
     }
@@ -423,20 +424,114 @@ fn log_paginates_with_before_sha_cursor() {
         fx.run_git(&["commit", "-q", "-m", &format!("c{i}")]);
     }
 
-    let first_page = operations::log(&fx.registry, &fx.repo_str(), 1, None, &fx.workspace).unwrap();
+    let first_page =
+        operations::log(&fx.registry, &fx.repo_str(), 1, 0, None, &fx.workspace).unwrap();
     assert_eq!(first_page.len(), 1);
-    let cursor = first_page[0].sha.clone();
+    let anchor = first_page[0].sha.clone();
 
     let second_page = operations::log(
         &fx.registry,
         &fx.repo_str(),
         10,
-        Some(&cursor),
+        1,
+        Some(&anchor),
         &fx.workspace,
     )
     .unwrap();
-    assert!(second_page.iter().all(|e| e.sha != cursor));
+    assert!(second_page.iter().all(|e| e.sha != anchor));
     assert_eq!(second_page.len(), 2);
+}
+
+#[test]
+fn log_paging_keeps_commits_reachable_only_through_a_merge() {
+    if skip_if_no_git() {
+        return;
+    }
+    let fx = GitRepoFixture::new();
+    let commit = |name: &str| {
+        fx.write_file(&format!("{name}.txt"), "x\n");
+        fx.run_git(&["add", "."]);
+        fx.run_git(&["commit", "-q", "-m", name]);
+    };
+    commit("root");
+    fx.run_git(&["checkout", "-q", "-b", "feat"]);
+    for n in ["f1", "f2", "f3"] {
+        commit(n);
+    }
+    fx.run_git(&["checkout", "-q", "main"]);
+    for n in ["m1", "m2", "m3"] {
+        commit(n);
+    }
+    fx.run_git(&["merge", "--no-ff", "-q", "-m", "merge feat", "feat"]);
+
+    let expected = git_stdout(&fx, &["log", "--format=%H"]);
+    assert_eq!(expected.len(), 8);
+
+    for page_size in [1u32, 3, 5] {
+        let mut shas: Vec<String> = Vec::new();
+        let anchor = expected[0].clone();
+        loop {
+            let page = operations::log(
+                &fx.registry,
+                &fx.repo_str(),
+                page_size,
+                shas.len() as u32,
+                Some(&anchor),
+                &fx.workspace,
+            )
+            .unwrap();
+            shas.extend(page.iter().map(|e| e.sha.clone()));
+            if page.len() < page_size as usize {
+                break;
+            }
+        }
+        assert_eq!(shas, expected, "page size {page_size}");
+    }
+}
+
+#[test]
+fn log_paging_is_unaffected_by_new_commits_on_head() {
+    if skip_if_no_git() {
+        return;
+    }
+    let fx = GitRepoFixture::new();
+    for i in 0..5 {
+        fx.write_file(&format!("f{i}.txt"), "x\n");
+        fx.run_git(&["add", "."]);
+        fx.run_git(&["commit", "-q", "-m", &format!("c{i}")]);
+    }
+    let expected = git_stdout(&fx, &["log", "--format=%H"]);
+    let first = operations::log(&fx.registry, &fx.repo_str(), 2, 0, None, &fx.workspace).unwrap();
+    let anchor = first[0].sha.clone();
+
+    fx.write_file("extra.txt", "x\n");
+    fx.run_git(&["add", "."]);
+    fx.run_git(&["commit", "-q", "-m", "new head"]);
+
+    let rest = operations::log(
+        &fx.registry,
+        &fx.repo_str(),
+        10,
+        2,
+        Some(&anchor),
+        &fx.workspace,
+    )
+    .unwrap();
+    let rest: Vec<String> = rest.into_iter().map(|e| e.sha).collect();
+    assert_eq!(rest, expected[2..]);
+}
+
+fn git_stdout(fx: &GitRepoFixture, args: &[&str]) -> Vec<String> {
+    let out = std::process::Command::new("git")
+        .args(args)
+        .current_dir(&fx.repo_path)
+        .output()
+        .expect("git on PATH");
+    assert!(out.status.success());
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::to_string)
+        .collect()
 }
 
 #[test]
@@ -453,6 +548,7 @@ fn log_with_invalid_cursor_sha_errors() {
         &fx.registry,
         &fx.repo_str(),
         10,
+        1,
         Some("not-hex"),
         &fx.workspace,
     ) {
@@ -476,7 +572,8 @@ fn commit_files_reports_added_and_modified() {
     fx.run_git(&["add", "a.txt"]);
     fx.run_git(&["commit", "-q", "-m", "modify"]);
 
-    let entries = operations::log(&fx.registry, &fx.repo_str(), 10, None, &fx.workspace).unwrap();
+    let entries =
+        operations::log(&fx.registry, &fx.repo_str(), 10, 0, None, &fx.workspace).unwrap();
     let head = &entries[0].sha;
 
     let files =
@@ -500,7 +597,8 @@ fn commit_file_diff_returns_original_and_modified_text() {
     fx.run_git(&["add", "a.txt"]);
     fx.run_git(&["commit", "-q", "-m", "v2"]);
 
-    let entries = operations::log(&fx.registry, &fx.repo_str(), 10, None, &fx.workspace).unwrap();
+    let entries =
+        operations::log(&fx.registry, &fx.repo_str(), 10, 0, None, &fx.workspace).unwrap();
     let head = &entries[0].sha;
 
     let diff = operations::commit_file_diff(
