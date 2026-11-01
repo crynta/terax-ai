@@ -162,6 +162,7 @@ export class GhosttyInputController {
   private lastSource: InputSource | null = null;
   private lastDataAt = 0;
   private wheelRemainder = 0;
+  private mouseWheelRemainder = 0;
   private lastMouseMotion: string | null = null;
   private disposed = false;
 
@@ -473,21 +474,7 @@ export class GhosttyInputController {
   };
 
   private readonly handleWheel = (event: WheelEvent): void => {
-    if (this.options.model.modes().mouseTracking && !event.shiftKey) {
-      const position = this.mousePosition(event);
-      if (!position) return;
-      consume(event);
-      this.sendMouse(
-        event.deltaY < 0 ? 64 : 65,
-        position.col,
-        position.row,
-        false,
-        event,
-      );
-      return;
-    }
-
-    if (this.options.model.scrollPosition().history === 0) return;
+    if (!Number.isFinite(event.deltaY) || event.deltaY === 0) return;
     const cellHeight = Math.max(1, this.options.cellSize().height);
     const delta =
       event.deltaMode === WheelEvent.DOM_DELTA_LINE
@@ -495,6 +482,29 @@ export class GhosttyInputController {
         : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
           ? event.deltaY * this.options.model.rows
           : event.deltaY / cellHeight;
+    if (this.options.model.modes().mouseTracking && !event.shiftKey) {
+      const position = this.mousePosition(event);
+      if (!position) return;
+      consume(event);
+      this.wheelRemainder = 0;
+      this.mouseWheelRemainder += Math.max(-100, Math.min(100, delta));
+      const lines = Math.trunc(this.mouseWheelRemainder);
+      this.mouseWheelRemainder -= lines;
+      // Bound PTY work for a single large wheel event.
+      for (let i = 0; i < Math.min(100, Math.abs(lines)); i++) {
+        this.sendMouse(
+          lines < 0 ? 64 : 65,
+          position.col,
+          position.row,
+          false,
+          event,
+        );
+      }
+      return;
+    }
+
+    this.mouseWheelRemainder = 0;
+    if (this.options.model.scrollPosition().history === 0) return;
     this.wheelRemainder += delta;
     const lines =
       this.wheelRemainder < 0

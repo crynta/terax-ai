@@ -28,6 +28,66 @@ describe("terminalMouseModifiers", () => {
 });
 
 describe("GhosttyInputController", () => {
+  it("accumulates trackpad pixels before emitting bounded mouse wheel reports", () => {
+    vi.stubGlobal("WheelEvent", {
+      DOM_DELTA_PIXEL: 0,
+      DOM_DELTA_LINE: 1,
+      DOM_DELTA_PAGE: 2,
+    });
+    const input = new FakeTextArea();
+    const pointer = new FakeElement();
+    const onData = vi.fn();
+    const controller = new GhosttyInputController({
+      model: inputModel((mode) => mode === 1006),
+      input: input as unknown as HTMLTextAreaElement,
+      pointerTarget: pointer as unknown as HTMLElement,
+      cellSize: () => ({ width: 10, height: 20 }),
+      isMac: true,
+      onCopy: () => false,
+      onData,
+    });
+    const wheel = (deltaY: number, deltaMode = 0) =>
+      pointer.dispatchEvent(
+        Object.assign(new Event("wheel", { cancelable: true }), {
+          deltaY,
+          deltaMode,
+          clientX: 5,
+          clientY: 5,
+          shiftKey: false,
+          ctrlKey: false,
+          altKey: false,
+        }),
+      );
+    try {
+      wheel(0);
+      wheel(Number.NaN);
+      for (let i = 0; i < 3; i++) wheel(5);
+      expect(onData).not.toHaveBeenCalled();
+      wheel(5);
+      expect(new TextDecoder().decode(onData.mock.lastCall?.[0])).toBe(
+        "\x1b[<65;1;1M",
+      );
+      onData.mockClear();
+      wheel(-40);
+      expect(onData).toHaveBeenCalledTimes(2);
+      expect(new TextDecoder().decode(onData.mock.lastCall?.[0])).toBe(
+        "\x1b[<64;1;1M",
+      );
+      onData.mockClear();
+      wheel(3, 1);
+      expect(onData).toHaveBeenCalledTimes(3);
+      onData.mockClear();
+      wheel(1, 2);
+      expect(onData).toHaveBeenCalledTimes(24);
+      onData.mockClear();
+      wheel(1000, 1);
+      expect(onData).toHaveBeenCalledTimes(100);
+    } finally {
+      controller.dispose();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it.each([false, true])(
     "routes macOS Option arrows tagged 229 (alternate: %s)",
     (alternateScreen) => {
