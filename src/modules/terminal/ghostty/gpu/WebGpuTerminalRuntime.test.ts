@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WebGpuRuntimeSurface } from "./WebGpuTerminalRuntime";
-import { WebGpuTerminalRuntime } from "./WebGpuTerminalRuntime";
+import {
+  GPU_COMPLETION_TIMEOUT_MS,
+  WebGpuTerminalRuntime,
+} from "./WebGpuTerminalRuntime";
 import type { CssRect } from "./PaneRects";
 
 import {
@@ -26,6 +29,138 @@ describe("WebGpuTerminalRuntime", () => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it.each([false, true])(
+    "falls back without mouse input and ignores late GPU completion (reject=%s)",
+    async (reject) => {
+      vi.useFakeTimers();
+      const h = createHarness();
+      let complete = () => {};
+      let fail = (_error: Error) => {};
+      h.onSubmittedWorkDone.mockImplementation(
+        () =>
+          new Promise<undefined>((resolve, reject) => {
+            complete = () => resolve(undefined);
+            fail = reject;
+          }),
+      );
+      const runtime = await createRuntime();
+      const surface = createSurface();
+      join(runtime, surface);
+      runtime.schedule(surface);
+      h.flushFrame();
+      await vi.advanceTimersByTimeAsync(GPU_COMPLETION_TIMEOUT_MS - 1);
+      expect(surface.handleRuntimeError).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(surface.handleRuntimeError).toHaveBeenCalledOnce();
+      expect(surface.handleRuntimeError.mock.calls[0][0].message).toBe(
+        "WebGPU frame completion timed out",
+      );
+      expect(runtime.diagnostics()).toMatchObject({
+        healthy: false,
+        frameScheduled: false,
+      });
+      expect(h.destroyDevice).toHaveBeenCalledOnce();
+      if (reject) fail(new Error("device destroyed"));
+      else complete();
+      await Promise.resolve();
+      expect(h.frames.size).toBe(0);
+      expect(surface.handleRuntimeError).toHaveBeenCalledOnce();
+      expect(surface.handleCanvasRevealed).not.toHaveBeenCalled();
+    },
+  );
+
+  it("gives remaining submissions a new deadline after confirmed GPU progress", async () => {
+    vi.useFakeTimers();
+    const h = createHarness();
+    const completions: (() => void)[] = [];
+    h.onSubmittedWorkDone.mockImplementation(
+      () =>
+        new Promise<undefined>((resolve) => {
+          completions.push(() => resolve(undefined));
+        }),
+    );
+    const runtime = await createRuntime();
+    const surface = createSurface();
+    join(runtime, surface);
+    runtime.schedule(surface);
+    h.flushFrame();
+    await vi.advanceTimersByTimeAsync(20);
+    runtime.schedule(surface);
+    h.flushFrame();
+    await vi.advanceTimersByTimeAsync(GPU_COMPLETION_TIMEOUT_MS - 21);
+    completions[0]();
+    await Promise.resolve();
+    expect(completions).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(GPU_COMPLETION_TIMEOUT_MS - 1);
+    expect(surface.handleRuntimeError).not.toHaveBeenCalled();
+    completions[1]();
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(GPU_COMPLETION_TIMEOUT_MS * 2);
+    expect(surface.handleRuntimeError).not.toHaveBeenCalled();
+    expect(runtime.diagnostics().inFlightFrames).toBe(0);
+  });
+
+  it("pauses the completion deadline while hidden and restarts it on return", async () => {
+    vi.useFakeTimers();
+    const h = createHarness();
+    h.onSubmittedWorkDone.mockImplementation(
+      () => new Promise<undefined>(() => {}),
+    );
+    const runtime = await createRuntime();
+    const surface = createSurface();
+    join(runtime, surface);
+    runtime.schedule(surface);
+    h.flushFrame();
+    h.setVisible(false);
+    h.notifyVisibility();
+    await vi.advanceTimersByTimeAsync(GPU_COMPLETION_TIMEOUT_MS * 10);
+    expect(surface.handleRuntimeError).not.toHaveBeenCalled();
+    h.setVisible(true);
+    h.notifyVisibility();
+    await vi.advanceTimersByTimeAsync(GPU_COMPLETION_TIMEOUT_MS - 1);
+    expect(surface.handleRuntimeError).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(surface.handleRuntimeError).toHaveBeenCalledOnce();
+  });
+
+  it("cancels the completion deadline on disposal", async () => {
+    vi.useFakeTimers();
+    const h = createHarness();
+    h.onSubmittedWorkDone.mockImplementation(
+      () => new Promise<undefined>(() => {}),
+    );
+    const runtime = await createRuntime();
+    const surface = createSurface();
+    join(runtime, surface);
+    runtime.schedule(surface);
+    h.flushFrame();
+    runtime.dispose();
+    await vi.advanceTimersByTimeAsync(GPU_COMPLETION_TIMEOUT_MS * 2);
+    expect(surface.handleRuntimeError).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("waits for a visible pane before timing out an abandoned submission", async () => {
+    vi.useFakeTimers();
+    const h = createHarness();
+    h.onSubmittedWorkDone.mockImplementation(
+      () => new Promise<undefined>(() => {}),
+    );
+    const runtime = await createRuntime();
+    const previous = createSurface();
+    join(runtime, previous);
+    runtime.schedule(previous);
+    h.flushFrame();
+    runtime.unregister(previous);
+    await vi.advanceTimersByTimeAsync(GPU_COMPLETION_TIMEOUT_MS * 2);
+    expect(runtime.diagnostics().healthy).toBe(true);
+    const current = createSurface();
+    join(runtime, current);
+    await vi.advanceTimersByTimeAsync(GPU_COMPLETION_TIMEOUT_MS);
+    expect(current.handleRuntimeError).toHaveBeenCalledOnce();
+    expect(previous.handleRuntimeError).not.toHaveBeenCalled();
   });
 
   it("creates no encoder when dirty notifications resolve to unchanged pixels", async () => {
@@ -171,7 +306,7 @@ describe("WebGpuTerminalRuntime", () => {
       harness.flushFrame();
     }
     for (let update = 0; update < 10_000; update++) runtime.schedule(surface);
-    vi.advanceTimersByTime(60_000);
+    vi.advanceTimersByTime(GPU_COMPLETION_TIMEOUT_MS - 100);
     expect(harness.submit).toHaveBeenCalledTimes(2);
     expect(harness.frames.size).toBe(0);
     // One wait at a time: the second frame is covered by the next wait, not a second one.

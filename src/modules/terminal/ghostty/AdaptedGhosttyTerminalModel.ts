@@ -1306,7 +1306,7 @@ function normalizeBufferSelection(selection: TerminalBufferSelection): {
 
 function wordCategory(value: string): "space" | "word" | "punctuation" {
   if (/\s/u.test(value)) return "space";
-  if (/^[\p{Letter}\p{Number}_]$/u.test(value)) return "word";
+  if (/^[\p{Letter}\p{Number}\p{Mark}_]+$/u.test(value)) return "word";
   return "punctuation";
 }
 

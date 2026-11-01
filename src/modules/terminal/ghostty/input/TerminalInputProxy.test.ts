@@ -189,13 +189,14 @@ describe("TerminalInputProxy", () => {
     h.controller.dispose();
   });
 
-  it("routes native paste to the terminal and keeps the placeholder", () => {
+  it("routes native paste to the terminal and keeps the placeholder", async () => {
     const h = setup();
     const event = fire(h.input, "paste", {
       clipboardData: { getData: () => "pasted text" },
     });
     expect(event.defaultPrevented).toBe(true);
     expect(h.pasted).toHaveBeenCalledWith("pasted text");
+    await Promise.resolve();
     fire(h.input, "beforeinput", {
       inputType: "insertFromPaste",
       data: "other",

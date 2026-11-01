@@ -35,6 +35,7 @@ const MAX_ATLAS_COUNT = 8;
 const MAX_WARM_UNUSED_ATLASES = 1;
 const ATLAS_IDLE_TTL_MS = 30_000;
 const MAX_IN_FLIGHT_FRAMES = 2;
+export const GPU_COMPLETION_TIMEOUT_MS = 5_000;
 /** Glyph rasterization allowed per frame across all surfaces. */
 export const RASTER_BUDGET_MS = 2;
 /** Larger allowance for a surface's first frame, so text appears whole. */
@@ -222,6 +223,7 @@ export class WebGpuTerminalRuntime {
   private submittedFrames = 0;
   /** Frames the GPU is not yet known to have finished: submitted minus confirmed. */
   private inFlightFrames = 0;
+  private completionTimer: ReturnType<typeof setTimeout> | null = null;
   private confirmedFrames = 0;
   private peakInFlightFrames = 0;
   private animationFrames = 0;
@@ -285,11 +287,13 @@ export class WebGpuTerminalRuntime {
     surface.handleVisibilityChange(
       state.visible && !this.pendingRecoveryReason && !this.recovering,
     );
+    this.armCompletionTimer();
     return binding;
   }
 
   unregister(surface: WebGpuRuntimeSurface): void {
     this.surfaces.delete(surface);
+    if (this.surfaces.size === 0) this.clearCompletionTimer();
     this.dirtySurfaces.delete(surface);
     this.renderSurfaces.delete(surface);
     const target = this.paneWindows.get(surface);
@@ -594,11 +598,15 @@ export class WebGpuTerminalRuntime {
         void this.recoverDevice(this.pendingRecoveryReason);
       return;
     }
-    if (!visible) this.cancelScheduledFrame();
+    if (!visible) {
+      this.cancelScheduledFrame();
+      this.clearCompletionTimer();
+    }
     for (const surface of this.surfaces) {
       surface.handleVisibilityChange(visible);
     }
     if (visible) {
+      this.armCompletionTimer();
       this.pacer.reset();
       for (const target of this.windows.values()) target.markDirty();
       this.requestFrame();
@@ -812,12 +820,15 @@ export class WebGpuTerminalRuntime {
    */
   private revealAfterPresent(panes: readonly WebGpuRuntimeSurface[]): void {
     const generation = this.generation;
-    void this.confirmFrames().then(() => {
-      if (this.disposed || generation !== this.generation) return;
-      for (const pane of panes) {
-        if (this.surfaces.has(pane)) pane.handleCanvasRevealed?.();
-      }
-    });
+    void this.confirmFrames().then(
+      () => {
+        if (this.disposed || generation !== this.generation) return;
+        for (const pane of panes) {
+          if (this.surfaces.has(pane)) pane.handleCanvasRevealed?.();
+        }
+      },
+      () => {},
+    );
   }
 
   /**
@@ -833,10 +844,12 @@ export class WebGpuTerminalRuntime {
     this.workDoneWaits += 1;
     this.pendingWaits += 1;
     this.latestWait = { through, completion };
+    this.armCompletionTimer();
     const issuedAt = performance.now();
     void completion.then(
       () => {
         if (this.disposed || generation !== this.generation) return;
+        this.clearCompletionTimer();
         this.pendingWaits = Math.max(0, this.pendingWaits - 1);
         this.workDoneLatency.record(performance.now() - issuedAt);
         this.confirmedFrames = Math.max(this.confirmedFrames, through);
@@ -846,6 +859,7 @@ export class WebGpuTerminalRuntime {
         );
         if (this.inFlightFrames > 0 && this.pendingWaits === 0)
           this.confirmFrames();
+        this.armCompletionTimer();
         this.requestFrame();
       },
       (error: unknown) => {
@@ -855,6 +869,27 @@ export class WebGpuTerminalRuntime {
       },
     );
     return completion;
+  }
+
+  private armCompletionTimer(): void {
+    if (
+      this.completionTimer !== null ||
+      this.pendingWaits === 0 ||
+      this.surfaces.size === 0 ||
+      this.disposed ||
+      this.fatalError ||
+      !terminalWindowPresentation().visible
+    )
+      return;
+    this.completionTimer = setTimeout(() => {
+      this.completionTimer = null;
+      this.disable(new Error("WebGPU frame completion timed out"));
+    }, GPU_COMPLETION_TIMEOUT_MS);
+  }
+
+  private clearCompletionTimer(): void {
+    if (this.completionTimer !== null) clearTimeout(this.completionTimer);
+    this.completionTimer = null;
   }
 
   private rebindAtlasUsers(resources: WebGpuSharedResources): void {
@@ -1174,6 +1209,7 @@ export class WebGpuTerminalRuntime {
    * leave its swapchain behind.
    */
   private releaseDevice(): void {
+    this.clearCompletionTimer();
     this.generation += 1;
     this.inFlightFrames = 0;
     this.pendingWaits = 0;

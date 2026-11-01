@@ -175,6 +175,16 @@ or search-mask work until presentation resumes.
 Terminal clipboard shortcuts use the native text clipboard plugin on all desktop
 platforms. Context clicks expose the selected text through the input element to
 restore the webview's native text menu; no persistent DOM scrollback is maintained.
+Windows Ctrl+V and Ctrl+Shift+V paste text; Ctrl+C copies a terminal selection
+and otherwise reaches the CLI. Clipboard and input-queue failures are visible.
+Native clipboard reads serialize subsequent CLI input, so Enter cannot overtake
+a pending paste. Deferred input is bounded to 256 KiB / 256 operations and is
+discarded if reading or delivery fails. A five-second read deadline restores
+typing without issuing another clipboard request until the old one settles.
+Ctrl+C can cancel a pending paste immediately. A read also waits for preceding
+Terax clipboard writes, so copying and immediately pasting cannot read old text.
+The 256 KiB input limit includes in-flight bytes; accepted input is sent in
+ordered writes of at most 64 KiB, and oversized pastes are rejected atomically.
 On macOS the input `<textarea>` always holds one selected placeholder character
 (`TerminalInputProxy`; elsewhere it stays empty, a selection could take X11 PRIMARY): a focused editable with a collapsed selection keeps
 WebKit's caret animation (a display link at display rate) running at ~3 % CPU and
@@ -187,6 +197,12 @@ The block prompt retains an enabled terminal input proxy for native menus and
 routes editing keys, composed text and paste back to its command editor.
 Character drags retain a native selection pin from pointerdown, including before
 the first pointermove. Unmoved clicks and lost captures discard provisional pins.
+Mouse word/line selection uses the native mousedown click count; pointerdown's
+detail is zero. Three-pixel drag slop prevents jitter from selecting adjacent
+cells. Selection autoscroll is time-based, capped at 120 rows per second, and
+stops at history boundaries or lost button state. Copy reconciles native pins
+immediately; typing and pasting clear the old selection. Dragging over a link
+does not open it.
 Key encoding supplies the base character required by Kitty keyboard mode; plain
 keys and key releases also use Ghostty encoding when the application requests it.
 Terminal text uses the configured font, an installed Nerd Font when detected,
@@ -294,6 +310,10 @@ WebGPU permits at most two outstanding frame submissions and keeps one
 `onSubmittedWorkDone` wait outstanding at a time: frames submitted while it is
 pending ride the next wait, which starts when it resolves (waiting only every
 second frame was tried and cut a 32 Hz producer to 23 presented frames a second).
+GPU completion must progress within five seconds while a terminal is visible.
+A timeout falls the shared runtime back to WebGL through the existing surface
+replacement path, retaining models and PTYs. The deadline is suspended while
+the window is hidden or no pane is registered, and cleared when work completes.
 User wheel, drag, and keyboard interaction gives only its pane 150 ms of focused
 cadence, including in an unfocused visible window. It starts no idle timer or
 frame loop.

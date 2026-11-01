@@ -19,8 +19,10 @@ export class PromptPresentationGate {
 
   observe(event: GhosttyTerminalEvent): void {
     if (event.type === "prompt-start") {
-      this.suppressedValue = true;
-      this.armWatchdog();
+      if (!this.suppressedValue) {
+        this.suppressedValue = true;
+        this.armWatchdog();
+      }
       return;
     }
     if (

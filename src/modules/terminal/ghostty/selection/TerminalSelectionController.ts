@@ -38,13 +38,18 @@ export class TerminalSelectionController {
   private meaningful = false;
   private lastClientX = 0;
   private lastClientY = 0;
+  private downClientX = 0;
+  private downClientY = 0;
   private autoScrollFrame: number | null = null;
+  private autoScrollAt: number | null = null;
+  private autoScrollLines = 0;
   private disposed = false;
 
   constructor(private readonly options: TerminalSelectionControllerOptions) {
     this.selection = options.model.trackedSelection?.() ?? null;
     this.meaningful = this.selection !== null;
     options.target.addEventListener("pointerdown", this.handlePointerDown);
+    options.target.addEventListener("mousedown", this.handleMouseDown);
     options.target.addEventListener("pointermove", this.handlePointerMove);
     options.target.addEventListener("pointerup", this.handlePointerUp);
     options.target.addEventListener("pointercancel", this.handleLostCapture);
@@ -59,6 +64,7 @@ export class TerminalSelectionController {
   }
 
   text(): string | null {
+    this.reconcile();
     const selection = this.value;
     if (!selection) return null;
     const value = this.options.model.selectionText(selection);
@@ -111,6 +117,7 @@ export class TerminalSelectionController {
     this.suspend();
     const { target } = this.options;
     target.removeEventListener("pointerdown", this.handlePointerDown);
+    target.removeEventListener("mousedown", this.handleMouseDown);
     target.removeEventListener("pointermove", this.handlePointerMove);
     target.removeEventListener("pointerup", this.handlePointerUp);
     target.removeEventListener("pointercancel", this.handleLostCapture);
@@ -143,18 +150,21 @@ export class TerminalSelectionController {
       return;
     }
 
+    this.reconcile();
     const point = this.pointFromEvent(event);
     if (!point) return;
-    event.preventDefault();
+    // Keep compatibility mousedown: it carries the native click count.
+    if (event.pointerType !== "mouse") event.preventDefault();
     event.stopPropagation();
     this.pointerId = event.pointerId;
     this.options.target.setPointerCapture(event.pointerId);
     this.lastClientX = event.clientX;
     this.lastClientY = event.clientY;
+    this.downClientX = event.clientX;
+    this.downClientY = event.clientY;
 
     const existingAnchor = event.shiftKey ? this.selection?.anchor : undefined;
-    this.mode =
-      event.detail >= 3 ? "line" : event.detail === 2 ? "word" : "character";
+    this.mode = "character";
     const anchor = existingAnchor ?? point;
     this.anchorRange = this.rangeForPoint(anchor, this.mode);
     const focusRange = this.rangeForPoint(point, this.mode);
@@ -165,13 +175,38 @@ export class TerminalSelectionController {
       focusRange,
       event.altKey,
     );
-    this.meaningful = event.shiftKey || this.mode !== "character";
+    this.meaningful = event.shiftKey;
+    this.commitSelection();
+    this.options.onChange();
+  };
+
+  private readonly handleMouseDown = (event: MouseEvent): void => {
+    if (this.pointerId === null || !this.selection || event.button !== 0)
+      return;
+    event.preventDefault();
+    if (event.detail < 2) return;
+    const point = this.pointFromEvent(event);
+    if (!point) return;
+    this.mode = event.detail === 2 ? "word" : "line";
+    this.anchorRange = this.rangeForPoint(this.selection.anchor, this.mode);
+    this.selection = selectionForRanges(
+      this.selection.anchor,
+      point,
+      this.anchorRange,
+      this.rangeForPoint(point, this.mode),
+      event.altKey,
+    );
+    this.meaningful = true;
     this.commitSelection();
     this.options.onChange();
   };
 
   private readonly handlePointerMove = (event: PointerEvent): void => {
     if (event.pointerId !== this.pointerId || !this.selection) return;
+    if (event.buttons === 0) {
+      this.suspend();
+      return;
+    }
     event.preventDefault();
     this.lastClientX = event.clientX;
     this.lastClientY = event.clientY;
@@ -200,6 +235,14 @@ export class TerminalSelectionController {
     event: Pick<PointerEvent, "clientX" | "clientY" | "altKey">,
   ): void {
     this.reconcile();
+    if (
+      !this.meaningful &&
+      Math.hypot(
+        event.clientX - this.downClientX,
+        event.clientY - this.downClientY,
+      ) < 3
+    )
+      return;
     const point = this.pointFromClient(event.clientX, event.clientY, true);
     if (!point || !this.selection || !this.anchorRange) return;
     const focusRange = this.rangeForPoint(point, this.mode);
@@ -231,7 +274,9 @@ export class TerminalSelectionController {
     return { start: point.column, end: point.column };
   }
 
-  private pointFromEvent(event: PointerEvent): TerminalBufferPoint | null {
+  private pointFromEvent(
+    event: Pick<MouseEvent, "clientX" | "clientY">,
+  ): TerminalBufferPoint | null {
     return this.pointFromClient(event.clientX, event.clientY, false);
   }
 
@@ -259,7 +304,10 @@ export class TerminalSelectionController {
     );
     const row = clampInteger(
       Math.floor(
-        (clientY - rect.top + (this.options.gridShiftY?.() ?? 0)) / cell.height,
+        (Math.max(rect.top, Math.min(rect.bottom - 0.001, clientY)) -
+          rect.top +
+          (this.options.gridShiftY?.() ?? 0)) /
+          cell.height,
       ),
       0,
       this.options.model.rows - 1,
@@ -277,7 +325,9 @@ export class TerminalSelectionController {
       return;
     }
     if (this.autoScrollFrame !== null) return;
-    const tick = () => {
+    this.autoScrollAt = null;
+    this.autoScrollLines = 1;
+    const tick = (now: number) => {
       this.autoScrollFrame = null;
       if (this.pointerId === null) return;
       const currentRect = this.options.target.getBoundingClientRect();
@@ -286,10 +336,22 @@ export class TerminalSelectionController {
           ? this.lastClientY - currentRect.top
           : this.lastClientY - currentRect.bottom;
       const cellHeight = Math.max(1, this.options.cellSize().height);
-      const lines =
-        Math.sign(overflow) *
-        Math.max(1, Math.min(8, Math.ceil(Math.abs(overflow) / cellHeight)));
-      if (!this.options.model.scrollBy(lines)) return;
+      const elapsed =
+        this.autoScrollAt === null
+          ? 0
+          : Math.max(0, Math.min(100, now - this.autoScrollAt));
+      this.autoScrollAt = now;
+      this.autoScrollLines +=
+        (Math.min(120, Math.max(15, (Math.abs(overflow) / cellHeight) * 30)) *
+          elapsed) /
+        1_000;
+      const lines = Math.floor(this.autoScrollLines);
+      this.autoScrollLines -= lines;
+      if (
+        lines > 0 &&
+        !this.options.model.scrollBy(Math.sign(overflow) * lines)
+      )
+        return;
       this.updateFocus({
         clientX: this.lastClientX,
         clientY: this.lastClientY,
@@ -304,6 +366,8 @@ export class TerminalSelectionController {
     if (this.autoScrollFrame !== null)
       cancelAnimationFrame(this.autoScrollFrame);
     this.autoScrollFrame = null;
+    this.autoScrollAt = null;
+    this.autoScrollLines = 0;
   }
 
   private commitSelection(): void {
