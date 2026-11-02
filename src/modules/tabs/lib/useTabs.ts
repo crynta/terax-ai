@@ -386,6 +386,19 @@ export function planCloseOtherTabs(
   };
 }
 
+export function planSingleTabClose(
+  tabs: Tab[],
+  closingId: number,
+  activeId: number,
+): CloseTabsPlanResult | null {
+  const fallback = nextActiveInSpace(tabs, closingId);
+  if (fallback === null) return null;
+  return applyCloseTabsPlan(tabs, fallback, {
+    closeIds: [closingId],
+    nextActiveId: activeId === closingId ? fallback : activeId,
+  });
+}
+
 export function applyCloseTabsPlan(
   tabs: Tab[],
   anchorId: number,
@@ -1131,19 +1144,13 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   );
 
   const closeTab = useCallback((id: number) => {
-    let toDispose: number[] = [];
-    setTabs((curr) => {
-      const fallback = nextActiveInSpace(curr, id);
-      if (fallback === null) return curr;
-      const target = curr.find((t) => t.id === id);
-      if (target?.kind === "terminal") {
-        toDispose = leafIds(target.paneTree);
-      }
-      const next = curr.filter((t) => t.id !== id);
-      setActiveId((active) => (id === active ? fallback : active));
-      return next;
-    });
-    for (const lid of toDispose) disposeSession(lid);
+    const result = planSingleTabClose(tabsRef.current, id, activeIdRef.current);
+    if (!result) return;
+    tabsRef.current = result.tabs;
+    activeIdRef.current = result.nextActiveId;
+    setTabs(result.tabs);
+    setActiveId(result.nextActiveId);
+    for (const lid of result.disposeLeafIds) disposeSession(lid);
   }, []);
 
   const closeTabs = useCallback(
