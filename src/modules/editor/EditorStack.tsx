@@ -1,5 +1,10 @@
-import { cn, isMarkdownPath } from "@/lib/utils";
-import { MarkdownViewToggle } from "@/modules/markdown";
+import { cn, isHtmlPath, isRenderablePath } from "@/lib/utils";
+import {
+  HTML_PREVIEW_BLOCK_HINT,
+  htmlPreviewBlock,
+  MarkdownViewToggle,
+} from "@/modules/markdown";
+import { useSpaces } from "@/modules/spaces/lib/useSpaces";
 import { useWindowInactive } from "@/modules/theme/WindowActivityBridge";
 import type { EditorTab, Tab } from "@/modules/tabs";
 import { useEffect, useRef } from "react";
@@ -90,12 +95,16 @@ export function EditorStack({
   }, [editors]);
 
   const windowInactive = useWindowInactive();
+  const spaces = useSpaces((s) => s.spaces);
 
   if (editors.length === 0) return null;
   return (
     <div className="relative h-full w-full">
       {editors.map((t) => {
         const visible = t.id === activeId;
+        const previewBlock = isHtmlPath(t.path)
+          ? htmlPreviewBlock(spaces.find((sp) => sp.id === t.spaceId)?.env)
+          : null;
         return (
           <div
             key={t.id}
@@ -106,12 +115,16 @@ export function EditorStack({
             aria-hidden={!visible}
           >
             <div className="relative h-full overflow-hidden bg-background">
-              {isMarkdownPath(t.path) && (
+              {isRenderablePath(t.path) && (
                 <MarkdownViewToggle
                   mode="raw"
                   onChange={(mode) => onSetMarkdownView(t.id, mode)}
-                  renderedDisabled={t.dirty}
-                  renderedHint="Save to preview"
+                  renderedDisabled={t.dirty || previewBlock !== null}
+                  renderedHint={
+                    previewBlock
+                      ? HTML_PREVIEW_BLOCK_HINT[previewBlock]
+                      : "Save to preview"
+                  }
                 />
               )}
               <EditorPane
