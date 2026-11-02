@@ -1,16 +1,15 @@
+import { TerminalInputProxy } from "@/modules/terminal/ghostty/input/TerminalInputProxy";
+import { TerminalNativeSelection } from "@/modules/terminal/ghostty/input/TerminalNativeSelection";
 import { terminalReadlineSequence } from "@/modules/terminal/lib/keymap";
 import { readTerminalClipboard } from "@/modules/terminal/lib/terminalClipboard";
 import {
   Key,
   KeyAction,
-  Mods,
   type KeyEvent,
+  Mods,
 } from "@terax/ghostty-core/protocol";
 import type { GhosttyTerminalModelApi } from "../GhosttyTerminalModel";
 import { encodeTerminalPaste } from "./terminalInputEncoding";
-
-import { TerminalInputProxy } from "@/modules/terminal/ghostty/input/TerminalInputProxy";
-import { TerminalNativeSelection } from "@/modules/terminal/ghostty/input/TerminalNativeSelection";
 
 const DUPLICATE_INPUT_WINDOW_MS = 75;
 
@@ -475,6 +474,34 @@ export class GhosttyInputController {
 
   private readonly handleWheel = (event: WheelEvent): void => {
     if (!Number.isFinite(event.deltaY) || event.deltaY === 0) return;
+    if (this.options.model.modes().mouseTracking && !event.shiftKey) {
+      consume(event);
+      this.wheelRemainder = 0;
+      const delta =
+        event.deltaMode === WheelEvent.DOM_DELTA_PIXEL
+          ? event.deltaY / Math.max(1, this.options.cellSize().height)
+          : Math.sign(event.deltaY);
+      this.mouseWheelRemainder = accumulateMouseWheel(
+        this.mouseWheelRemainder,
+        delta,
+      );
+      const tick = Math.trunc(this.mouseWheelRemainder);
+      if (tick === 0) return;
+      this.mouseWheelRemainder -= tick;
+      const position = this.mousePosition(event);
+      if (!position) return;
+      this.sendMouse(
+        tick < 0 ? 64 : 65,
+        position.col,
+        position.row,
+        false,
+        event,
+      );
+      return;
+    }
+
+    this.mouseWheelRemainder = 0;
+    if (this.options.model.scrollPosition().history === 0) return;
     const cellHeight = Math.max(1, this.options.cellSize().height);
     const delta =
       event.deltaMode === WheelEvent.DOM_DELTA_LINE
@@ -482,29 +509,6 @@ export class GhosttyInputController {
         : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
           ? event.deltaY * this.options.model.rows
           : event.deltaY / cellHeight;
-    if (this.options.model.modes().mouseTracking && !event.shiftKey) {
-      const position = this.mousePosition(event);
-      if (!position) return;
-      consume(event);
-      this.wheelRemainder = 0;
-      this.mouseWheelRemainder += Math.max(-100, Math.min(100, delta));
-      const lines = Math.trunc(this.mouseWheelRemainder);
-      this.mouseWheelRemainder -= lines;
-      // Bound PTY work for a single large wheel event.
-      for (let i = 0; i < Math.min(100, Math.abs(lines)); i++) {
-        this.sendMouse(
-          lines < 0 ? 64 : 65,
-          position.col,
-          position.row,
-          false,
-          event,
-        );
-      }
-      return;
-    }
-
-    this.mouseWheelRemainder = 0;
-    if (this.options.model.scrollPosition().history === 0) return;
     this.wheelRemainder += delta;
     const lines =
       this.wheelRemainder < 0
@@ -601,6 +605,15 @@ export class GhosttyInputController {
       : this.encoder.encode(data);
     if (bytes.byteLength > 0) this.options.onData(bytes);
   }
+}
+
+function accumulateMouseWheel(remainder: number, delta: number): number {
+  if (!Number.isFinite(delta)) return 0;
+  // Mouse reports are wheel ticks, not rows: the TUI chooses their scroll
+  // distance. Accumulate small pixel motion, but never amplify a browser event
+  // into multiple ticks or retain excess motion as a backlog.
+  if (Math.sign(delta) !== Math.sign(remainder)) remainder = 0;
+  return remainder + Math.max(-1, Math.min(1, delta));
 }
 
 const UNSHIFTED_SYMBOLS: Readonly<Record<string, string>> = {

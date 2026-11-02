@@ -1,8 +1,8 @@
-import type { GhosttyTerminalModelApi } from "@/modules/terminal/ghostty/GhosttyTerminalModel";
 import { readFile } from "node:fs/promises";
+import type { GhosttyTerminalModelApi } from "@/modules/terminal/ghostty/GhosttyTerminalModel";
 import { Key, Mods } from "@terax/ghostty-core";
 import { TeraxGhostty } from "@terax/ghostty-core/adapted";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeElement, FakeTextArea } from "./fakeTextArea";
 import {
   GhosttyInputController,
@@ -28,64 +28,141 @@ describe("terminalMouseModifiers", () => {
 });
 
 describe("GhosttyInputController", () => {
-  it("accumulates trackpad pixels before emitting bounded mouse wheel reports", () => {
-    vi.stubGlobal("WheelEvent", {
-      DOM_DELTA_PIXEL: 0,
-      DOM_DELTA_LINE: 1,
-      DOM_DELTA_PAGE: 2,
+  describe("mouse wheel", () => {
+    let h: ReturnType<typeof wheelHarness>;
+
+    beforeEach(() => {
+      vi.stubGlobal("WheelEvent", {
+        DOM_DELTA_PIXEL: 0,
+        DOM_DELTA_LINE: 1,
+        DOM_DELTA_PAGE: 2,
+      });
+      h = wheelHarness();
     });
-    const input = new FakeTextArea();
-    const pointer = new FakeElement();
-    const onData = vi.fn();
-    const controller = new GhosttyInputController({
-      model: inputModel((mode) => mode === 1006),
-      input: input as unknown as HTMLTextAreaElement,
-      pointerTarget: pointer as unknown as HTMLElement,
-      cellSize: () => ({ width: 10, height: 20 }),
-      isMac: true,
-      onCopy: () => false,
-      onData,
-    });
-    const wheel = (deltaY: number, deltaMode = 0) =>
-      pointer.dispatchEvent(
-        Object.assign(new Event("wheel", { cancelable: true }), {
-          deltaY,
-          deltaMode,
-          clientX: 5,
-          clientY: 5,
-          shiftKey: false,
-          ctrlKey: false,
-          altKey: false,
-        }),
-      );
-    try {
-      wheel(0);
-      wheel(Number.NaN);
-      for (let i = 0; i < 3; i++) wheel(5);
-      expect(onData).not.toHaveBeenCalled();
-      wheel(5);
-      expect(new TextDecoder().decode(onData.mock.lastCall?.[0])).toBe(
-        "\x1b[<65;1;1M",
-      );
-      onData.mockClear();
-      wheel(-40);
-      expect(onData).toHaveBeenCalledTimes(2);
-      expect(new TextDecoder().decode(onData.mock.lastCall?.[0])).toBe(
-        "\x1b[<64;1;1M",
-      );
-      onData.mockClear();
-      wheel(3, 1);
-      expect(onData).toHaveBeenCalledTimes(3);
-      onData.mockClear();
-      wheel(1, 2);
-      expect(onData).toHaveBeenCalledTimes(24);
-      onData.mockClear();
-      wheel(1000, 1);
-      expect(onData).toHaveBeenCalledTimes(100);
-    } finally {
-      controller.dispose();
+
+    afterEach(() => {
+      h.controller.dispose();
       vi.unstubAllGlobals();
-    }
+    });
+
+    it("accumulates small pixels without layout reads or input until a tick is due", () => {
+      for (let i = 0; i < 3; i++) {
+        expect(h.wheel(5).defaultPrevented).toBe(true);
+      }
+      expect(h.onData).not.toHaveBeenCalled();
+      expect(h.bounds).not.toHaveBeenCalled();
+      h.wheel(5);
+      expect(h.reports()).toEqual(["\x1b[<65;1;1M"]);
+      expect(h.bounds).toHaveBeenCalledTimes(1);
+      expect(h.scrollBy).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [40, 0],
+      [2000, 0],
+      [Number.MAX_VALUE, 0],
+      [3, 1],
+      [1000, 1],
+      [1, 2],
+    ])(
+      "emits at most one tick for delta %s in mode %s, without queued excess",
+      (delta, mode) => {
+        h.wheel(delta, mode);
+        expect(h.reports()).toEqual(["\x1b[<65;1;1M"]);
+        h.wheel(-delta, mode);
+        expect(h.reports()).toEqual(["\x1b[<65;1;1M", "\x1b[<64;1;1M"]);
+        h.onData.mockClear();
+        h.wheel(-5);
+        expect(h.onData).not.toHaveBeenCalled();
+      },
+    );
+
+    it("ignores zero, horizontal-only and non-finite motion without poisoning the remainder", () => {
+      h.wheel(15);
+      for (const delta of [0, Number.NaN, Infinity, -Infinity]) {
+        expect(h.wheel(delta, 0, { deltaX: 100 }).defaultPrevented).toBe(false);
+      }
+      expect(h.onData).not.toHaveBeenCalled();
+      expect(h.bounds).not.toHaveBeenCalled();
+      h.wheel(5);
+      expect(h.reports()).toEqual(["\x1b[<65;1;1M"]);
+    });
+
+    it("does not make a reversed gesture work against the previous remainder", () => {
+      h.wheel(15);
+      for (let i = 0; i < 3; i++) h.wheel(-5);
+      expect(h.onData).not.toHaveBeenCalled();
+      h.wheel(-5);
+      expect(h.reports()).toEqual(["\x1b[<64;1;1M"]);
+      h.wheel(20);
+      expect(h.reports()).toEqual(["\x1b[<64;1;1M", "\x1b[<65;1;1M"]);
+    });
+
+    it.each([true, false])(
+      "keeps encoding and modifiers intact (SGR: %s)",
+      (sgr) => {
+        h.state.sgr = sgr;
+        h.wheel(20, 0, { ctrlKey: true, altKey: true });
+        expect(h.reports()).toEqual([sgr ? "\x1b[<89;1;1M" : "\x1b[My!!"]);
+      },
+    );
+
+    it.each(["shift", "tracking"] as const)(
+      "clears both remainders when switching through %s scrollback",
+      (route) => {
+        const options = route === "shift" ? { shiftKey: true } : {};
+        h.wheel(15);
+        if (route === "tracking") h.state.mouseTracking = false;
+        h.wheel(15, 0, options);
+        expect(h.scrollBy).not.toHaveBeenCalled();
+        h.state.mouseTracking = true;
+        h.wheel(5);
+        expect(h.onData).not.toHaveBeenCalled();
+        if (route === "tracking") h.state.mouseTracking = false;
+        h.wheel(5, 0, options);
+        expect(h.scrollBy).not.toHaveBeenCalled();
+        h.wheel(15, 0, options);
+        expect(h.scrollBy).toHaveBeenCalledExactlyOnceWith(1);
+      },
+    );
+
+    it("clears mouse motion even when the scrollback route has no history", () => {
+      h.wheel(15);
+      h.state.history = 0;
+      h.wheel(5, 0, { shiftKey: true });
+      h.wheel(5);
+      expect(h.onData).not.toHaveBeenCalled();
+    });
+
+    it("preserves pixel, line and page distances in ordinary scrollback", () => {
+      h.state.mouseTracking = false;
+      h.wheel(40);
+      h.wheel(-3, 1);
+      h.wheel(1, 2);
+      expect(h.scrollBy.mock.calls).toEqual([[2], [-3], [24]]);
+      expect(h.onData).not.toHaveBeenCalled();
+      expect(h.bounds).not.toHaveBeenCalled();
+    });
+
+    it("keeps a sustained mixed gesture bounded by the browser event count", () => {
+      // Replaying the same trace always sends <= one report per event, including
+      // fast flicks and reversals; small trackpad motion still gets filtered.
+      const trace = [1, 2, 5, 12, 400, 2000, -5, -15, -3000, -1];
+      for (let i = 0; i < 1000; i++) {
+        const before = h.onData.mock.calls.length;
+        h.wheel(trace[i % trace.length]);
+        expect(h.onData.mock.calls.length - before).toBeLessThanOrEqual(1);
+      }
+      expect(h.onData.mock.calls.length).toBeGreaterThan(0);
+      expect(h.onData.mock.calls.length).toBeLessThan(1000);
+    });
+
+    it("stops handling wheel input after disposal", () => {
+      h.controller.dispose();
+      h.wheel(100);
+      expect(h.onData).not.toHaveBeenCalled();
+      expect(h.bounds).not.toHaveBeenCalled();
+    });
   });
 
   it.each([false, true])(
@@ -706,6 +783,52 @@ describe("GhosttyInputController", () => {
     controller.dispose();
   });
 });
+
+function wheelHarness() {
+  const state = { mouseTracking: true, history: 100, sgr: true };
+  const pointer = new FakeElement();
+  const bounds = vi.spyOn(pointer, "getBoundingClientRect");
+  const onData = vi.fn<(bytes: Uint8Array) => void>();
+  const scrollBy = vi.fn(() => true);
+  const base = inputModel((mode) => state.sgr && mode === 1006);
+  const controller = new GhosttyInputController({
+    model: {
+      ...base,
+      modes: () => ({ ...base.modes(), mouseTracking: state.mouseTracking }),
+      scrollPosition: () => ({ offset: 0, history: state.history }),
+      scrollBy,
+    },
+    input: new FakeTextArea() as unknown as HTMLTextAreaElement,
+    pointerTarget: pointer as unknown as HTMLElement,
+    cellSize: () => ({ width: 10, height: 20 }),
+    isMac: true,
+    onCopy: () => false,
+    onData,
+  });
+  return {
+    state,
+    controller,
+    onData,
+    scrollBy,
+    bounds,
+    reports: () =>
+      onData.mock.calls.map(([bytes]) => new TextDecoder().decode(bytes)),
+    wheel(deltaY: number, deltaMode = 0, options: Partial<WheelEvent> = {}) {
+      const event = Object.assign(new Event("wheel", { cancelable: true }), {
+        deltaY,
+        deltaMode,
+        clientX: 5,
+        clientY: 5,
+        shiftKey: false,
+        ctrlKey: false,
+        altKey: false,
+        ...options,
+      });
+      pointer.dispatchEvent(event);
+      return event;
+    },
+  };
+}
 
 function inputModel(
   mode: (value: number) => boolean = () => false,
