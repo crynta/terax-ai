@@ -123,6 +123,9 @@ jobs:
       - name: fish shell integration
         run: fish --no-config src-tauri/src/modules/pty/scripts/init.test.fish
 
+      - name: bash shell integration
+        run: bash src-tauri/src/modules/pty/scripts/bashrc.test.bash
+
   rust-platforms:
     name: rust-test (${{ matrix.os }})
     strategy:
