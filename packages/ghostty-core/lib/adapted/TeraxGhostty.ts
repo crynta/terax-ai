@@ -116,6 +116,7 @@ const requiredExports = [
   "restty_reset_palette",
   "restty_mode",
   "restty_mode_bits",
+  "restty_kitty_keyboard_flags",
   "restty_set_cursor_options",
   "restty_encode_key",
   "restty_key_output_ptr",
@@ -900,6 +901,12 @@ export class TeraxGhosttyTerminal {
   modeBits(): number {
     this.assertLive();
     return this.exports.restty_mode_bits(this.handle);
+  }
+
+  /** Active Kitty keyboard protocol flags on the active screen. */
+  kittyKeyboardFlags(): number {
+    this.assertLive();
+    return this.exports.restty_kitty_keyboard_flags(this.handle);
   }
 
   setCursorOptions(

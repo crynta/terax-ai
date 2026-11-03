@@ -781,6 +781,11 @@ export class AdaptedGhosttyTerminalModel implements GhosttyTerminalModelApi {
     return this.terminal.encodeKey(event);
   }
 
+  kittyKeyboardFlags(): number {
+    this.assertLive();
+    return this.terminal.kittyKeyboardFlags();
+  }
+
   mode(mode: number, isAnsi = false): boolean {
     this.assertLive();
     return this.terminal.mode(mode, isAnsi);
