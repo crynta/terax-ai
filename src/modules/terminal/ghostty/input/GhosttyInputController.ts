@@ -327,7 +327,19 @@ export class GhosttyInputController {
       key,
       mods: modifiers(event),
       utf8: event.key.length === 1 ? event.key : undefined,
-      unshiftedCodepoint: unshiftedCodepoint(event),
+      // Kitty needs the unshifted base only for keys reported as escape codes.
+      // Under the common flags (disambiguate + event types) those are Ctrl,
+      // Alt and Meta combinations; "report all keys as escape codes" (0x8)
+      // adds every text key. Supplying a base for Shift-only text otherwise
+      // makes the encoder escape-code it, so apps insert the unshifted key
+      // instead of the shifted character.
+      unshiftedCodepoint:
+        event.ctrlKey ||
+        event.altKey ||
+        event.metaKey ||
+        ((this.options.model.kittyKeyboardFlags?.() ?? 0) & 0x8) !== 0
+          ? unshiftedCodepoint(event)
+          : 0,
     };
     const encoded = this.options.model.encodeKey(data);
     if (encoded.byteLength > 0) this.pressedKeys.set(event.code, data);
