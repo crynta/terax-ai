@@ -153,7 +153,7 @@ export function ptyIdForLeaf(leafId: number): number | null {
 
 export async function leafHasForegroundProcess(
   leafId: number,
-): Promise<boolean> {
+): Promise<boolean | "error"> {
   return ghosttyLeafHasForegroundProcess(leafId);
 }
 
