@@ -16,7 +16,7 @@ Cloud providers are defined in `src/modules/ai/config.ts`:
 - `openai-compatible` for any custom base URL
 - Local: LM Studio, MLX, Ollama
 
-`buildLanguageModel` in `src/modules/ai/lib/agent.ts:76` branches on `provider` to construct the correct AI SDK provider instance. Local providers use `createOpenAICompatible` with a `localProxyFetch` that allows private-network access, while cloud providers use their dedicated SDK constructors.
+`buildLanguageModel` in `src/modules/ai/lib/agent.ts` branches on `provider` to construct the correct AI SDK provider instance. Local providers use `createOpenAICompatible` with a `localProxyFetch` that allows private-network access, while cloud providers use their dedicated SDK constructors.
 
 Model metadata (context limits, costs, reasoning behavior) lives in the model registry in `config.ts`. `resolveModel` maps a model id to its provider and defaults.
 
@@ -24,7 +24,7 @@ Model metadata (context limits, costs, reasoning behavior) lives in the model re
 
 1. Add a `ProviderInfo` entry to `PROVIDERS` in `src/modules/ai/config.ts`.
 2. Add model ids and metadata to the model registry in the same file.
-3. Add a branch in `buildLanguageModel` (`src/modules/ai/lib/agent.ts:99`) that constructs the provider instance. For OpenAI-compatible APIs you can often reuse `createOpenAICompatible`.
+3. Add a case to the `switch (provider)` in `buildLanguageModel` (`src/modules/ai/lib/agent.ts`) that constructs the provider instance. For OpenAI-compatible APIs you can often reuse `createOpenAICompatible`.
 4. If the provider requires an API key, update `providerNeedsKey` in `config.ts` and the keyring service mapping.
 5. If it needs a dedicated `@ai-sdk/*` package, add it to `package.json` and justify the bundle cost (see `CONTRIBUTING.md`).
 6. New built-ins must justify unique value beyond `openai-compatible` and OpenRouter; `CONTRIBUTING.md` calls this out explicitly.
@@ -33,7 +33,7 @@ Keys are never persisted outside the OS keychain / Linux secrets file.
 
 ## Agent run loop
 
-`runAgentStream` (`agent.ts:391`):
+`runAgentStream` (`agent.ts`):
 
 1. Resolves the model via `buildConfiguredLanguageModel`.
 2. Builds a stable system prompt from `selectSystemPrompt(modelId)` plus optional persona, custom instructions, and `TERAX.md` project memory.
@@ -49,11 +49,13 @@ The tool set is assembled in `src/modules/ai/tools/tools.ts` from `fs`, `edit`, 
 
 ## Sessions
 
-Conversations are organized into sessions. Persistence lives in `terax-ai-sessions.json` via `tauri-plugin-store` (`src/modules/ai/lib/sessions.ts`):
+Conversations are organized into sessions (`src/modules/ai/lib/sessions.ts`):
 
-- `sessions` key: list of session metadata
-- `activeId` key: active session id
-- `messages:<id>` keys: per-session messages, loaded lazily
+- `terax-ai-sessions.json` (`tauri-plugin-store`) holds only session metadata and `activeId`.
+- Message arrays live in per-session `conversations/session-<id>.json` files owned by Rust (`src-tauri/src/modules/ai_sessions.rs`, commands `ai_session_load` / `ai_session_save` / `ai_session_delete`). Writes are atomic, keep a `.bak` of the previous version, and set a damaged file aside as `.corrupt`.
+- Conversations from older versions, stored under `messages:<id>` keys of the metadata store, are migrated per session (`ai_session_finish_migration`, `ai_session_prune_backup`).
+
+`TERAX.md` documents the durability rules (flush cadence, fsync, close-time flush).
 
 `AgentRunBridge` mirrors active-session messages to disk on every change and auto-derives titles from the first user message.
 
@@ -68,7 +70,8 @@ The composer derives `isBusy` from `agentMeta.status` so it can mount safely bef
 Tool definitions live under `src/modules/ai/tools/`:
 
 - Read-only tools (`read_file`, `list_directory`, `grep`, `glob`) auto-execute after passing the security deny-list.
-- Mutating tools (`write_file`, `edit`, `multi_edit`, `create_directory`, `bash_run`, `bash_background`) set `needsApproval: true`. The AI SDK pauses and the UI renders an approval card.
+- Mutating tools (`write_file`, `edit`, `multi_edit`, `create_directory`, `bash_run`, `bash_background`) and the coding-agent tools (`spawn_coding_agent`, `send_to_agent`) set `needsApproval: true`. The AI SDK pauses and the UI renders an approval card.
+- Other tools run without an approval card: `bash_logs`, `bash_list`, `bash_kill` (background processes the agent started), `get_terminal_output` (refused for private terminals), `suggest_command` (renders an Insert card, never writes to a terminal), `open_preview`, `todo_write`, `read_agent_output` and `run_subagent`.
 - `edit` / `multi_edit` enforce a read-before-edit invariant: the model must have read the file earlier in the session.
 - In plan mode, mutating tools queue edits for batch review instead of applying them immediately.
 

@@ -23,7 +23,7 @@ The themes below frame every scope decision.
 
 1. **AI as a native primitive.** Agents, tools, autocomplete, voice - first-class, not a panel bolted onto a regular terminal.
 2. **Lightweight always.** 7-8 MB binary. Every dependency justified. Per-tab memory budget enforced.
-3. **Terminal-first.** xterm.js correctness, PTY fidelity, TUI app compatibility are non-negotiable.
+3. **Terminal-first.** Terminal emulation correctness, PTY fidelity, TUI app compatibility are non-negotiable.
 4. **Cross-platform parity.** macOS, Linux, Windows, WSL. No platform-specific exclusives.
 5. **Security by default.** Path guards, SSRF protection, OSC trust, IPC sandboxing. Defaults safe out of the box.
 
@@ -31,7 +31,7 @@ The themes below frame every scope decision.
 
 ### Terminal
 
-- [x] Multi-tab terminal with WebGL renderer
+- [x] Multi-tab terminal on libghostty-vt with a WebGPU renderer and WebGL fallback
 - [x] Native PTY backend (zsh, bash, pwsh, fish, cmd)
 - [x] Split panes
 - [x] Shell integration (cwd, prompt markers)

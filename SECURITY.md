@@ -27,7 +27,7 @@ Until `1.0.0`, only the latest minor gets security fixes. See the current versio
 
 ## What's not
 
-- Bugs in upstream deps (Tauri, xterm.js, CodeMirror, AI SDKs…) - report those upstream. We'll ship the fix once it's released.
+- Bugs in upstream deps (Tauri, Ghostty, CodeMirror, AI SDKs…) - report those upstream. We'll ship the fix once it's released.
 - Anything that needs an already-compromised machine or a local attacker with shell access
 - Older versions (`< 0.5`)
 
