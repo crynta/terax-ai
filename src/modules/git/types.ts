@@ -95,3 +95,289 @@ export type GitBranchEntry = {
 export type GitBranchListResult = {
   branches: GitBranchEntry[];
 };
+
+// ---------------------------------------------------------------- review
+
+export type CheckpointEndpoint =
+  | { kind: "ref"; name: string }
+  | { kind: "worktree" };
+
+/** What the review view is looking at. */
+export type GitDiffScope =
+  | { kind: "uncommitted" }
+  | { kind: "staged" }
+  | { kind: "unstaged" }
+  | { kind: "range"; base: string; head: string }
+  | { kind: "commit"; sha: string }
+  | { kind: "checkpoint"; from: CheckpointEndpoint; to: CheckpointEndpoint };
+
+export type GitFileStatus =
+  | "added"
+  | "modified"
+  | "deleted"
+  | "renamed"
+  | "copied"
+  | "typeChanged"
+  | "unmerged"
+  | "untracked";
+
+export type DiffSide =
+  | { kind: "rev"; id: string }
+  | { kind: "index" }
+  | { kind: "worktree"; tree?: string };
+
+export type DiffFileSummary = {
+  path: string;
+  oldPath: string | null;
+  status: GitFileStatus;
+  added: number;
+  removed: number;
+  binary: boolean;
+  submodule: boolean;
+  symlink: boolean;
+  /** Line counts were not computed (untracked file over its budget). */
+  approximate: boolean;
+};
+
+export type DiffTotals = {
+  files: number;
+  added: number;
+  removed: number;
+  binary: number;
+};
+
+export type GitDiffSummary = {
+  files: DiffFileSummary[];
+  totals: DiffTotals;
+  truncated: boolean;
+  untrackedTruncated: boolean;
+  from: DiffSide;
+  to: DiffSide;
+  mergeBase: string | null;
+};
+
+export type DiffLineKind = "context" | "add" | "remove";
+
+export type DiffLine = {
+  kind: DiffLineKind;
+  /** Without the leading marker; a CRLF file keeps its trailing `\r`. */
+  text: string;
+  oldLine: number | null;
+  newLine: number | null;
+  /** A "\ No newline at end of file" marker follows this line. */
+  noNewline: boolean;
+};
+
+export type DiffHunk = {
+  /** Content-derived; apply calls select hunks by it. */
+  id: string;
+  header: string;
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  lines: DiffLine[];
+  added: number;
+  removed: number;
+};
+
+export type ContentsOmitted = "tooLarge" | "binary" | "submodule" | "disabled";
+
+export type GitFileDiff = {
+  path: string;
+  oldPath: string | null;
+  status: GitFileStatus;
+  /** The file has no changes in this scope (the view was stale). */
+  unchanged: boolean;
+  binary: boolean;
+  submodule: boolean;
+  symlink: boolean;
+  added: number;
+  removed: number;
+  hunks: DiffHunk[];
+  fingerprint: string;
+  /** The patch hit its cap; `hunks` holds only the complete leading hunks. */
+  truncated: boolean;
+  contents: { original: string; modified: string } | null;
+  contentsOmitted: ContentsOmitted | null;
+  from: DiffSide;
+  to: DiffSide;
+};
+
+export type ApplyMode = "stage" | "unstage" | "revert";
+
+export type HunkSelection = {
+  id: string;
+  /** Indices into the hunk's `lines`; omitted takes the whole hunk. */
+  lines?: number[];
+};
+
+export type ApplySelection =
+  | { kind: "file" }
+  | { kind: "hunks"; items: HunkSelection[] };
+
+export type ApplyHunksRequest = {
+  scope: GitDiffScope;
+  path: string;
+  oldPath?: string | null;
+  mode: ApplyMode;
+  selection: ApplySelection;
+};
+
+export type ApplyRefusalCode =
+  | "unchanged"
+  | "staleHunks"
+  | "wholeFileOnly"
+  | "unsupportedScope"
+  | "invalidSelection"
+  | "patchRejected"
+  | "needsSeparateScopes";
+
+/** Nothing is changed when `applied` is false. */
+export type ApplyOutcome = {
+  applied: boolean;
+  refusal: {
+    code: ApplyRefusalCode;
+    message: string;
+    hunkIds: string[];
+  } | null;
+};
+
+// ------------------------------------------------------------ worktrees
+
+export type WorktreeEntry = {
+  path: string;
+  branch: string | null;
+  head: string | null;
+  detached: boolean;
+  bare: boolean;
+  locked: boolean;
+  lockReason: string | null;
+  prunable: boolean;
+  prunableReason: string | null;
+  isMain: boolean;
+  exists: boolean;
+};
+
+export type WorktreeBranch =
+  | { mode: "newBranch"; name: string }
+  | { mode: "existingBranch"; name: string }
+  | { mode: "detach" };
+
+export type WorktreeAddRequest = {
+  /** Absolute location; omitted: `~/.terax/worktrees/<project>/<task>`. */
+  path?: string | null;
+  taskSlug?: string | null;
+  branch: WorktreeBranch;
+  base?: string | null;
+  /** Globs of ignored files to copy in (e.g. `.env`), relative to the repo. */
+  include?: string[];
+};
+
+export type SkippedPath = { path: string; reason: string };
+
+export type WorktreeAdded = {
+  path: string;
+  branch: string | null;
+  head: string;
+  detached: boolean;
+  copied: string[];
+  skipped: SkippedPath[];
+  includeTruncated: boolean;
+};
+
+export type ChangedPath = { path: string; status: GitFileStatus };
+
+export type WorktreeRemoveBlocker = "locked" | "dirty" | "unmerged";
+
+export type WorktreeRemoveReport = {
+  removed: boolean;
+  path: string;
+  branch: string | null;
+  blockers: WorktreeRemoveBlocker[];
+  dirtyFiles: ChangedPath[];
+  dirtyTotal: number;
+  untrackedCount: number;
+  unmergedCommits: number;
+  lockReason: string | null;
+};
+
+export type WorktreePruneReport = { pruned: string[] };
+
+// ---------------------------------------------------------- checkpoints
+
+export type CheckpointInfo = {
+  ref: string;
+  taskId: string;
+  turn: number;
+  commit: string;
+  tree: string;
+  parent: string | null;
+  createdAtSecs: number;
+};
+
+export type CheckpointLimits = {
+  atomic: boolean;
+  capturesIgnoredFiles: boolean;
+  capturesSubmoduleContents: boolean;
+  capturesIndexState: boolean;
+};
+
+export type CheckpointCreated = CheckpointInfo & {
+  /** Two consecutive snapshot passes produced the same tree. */
+  consistent: boolean;
+  passes: number;
+  warnings: string[];
+  /** Files that kept changing under the snapshot and were left out. */
+  unstablePaths: string[];
+  limits: CheckpointLimits;
+  durationMs: number;
+};
+
+export type RestoreReport = {
+  restored: boolean;
+  refusal: "changedSinceLatest" | null;
+  latestRef: string | null;
+  dirty: ChangedPath[];
+  dirtyTotal: number;
+  written: number;
+  removed: number;
+  skipped: SkippedPath[];
+  headMoved: boolean;
+  indexSynced: boolean;
+  consistent: boolean;
+  atomic: boolean;
+};
+
+// ------------------------------------------------------------- branches
+
+export type BranchCreated = { name: string; commit: string };
+
+export type UpstreamInfo = {
+  branch: string | null;
+  detached: boolean;
+  upstream: string | null;
+  remote: string | null;
+  remoteBranch: string | null;
+  remoteUrl: string | null;
+  ahead: number;
+  behind: number;
+  /** An upstream is configured but its remote-tracking ref is gone. */
+  gone: boolean;
+  hasRemotes: boolean;
+  suggestedRemote: string | null;
+};
+
+// ---------------------------------------------------------------- watch
+
+export type GitChangeKind = "head" | "index" | "refs" | "worktree";
+
+export type GitWatchInfo = {
+  watching: boolean;
+  repo: string;
+  watchedDirs: number;
+  truncated: boolean;
+  reason: string | null;
+};
+
+export type GitChangedEvent = { repo: string; kinds: GitChangeKind[] };
