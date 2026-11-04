@@ -1047,7 +1047,13 @@ export default function App() {
     [activeTab, captureActiveSelection],
   );
 
-  useGlobalShortcuts(shortcutHandlers, { isDisabled: shortcutsDisabled });
+  useGlobalShortcuts(shortcutHandlers, {
+    isDisabled: shortcutsDisabled,
+    inTerminal: (e) =>
+      isTerminalSurfaceTarget(
+        (e.target as HTMLElement | null) ?? document.activeElement,
+      ),
+  });
 
   const registerTerminalHandle = useCallback(
     (leafId: number, h: TerminalPaneHandle | null) => {

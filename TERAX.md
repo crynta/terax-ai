@@ -187,8 +187,13 @@ The block prompt retains an enabled terminal input proxy for native menus and
 routes editing keys, composed text and paste back to its command editor.
 Character drags retain a native selection pin from pointerdown, including before
 the first pointermove. Unmoved clicks and lost captures discard provisional pins.
-Key encoding supplies the base character required by Kitty keyboard mode; plain
-keys and key releases also use Ghostty encoding when the application requests it.
+Key encoding supplies the base character only where Kitty keyboard mode escape-codes
+text (a held Ctrl, Alt or Super, or report-all-keys); Shift-only and plain text stay text,
+lock modifiers are reported only at the report-all-keys level, and key releases follow
+the presses that were escape-coded. The wheel accumulates whole lines scaled by the
+`terminalScrollSpeed` preference and becomes cursor keys on the alternate screen under
+DEC 1007; the input element is moved onto the cursor cell only for the length of an IME
+composition (`ImeAnchor`).
 Terminal text uses the configured font, an installed Nerd Font when detected,
 or bundled JetBrains Mono. Private-use prompt symbols require an installed font
 that supplies them; Terax does not ship a separate symbol font. Native color
@@ -374,7 +379,7 @@ Each module is self-contained, exports a thin barrel via `index.ts`, and owns it
 - **tabs/** - `useTabs` is the source of truth for tab list + active id. `useWorkspaceCwd` derives explorer root + inherited cwd for new tabs from active tab. `basename` splits on both `/` and `\`.
 - **header/** - top bar + inline search (`SearchInline` adapts to terminal vs editor via `SearchTarget`). `WindowControls` rendered when `USE_CUSTOM_WINDOW_CONTROLS` is true (Linux + Windows; macOS uses native traffic lights).
 - **statusbar/** - bottom bar, `CwdBreadcrumb` (handles Unix paths, Windows drive letters, and home `~` segments via `pathUtils.segmentsFromCwd`), AI tools indicator.
-- **shortcuts/** - keymap registry (`shortcuts.ts`) + `useGlobalShortcuts`. Handlers live in `App.tsx` and are passed in by id (`tab.new`, `ai.toggle`, …). `metaKey || ctrlKey` for cross-platform Cmd/Ctrl.
+- **shortcuts/** - keymap registry (`shortcuts.ts`) + `useGlobalShortcuts`. Handlers live in `App.tsx` and are passed in by id (`tab.new`, `ai.toggle`, …). `metaKey || ctrlKey` for cross-platform Cmd/Ctrl. While a terminal has focus on Windows/Linux, plain Ctrl+letter defaults belong to the shell and the app command moves to Ctrl+Shift (`lib/terminalFocusPolicy.ts`); a binding the user set always wins.
 - **settings/** - settings store (`store.ts` via `tauri-plugin-store`), preferences hook, settings window opener. The Settings window is closed (not hidden, so its WebContent process is released) when it hands a theme edit to the main window; `open_settings_window` rebuilds it on demand.
 - **sidebar/** - activity bar + collapsible side panels (explorer, source control, git history).
 - **source-control/** - git status / stage / commit panel and diff workflow. `useSourceControl` takes a `live` flag (`statusConsumers.ts`): `git status` runs on window focus and context changes only while the Source Control panel, a git tab or the explorer's git decorations are on screen. Otherwise nothing runs, a snapshot for another repository is dropped (never a wrong badge), and the next consumer to appear refreshes it. The rail badge alone is not a consumer; it refreshes lazily.
