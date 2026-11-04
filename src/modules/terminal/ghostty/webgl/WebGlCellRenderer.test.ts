@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { TerminalGpuTheme } from "../gpu/terminalVisuals";
 import {
+  COLOR_FRAGMENT_SHADER,
+  COLOR_VERTEX_SHADER,
+  GLYPH_FRAGMENT_SHADER,
+  GLYPH_VERTEX_SHADER,
   nextWebGlCellCapacity,
   rendererProfileKey,
   resetGlyphGrid,
@@ -11,6 +15,7 @@ const theme: TerminalGpuTheme = {
   background: [0, 0, 0],
   foreground: [255, 255, 255],
   cursor: [255, 255, 255],
+  cursorText: [0, 0, 0],
   selection: { color: [80, 100, 200], alpha: 0.4 },
   palette: [],
 };
@@ -118,5 +123,38 @@ describe("nextWebGlCellCapacity", () => {
     expect(initial).toBe(1_280);
     expect(nextWebGlCellCapacity(initial, 2_000)).toBe(2_048);
     expect(() => nextWebGlCellCapacity(0, 262_145)).toThrow(RangeError);
+  });
+});
+
+describe("WebGL shaders", () => {
+  const fragments = [COLOR_FRAGMENT_SHADER, GLYPH_FRAGMENT_SHADER];
+
+  it("never lowers fragment precision, which collapses colours on Mesa and WebKitGTK", () => {
+    for (const source of [
+      ...fragments,
+      COLOR_VERTEX_SHADER,
+      GLYPH_VERTEX_SHADER,
+    ]) {
+      expect(source).not.toMatch(/\blowp\b/);
+      expect(source).not.toMatch(/\bmediump\b/);
+    }
+    for (const source of fragments) {
+      expect(source).toMatch(/precision highp float;/);
+    }
+    expect(GLYPH_FRAGMENT_SHADER).toMatch(/precision highp sampler2D;/);
+  });
+
+  it("passes the text colour through unquantised and blends it by glyph coverage", () => {
+    expect(GLYPH_FRAGMENT_SHADER).toMatch(
+      /outColor = vec4\(v_color\.rgb, alpha \* coverage\);/,
+    );
+  });
+
+  it("recolours the glyphs under a block cursor in the vertex stage", () => {
+    expect(GLYPH_VERTEX_SHADER).toMatch(/uniform vec4 u_cursor;/);
+    expect(GLYPH_VERTEX_SHADER).toMatch(/uniform vec3 u_cursor_text;/);
+    expect(GLYPH_VERTEX_SHADER).toMatch(
+      /v_color = vec4\(u_cursor_text, 1\.0\);/,
+    );
   });
 });

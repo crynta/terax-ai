@@ -7,7 +7,7 @@
  * All coordinates are integer device pixels; nothing is filtered.
  */
 
-export const SCREEN_UNIFORM_BYTES = 192;
+export const SCREEN_UNIFORM_BYTES = 208;
 
 /** Byte offsets of `Screen` fields; the TypeScript packer mirrors this layout. */
 export const SCREEN_OFFSET = {
@@ -35,12 +35,15 @@ export const SCREEN_OFFSET = {
   decoration: 144,
   contrast: 160,
   gamma: 176,
+  cursorText: 192,
 } as const;
 
 export const SCREEN_FLAG_TEXT_BLINK_VISIBLE = 1;
 export const SCREEN_FLAG_SEARCH_ACTIVE = 2;
 export const SCREEN_FLAG_SELECTION_ACTIVE = 4;
 export const SCREEN_FLAG_SELECTION_RECTANGULAR = 8;
+/** A block cursor is drawn: the character under it takes `cursor_text`. */
+export const SCREEN_FLAG_CURSOR_BLOCK = 16;
 
 /*
  * Notes on the shader source below (kept out of the WGSL strings: they ship in the bundle):
@@ -71,6 +74,7 @@ struct Screen {
   decoration: vec4u,
   contrast: vec4f,
   gamma: vec4f,
+  cursor_text: vec4f,
 }
 
 @group(0) @binding(0) var<uniform> screen: Screen;
@@ -85,6 +89,7 @@ const FLAG_TEXT_BLINK_VISIBLE = 1u;
 const FLAG_SEARCH_ACTIVE = 2u;
 const FLAG_SELECTION_ACTIVE = 4u;
 const FLAG_SELECTION_RECTANGULAR = 8u;
+const FLAG_CURSOR_BLOCK = 16u;
 
 const SEARCH_MATCH = vec3f(0.31764706, 0.36078432, 0.41568628);
 const SEARCH_ACTIVE_MATCH = vec3f(0.81960785, 0.52549022, 0.08627451);
@@ -101,6 +106,17 @@ fn is_wide_lead(record: vec4u) -> bool {
 
 fn is_spacer_tail(index: u32, col: u32) -> bool {
   return col > 0u && is_wide_lead(cells[index - 1u]);
+}
+
+fn cursor_cell() -> vec2u {
+  return vec2u(round(screen.cursor_origin / vec2f(screen.cell_size)));
+}
+
+fn cursor_columns(cell: vec2u) -> vec2u {
+  let index = cell.y * screen.dims.x + cell.x;
+  if (is_wide_lead(cells[index]) && cell.x + 1u < screen.dims.x) { return vec2u(cell.x, 2u); }
+  if (is_spacer_tail(index, cell.x)) { return vec2u(cell.x - 1u, 2u); }
+  return vec2u(cell.x, 1u);
 }
 
 fn selection_contains(row: i32, col: i32) -> bool {
@@ -208,9 +224,18 @@ fn fragment_main(@builtin(position) position: vec4f) -> @location(0) vec4f {
   let record = cells[index];
   let background = cell_background(index, cell.y, cell.x);
 
-  let cursor_end = screen.cursor_origin + screen.cursor_size;
-  if (local_position.x >= screen.cursor_origin.x && local_position.y >= screen.cursor_origin.y &&
-      local_position.x < cursor_end.x && local_position.y < cursor_end.y) {
+  var cursor_min = screen.cursor_origin;
+  var cursor_max = screen.cursor_origin + screen.cursor_size;
+  if ((screen.flags & FLAG_CURSOR_BLOCK) != 0u) {
+    let cursor_at = cursor_cell();
+    if (cell.y == cursor_at.y) {
+      let span = cursor_columns(cursor_at);
+      cursor_min.x = f32(span.x * screen.cell_size.x);
+      cursor_max.x = f32((span.x + span.y) * screen.cell_size.x);
+    }
+  }
+  if (local_position.x >= cursor_min.x && local_position.y >= cursor_min.y &&
+      local_position.x < cursor_max.x && local_position.y < cursor_max.y) {
     return vec4f(screen.cursor_color.rgb, 1.0);
   }
 
@@ -312,6 +337,15 @@ fn vertex_main(
   output.texel_origin = vec2i(i32(entry.x & 0xffffu) + skipped, i32(entry.x >> 16u));
   output.quad_origin = origin;
   output.color = unpack4x8unorm(record.y);
+  if ((screen.flags & FLAG_CURSOR_BLOCK) != 0u) {
+    let cursor_at = cursor_cell();
+    if (row == cursor_at.y) {
+      let span = cursor_columns(cursor_at);
+      if (col >= span.x && col < span.x + span.y) {
+        output.color = vec4f(screen.cursor_text.rgb, 1.0);
+      }
+    }
+  }
   output.glyph_flags = entry.w;
   return output;
 }

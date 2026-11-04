@@ -11,6 +11,7 @@ import {
   CanvasBackingStore,
   type GestureGrowth,
 } from "../gpu/CanvasBackingStore";
+import { blockCursorSpan } from "../gpu/cursorText";
 import type {
   TerminalFontMetrics,
   TerminalGpuTheme,
@@ -79,6 +80,9 @@ type GlyphProgram = Program & {
   readonly atlas: WebGLUniformLocation;
   readonly colorAtlas: WebGLUniformLocation;
   readonly textBlinkVisible: WebGLUniformLocation;
+  readonly cursor: WebGLUniformLocation;
+  readonly cursorText: WebGLUniformLocation;
+  readonly cells: WebGLUniformLocation;
 };
 
 type RectangleVertices = {
@@ -113,8 +117,13 @@ export class WebGlCellRenderer {
   private foregrounds = new Uint32Array(0);
   private underlineColors = new Uint32Array(0);
   private flags = new Uint8Array(0);
+  private widths = new Uint8Array(0);
   private decorations = new Uint8Array(0);
   private blinkingRows = new Uint8Array(0);
+  /** The cells a drawn block cursor covers (count 0: none); their glyphs take the cursor text colour. */
+  private blockColumn = 0;
+  private blockRow = 0;
+  private blockCount = 0;
   private readonly backgroundVertices: RectangleVertices = {
     attributes: new Float32Array(INITIAL_RECTANGLE_CAPACITY * RECTANGLE_FLOATS),
     count: 0,
@@ -303,6 +312,7 @@ export class WebGlCellRenderer {
     this.foregrounds.fill(0, 0, cells);
     this.underlineColors.fill(0, 0, cells);
     this.flags.fill(0, 0, cells);
+    this.widths.fill(1, 0, cells);
     this.decorations.fill(0, 0, cells);
     this.blinkingRows.fill(0, 0, this.rows);
     this.blinkingRowCount = 0;
@@ -326,6 +336,7 @@ export class WebGlCellRenderer {
         this.foregrounds.byteLength +
         this.underlineColors.byteLength +
         this.flags.byteLength +
+        this.widths.byteLength +
         this.decorations.byteLength +
         this.backgroundVertices.attributes.byteLength +
         this.rectangleRows.byteLength +
@@ -371,6 +382,7 @@ export class WebGlCellRenderer {
     this.foregrounds = new Uint32Array(0);
     this.underlineColors = new Uint32Array(0);
     this.flags = new Uint8Array(0);
+    this.widths = new Uint8Array(0);
     this.decorations = new Uint8Array(0);
     this.blinkingRows = new Uint8Array(0);
     this.backgroundVertices.attributes = new Float32Array(0);
@@ -475,6 +487,7 @@ export class WebGlCellRenderer {
         const cellIndex = row * this.cols + column;
         const glyphIndex = cellIndex * GLYPH_FLOATS;
         const width = cells.width(cellIndex);
+        this.widths[cellIndex] = width;
         this.clearGlyph(glyphIndex);
         if (width === 0) {
           rowRectanglesChanged ||=
@@ -761,6 +774,7 @@ export class WebGlCellRenderer {
   private updateCursor(frame: WebGlRendererFrame): boolean {
     const vertices = this.cursorVertices;
     vertices.count = 0;
+    this.blockCount = 0;
     if (!this.profile || !frame.cursorVisible) {
       return this.uploadCursor();
     }
@@ -790,7 +804,24 @@ export class WebGlCellRenderer {
         1,
       );
     } else {
-      this.writeRectangle(vertices, 0, cursor.x, cursor.y, 1, 1, color, 1);
+      const span = blockCursorSpan(
+        cursor.x,
+        this.widths[cursor.y * this.cols + cursor.x],
+        this.cols,
+      );
+      this.writeRectangle(
+        vertices,
+        0,
+        span.start,
+        cursor.y,
+        span.count,
+        1,
+        color,
+        1,
+      );
+      this.blockColumn = span.start;
+      this.blockRow = cursor.y;
+      this.blockCount = span.count;
     }
     vertices.count = 1;
     return this.uploadCursor();
@@ -908,6 +939,21 @@ export class WebGlCellRenderer {
       resources.glyphProgram.textBlinkVisible,
       textBlinkVisible ? 1 : 0,
     );
+    gl.uniform4f(
+      resources.glyphProgram.cursor,
+      this.blockColumn,
+      this.blockRow,
+      this.blockCount,
+      this.blockCount > 0 ? 1 : 0,
+    );
+    const text = profile.theme.cursorText;
+    gl.uniform3f(
+      resources.glyphProgram.cursorText,
+      text[0] / 255,
+      text[1] / 255,
+      text[2] / 255,
+    );
+    gl.uniform2f(resources.glyphProgram.cells, this.cols, this.rows);
     gl.drawElementsInstanced(
       gl.TRIANGLE_STRIP,
       4,
@@ -966,6 +1012,7 @@ export class WebGlCellRenderer {
       this.foregrounds = new Uint32Array(this.cellCapacity);
       this.underlineColors = new Uint32Array(this.cellCapacity);
       this.flags = new Uint8Array(this.cellCapacity);
+      this.widths = new Uint8Array(this.cellCapacity);
       this.decorations = new Uint8Array(this.cellCapacity);
       this.ensureGlyphGpuCapacity();
     }
@@ -996,6 +1043,7 @@ export class WebGlCellRenderer {
       this.foregrounds = new Uint32Array(this.cellCapacity);
       this.underlineColors = new Uint32Array(this.cellCapacity);
       this.flags = new Uint8Array(this.cellCapacity);
+      this.widths = new Uint8Array(this.cellCapacity);
       this.decorations = new Uint8Array(this.cellCapacity);
       this.ensureGlyphGpuCapacity(true);
     }
@@ -1060,6 +1108,13 @@ export class WebGlCellRenderer {
       glyphProgramValue,
       "u_text_blink_visible",
     );
+    const glyphCursor = requiredUniform(gl, glyphProgramValue, "u_cursor");
+    const glyphCursorText = requiredUniform(
+      gl,
+      glyphProgramValue,
+      "u_cursor_text",
+    );
+    const glyphCells = requiredUniform(gl, glyphProgramValue, "u_cells");
 
     const backgroundBuffer = requiredBuffer(gl);
     const cursorBuffer = requiredBuffer(gl);
@@ -1109,6 +1164,9 @@ export class WebGlCellRenderer {
         atlas: glyphAtlas,
         colorAtlas: glyphColorAtlas,
         textBlinkVisible: glyphTextBlinkVisible,
+        cursor: glyphCursor,
+        cursorText: glyphCursorText,
+        cells: glyphCells,
       },
       backgroundVao,
       cursorVao,
@@ -1383,7 +1441,7 @@ export function nextWebGlCellCapacity(
   );
 }
 
-const COLOR_VERTEX_SHADER = `#version 300 es
+export const COLOR_VERTEX_SHADER = `#version 300 es
 layout(location = 0) in vec2 a_position;
 layout(location = 1) in vec2 a_size;
 layout(location = 2) in vec4 a_color;
@@ -1401,8 +1459,8 @@ void main() {
   v_decoration = a_decoration;
 }`;
 
-const COLOR_FRAGMENT_SHADER = `#version 300 es
-precision mediump float;
+export const COLOR_FRAGMENT_SHADER = `#version 300 es
+precision highp float;
 in vec4 v_color;
 in vec2 v_unitquad;
 flat in float v_decoration;
@@ -1419,7 +1477,7 @@ void main() {
   outColor = v_color;
 }`;
 
-const GLYPH_VERTEX_SHADER = `#version 300 es
+export const GLYPH_VERTEX_SHADER = `#version 300 es
 layout(location = 0) in vec2 a_unitquad;
 layout(location = 1) in vec2 a_offset;
 layout(location = 2) in vec2 a_size;
@@ -1430,6 +1488,9 @@ layout(location = 6) in float a_intrinsic_color;
 layout(location = 7) in vec2 a_cellpos;
 uniform mat4 u_projection;
 uniform vec2 u_resolution;
+uniform vec4 u_cursor;
+uniform vec3 u_cursor_text;
+uniform vec2 u_cells;
 out vec2 v_texcoord;
 out vec4 v_color;
 flat out float v_intrinsic_color;
@@ -1438,11 +1499,17 @@ void main() {
   gl_Position = u_projection * vec4(zeroToOne, 0.0, 1.0);
   v_texcoord = a_texcoord + a_unitquad * a_texsize;
   v_color = a_color;
+  vec2 cell = floor(a_cellpos * u_cells + 0.5);
+  if (u_cursor.w > 0.5 && cell.y == u_cursor.y && cell.x >= u_cursor.x &&
+      cell.x < u_cursor.x + u_cursor.z) {
+    v_color = vec4(u_cursor_text, 1.0);
+  }
   v_intrinsic_color = a_intrinsic_color;
 }`;
 
-const GLYPH_FRAGMENT_SHADER = `#version 300 es
-precision lowp float;
+export const GLYPH_FRAGMENT_SHADER = `#version 300 es
+precision highp float;
+precision highp sampler2D;
 uniform sampler2D u_atlas;
 uniform sampler2D u_color_atlas;
 uniform bool u_text_blink_visible;

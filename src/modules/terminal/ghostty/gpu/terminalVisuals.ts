@@ -1,5 +1,6 @@
 import { readTerminalTokens } from "@/styles/tokens";
 import type { Rgb } from "../core/packedCells";
+import { resolveCursorText } from "./cursorText";
 
 export type TerminalFontSpec = {
   readonly family: string;
@@ -36,6 +37,8 @@ export type TerminalGpuTheme = {
   readonly background: Rgb;
   readonly foreground: Rgb;
   readonly cursor: Rgb;
+  /** Colour of the character under a block cursor. */
+  readonly cursorText: Rgb;
   readonly selection: {
     readonly color: Rgb;
     readonly alpha: number;
@@ -165,10 +168,17 @@ export function fontCss(
 export function readTerminalGpuTheme(): TerminalGpuTheme {
   const tokens = readTerminalTokens();
   const selection = cssColorToRgba(tokens.selection);
+  const background = cssColorToRgb(tokens.background);
+  const cursor = cssColorToRgb(tokens.cursor);
   return {
-    background: cssColorToRgb(tokens.background),
+    background,
     foreground: cssColorToRgb(tokens.foreground),
-    cursor: cssColorToRgb(tokens.cursor),
+    cursor,
+    cursorText: resolveCursorText(
+      cursor,
+      tokens.cursorAccent ? cssColorToRgb(tokens.cursorAccent) : null,
+      background,
+    ),
     selection: {
       color: [selection[0], selection[1], selection[2]],
       alpha: selection[3],

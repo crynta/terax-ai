@@ -1409,6 +1409,8 @@ export class WebGpuTerminalSurface
         ? cursorRect(cursor, cursor.style, this.metrics)
         : null,
       cursorColor: theme.cursor,
+      cursorBlock: cursor.style === "block",
+      cursorText: theme.cursorText,
       background: theme.background,
       selection: bounds
         ? selectionUniform(bounds, viewportOriginLine, frame.rows)
