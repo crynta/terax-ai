@@ -5,7 +5,9 @@ export type TerminalKeyEvent = Pick<
 
 export type PlatformOpts = { isMac: boolean };
 
-export function terminalWordNavigationSequence(event: TerminalKeyEvent): string | null {
+export function terminalWordNavigationSequence(
+  event: TerminalKeyEvent,
+): string | null {
   if (!event.altKey || event.ctrlKey || event.metaKey) return null;
   if (event.key === "ArrowLeft" || event.code === "ArrowLeft") return "\x1bb";
   if (event.key === "ArrowRight" || event.code === "ArrowRight") return "\x1bf";
@@ -44,14 +46,21 @@ export function terminalDeleteSequence(
   return null;
 }
 
+/**
+ * Command-key editing (line start/end, kill line) has no terminal encoding, so
+ * it is the same readline control character on either screen. Option and Ctrl
+ * word motion is a real key on the alternate screen (`CSI 1;3D`): a full-screen
+ * application gets the key, not a shell binding.
+ */
 export function terminalReadlineSequence(
   event: TerminalKeyEvent,
   opts: PlatformOpts & { isAlternateScreen: boolean },
 ): string | null {
-  if (opts.isAlternateScreen) return null;
-  return (
+  const command =
     terminalLineNavigationSequence(event, opts) ??
-    terminalWordNavigationSequence(event) ??
-    terminalDeleteSequence(event, opts)
+    (event.metaKey ? terminalDeleteSequence(event, opts) : null);
+  if (command || opts.isAlternateScreen) return command;
+  return (
+    terminalWordNavigationSequence(event) ?? terminalDeleteSequence(event, opts)
   );
 }

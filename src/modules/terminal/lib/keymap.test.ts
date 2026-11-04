@@ -74,7 +74,12 @@ describe("terminalLineNavigationSequence", () => {
   it("does not remap Cmd+Option+Arrow (selection-style combos pass through)", () => {
     expect(
       terminalLineNavigationSequence(
-        evt({ metaKey: true, altKey: true, key: "ArrowLeft", code: "ArrowLeft" }),
+        evt({
+          metaKey: true,
+          altKey: true,
+          key: "ArrowLeft",
+          code: "ArrowLeft",
+        }),
         { isMac: true },
       ),
     ).toBeNull();
@@ -129,10 +134,9 @@ describe("terminalDeleteSequence", () => {
 
   it("does not remap plain Backspace", () => {
     expect(
-      terminalDeleteSequence(
-        evt({ key: "Backspace", code: "Backspace" }),
-        { isMac: true },
-      ),
+      terminalDeleteSequence(evt({ key: "Backspace", code: "Backspace" }), {
+        isMac: true,
+      }),
     ).toBeNull();
   });
 });
@@ -168,12 +172,24 @@ describe("terminalReadlineSequence", () => {
     },
   );
 
-  it.each(remaps)("suppresses %s on the alternate screen", (_name, event) => {
+  it.each(remaps)(
+    "keeps Command editing and leaves Option motion to the application on the alternate screen (%s)",
+    (_name, event, sequence) => {
+      expect(
+        terminalReadlineSequence(event, {
+          isMac: true,
+          isAlternateScreen: true,
+        }),
+      ).toBe(event.metaKey ? sequence : null);
+    },
+  );
+
+  it("never remaps Ctrl+Backspace on the alternate screen", () => {
     expect(
-      terminalReadlineSequence(event, {
-        isMac: true,
-        isAlternateScreen: true,
-      }),
+      terminalReadlineSequence(
+        evt({ ctrlKey: true, key: "Backspace", code: "Backspace" }),
+        { isMac: false, isAlternateScreen: true },
+      ),
     ).toBeNull();
   });
 });

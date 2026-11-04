@@ -1,132 +1,33 @@
+import { ImeAnchor } from "@/modules/terminal/ghostty/input/ImeAnchor";
 import { TerminalInputProxy } from "@/modules/terminal/ghostty/input/TerminalInputProxy";
 import { TerminalNativeSelection } from "@/modules/terminal/ghostty/input/TerminalNativeSelection";
-import { terminalReadlineSequence } from "@/modules/terminal/lib/keymap";
 import { readTerminalClipboard } from "@/modules/terminal/lib/terminalClipboard";
-import {
-  Key,
-  KeyAction,
-  type KeyEvent,
-  Mods,
-} from "@terax/ghostty-core/protocol";
+import { type Key, KeyAction, type KeyEvent } from "@terax/ghostty-core/protocol";
 import type { GhosttyTerminalModelApi } from "../GhosttyTerminalModel";
+import {
+  buildKeyEvent,
+  canonicalKittyPress,
+  ignoredForIme,
+  KITTY_REPORT_EVENT_TYPES,
+  type KeyContext,
+  type KeyRoute,
+  keyModifiers,
+  routeKeyDown,
+} from "./keyRouting";
+import { KEY_MAP } from "./keyTable";
 import { encodeTerminalPaste } from "./terminalInputEncoding";
+import {
+  cursorKeySequence,
+  DEFAULT_SCROLL_SPEED,
+  MAX_WHEEL_REPORTS_PER_EVENT,
+  WheelAccumulator,
+  wheelLines,
+  wheelRoute,
+} from "./terminalWheel";
 
 const DUPLICATE_INPUT_WINDOW_MS = 75;
-
-const KEY_MAP: Readonly<Record<string, Key>> = {
-  KeyA: Key.A,
-  KeyB: Key.B,
-  KeyC: Key.C,
-  KeyD: Key.D,
-  KeyE: Key.E,
-  KeyF: Key.F,
-  KeyG: Key.G,
-  KeyH: Key.H,
-  KeyI: Key.I,
-  KeyJ: Key.J,
-  KeyK: Key.K,
-  KeyL: Key.L,
-  KeyM: Key.M,
-  KeyN: Key.N,
-  KeyO: Key.O,
-  KeyP: Key.P,
-  KeyQ: Key.Q,
-  KeyR: Key.R,
-  KeyS: Key.S,
-  KeyT: Key.T,
-  KeyU: Key.U,
-  KeyV: Key.V,
-  KeyW: Key.W,
-  KeyX: Key.X,
-  KeyY: Key.Y,
-  KeyZ: Key.Z,
-  Digit0: Key.ZERO,
-  Digit1: Key.ONE,
-  Digit2: Key.TWO,
-  Digit3: Key.THREE,
-  Digit4: Key.FOUR,
-  Digit5: Key.FIVE,
-  Digit6: Key.SIX,
-  Digit7: Key.SEVEN,
-  Digit8: Key.EIGHT,
-  Digit9: Key.NINE,
-  Backquote: Key.GRAVE,
-  Backslash: Key.BACKSLASH,
-  BracketLeft: Key.BRACKET_LEFT,
-  BracketRight: Key.BRACKET_RIGHT,
-  Comma: Key.COMMA,
-  Equal: Key.EQUAL,
-  IntlBackslash: Key.INTL_BACKSLASH,
-  Minus: Key.MINUS,
-  Period: Key.PERIOD,
-  Quote: Key.QUOTE,
-  Semicolon: Key.SEMICOLON,
-  Slash: Key.SLASH,
-  Backspace: Key.BACKSPACE,
-  Enter: Key.ENTER,
-  Space: Key.SPACE,
-  Tab: Key.TAB,
-  Delete: Key.DELETE,
-  End: Key.END,
-  Home: Key.HOME,
-  Insert: Key.INSERT,
-  PageDown: Key.PAGE_DOWN,
-  PageUp: Key.PAGE_UP,
-  ArrowDown: Key.DOWN,
-  ArrowLeft: Key.LEFT,
-  ArrowRight: Key.RIGHT,
-  ArrowUp: Key.UP,
-  Escape: Key.ESCAPE,
-  F1: Key.F1,
-  F2: Key.F2,
-  F3: Key.F3,
-  F4: Key.F4,
-  F5: Key.F5,
-  F6: Key.F6,
-  F7: Key.F7,
-  F8: Key.F8,
-  F9: Key.F9,
-  F10: Key.F10,
-  F11: Key.F11,
-  F12: Key.F12,
-  F13: Key.F13,
-  F14: Key.F14,
-  F15: Key.F15,
-  F16: Key.F16,
-  F17: Key.F17,
-  F18: Key.F18,
-  F19: Key.F19,
-  F20: Key.F20,
-  F21: Key.F21,
-  F22: Key.F22,
-  F23: Key.F23,
-  F24: Key.F24,
-  Numpad0: Key.KP_0,
-  Numpad1: Key.KP_1,
-  Numpad2: Key.KP_2,
-  Numpad3: Key.KP_3,
-  Numpad4: Key.KP_4,
-  Numpad5: Key.KP_5,
-  Numpad6: Key.KP_6,
-  Numpad7: Key.KP_7,
-  Numpad8: Key.KP_8,
-  Numpad9: Key.KP_9,
-  NumpadAdd: Key.KP_PLUS,
-  NumpadDecimal: Key.KP_PERIOD,
-  NumpadDivide: Key.KP_DIVIDE,
-  NumpadEnter: Key.KP_ENTER,
-  NumpadEqual: Key.KP_EQUAL,
-  NumpadMultiply: Key.KP_MULTIPLY,
-  NumpadSubtract: Key.KP_MINUS,
-  AltLeft: Key.ALT_LEFT,
-  AltRight: Key.ALT_RIGHT,
-  ControlLeft: Key.CONTROL_LEFT,
-  ControlRight: Key.CONTROL_RIGHT,
-  MetaLeft: Key.META_LEFT,
-  MetaRight: Key.META_RIGHT,
-  ShiftLeft: Key.SHIFT_LEFT,
-  ShiftRight: Key.SHIFT_RIGHT,
-};
+const MODE_CURSOR_KEYS = 1;
+const MODE_ALTERNATE_SCROLL = 1007;
 
 type InputSource = "keydown" | "beforeinput" | "composition" | "paste";
 
@@ -145,31 +46,50 @@ export type GhosttyInputControllerOptions = {
   readonly onKeyDown?: (event: KeyboardEvent) => boolean;
   readonly macOptionIsMeta?: boolean;
   readonly isMac?: boolean;
+  readonly isWindows?: boolean;
   /** Selected-placeholder input proxy (a macOS WebKit fix); defaults to `isMac`. */
   readonly inputPlaceholder?: boolean;
+  /** Wheel distance multiplier; read per event so a preference change applies at once. */
+  readonly scrollSpeed?: () => number;
 };
 
 export class GhosttyInputController {
   private readonly encoder = new TextEncoder();
   private readonly isMac: boolean;
   private readonly proxy: TerminalInputProxy;
+  private readonly imeAnchor: ImeAnchor;
   private readonly nativeSelection: TerminalNativeSelection | null;
+  private readonly keyContext: KeyContext;
   private readonly pressedKeys = new Map<string, KeyEvent>();
+  private readonly wheel = new WheelAccumulator();
   private composing = false;
   private mouseButtons = 0;
   private lastData = "";
   private lastSource: InputSource | null = null;
   private lastDataAt = 0;
-  private wheelRemainder = 0;
-  private mouseWheelRemainder = 0;
   private lastMouseMotion: string | null = null;
   private disposed = false;
 
   constructor(private readonly options: GhosttyInputControllerOptions) {
-    this.isMac = options.isMac ?? /Mac|iPhone|iPad/.test(navigator.userAgent);
+    const userAgent =
+      typeof navigator === "undefined" ? "" : navigator.userAgent;
+    this.isMac = options.isMac ?? /Mac|iPhone|iPad/.test(userAgent);
+    const isWindows =
+      options.isWindows ?? (!this.isMac && /Windows/.test(userAgent));
+    this.keyContext = {
+      isMac: this.isMac,
+      isWindows,
+      macOptionIsMeta: options.macOptionIsMeta === true,
+      composing: () => this.composing,
+      alternateScreen: () => options.model.modes().alternateScreen,
+      kittyFlags: () => this.kittyFlags(),
+    };
     this.proxy = new TerminalInputProxy(options.input, {
       placeholder: options.inputPlaceholder ?? this.isMac,
     });
+    this.imeAnchor = new ImeAnchor(options.input.style, () =>
+      this.cursorCell(),
+    );
     this.nativeSelection = options.getSelection
       ? new TerminalNativeSelection({
           proxy: this.proxy,
@@ -213,6 +133,7 @@ export class GhosttyInputController {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.imeAnchor.end();
     this.nativeSelection?.dispose();
     this.proxy.dispose();
     this.pressedKeys.clear();
@@ -231,34 +152,26 @@ export class GhosttyInputController {
     pointerTarget.removeEventListener("wheel", this.handleWheel);
   }
 
+  private kittyFlags(): number {
+    return this.options.model.kittyKeyboardFlags?.() ?? 0;
+  }
+
   private readonly handleKeyDown = (event: KeyboardEvent): void => {
     this.nativeSelection?.reset();
-    // WKWebView can tag Option arrows as 229 without an active composition.
-    if (
-      event.defaultPrevented ||
-      this.composing ||
-      event.isComposing ||
-      (event.keyCode === 229 &&
-        !(
-          this.isMac &&
-          event.altKey &&
-          !event.ctrlKey &&
-          !event.metaKey &&
-          (event.key === "ArrowLeft" || event.key === "ArrowRight")
-        )) ||
-      event.key === "Dead" ||
-      event.key === "Process"
-    )
-      return;
+    if (ignoredForIme(event, this.keyContext)) return;
 
-    if (isPasteShortcut(event, this.isMac)) {
+    let route = routeKeyDown(event, this.keyContext);
+    if (route.kind === "paste") {
       consume(event);
-      void readTerminalClipboard().then((text) => this.paste(text));
+      this.pasteFromClipboard(event, route);
       return;
     }
-    if (isCopyShortcut(event, this.isMac) && this.options.onCopy()) {
-      consume(event);
-      return;
+    if (route.kind === "copy") {
+      if (this.options.onCopy()) {
+        consume(event);
+        return;
+      }
+      route = routeKeyDown(event, this.keyContext, true);
     }
 
     if (this.options.onKeyDown?.(event)) {
@@ -266,83 +179,71 @@ export class GhosttyInputController {
       return;
     }
 
-    const readline = terminalReadlineSequence(event, {
-      isMac: this.isMac,
-      isAlternateScreen: this.options.model.modes().alternateScreen,
-    });
-    if (readline) {
-      consume(event);
-      this.emitText(readline, "keydown");
-      return;
-    }
-    // Unclaimed Command shortcuts belong to the native menu, even in Kitty mode.
-    if (this.isMac && event.metaKey) return;
-    if (
-      event.key === "Enter" &&
-      event.shiftKey &&
-      !event.altKey &&
-      !event.ctrlKey &&
-      !event.metaKey
-    ) {
-      consume(event);
-      this.emitText("\x1b\r", "keydown");
-      return;
-    }
-
-    const printable =
-      event.key.length === 1 &&
-      !event.metaKey &&
-      ((!event.ctrlKey && !event.altKey) ||
-        (event.ctrlKey && event.altKey) ||
-        (this.isMac &&
-          event.altKey &&
-          !event.ctrlKey &&
-          this.options.macOptionIsMeta !== true));
-    if (printable) {
-      consume(event);
-      this.emitText(
-        event.key,
-        "keydown",
-        true,
-        true,
-        true,
-        !event.altKey && KEY_MAP[event.code] !== undefined ? event : undefined,
-      );
-      return;
-    }
-
-    const key = KEY_MAP[event.code];
-    if (key === undefined) return;
-    const encoded = this.encodeKeyDown(event, key);
-    if (encoded.byteLength > 0) {
-      consume(event);
-      this.options.model.scrollToBottom();
-      this.options.onData(encoded);
+    switch (route.kind) {
+      case "bytes":
+        consume(event);
+        this.emitText(route.text, "keydown");
+        return;
+      case "text":
+        consume(event);
+        this.emitText(
+          route.text,
+          "keydown",
+          true,
+          true,
+          true,
+          route.key === null ? undefined : { event, key: route.key },
+        );
+        return;
+      case "key": {
+        const encoded = this.encodeKeyDown(event, route.key, route.utf8);
+        if (encoded.byteLength > 0) {
+          consume(event);
+          this.options.model.scrollToBottom();
+          this.options.onData(encoded);
+        }
+        return;
+      }
+      default:
+        return;
     }
   };
 
-  private encodeKeyDown(event: KeyboardEvent, key: Key): Uint8Array {
-    const data = {
-      action: event.repeat ? KeyAction.REPEAT : KeyAction.PRESS,
-      key,
-      mods: modifiers(event),
-      utf8: event.key.length === 1 ? event.key : undefined,
-      // Kitty needs the unshifted base only for keys reported as escape codes.
-      // Under the common flags (disambiguate + event types) those are Ctrl,
-      // Alt and Meta combinations; "report all keys as escape codes" (0x8)
-      // adds every text key. Supplying a base for Shift-only text otherwise
-      // makes the encoder escape-code it, so apps insert the unshifted key
-      // instead of the shifted character.
-      unshiftedCodepoint:
-        event.ctrlKey ||
-        event.altKey ||
-        event.metaKey ||
-        ((this.options.model.kittyKeyboardFlags?.() ?? 0) & 0x8) !== 0
-          ? unshiftedCodepoint(event)
-          : 0,
-    };
-    const encoded = this.options.model.encodeKey(data);
-    if (encoded.byteLength > 0) this.pressedKeys.set(event.code, data);
+  private pasteFromClipboard(
+    event: KeyboardEvent,
+    route: Extract<KeyRoute, { kind: "paste" }>,
+  ): void {
+    // Ctrl+V is also a key: an application that reads the clipboard itself (an
+    // image paste) gets it when there is no text to paste.
+    const key = route.forwardKeyWhenEmpty ? KEY_MAP[event.code] : undefined;
+    const fallback =
+      key === undefined
+        ? null
+        : this.options.model.encodeKey(
+            buildKeyEvent(event, key, KeyAction.PRESS, this.kittyFlags()),
+          );
+    void readTerminalClipboard().then((text) => {
+      if (this.disposed) return;
+      if (text) this.paste(text);
+      else if (fallback && fallback.byteLength > 0)
+        this.options.onData(fallback);
+    });
+  }
+
+  private encodeKeyDown(
+    event: KeyboardEvent,
+    key: Key,
+    utf8?: string,
+  ): Uint8Array {
+    const flags = this.kittyFlags();
+    const action = event.repeat ? KeyAction.REPEAT : KeyAction.PRESS;
+    const data = buildKeyEvent(event, key, action, flags, utf8);
+    let encoded = this.options.model.encodeKey(data);
+    if (encoded.byteLength === 0) return encoded;
+    // A press that went out as plain text has no release to report.
+    if (encoded[0] === 0x1b) this.pressedKeys.set(event.code, data);
+    if (action === KeyAction.PRESS && (flags & KITTY_REPORT_EVENT_TYPES) !== 0)
+      encoded = canonicalKittyPress(encoded);
     return encoded;
   }
 
@@ -354,14 +255,29 @@ export class GhosttyInputController {
     const encoded = this.options.model.encodeKey({
       ...pressed,
       action: KeyAction.RELEASE,
-      mods: modifiers(event),
-      utf8: undefined,
+      mods: keyModifiers(event, this.kittyFlags()),
     });
     if (encoded.byteLength > 0) {
       consume(event);
       this.options.onData(encoded);
     }
   };
+
+  /** Applications that track key events must not see a key stay down. */
+  private releasePressedKeys(): void {
+    if (this.pressedKeys.size === 0) return;
+    const reports = (this.kittyFlags() & KITTY_REPORT_EVENT_TYPES) !== 0;
+    const pressed = [...this.pressedKeys.values()];
+    this.pressedKeys.clear();
+    if (!reports || this.disposed) return;
+    for (const key of pressed) {
+      const encoded = this.options.model.encodeKey({
+        ...key,
+        action: KeyAction.RELEASE,
+      });
+      if (encoded.byteLength > 0) this.options.onData(encoded);
+    }
+  }
 
   private readonly handleBeforeInput = (event: InputEvent): void => {
     if (this.composing || event.isComposing) return;
@@ -403,10 +319,12 @@ export class GhosttyInputController {
 
   private readonly handleCompositionStart = (): void => {
     this.composing = true;
+    this.imeAnchor.begin();
   };
 
   private readonly handleCompositionEnd = (event: CompositionEvent): void => {
     this.composing = false;
+    this.imeAnchor.end();
     if (event.data) this.emitText(event.data, "composition", true, true, true);
     this.proxy.arm();
   };
@@ -425,12 +343,31 @@ export class GhosttyInputController {
   };
 
   private readonly handleBlur = (): void => {
-    this.pressedKeys.clear();
+    this.releasePressedKeys();
     this.composing = false;
+    this.imeAnchor.end();
+    this.wheel.reset();
     if (this.options.model.modes().focusReporting) {
       this.emitText("\x1b[O", "keydown", false, false);
     }
   };
+
+  private cursorCell(): {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } | null {
+    const cell = this.options.cellSize();
+    if (!(cell.width > 0 && cell.height > 0)) return null;
+    const cursor = this.options.model.cursor();
+    return {
+      left: cursor.x * cell.width,
+      top: cursor.y * cell.height - (this.options.gridShiftY?.() ?? 0),
+      width: cell.width,
+      height: cell.height,
+    };
+  }
 
   private readonly handleMouseDown = (event: MouseEvent): void => {
     if (!this.options.model.modes().mouseTracking || event.shiftKey) return;
@@ -486,49 +423,60 @@ export class GhosttyInputController {
 
   private readonly handleWheel = (event: WheelEvent): void => {
     if (!Number.isFinite(event.deltaY) || event.deltaY === 0) return;
-    if (this.options.model.modes().mouseTracking && !event.shiftKey) {
+    const { model } = this.options;
+    const modes = model.modes();
+    const route = wheelRoute({
+      mouseTracking: modes.mouseTracking,
+      shiftKey: event.shiftKey,
+      alternateScreen: modes.alternateScreen,
+      alternateScroll:
+        modes.alternateScreen && model.mode(MODE_ALTERNATE_SCROLL),
+    });
+    const lines = wheelLines(
+      event.deltaY,
+      event.deltaMode,
+      this.options.cellSize().height,
+      model.rows,
+      this.options.scrollSpeed?.() ?? DEFAULT_SCROLL_SPEED,
+    );
+
+    if (route === "scrollback") {
+      if (model.scrollPosition().history === 0) {
+        this.wheel.reset();
+        return;
+      }
+      const whole = this.wheel.push(route, lines);
+      if (whole !== 0) model.scrollBy(whole);
       consume(event);
-      this.wheelRemainder = 0;
-      const delta =
-        event.deltaMode === WheelEvent.DOM_DELTA_PIXEL
-          ? event.deltaY / Math.max(1, this.options.cellSize().height)
-          : Math.sign(event.deltaY);
-      this.mouseWheelRemainder = accumulateMouseWheel(
-        this.mouseWheelRemainder,
-        delta,
+      return;
+    }
+
+    consume(event);
+    const count = this.wheel.push(route, lines, MAX_WHEEL_REPORTS_PER_EVENT);
+    if (count === 0) return;
+    const times = Math.abs(count);
+    if (route === "arrows") {
+      const sequence = cursorKeySequence(
+        count < 0 ? "up" : "down",
+        model.mode(MODE_CURSOR_KEYS),
       );
-      const tick = Math.trunc(this.mouseWheelRemainder);
-      if (tick === 0) return;
-      this.mouseWheelRemainder -= tick;
-      const position = this.mousePosition(event);
-      if (!position) return;
-      this.sendMouse(
-        tick < 0 ? 64 : 65,
+      this.emitText(sequence.repeat(times), "keydown", false);
+      return;
+    }
+    const position = this.mousePosition(event);
+    if (!position) return;
+    this.emitText(
+      this.mouseReport(
+        count < 0 ? 64 : 65,
         position.col,
         position.row,
         false,
         event,
-      );
-      return;
-    }
-
-    this.mouseWheelRemainder = 0;
-    if (this.options.model.scrollPosition().history === 0) return;
-    const cellHeight = Math.max(1, this.options.cellSize().height);
-    const delta =
-      event.deltaMode === WheelEvent.DOM_DELTA_LINE
-        ? event.deltaY
-        : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
-          ? event.deltaY * this.options.model.rows
-          : event.deltaY / cellHeight;
-    this.wheelRemainder += delta;
-    const lines =
-      this.wheelRemainder < 0
-        ? Math.ceil(this.wheelRemainder)
-        : Math.floor(this.wheelRemainder);
-    this.wheelRemainder -= lines;
-    if (lines !== 0) this.options.model.scrollBy(lines);
-    consume(event);
+      ).repeat(times),
+      "keydown",
+      false,
+      false,
+    );
   };
 
   private mousePosition(
@@ -558,6 +506,22 @@ export class GhosttyInputController {
     };
   }
 
+  private mouseReport(
+    button: number,
+    col: number,
+    row: number,
+    release: boolean,
+    event: MouseEvent,
+  ): string {
+    const encodedButton = button + terminalMouseModifiers(event);
+    if (this.options.model.mode(1006))
+      return `\x1b[<${encodedButton};${col};${row}${release ? "m" : "M"}`;
+    const legacyButton = release ? 3 : encodedButton;
+    return `\x1b[M${String.fromCharCode(legacyButton + 32)}${String.fromCharCode(
+      Math.min(255, col + 32),
+    )}${String.fromCharCode(Math.min(255, row + 32))}`;
+  }
+
   private sendMouse(
     button: number,
     col: number,
@@ -565,22 +529,8 @@ export class GhosttyInputController {
     release: boolean,
     event: MouseEvent,
   ): void {
-    const modifiers = terminalMouseModifiers(event);
-    const encodedButton = button + modifiers;
-    if (this.options.model.mode(1006)) {
-      this.emitText(
-        `\x1b[<${encodedButton};${col};${row}${release ? "m" : "M"}`,
-        "keydown",
-        false,
-        false,
-      );
-      return;
-    }
-    const legacyButton = release ? 3 : encodedButton;
     this.emitText(
-      `\x1b[M${String.fromCharCode(legacyButton + 32)}${String.fromCharCode(
-        Math.min(255, col + 32),
-      )}${String.fromCharCode(Math.min(255, row + 32))}`,
+      this.mouseReport(button, col, row, release, event),
       "keydown",
       false,
       false,
@@ -593,7 +543,7 @@ export class GhosttyInputController {
     deduplicate = true,
     scrollToBottom = true,
     editableText = false,
-    keyEvent?: KeyboardEvent,
+    keyed?: { event: KeyboardEvent; key: Key },
   ): void {
     if (this.disposed) return;
     const now = performance.now();
@@ -612,53 +562,11 @@ export class GhosttyInputController {
     this.lastDataAt = now;
     if (editableText && this.options.onText?.(data)) return;
     if (scrollToBottom) this.options.model.scrollToBottom();
-    const bytes = keyEvent
-      ? this.encodeKeyDown(keyEvent, KEY_MAP[keyEvent.code])
+    const bytes = keyed
+      ? this.encodeKeyDown(keyed.event, keyed.key)
       : this.encoder.encode(data);
     if (bytes.byteLength > 0) this.options.onData(bytes);
   }
-}
-
-function accumulateMouseWheel(remainder: number, delta: number): number {
-  if (!Number.isFinite(delta)) return 0;
-  // Mouse reports are wheel ticks, not rows: the TUI chooses their scroll
-  // distance. Accumulate small pixel motion, but never amplify a browser event
-  // into multiple ticks or retain excess motion as a backlog.
-  if (Math.sign(delta) !== Math.sign(remainder)) remainder = 0;
-  return remainder + Math.max(-1, Math.min(1, delta));
-}
-
-const UNSHIFTED_SYMBOLS: Readonly<Record<string, string>> = {
-  Backquote: "`~",
-  Backslash: "\\|",
-  BracketLeft: "[{",
-  BracketRight: "]}",
-  Comma: ",<",
-  Equal: "=+",
-  IntlBackslash: "\\|",
-  Minus: "-_",
-  Period: ".>",
-  Quote: "'\"",
-  Semicolon: ";:",
-  Slash: "/?",
-};
-
-function unshiftedCodepoint(event: KeyboardEvent): number {
-  const character = event.key.toLowerCase().codePointAt(0) ?? 0;
-  if (event.key.length === 1 && character >= 32 && character !== 127) {
-    if (event.shiftKey) {
-      const pair = UNSHIFTED_SYMBOLS[event.code];
-      if (pair?.[1] === event.key) return pair.charCodeAt(0);
-      if (event.code.startsWith("Digit") && event.code.length === 6) {
-        const digit = event.code.charCodeAt(5) - 48;
-        if (")!@#$%^&*("[digit] === event.key) return digit + 48;
-      }
-    }
-    return character;
-  }
-  return event.code.startsWith("Key") && event.code.length === 4
-    ? event.code.toLowerCase().charCodeAt(3)
-    : 0;
 }
 
 export function terminalMouseModifiers(
@@ -669,47 +577,6 @@ export function terminalMouseModifiers(
   if (event.altKey) modifiers |= 8;
   if (event.ctrlKey) modifiers |= 16;
   return modifiers;
-}
-
-function modifiers(event: KeyboardEvent): Mods {
-  let result = Mods.NONE;
-  if (event.shiftKey) result |= Mods.SHIFT;
-  if (event.ctrlKey) result |= Mods.CTRL;
-  if (event.altKey) result |= Mods.ALT;
-  if (event.metaKey) result |= Mods.SUPER;
-  if (event.getModifierState("CapsLock")) result |= Mods.CAPSLOCK;
-  if (event.getModifierState("NumLock")) result |= Mods.NUMLOCK;
-  return result;
-}
-
-function isCopyShortcut(event: KeyboardEvent, isMac: boolean): boolean {
-  if (isMac) {
-    return (
-      event.metaKey && !event.ctrlKey && !event.altKey && event.code === "KeyC"
-    );
-  }
-  return (
-    event.ctrlKey &&
-    event.shiftKey &&
-    !event.altKey &&
-    !event.metaKey &&
-    event.code === "KeyC"
-  );
-}
-
-function isPasteShortcut(event: KeyboardEvent, isMac: boolean): boolean {
-  if (isMac) {
-    return (
-      event.metaKey && !event.ctrlKey && !event.altKey && event.code === "KeyV"
-    );
-  }
-  return (
-    event.ctrlKey &&
-    event.shiftKey &&
-    !event.altKey &&
-    !event.metaKey &&
-    event.code === "KeyV"
-  );
 }
 
 function consume(event: Event): void {

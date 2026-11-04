@@ -8,6 +8,7 @@ import {
   GhosttyInputController,
   terminalMouseModifiers,
 } from "./GhosttyInputController";
+import { MAX_WHEEL_REPORTS_PER_EVENT } from "./terminalWheel";
 
 describe("terminalMouseModifiers", () => {
   it("encodes xterm Shift, Alt, and Control bits", () => {
@@ -30,52 +31,74 @@ describe("terminalMouseModifiers", () => {
 describe("GhosttyInputController", () => {
   describe("mouse wheel", () => {
     let h: ReturnType<typeof wheelHarness>;
+    const UP = "\x1b[<64;1;1M";
+    const DOWN = "\x1b[<65;1;1M";
 
     beforeEach(() => {
-      vi.stubGlobal("WheelEvent", {
-        DOM_DELTA_PIXEL: 0,
-        DOM_DELTA_LINE: 1,
-        DOM_DELTA_PAGE: 2,
-      });
       h = wheelHarness();
     });
 
     afterEach(() => {
       h.controller.dispose();
-      vi.unstubAllGlobals();
     });
 
-    it("accumulates small pixels without layout reads or input until a tick is due", () => {
+    it("accumulates small pixels without layout reads or input until a line is due", () => {
       for (let i = 0; i < 3; i++) {
         expect(h.wheel(5).defaultPrevented).toBe(true);
       }
       expect(h.onData).not.toHaveBeenCalled();
       expect(h.bounds).not.toHaveBeenCalled();
       h.wheel(5);
-      expect(h.reports()).toEqual(["\x1b[<65;1;1M"]);
+      expect(h.reports()).toEqual([DOWN]);
       expect(h.bounds).toHaveBeenCalledTimes(1);
       expect(h.scrollBy).not.toHaveBeenCalled();
     });
 
     it.each([
-      [40, 0],
-      [2000, 0],
-      [Number.MAX_VALUE, 0],
-      [3, 1],
-      [1000, 1],
-      [1, 2],
+      [0, 20, 1],
+      [0, 60, 3],
+      [0, 79, 3],
+      [1, 2, 2],
+      [2, 0.1, 2],
     ])(
-      "emits at most one tick for delta %s in mode %s, without queued excess",
-      (delta, mode) => {
+      "reports whole lines in one write (mode %s, delta %s -> %s)",
+      (mode, delta, lines) => {
         h.wheel(delta, mode);
-        expect(h.reports()).toEqual(["\x1b[<65;1;1M"]);
+        expect(h.reports()).toEqual([DOWN.repeat(lines)]);
         h.wheel(-delta, mode);
-        expect(h.reports()).toEqual(["\x1b[<65;1;1M", "\x1b[<64;1;1M"]);
+        expect(h.reports()).toEqual([DOWN.repeat(lines), UP.repeat(lines)]);
+      },
+    );
+
+    it.each([
+      [0, 2000],
+      [0, Number.MAX_VALUE],
+      [1, 1000],
+      [2, 40],
+    ])(
+      "caps a runaway event (mode %s, delta %s) and queues no excess",
+      (mode, delta) => {
+        h.wheel(delta, mode);
+        expect(h.reports()).toEqual([DOWN.repeat(MAX_WHEEL_REPORTS_PER_EVENT)]);
         h.onData.mockClear();
         h.wheel(-5);
         expect(h.onData).not.toHaveBeenCalled();
+        h.wheel(-15);
+        expect(h.reports()).toEqual([UP]);
       },
     );
+
+    it("keeps the fraction between events and drops it on reversal", () => {
+      h.wheel(30);
+      h.wheel(30);
+      expect(h.reports()).toEqual([DOWN, DOWN.repeat(2)]);
+      h.onData.mockClear();
+      h.wheel(15);
+      h.wheel(-15);
+      expect(h.onData).not.toHaveBeenCalled();
+      h.wheel(-5);
+      expect(h.reports()).toEqual([UP]);
+    });
 
     it("ignores zero, horizontal-only and non-finite motion without poisoning the remainder", () => {
       h.wheel(15);
@@ -85,17 +108,17 @@ describe("GhosttyInputController", () => {
       expect(h.onData).not.toHaveBeenCalled();
       expect(h.bounds).not.toHaveBeenCalled();
       h.wheel(5);
-      expect(h.reports()).toEqual(["\x1b[<65;1;1M"]);
+      expect(h.reports()).toEqual([DOWN]);
     });
 
-    it("does not make a reversed gesture work against the previous remainder", () => {
-      h.wheel(15);
-      for (let i = 0; i < 3; i++) h.wheel(-5);
-      expect(h.onData).not.toHaveBeenCalled();
-      h.wheel(-5);
-      expect(h.reports()).toEqual(["\x1b[<64;1;1M"]);
+    it("scales the distance by the scroll speed preference at once", () => {
+      h.speed.value = 0.5;
+      h.wheel(40);
+      expect(h.reports()).toEqual([DOWN]);
+      h.speed.value = 3;
+      h.onData.mockClear();
       h.wheel(20);
-      expect(h.reports()).toEqual(["\x1b[<64;1;1M", "\x1b[<65;1;1M"]);
+      expect(h.reports()).toEqual([DOWN.repeat(3)]);
     });
 
     it.each([true, false])(
@@ -108,7 +131,7 @@ describe("GhosttyInputController", () => {
     );
 
     it.each(["shift", "tracking"] as const)(
-      "clears both remainders when switching through %s scrollback",
+      "clears the remainder when switching through %s scrollback",
       (route) => {
         const options = route === "shift" ? { shiftKey: true } : {};
         h.wheel(15);
@@ -144,17 +167,60 @@ describe("GhosttyInputController", () => {
       expect(h.bounds).not.toHaveBeenCalled();
     });
 
-    it("keeps a sustained mixed gesture bounded by the browser event count", () => {
-      // Replaying the same trace always sends <= one report per event, including
-      // fast flicks and reversals; small trackpad motion still gets filtered.
-      const trace = [1, 2, 5, 12, 400, 2000, -5, -15, -3000, -1];
-      for (let i = 0; i < 1000; i++) {
-        const before = h.onData.mock.calls.length;
-        h.wheel(trace[i % trace.length]);
-        expect(h.onData.mock.calls.length - before).toBeLessThanOrEqual(1);
-      }
-      expect(h.onData.mock.calls.length).toBeGreaterThan(0);
-      expect(h.onData.mock.calls.length).toBeLessThan(1000);
+    describe("alternate scroll (DEC 1007)", () => {
+      beforeEach(() => {
+        h.state.mouseTracking = false;
+        h.state.alternateScreen = true;
+        h.state.history = 0;
+      });
+
+      it("sends cursor keys, one per line, on the alternate screen", () => {
+        const event = h.wheel(60);
+        expect(event.defaultPrevented).toBe(true);
+        h.wheel(-40);
+        expect(h.reports()).toEqual(["\x1b[B".repeat(3), "\x1b[A".repeat(2)]);
+        expect(h.scrollBy).not.toHaveBeenCalled();
+        expect(h.bounds).not.toHaveBeenCalled();
+      });
+
+      it("honours application cursor keys", () => {
+        h.state.applicationCursor = true;
+        h.wheel(20);
+        h.wheel(-20);
+        expect(h.reports()).toEqual(["\x1bOB", "\x1bOA"]);
+      });
+
+      it("leaves the wheel alone when the application turned alternate scroll off", () => {
+        h.state.alternateScroll = false;
+        const event = h.wheel(60);
+        expect(event.defaultPrevented).toBe(false);
+        expect(h.onData).not.toHaveBeenCalled();
+        expect(h.scrollBy).not.toHaveBeenCalled();
+      });
+
+      it("does not apply on the primary screen", () => {
+        h.state.alternateScreen = false;
+        h.state.history = 100;
+        h.wheel(60);
+        expect(h.onData).not.toHaveBeenCalled();
+        expect(h.scrollBy).toHaveBeenCalledExactlyOnceWith(3);
+      });
+
+      it("mouse tracking wins over alternate scroll, Shift hands the wheel back", () => {
+        h.state.mouseTracking = true;
+        h.wheel(20);
+        expect(h.reports()).toEqual([DOWN]);
+        h.onData.mockClear();
+        h.wheel(20, 0, { shiftKey: true });
+        expect(h.reports()).toEqual(["\x1b[B"]);
+      });
+
+      it("caps the burst like mouse reports", () => {
+        h.wheel(5000);
+        expect(h.reports()).toEqual([
+          "\x1b[B".repeat(MAX_WHEEL_REPORTS_PER_EVENT),
+        ]);
+      });
     });
 
     it("stops handling wheel input after disposal", () => {
@@ -273,8 +339,8 @@ describe("GhosttyInputController", () => {
           for (const [mode, eventType] of [
             [0, ""],
             [1, ""],
-            [11, ":1"],
-            [31, ":1"],
+            [11, ""],
+            [31, ""],
           ] as const) {
             terminal.write(new TextEncoder().encode(`\x1b[=${mode}u`));
             for (const [key, normal, suffix] of [
@@ -305,15 +371,15 @@ describe("GhosttyInputController", () => {
   );
 
   it.each([
-    { isMac: false },
-    { ctrlKey: true },
-    { metaKey: true },
-    { altKey: false },
-    { key: "ArrowUp", code: "ArrowUp" },
-    { key: "Dead" },
-    { key: "Process" },
+    { key: "Dead", code: "Quote" },
+    { key: "Process", code: "ArrowLeft" },
     { isComposing: true },
-  ])("retains the 229 guard for %j", ({ isMac = true, ...values }) => {
+    { key: "Enter", code: "Enter", altKey: false },
+    { key: "Backspace", code: "Backspace", altKey: false },
+    { key: "Escape", code: "Escape", altKey: false },
+    { key: "a", code: "KeyA", altKey: false },
+    { key: " ", code: "Space", altKey: false },
+  ])("retains the 229 guard for %j", ({ ...values }) => {
     const input = new FakeTextArea();
     const onData = vi.fn();
     const encodeKey = vi.fn(() => Uint8Array.of(27, 91, 68));
@@ -322,7 +388,7 @@ describe("GhosttyInputController", () => {
       input: input as unknown as HTMLTextAreaElement,
       pointerTarget: new FakeElement() as unknown as HTMLElement,
       cellSize: () => ({ width: 10, height: 20 }),
-      isMac,
+      isMac: true,
       onCopy: () => false,
       onData,
     });
@@ -342,6 +408,45 @@ describe("GhosttyInputController", () => {
       controller.dispose();
     }
   });
+
+  it.each([
+    { isMac: false, altKey: false, key: "ArrowUp", code: "ArrowUp" },
+    { isMac: false, altKey: false, key: "ArrowDown", code: "ArrowDown" },
+    { isMac: false, altKey: false, key: "Home", code: "Home" },
+    { isMac: false, ctrlKey: true, key: "ArrowRight", code: "ArrowRight" },
+    { isMac: true, altKey: true, key: "ArrowUp", code: "ArrowUp" },
+    { isMac: true, altKey: false, key: "End", code: "End" },
+    { isMac: false, altKey: false, key: "F5", code: "F5" },
+    { isMac: false, altKey: false, key: "PageDown", code: "PageDown" },
+  ])(
+    "delivers navigation keys an IME tagged 229 when nothing is composed (%j)",
+    ({ isMac, ...values }) => {
+      const input = new FakeTextArea();
+      const onData = vi.fn();
+      const encodeKey = vi.fn(() => Uint8Array.of(27, 91, 65));
+      const controller = new GhosttyInputController({
+        model: { ...inputModel(), encodeKey },
+        input: input as unknown as HTMLTextAreaElement,
+        pointerTarget: new FakeElement() as unknown as HTMLElement,
+        cellSize: () => ({ width: 10, height: 20 }),
+        isMac,
+        onCopy: () => false,
+        onData,
+      });
+      try {
+        const event = keyboardEvent({ keyCode: 229, ...values });
+        input.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(true);
+        expect(onData).toHaveBeenCalledWith(Uint8Array.of(27, 91, 65));
+        input.dispatchEvent(new Event("compositionstart"));
+        onData.mockClear();
+        input.dispatchEvent(keyboardEvent({ keyCode: 229, ...values }));
+        expect(onData).not.toHaveBeenCalled();
+      } finally {
+        controller.dispose();
+      }
+    },
+  );
 
   it.each(["ghostty-vt.wasm", "ghostty-vt-scalar.wasm"])(
     "leaves macOS Command shortcuts to the application in legacy and Kitty modes (%s)",
@@ -835,16 +940,33 @@ describe("GhosttyInputController", () => {
 });
 
 function wheelHarness() {
-  const state = { mouseTracking: true, history: 100, sgr: true };
+  const state = {
+    mouseTracking: true,
+    history: 100,
+    sgr: true,
+    alternateScreen: false,
+    alternateScroll: true,
+    applicationCursor: false,
+  };
+  const speed = { value: 1 };
   const pointer = new FakeElement();
   const bounds = vi.spyOn(pointer, "getBoundingClientRect");
   const onData = vi.fn<(bytes: Uint8Array) => void>();
   const scrollBy = vi.fn(() => true);
-  const base = inputModel((mode) => state.sgr && mode === 1006);
+  const base = inputModel((mode) => {
+    if (mode === 1006) return state.sgr;
+    if (mode === 1007) return state.alternateScroll;
+    if (mode === 1) return state.applicationCursor;
+    return false;
+  });
   const controller = new GhosttyInputController({
     model: {
       ...base,
-      modes: () => ({ ...base.modes(), mouseTracking: state.mouseTracking }),
+      modes: () => ({
+        ...base.modes(),
+        mouseTracking: state.mouseTracking,
+        alternateScreen: state.alternateScreen,
+      }),
       scrollPosition: () => ({ offset: 0, history: state.history }),
       scrollBy,
     },
@@ -854,9 +976,11 @@ function wheelHarness() {
     isMac: true,
     onCopy: () => false,
     onData,
+    scrollSpeed: () => speed.value,
   });
   return {
     state,
+    speed,
     controller,
     onData,
     scrollBy,
@@ -897,6 +1021,13 @@ function inputModel(
     scrollToBottom: () => false,
     scrollPosition: () => ({ offset: 0, history: 0 }),
     scrollBy: () => false,
+    cursor: () => ({
+      x: 4,
+      y: 2,
+      visible: true,
+      blinking: false,
+      style: "block",
+    }),
     encodeKey: () => new Uint8Array(0),
     kittyKeyboardFlags: () => 0,
   } as unknown as GhosttyTerminalModelApi;
