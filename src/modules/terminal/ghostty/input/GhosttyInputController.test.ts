@@ -411,6 +411,33 @@ describe("GhosttyInputController", () => {
     }
   });
 
+  it("deletes a word for Option+Backspace even when WebKit tags it 229", () => {
+    const input = new FakeTextArea();
+    const onData = vi.fn();
+    const controller = new GhosttyInputController({
+      model: inputModel(),
+      input: input as unknown as HTMLTextAreaElement,
+      pointerTarget: new FakeElement() as unknown as HTMLElement,
+      cellSize: () => ({ width: 10, height: 20 }),
+      isMac: true,
+      onCopy: () => false,
+      onData,
+    });
+    try {
+      const event = keyboardEvent({
+        key: "Backspace",
+        code: "Backspace",
+        altKey: true,
+        keyCode: 229,
+      });
+      input.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(true);
+      expect(new TextDecoder().decode(onData.mock.lastCall?.[0])).toBe("\x17");
+    } finally {
+      controller.dispose();
+    }
+  });
+
   it.each([
     { isMac: false, altKey: false, key: "ArrowUp", code: "ArrowUp" },
     { isMac: false, altKey: false, key: "ArrowDown", code: "ArrowDown" },

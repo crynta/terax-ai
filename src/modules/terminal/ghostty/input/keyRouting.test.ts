@@ -146,6 +146,10 @@ describe("ignoredForIme", () => {
     [{ key: "ArrowLeft", keyCode: 229 }, false, false],
     [{ key: "F7", keyCode: 229 }, false, false],
     [{ key: "PageUp", keyCode: 229 }, false, false],
+    [{ key: "Backspace", keyCode: 229 }, false, true],
+    [{ key: "Backspace", keyCode: 229, altKey: true }, false, false],
+    [{ key: "Backspace", keyCode: 229, metaKey: true }, false, false],
+    [{ key: "Backspace", keyCode: 229, ctrlKey: true }, false, false],
     [{}, false, false],
   ])("%j (composing %s) -> ignored %s", (over, composing, ignored) => {
     expect(ignoredForIme(press(over), ctx(composing))).toBe(ignored);

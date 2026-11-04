@@ -75,7 +75,7 @@ const LEGACY_CONTROL: Readonly<Record<string, string>> = {
  * Keys an IME can never end a composition with. WebKit tags Option combinations
  * (and some Windows IMEs tag everything while enabled) with keyCode 229 even
  * when nothing is being composed, so a 229 only means "IME" for the keys that
- * commit or edit text: Enter, Space, Tab, Backspace, Escape and characters.
+ * commit or edit text: Enter, Space, Tab, plain Backspace, Escape and characters.
  */
 const IME_SAFE_KEYS: ReadonlySet<string> = new Set([
   "ArrowUp",
@@ -112,7 +112,12 @@ export function ignoredForIme(event: KeyboardLike, ctx: KeyContext): boolean {
   const { key } = event;
   if (key === "Process" || key === "Unidentified") return true;
   if (isOptionMeta(event, ctx)) return false;
-  return key === "Dead" || (event.keyCode === 229 && !IME_SAFE_KEYS.has(key));
+  if (key === "Dead") return true;
+  if (event.keyCode !== 229) return false;
+  // Backspace edits a preedit, but Option/Ctrl/Command+Backspace never does.
+  const wordDelete =
+    key === "Backspace" && (event.altKey || event.ctrlKey || event.metaKey);
+  return !IME_SAFE_KEYS.has(key) && !wordDelete;
 }
 
 /** Classifies a key press the IME guard let through. */
