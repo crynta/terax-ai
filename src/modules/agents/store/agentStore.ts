@@ -17,6 +17,7 @@ type AgentStoreState = {
   start: (leafId: number, tabId: number, agent: string) => void;
   setStatus: (leafId: number, status: AgentStatus) => void;
   finish: (leafId: number) => void;
+  setClaudeSession: (leafId: number, sessionId: string) => void;
   setLocalAgent: (state: LocalAgentState) => void;
   pushNotification: (
     n: Omit<AgentNotification, "id" | "at" | "read">,
@@ -44,7 +45,20 @@ export const useAgentStore = create<AgentStoreState>((set) => ({
             startedAt: now,
             lastActivityAt: now,
             attentionSince: null,
+            claudeSessionId: null,
           },
+        },
+      };
+    }),
+
+  setClaudeSession: (leafId, sessionId) =>
+    set((s) => {
+      const prev = s.sessions[leafId];
+      if (!prev || prev.claudeSessionId === sessionId) return s;
+      return {
+        sessions: {
+          ...s.sessions,
+          [leafId]: { ...prev, claudeSessionId: sessionId },
         },
       };
     }),

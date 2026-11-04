@@ -43,6 +43,7 @@ function harness(mouseTracking: boolean) {
   });
   const root = fakeElement();
   const onOpenLink = vi.fn();
+  const onHoverChange = vi.fn();
   const hover = new TerminalLinkHover({
     root: root as unknown as HTMLElement,
     model: linkModel(mouseTracking) as never,
@@ -52,6 +53,7 @@ function harness(mouseTracking: boolean) {
     ignoreTarget: () => false,
     underlineColor: () => "rgb(1, 2, 3)",
     onOpenLink,
+    onHoverChange,
     isMac: true,
   });
   const mouse = (type: string, column: number, row: number, metaKey = false) =>
@@ -64,7 +66,7 @@ function harness(mouseTracking: boolean) {
         shiftKey: false,
       }),
     );
-  return { root, hover, onOpenLink, mouse, created };
+  return { root, hover, onOpenLink, onHoverChange, mouse, created };
 }
 
 describe("terminalLinkSegments", () => {
@@ -110,6 +112,23 @@ describe("TerminalLinkHover", () => {
     hover.refresh();
     mouse("mouseup", 8, 0, true);
     expect(onOpenLink).toHaveBeenCalledOnce();
+    hover.dispose();
+  });
+
+  it("reports the hovered link's box once per link and null when it ends", () => {
+    const { hover, onHoverChange, mouse } = harness(false);
+    mouse("mousemove", 8, 0);
+    mouse("mousemove", 9, 0);
+    mouse("mousemove", 1, 1);
+    expect(onHoverChange).toHaveBeenCalledTimes(1);
+    expect(onHoverChange).toHaveBeenLastCalledWith({
+      uri: "src/a.ts:3",
+      rect: { left: 0, right: 100, top: 0, bottom: 40 },
+    });
+    mouse("mousemove", 0, 3);
+    expect(onHoverChange).toHaveBeenLastCalledWith(null);
+    mouse("mousemove", 0, 2);
+    expect(onHoverChange).toHaveBeenCalledTimes(2);
     hover.dispose();
   });
 });

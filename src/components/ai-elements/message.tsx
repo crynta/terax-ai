@@ -23,6 +23,7 @@ import {
   useState,
 } from "react";
 import { Streamdown } from "streamdown";
+import { MarkdownLink } from "./markdown-link";
 import { ChatStreamingProvider } from "./chat-code";
 import { MarkdownCode } from "./markdown-code";
 
@@ -321,7 +322,11 @@ export type MessageResponseProps = ComponentProps<typeof Streamdown> & {
   streaming?: boolean;
 };
 
-const streamdownComponents = { code: MarkdownCode };
+const streamdownComponents = { code: MarkdownCode, a: MarkdownLink };
+
+// Links open straight away through our own handler; Streamdown's confirmation
+// modal opens with `window.open`, which does nothing in the webview.
+const noLinkSafety = { enabled: false };
 
 export const MessageResponse = memo(
   ({ className, streaming = false, ...props }: MessageResponseProps) => (
@@ -332,6 +337,7 @@ export const MessageResponse = memo(
           className,
         )}
         components={streamdownComponents}
+        linkSafety={noLinkSafety}
         {...props}
       />
     </ChatStreamingProvider>

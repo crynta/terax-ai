@@ -238,7 +238,9 @@ export function TabBar({
                     }
                   : { opacity: 0 }
               }
-            />
+            >
+              <span className="absolute inset-x-2.5 bottom-0 h-0.5 rounded-full bg-ring/80" />
+            </span>
             {tabs.map((t, i) => {
               const isPreview =
                 (t.kind === "editor" || t.kind === "git-diff") && t.preview;
@@ -630,12 +632,13 @@ function TerminalTabIcon({ tab }: { tab: TerminalTab }) {
   );
   if (agentStatus.state === "attention") {
     return (
-      <HugeiconsIcon
-        icon={Message02Icon}
-        size={14}
-        strokeWidth={2}
-        className="shrink-0"
-      />
+      <span
+        className="relative inline-flex size-3.5 shrink-0 items-center justify-center text-agent-attention"
+        title="Needs your input"
+      >
+        <HugeiconsIcon icon={Message02Icon} size={14} strokeWidth={2} />
+        <span className="terax-attention-pulse absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-agent-attention ring-2 ring-frame" />
+      </span>
     );
   }
   if (agentStatus.state === "finished") {
@@ -644,14 +647,22 @@ function TerminalTabIcon({ tab }: { tab: TerminalTab }) {
         icon={CheckmarkCircle01Icon}
         size={14}
         strokeWidth={2}
-        className="shrink-0"
+        className="shrink-0 text-agent-done"
       />
     );
   }
-  if (
-    (agentStatus.state === "working" || agentStatus.state === "idle") &&
-    agentStatus.agent
-  ) {
+  if (agentStatus.state === "working" && agentStatus.agent) {
+    return (
+      <span
+        className="relative inline-flex size-3.5 shrink-0 items-center justify-center"
+        title="Working"
+      >
+        <AgentIcon agent={agentStatus.agent} size={10} />
+        <span className="absolute -inset-0.5 animate-spin rounded-full border-[1.5px] border-agent-working/25 border-t-agent-working" />
+      </span>
+    );
+  }
+  if (agentStatus.state === "idle" && agentStatus.agent) {
     return (
       <AgentIcon agent={agentStatus.agent} size={14} className="shrink-0" />
     );

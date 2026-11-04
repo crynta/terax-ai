@@ -6,5 +6,7 @@
 	<string>A program running within Terax would like to use the camera.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>A program running within Terax would like to use your microphone.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Terax turns your speech into text in the chat composer.</string>
 </dict>
 </plist>

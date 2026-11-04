@@ -18,6 +18,15 @@ import {
   nextAttentionTarget,
   validateAgentLaunchCommand,
 } from "@/modules/agents";
+import { setAgentCommandLauncher } from "@/modules/agents/lib/agentLaunchBridge";
+import { selectSessionRows } from "@/modules/agents/lib/sessionRows";
+import {
+  openReader,
+  toggleReader,
+  viewPastChat,
+} from "@/modules/agents/reader/readerStore";
+import { SessionsPanel } from "@/modules/agents/sessions/SessionsPanelLazy";
+import { useAgentStore } from "@/modules/agents/store/agentStore";
 import {
   AgentRunBridge,
   AiMiniWindow,
@@ -46,7 +55,6 @@ import {
   type SearchTarget,
 } from "@/modules/header";
 import { setLspNavigator } from "@/modules/lsp";
-import { setTerminalFileOpener } from "@/modules/terminal/lib/terminalFileLinks";
 import type { PreviewPaneHandle } from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
@@ -76,8 +84,8 @@ import {
 } from "@/modules/spaces";
 import { StatusBar } from "@/modules/statusbar";
 import {
-  TabSwitcherHud,
   type CloseTabsPlan,
+  TabSwitcherHud,
   useTabSwitcher,
   useTabs,
   useWindowTitle,
@@ -100,9 +108,11 @@ import {
   whenSessionReady,
   writeToSession,
 } from "@/modules/terminal";
-import type { TerminalSearchController } from "@/modules/terminal/search/TerminalSearchController";
 import { bindTerminalWindowFocus } from "@/modules/terminal/ghostty/renderScheduling";
 import { subscribeWindowPresentation } from "@/modules/terminal/ghostty/windowPresentation";
+import { setTerminalFileOpener } from "@/modules/terminal/lib/terminalFileLinks";
+import { TerminalLinkChip } from "@/modules/terminal/links/TerminalLinkChipLazy";
+import type { TerminalSearchController } from "@/modules/terminal/search/TerminalSearchController";
 import {
   LivePageResizeBridge,
   ThemeProvider,
@@ -135,12 +145,12 @@ import {
   WorkspaceInputBar,
 } from "./components/WorkspaceInputBar";
 import { WorkspaceSurface } from "./components/WorkspaceSurface";
-import { useAppCloseGuard } from "./hooks/useAppCloseGuard";
 import {
   hasOpenPathTab,
   renamedPath,
   spacesEmptiedByTabs,
 } from "./hooks/tabCloseGuards";
+import { useAppCloseGuard } from "./hooks/useAppCloseGuard";
 import { useTabCloseGuards } from "./hooks/useTabCloseGuards";
 import { useWorkspaceSwitcher } from "./hooks/useWorkspaceSwitcher";
 
@@ -652,6 +662,33 @@ export default function App() {
     [inheritedCwdForNewTab, newAgentGroupTab],
   );
 
+  // The Session Reader opens resumed and forked chats in new tabs through this.
+  useEffect(
+    () =>
+      setAgentCommandLauncher(({ cwd, title, command }) => {
+        const checked = validateAgentLaunchCommand(command);
+        if (!checked.ok) return null;
+        const { leafIds } = newAgentGroupTab(
+          cwd ?? inheritedCwdForNewTab(),
+          title,
+          1,
+        );
+        const leafId = leafIds[0];
+        if (leafId === undefined) return null;
+        const hooksReady = invoke("agent_enable_hooks", {
+          agent: "claude",
+        }).catch((error) => {
+          console.warn("[terax] could not enable claude notifications:", error);
+        });
+        const started = (async () => {
+          await Promise.all([whenSessionReady(leafId), hooksReady]);
+          return writeToSession(leafId, `${checked.command}\r`);
+        })();
+        return { leafId, started };
+      }),
+    [inheritedCwdForNewTab, newAgentGroupTab],
+  );
+
   const sendCd = useCallback(
     (path: string) => {
       if (activeLeafId === null) return;
@@ -892,6 +929,39 @@ export default function App() {
     [setActiveId, focusPane],
   );
 
+  const openAgentReader = useCallback(
+    (tabId: number, leafId: number) => {
+      activateAgentTarget(tabId, leafId);
+      openReader(leafId);
+    },
+    [activateAgentTarget],
+  );
+
+  // Session Reader for the focused pane of the active terminal tab.
+  const toggleActiveReader = useCallback(() => {
+    const tab = tabsRef.current.find((t) => t.id === activeId);
+    if (tab?.kind === "terminal") toggleReader(tab.activeLeafId);
+  }, [activeId]);
+
+  // A past chat from the Agents sidebar, read only in the active pane's Reader.
+  const openPastChat = useCallback(
+    (sessionId: string): boolean => {
+      const tab = tabsRef.current.find((t) => t.id === activeId);
+      if (tab?.kind !== "terminal") return false;
+      viewPastChat(tab.activeLeafId, sessionId);
+      return true;
+    },
+    [activeId],
+  );
+
+  const launchClaude = useCallback(() => {
+    launchAgentGroup({
+      agent: "claude",
+      command: usePreferencesStore.getState().agentLaunchCommands.claude,
+      instances: 1,
+    });
+  }, [launchAgentGroup]);
+
   const shortcutHandlers = useMemo<ShortcutHandlers>(
     () => ({
       "commandPalette.open": () => openCommandPalette("commands"),
@@ -946,6 +1016,7 @@ export default function App() {
         const t = nextAttentionTarget();
         if (t) activateAgentTarget(t.tabId, t.leafId);
       },
+      "agent.toggleReader": toggleActiveReader,
       "settings.open": () => void openSettingsWindow(),
       "sidebar.toggle": toggleSidebar,
       "explorer.focus": toggleExplorerFocus,
@@ -991,6 +1062,7 @@ export default function App() {
       zoomOut,
       zoomReset,
       activateAgentTarget,
+      toggleActiveReader,
     ],
   );
 
@@ -1287,6 +1359,22 @@ export default function App() {
             openSpacesOverview: () => setSwitcherOpen(true),
             newSpace: () => void handleNewSpace(),
             switchSpace: (id) => useSpaces.getState().setActive(id),
+            // Read at open time: the palette is rebuilt every time it opens.
+            sessions: selectSessionRows({
+              sessions: useAgentStore.getState().sessions,
+              notifications: useAgentStore.getState().notifications,
+              phases: useAgentActivityStore.getState().phases,
+              sessionIds: useAgentActivityStore.getState().sessionIds,
+              tabs,
+              ptyIdForLeaf,
+            }),
+            focusSession: activateAgentTarget,
+            focusNextAttention: () => {
+              const t = nextAttentionTarget();
+              if (t) activateAgentTarget(t.tabId, t.leafId);
+            },
+            launchClaude,
+            toggleReader: toggleActiveReader,
           })
         : [],
     [
@@ -1310,6 +1398,9 @@ export default function App() {
       askFromSelection,
       activeSpaceId,
       handleNewSpace,
+      activateAgentTarget,
+      launchClaude,
+      toggleActiveReader,
     ],
   );
 
@@ -1511,6 +1602,15 @@ export default function App() {
                           pathDropTarget={terminalPathDropTarget}
                           visible={!sidebarCollapsed}
                         />
+                      ) : sidebarView === "sessions" ? (
+                        <SessionsPanel
+                          tabs={tabs}
+                          onActivate={activateAgentTarget}
+                          onOpenReader={openAgentReader}
+                          onLaunchClaude={launchClaude}
+                          historyCwd={activeCwd ?? null}
+                          onOpenPastChat={openPastChat}
+                        />
                       ) : (
                         <SourceControlPanel
                           open
@@ -1606,6 +1706,7 @@ export default function App() {
             activeId={activeId}
             onActivate={onActivateAgent}
           />
+          <TerminalLinkChip />
           <Toaster position="bottom-right" />
 
           {hasComposer ? (

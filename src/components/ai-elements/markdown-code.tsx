@@ -1,8 +1,16 @@
 "use client";
 
+import { cn } from "@/lib/utils";
+import { copyToClipboard } from "@/modules/explorer/lib/contextActions";
 import { isValidElement, type ReactNode } from "react";
 
 import { ChatCodeBlock } from "./chat-code";
+import {
+  classifyLinkTarget,
+  routeLink,
+  useMarkdownLinkRouter,
+  wantsCopy,
+} from "./markdown-link";
 
 export function markdownCodeText(children?: ReactNode): string {
   if (children == null || typeof children === "boolean") return "";
@@ -31,11 +39,31 @@ export function MarkdownCode({
   className?: string;
   children?: ReactNode;
 }) {
+  const router = useMarkdownLinkRouter();
   const match = className?.match(/language-(\w+)/);
   if (!match) {
+    // Inline code that is exactly a URL or a path opens on Cmd+click.
+    const text = markdownCodeText(children).trim();
+    const kind = classifyLinkTarget(text);
+    const linkable =
+      kind === "external" || (kind === "file" && !!router.openFile);
     return (
       <code
-        className="rounded bg-muted/70 px-1.5 py-0.5 font-mono text-[0.875em] text-foreground"
+        className={cn(
+          "rounded bg-muted/70 px-1.5 py-0.5 font-mono text-[0.875em] text-foreground",
+          linkable && "hover:underline hover:decoration-dotted",
+        )}
+        title={linkable ? `⌘-click to open ${text}` : undefined}
+        onClick={
+          linkable
+            ? (event) => {
+                if (!(event.metaKey || event.ctrlKey)) return;
+                event.preventDefault();
+                if (wantsCopy(event)) void copyToClipboard(text);
+                else routeLink(text, router);
+              }
+            : undefined
+        }
         {...rest}
       >
         {children}

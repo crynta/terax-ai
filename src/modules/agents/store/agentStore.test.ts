@@ -44,6 +44,23 @@ describe("agent session store", () => {
     expect(useAgentStore.getState().sessions[7].attentionSince).toBeNull();
   });
 
+  it("links a Claude session id and drops it when the agent restarts", () => {
+    const store = useAgentStore.getState();
+    store.setClaudeSession(7, "0b5f4c2e-9a1d-4e3b-8c7f-1234567890ab");
+    expect(useAgentStore.getState().sessions[7]).toBeUndefined();
+
+    store.start(7, 3, "claude");
+    expect(useAgentStore.getState().sessions[7].claudeSessionId).toBeNull();
+    store.setClaudeSession(7, "0b5f4c2e-9a1d-4e3b-8c7f-1234567890ab");
+    const linked = useAgentStore.getState().sessions[7];
+    expect(linked.claudeSessionId).toBe("0b5f4c2e-9a1d-4e3b-8c7f-1234567890ab");
+    store.setClaudeSession(7, "0b5f4c2e-9a1d-4e3b-8c7f-1234567890ab");
+    expect(useAgentStore.getState().sessions[7]).toBe(linked);
+
+    store.start(7, 3, "claude");
+    expect(useAgentStore.getState().sessions[7].claudeSessionId).toBeNull();
+  });
+
   it("removes the session on finish", () => {
     useAgentStore.getState().start(7, 3, "claude");
     useAgentStore.getState().finish(7);

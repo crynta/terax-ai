@@ -27,6 +27,9 @@ function leafIdAt(x: number, y: number): number | null {
     ly = y / dpr;
   }
   const el = document.elementFromPoint(lx, ly);
+  // The Session Reader covers the pane: drops there belong to its composer,
+  // never to the hidden terminal underneath.
+  if (el?.closest("[data-terax-reader]")) return null;
   const leafEl = el?.closest<HTMLElement>("[data-pane-leaf]");
   if (!leafEl) return null;
   const id = Number(leafEl.dataset.paneLeaf);

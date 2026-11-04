@@ -7,6 +7,17 @@ type LinkModel = Pick<
 
 export type TerminalLinkSegment = { row: number; start: number; end: number };
 
+/** The hovered link and the viewport box around all of its segments. */
+export type TerminalLinkHoverInfo = {
+  readonly uri: string;
+  readonly rect: {
+    readonly left: number;
+    readonly top: number;
+    readonly right: number;
+    readonly bottom: number;
+  };
+};
+
 export type TerminalLinkHoverOptions = {
   readonly root: HTMLElement;
   readonly model: LinkModel;
@@ -17,6 +28,8 @@ export type TerminalLinkHoverOptions = {
   readonly ignoreTarget: (target: EventTarget | null) => boolean;
   readonly underlineColor: () => string;
   readonly onOpenLink?: (uri: string) => void;
+  /** Fires only when the hovered link (or its position) changes, and with null when it ends. */
+  readonly onHoverChange?: (link: TerminalLinkHoverInfo | null) => void;
   readonly isMac?: boolean;
 };
 
@@ -75,6 +88,7 @@ export class TerminalLinkHover {
   private pointer: PointerState | null = null;
   private segments: TerminalLinkSegment[] = [];
   private readonly underlines: HTMLElement[] = [];
+  private reportedHover: string | null = null;
   private readonly isMac: boolean;
   private readonly keyTarget: Window | null;
 
@@ -107,6 +121,18 @@ export class TerminalLinkHover {
     this.segments = [];
     this.options.root.style.cursor = "text";
     for (const line of this.underlines) line.style.display = "none";
+    this.reportHover(null);
+  }
+
+  private reportHover(link: TerminalLinkHoverInfo | null): void {
+    const onHoverChange = this.options.onHoverChange;
+    if (!onHoverChange) return;
+    const key = link
+      ? `${link.uri}\u0000${link.rect.left},${link.rect.top},${link.rect.right},${link.rect.bottom}`
+      : null;
+    if (key === this.reportedHover) return;
+    this.reportedHover = key;
+    onHoverChange(link);
   }
 
   dispose(): void {
@@ -237,6 +263,28 @@ export class TerminalLinkHover {
     ) {
       this.underlines[index].style.display = "none";
     }
+    if (!uri || this.segments.length === 0) {
+      this.reportHover(null);
+      return;
+    }
+    const box = this.options.root.getBoundingClientRect();
+    let left = Number.POSITIVE_INFINITY;
+    let right = Number.NEGATIVE_INFINITY;
+    for (const segment of this.segments) {
+      left = Math.min(left, segment.start * cell.width);
+      right = Math.max(right, (segment.end + 1) * cell.width);
+    }
+    const first = this.segments[0].row;
+    const last = this.segments[this.segments.length - 1].row;
+    this.reportHover({
+      uri,
+      rect: {
+        left: box.left + left,
+        right: box.left + right,
+        top: box.top + first * cell.height - shift,
+        bottom: box.top + (last + 1) * cell.height - shift,
+      },
+    });
   }
 }
 

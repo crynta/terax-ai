@@ -1,4 +1,4 @@
-import { isExternalUrl, openExternalUrl } from "@/lib/external-link";
+import { isExternalUrl, logLink, openExternalUrl } from "@/lib/external-link";
 import { currentWorkspaceEnv } from "@/modules/workspace/env";
 import { invoke } from "@tauri-apps/api/core";
 import { homeDir } from "@tauri-apps/api/path";
@@ -12,6 +12,39 @@ let opener: TerminalFileOpener | null = null;
 /** The app registers how a clicked terminal path opens in the editor. */
 export function setTerminalFileOpener(next: TerminalFileOpener | null): void {
   opener = next;
+}
+
+/** A link under the pointer in some pane, for the floating link chip. */
+export type TerminalLinkHoverEvent = {
+  uri: string;
+  rect: { left: number; top: number; right: number; bottom: number };
+  leafId: number;
+  cwd: string | null;
+};
+
+type TerminalLinkHoverListener = (event: TerminalLinkHoverEvent | null) => void;
+
+let hoverListener: TerminalLinkHoverListener | null = null;
+
+/** The link chip registers here; a terminal surface only ever calls {@link emitTerminalLinkHover}. */
+export function setTerminalLinkHoverListener(
+  next: TerminalLinkHoverListener | null,
+): void {
+  hoverListener = next;
+}
+
+export function emitTerminalLinkHover(
+  event: TerminalLinkHoverEvent | null,
+): void {
+  hoverListener?.(event);
+}
+
+/** The file a link points at, resolved like a click would, or null for URLs and unknown bases. */
+export function resolveTerminalFileLink(
+  uri: string,
+  cwd: string | null,
+): TerminalFileTarget | null {
+  return parseTerminalFileLink(uri, cwd, cachedHome);
 }
 
 let cachedHome: string | null = null;
@@ -86,6 +119,8 @@ export async function openTerminalLink(
   if (isExternalUrl(uri)) return openExternalUrl(uri, onSettled);
   const target = parseTerminalFileLink(uri, cwd, cachedHome);
   const open = opener;
+  if (!target) logLink("open file skipped (not resolvable)");
+  else if (!open) logLink("open file skipped (no editor opener)", true);
   if (target && open) {
     const stat = await invoke<{ kind: string }>("fs_stat", {
       path: target.path,
@@ -93,8 +128,12 @@ export async function openTerminalLink(
     }).catch(() => null);
     if (stat && stat.kind !== "dir") {
       open(target.path, target.line);
+      logLink(`open file ok${target.line ? ` (line ${target.line})` : ""}`);
       return;
     }
+    logLink(
+      stat ? "open file skipped (a folder)" : "open file skipped (missing)",
+    );
   }
   onSettled?.();
 }

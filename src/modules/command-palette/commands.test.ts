@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { SessionRow } from "@/modules/agents/lib/sessionRows";
 import type { Tab } from "@/modules/tabs";
 import {
   type CommandPaletteActionContext,
@@ -100,5 +101,67 @@ describe("createCommandItems", () => {
       "spaces.switch.sp1",
     );
     expect(reason).toBe("Current space");
+  });
+});
+
+describe("Sessions group", () => {
+  const row = (over: Partial<SessionRow>): SessionRow => ({
+    leafId: 10,
+    tabId: 1,
+    agent: "claude",
+    phase: "working",
+    title: "terax-ai",
+    paneLabel: null,
+    cwd: "/repo",
+    startedAt: 0,
+    lastActivityAt: 0,
+    attentionSince: null,
+    claudeSessionId: null,
+    lastNotification: null,
+    ...over,
+  });
+
+  it("is absent when the app passes no session actions", () => {
+    const items = createCommandItems(baseContext());
+    expect(items.filter((i) => i.group === "Sessions")).toEqual([]);
+  });
+
+  it("lists each session with its phase and jumps to it", () => {
+    const focusSession = vi.fn();
+    const items = createCommandItems(
+      baseContext({
+        sessions: [
+          row({ leafId: 11, phase: "attention", paneLabel: "Pane 2" }),
+          row({ leafId: 12, phase: "finished", title: "notes" }),
+        ],
+        focusSession,
+        focusNextAttention: () => {},
+        launchClaude: () => {},
+        toggleReader: () => {},
+      }),
+    ).filter((i) => i.group === "Sessions");
+    expect(items.map((i) => i.id)).toEqual([
+      "sessions.nextAttention",
+      "sessions.toggleReader",
+      "sessions.newClaude",
+      "sessions.focus.11",
+      "sessions.focus.12",
+    ]);
+    const first = items.find((i) => i.id === "sessions.focus.11");
+    expect(first).toMatchObject({
+      title: "Go to terax-ai · Pane 2",
+      trailing: "Needs input",
+    });
+    first?.run();
+    expect(focusSession).toHaveBeenCalledWith(1, 11);
+    expect(items[0].disabledReason).toBeUndefined();
+  });
+
+  it("disables the next-attention jump when nothing is waiting", () => {
+    const reason = reasonById(
+      { sessions: [row({})], focusNextAttention: () => {} },
+      "sessions.nextAttention",
+    );
+    expect(reason).toBe("None waiting");
   });
 });

@@ -7,12 +7,15 @@ type AgentSignalKind =
   | "working"
   | "attention"
   | "finished"
-  | "exited";
+  | "exited"
+  | "linked";
 
 export type AgentSignal = {
   id: number;
   kind: AgentSignalKind;
   agent: string | null;
+  /** The agent's own session id (UUID), on `linked` signals only. */
+  session?: string | null;
 };
 
 export type AgentSession = {
@@ -23,6 +26,8 @@ export type AgentSession = {
   startedAt: number;
   lastActivityAt: number;
   attentionSince: number | null;
+  /** Claude Code session id, once its hook reports it (opens the transcript). */
+  claudeSessionId: string | null;
 };
 
 export type AgentNotification = {

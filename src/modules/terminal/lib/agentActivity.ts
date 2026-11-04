@@ -7,6 +7,8 @@ type AgentSignal = {
   id: number;
   kind: string;
   agent?: string | null;
+  /** The agent's own session id (UUID), on `linked` signals only. */
+  session?: string | null;
 };
 
 type AgentActivityStore = {
@@ -14,8 +16,11 @@ type AgentActivityStore = {
   // pty -> agent name, learned from the `started` signal and kept until exit so
   // the tab can show that agent's brand icon while it runs.
   agents: Record<number, string>;
+  // pty -> the agent's session id (Claude's transcript), learned from `linked`.
+  sessionIds: Record<number, string>;
   setPhase: (id: number, phase: AgentPhase) => void;
   setAgent: (id: number, agent: string) => void;
+  setSessionId: (id: number, sessionId: string) => void;
   acknowledgeAttention: (ids: readonly number[]) => void;
   clear: (id: number) => void;
 };
@@ -23,6 +28,7 @@ type AgentActivityStore = {
 export const useAgentActivityStore = create<AgentActivityStore>((set) => ({
   phases: {},
   agents: {},
+  sessionIds: {},
   setPhase: (id, phase) =>
     set((s) => {
       if (s.phases[id] === phase) return s;
@@ -32,6 +38,11 @@ export const useAgentActivityStore = create<AgentActivityStore>((set) => ({
     set((s) => {
       if (s.agents[id] === agent) return s;
       return { agents: { ...s.agents, [id]: agent } };
+    }),
+  setSessionId: (id, sessionId) =>
+    set((s) => {
+      if (s.sessionIds[id] === sessionId) return s;
+      return { sessionIds: { ...s.sessionIds, [id]: sessionId } };
     }),
   acknowledgeAttention: (ids) =>
     set((s) => {
@@ -45,12 +56,16 @@ export const useAgentActivityStore = create<AgentActivityStore>((set) => ({
     }),
   clear: (id) =>
     set((s) => {
-      if (!(id in s.phases) && !(id in s.agents)) return s;
+      if (!(id in s.phases) && !(id in s.agents) && !(id in s.sessionIds)) {
+        return s;
+      }
       const phases = { ...s.phases };
       const agents = { ...s.agents };
+      const sessionIds = { ...s.sessionIds };
       delete phases[id];
       delete agents[id];
-      return { phases, agents };
+      delete sessionIds[id];
+      return { phases, agents, sessionIds };
     }),
 }));
 
@@ -111,6 +126,12 @@ export function subscribeAgentSignals(handler: AgentSignalHandler): () => void {
 
 function applySignal(payload: AgentSignal): void {
   const { id, agent } = payload;
+  if (payload.kind === "linked") {
+    if (payload.session) {
+      useAgentActivityStore.getState().setSessionId(id, payload.session);
+    }
+    return;
+  }
   const action = phaseForSignal(payload.kind);
   if (action === null) return;
   clearFinishedTimer(id);

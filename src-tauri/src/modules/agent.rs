@@ -100,11 +100,26 @@ fn find(agent: &str) -> Result<&'static AgentSpec, String> {
 
 fn hook_command(spec: &AgentSpec, event: &str) -> String {
     match spec.delivery {
-        Delivery::TerminalSequence => format!(
-            r#"[ -n "$TERAX_TERMINAL" ] && printf '{{"terminalSequence":"\\u001b]777;notify;Terax;{event}\\u0007"}}' || true"#
-        ),
+        Delivery::TerminalSequence => terminal_sequence_command(spec.agent, event),
         Delivery::Osc => osc_command(spec.agent, event),
     }
+}
+
+// Claude pipes the hook a JSON payload on stdin; its `session_id` rides the
+// marker so Terax can open that session's transcript. sed, not jq, so it works
+// on a stock system; only a UUID-shaped id is ever extracted.
+#[cfg(unix)]
+fn terminal_sequence_command(agent: &str, event: &str) -> String {
+    format!(
+        r#"[ -n "$TERAX_TERMINAL" ] && {{ s=$(sed -n 's/.*"session_id" *: *"\([0-9a-fA-F-]\{{36\}}\)".*/\1/p' | head -n 1); printf '{{"terminalSequence":"\\u001b]777;notify;Terax;{agent};{event}%s\\u0007"}}' "${{s:+;$s}}"; }} || true"#
+    )
+}
+
+#[cfg(windows)]
+fn terminal_sequence_command(agent: &str, event: &str) -> String {
+    format!(
+        r#"[ -n "$TERAX_TERMINAL" ] && printf '{{"terminalSequence":"\\u001b]777;notify;Terax;{agent};{event}\\u0007"}}' || true"#
+    )
 }
 
 // Marker to the tty, then `{}` on stdout: Codex/Gemini require a JSON no-op.
@@ -127,7 +142,8 @@ fn osc_command(agent: &str, event: &str) -> String {
 // Kept in sync with hook_command so status reflects what enable writes.
 fn status_needle(spec: &AgentSpec, event: &str) -> String {
     match spec.delivery {
-        Delivery::TerminalSequence => format!("notify;Terax;{event}"),
+        // Names the agent, so a legacy 3-field install reads as "update hooks".
+        Delivery::TerminalSequence => format!("notify;Terax;{};{event}", spec.agent),
         Delivery::Osc => {
             #[cfg(unix)]
             {
@@ -381,11 +397,65 @@ mod tests {
         assert_eq!(hook_count(&out, "UserPromptSubmit"), 1);
         assert_eq!(hook_count(&out, "Notification"), 1);
         assert_eq!(hook_count(&out, "Stop"), 1);
-        assert!(command(&out, "Notification", 0).contains("notify;Terax;attention"));
-        assert!(command(&out, "Stop", 0).contains("notify;Terax;finished"));
-        assert!(command(&out, "UserPromptSubmit", 0).contains("notify;Terax;working"));
+        assert!(command(&out, "Notification", 0).contains("notify;Terax;claude;attention"));
+        assert!(command(&out, "Stop", 0).contains("notify;Terax;claude;finished"));
+        assert!(command(&out, "UserPromptSubmit", 0).contains("notify;Terax;claude;working"));
         assert!(command(&out, "Stop", 0).contains("terminalSequence"));
         assert!(!command(&out, "Stop", 0).contains("/dev/tty"));
+    }
+
+    #[test]
+    fn legacy_claude_install_reports_hooks_out_of_date() {
+        let legacy = r#"printf '{"terminalSequence":"\u001b]777;notify;Terax;working\u0007"}'"#;
+        let s = spec("claude");
+        assert!(!legacy.contains(&status_needle(s, "working")));
+        assert!(hook_command(s, "working").contains(&status_needle(s, "working")));
+    }
+
+    // Runs the generated hook through a real shell, as Claude does.
+    #[cfg(unix)]
+    fn run_hook(event: &str, stdin: &str) -> String {
+        use std::io::Write;
+        let mut child = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(hook_command(spec("claude"), event))
+            .env("TERAX_TERMINAL", "1")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        child.stdin.take().unwrap().write_all(stdin.as_bytes()).unwrap();
+        let out = child.wait_with_output().unwrap();
+        String::from_utf8(out.stdout).unwrap()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn claude_hook_forwards_the_session_id_from_stdin() {
+        let id = "0b5f4c2e-9a1d-4e3b-8c7f-1234567890ab";
+        let payload = format!(
+            r#"{{"session_id": "{id}", "transcript_path": "/x/{id}.jsonl", "hook_event_name": "Stop"}}"#
+        );
+        let out = run_hook("finished", &payload);
+        let json: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(
+            json["terminalSequence"],
+            format!("\u{1b}]777;notify;Terax;claude;finished;{id}\u{7}")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn claude_hook_without_a_valid_session_id_sends_the_four_field_marker() {
+        for stdin in ["", "not json", r#"{"session_id": "../../etc"}"#] {
+            let out = run_hook("working", stdin);
+            let json: Value = serde_json::from_str(&out).unwrap();
+            assert_eq!(
+                json["terminalSequence"],
+                "\u{1b}]777;notify;Terax;claude;working\u{7}",
+                "{stdin:?}"
+            );
+        }
     }
 
     #[test]
@@ -545,7 +615,7 @@ mod tests {
         });
         let out = merge_hooks(input, spec("claude"));
         assert_eq!(hook_count(&out, "Notification"), 1);
-        assert!(command(&out, "Notification", 0).contains("notify;Terax;attention"));
+        assert!(command(&out, "Notification", 0).contains("notify;Terax;claude;attention"));
     }
 
     #[test]

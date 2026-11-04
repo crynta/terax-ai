@@ -17,7 +17,8 @@ const ATTENTION_REPEAT: Duration = Duration::from_secs(3);
 const DEFAULT_AGENTS: &[&str] = &["claude", "codex", "gemini", "pi", "opencode", "grok"];
 
 // OSC 777 marker our agent hooks emit. Legacy 3-field `notify;Terax;<event>`
-// (Claude) or 4-field `notify;Terax;<agent>;<event>` (Codex/Gemini/Pi).
+// (Claude), 4-field `notify;Terax;<agent>;<event>` (Codex/Gemini/Pi), or 5-field
+// `notify;Terax;<agent>;<event>;<session uuid>` (Claude, links its transcript).
 const TERAX_MARKER: &[u8] = b"notify;Terax;";
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -41,6 +42,8 @@ pub enum Transition {
     Attention,
     Finished,
     Exited,
+    /// The agent's own session id (a UUID), reported by its hook.
+    Linked { session: String },
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -48,20 +51,47 @@ pub struct AgentSignal {
     pub id: u32,
     pub kind: &'static str,
     pub agent: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
 }
 
 impl Transition {
     pub fn into_signal(self, id: u32) -> AgentSignal {
         match self {
-            Transition::Started { agent } => {
-                AgentSignal { id, kind: "started", agent: Some(agent) }
-            }
-            Transition::Working => AgentSignal { id, kind: "working", agent: None },
-            Transition::Attention => AgentSignal { id, kind: "attention", agent: None },
-            Transition::Finished => AgentSignal { id, kind: "finished", agent: None },
-            Transition::Exited => AgentSignal { id, kind: "exited", agent: None },
+            Transition::Started { agent } => AgentSignal {
+                id,
+                kind: "started",
+                agent: Some(agent),
+                session: None,
+            },
+            Transition::Working => AgentSignal::bare(id, "working"),
+            Transition::Attention => AgentSignal::bare(id, "attention"),
+            Transition::Finished => AgentSignal::bare(id, "finished"),
+            Transition::Exited => AgentSignal::bare(id, "exited"),
+            Transition::Linked { session } => AgentSignal {
+                id,
+                kind: "linked",
+                agent: None,
+                session: Some(session),
+            },
         }
     }
+}
+
+impl AgentSignal {
+    fn bare(id: u32, kind: &'static str) -> Self {
+        Self { id, kind, agent: None, session: None }
+    }
+}
+
+/// A canonical 8-4-4-4-12 hex UUID. PTY output is untrusted, so only this exact
+/// shape is ever forwarded as a session id (never a path or free text).
+fn is_session_uuid(bytes: &[u8]) -> bool {
+    bytes.len() == 36
+        && bytes.iter().enumerate().all(|(i, &b)| match i {
+            8 | 13 | 18 | 23 => b == b'-',
+            _ => b.is_ascii_hexdigit(),
+        })
 }
 
 pub struct AgentDetector {
@@ -72,6 +102,8 @@ pub struct AgentDetector {
     status: Status,
     /// When generic attention was last emitted; consulted only while armed.
     last_attention: Option<Instant>,
+    /// Session id last reported for the armed agent, to emit `Linked` once.
+    session: Option<String>,
     clock: fn() -> Instant,
 }
 
@@ -92,6 +124,7 @@ impl AgentDetector {
             armed: false,
             status: Status::Working,
             last_attention: None,
+            session: None,
             clock,
         }
     }
@@ -183,6 +216,7 @@ impl AgentDetector {
         self.armed = false;
         self.status = Status::Working;
         self.last_attention = None;
+        self.session = None;
     }
 
     fn note_attention(&mut self) {
@@ -207,7 +241,7 @@ impl AgentDetector {
     fn handle_osc777<F: FnMut(Transition)>(&mut self, pt: &[u8], emit: &mut F) {
         if let Some(tail) = pt.strip_prefix(TERAX_MARKER) {
             // PTY output is untrusted: only self-arm for known agents.
-            let (agent, event) = match tail.iter().position(|&c| c == b';') {
+            let (agent, rest) = match tail.iter().position(|&c| c == b';') {
                 Some(i) => {
                     let Ok(name) = std::str::from_utf8(&tail[..i]) else {
                         return;
@@ -219,20 +253,30 @@ impl AgentDetector {
                 }
                 None => ("claude", tail),
             };
-            // Self-arms when no shell preexec fired (bash, Windows, tmux).
-            match event {
-                b"working" => {
-                    self.ensure_armed(agent, emit);
-                    self.set_working(emit);
+            // An optional trailing session id; anything but a UUID is dropped.
+            let (event, session) = match rest.iter().position(|&c| c == b';') {
+                Some(i) => {
+                    let id = &rest[i + 1..];
+                    (&rest[..i], is_session_uuid(id).then_some(id))
                 }
+                None => (rest, None),
+            };
+            if !matches!(event, b"working" | b"attention" | b"finished") {
+                return;
+            }
+            // Self-arms when no shell preexec fired (bash, Windows, tmux).
+            self.ensure_armed(agent, emit);
+            if let Some(id) = session {
+                self.link_session(id, emit);
+            }
+            match event {
+                b"working" => self.set_working(emit),
                 b"attention" => {
-                    self.ensure_armed(agent, emit);
                     self.status = Status::Waiting;
                     self.note_attention();
                     emit(Transition::Attention);
                 }
                 b"finished" => {
-                    self.ensure_armed(agent, emit);
                     self.status = Status::Waiting;
                     self.note_attention();
                     emit(Transition::Finished);
@@ -262,6 +306,15 @@ impl AgentDetector {
                 emit(Transition::Exited);
             }
             _ => {}
+        }
+    }
+
+    fn link_session<F: FnMut(Transition)>(&mut self, id: &[u8], emit: &mut F) {
+        // Validated as ASCII hex and dashes, so this is lossless.
+        let id = String::from_utf8_lossy(id).into_owned();
+        if self.session.as_deref() != Some(id.as_str()) {
+            self.session = Some(id.clone());
+            emit(Transition::Linked { session: id });
         }
     }
 
@@ -458,6 +511,80 @@ mod tests {
         assert_eq!(run(&mut d, &osc("777;notify;Terax;gemini;attention")), vec![Transition::Attention]);
         assert_eq!(run(&mut d, &osc("777;notify;Terax;gemini;working")), vec![Transition::Working]);
         assert_eq!(run(&mut d, &osc("777;notify;Terax;gemini;finished")), vec![Transition::Finished]);
+    }
+
+    const SESSION: &str = "0b5f4c2e-9a1d-4e3b-8c7f-1234567890ab";
+
+    fn linked(session: &str) -> Transition {
+        Transition::Linked { session: session.into() }
+    }
+
+    #[test]
+    fn five_field_marker_links_the_session_once() {
+        let mut d = AgentDetector::new();
+        assert_eq!(
+            run(&mut d, &osc(&format!("777;notify;Terax;claude;working;{SESSION}"))),
+            vec![started("claude"), linked(SESSION)]
+        );
+        // The same id on later events is not re-reported.
+        assert_eq!(
+            run(&mut d, &osc(&format!("777;notify;Terax;claude;attention;{SESSION}"))),
+            vec![Transition::Attention]
+        );
+        // A different id (e.g. /clear started a new session) is.
+        let other = "ffffffff-0000-4000-8000-000000000000";
+        assert_eq!(
+            run(&mut d, &osc(&format!("777;notify;Terax;claude;finished;{other}"))),
+            vec![linked(other), Transition::Finished]
+        );
+    }
+
+    #[test]
+    fn session_is_forgotten_on_exit() {
+        let mut d = AgentDetector::new();
+        run(&mut d, &osc("133;C;claude"));
+        run(&mut d, &osc(&format!("777;notify;Terax;claude;working;{SESSION}")));
+        run(&mut d, &osc("133;D;0"));
+        run(&mut d, &osc("133;C;claude"));
+        assert_eq!(
+            run(&mut d, &osc(&format!("777;notify;Terax;claude;attention;{SESSION}"))),
+            vec![linked(SESSION), Transition::Attention]
+        );
+    }
+
+    #[test]
+    fn hostile_session_fields_are_dropped_but_the_event_still_counts() {
+        for bad in [
+            "../../etc/passwd",
+            "0b5f4c2e-9a1d-4e3b-8c7f-1234567890ab;extra",
+            "0b5f4c2e-9a1d-4e3b-8c7f-1234567890a",
+            "0b5f4c2e/9a1d/4e3b/8c7f/1234567890ab",
+            "zzzzzzzz-9a1d-4e3b-8c7f-1234567890ab",
+            "",
+        ] {
+            let mut d = AgentDetector::new();
+            run(&mut d, &osc("133;C;claude"));
+            assert_eq!(
+                run(&mut d, &osc(&format!("777;notify;Terax;claude;attention;{bad}"))),
+                vec![Transition::Attention],
+                "{bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_event_with_a_session_does_not_arm() {
+        let mut d = AgentDetector::new();
+        assert!(run(&mut d, &osc(&format!("777;notify;Terax;claude;bogus;{SESSION}"))).is_empty());
+    }
+
+    #[test]
+    fn linked_signal_carries_the_session_and_others_omit_it() {
+        let signal = linked(SESSION).into_signal(7);
+        assert_eq!(signal.kind, "linked");
+        assert_eq!(signal.session.as_deref(), Some(SESSION));
+        let json = serde_json::to_value(Transition::Working.into_signal(7)).unwrap();
+        assert!(json.get("session").is_none());
     }
 
     thread_local! {

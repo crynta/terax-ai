@@ -1,7 +1,10 @@
+import type { SessionRow } from "@/modules/agents/lib/sessionRows";
 import type { SearchTarget } from "@/modules/header";
 import { MAX_PANES_PER_TAB, type Tab } from "@/modules/tabs";
 import { leafIds } from "@/modules/terminal";
 import {
+  AiChat02Icon,
+  BookOpen01Icon,
   Cancel01Icon,
   DashboardSquare01Icon,
   FileEditIcon,
@@ -31,7 +34,15 @@ export const COMMAND_GROUPS = [
   "Search",
   "View",
   "AI",
+  "Sessions",
 ] as const;
+
+const PHASE_TRAILING: Record<SessionRow["phase"], string> = {
+  attention: "Needs input",
+  working: "Working",
+  finished: "Done",
+  idle: "Idle",
+};
 
 export type CommandPaletteActionContext = {
   tabs: Tab[];
@@ -62,7 +73,75 @@ export type CommandPaletteActionContext = {
   openSpacesOverview: () => void;
   newSpace: () => void;
   switchSpace: (id: string) => void;
+  /** Agent sessions, needs-input first; the "Sessions" group lists them. */
+  sessions?: readonly SessionRow[];
+  focusSession?: (tabId: number, leafId: number) => void;
+  focusNextAttention?: () => void;
+  launchClaude?: () => void;
+  toggleReader?: () => void;
 };
+
+function sessionItems(ctx: CommandPaletteActionContext): PaletteItem[] {
+  const sessions = ctx.sessions ?? [];
+  const items: PaletteItem[] = [];
+  if (ctx.focusNextAttention) {
+    items.push({
+      id: "sessions.nextAttention",
+      title: "Next session needing input",
+      group: "Sessions",
+      keywords: ["agent", "claude", "attention", "waiting", "jump"],
+      icon: AiChat02Icon,
+      shortcutId: "agent.focusAttention",
+      disabledReason: sessions.some((s) => s.phase === "attention")
+        ? undefined
+        : "None waiting",
+      run: ctx.focusNextAttention,
+    });
+  }
+  if (ctx.toggleReader) {
+    items.push({
+      id: "sessions.toggleReader",
+      title: "Toggle Session Reader",
+      group: "Sessions",
+      keywords: ["reader", "transcript", "document", "claude", "agent"],
+      icon: BookOpen01Icon,
+      shortcutId: "agent.toggleReader",
+      run: ctx.toggleReader,
+    });
+  }
+  if (ctx.launchClaude) {
+    items.push({
+      id: "sessions.newClaude",
+      title: "New Claude session",
+      group: "Sessions",
+      keywords: ["agent", "claude", "launch", "start"],
+      icon: AiChat02Icon,
+      run: ctx.launchClaude,
+    });
+  }
+  const focus = ctx.focusSession;
+  if (focus) {
+    for (const session of sessions) {
+      const where = session.paneLabel ? ` · ${session.paneLabel}` : "";
+      items.push({
+        id: `sessions.focus.${session.leafId}`,
+        title: `Go to ${session.title}${where}`,
+        group: "Sessions",
+        keywords: [
+          "agent",
+          "session",
+          session.agent,
+          session.title,
+          session.cwd ?? "",
+        ],
+        icon: AiChat02Icon,
+        trailing: PHASE_TRAILING[session.phase],
+        run: () => focus(session.tabId, session.leafId),
+      });
+    }
+  }
+  return items;
+}
 
 const noop = () => {};
 
@@ -114,7 +193,14 @@ export function createCommandItems(
       id: "spaces.overview",
       title: "Spaces: Overview",
       group: "Spaces",
-      keywords: ["spaces", "sessions", "overview", "organize", "manage", "move"],
+      keywords: [
+        "spaces",
+        "sessions",
+        "overview",
+        "organize",
+        "manage",
+        "move",
+      ],
       icon: DashboardSquare01Icon,
       run: ctx.openSpacesOverview,
     },
@@ -132,8 +218,7 @@ export function createCommandItems(
       group: "Spaces" as const,
       keywords: ["space", "switch", "session", sp.name],
       icon: DashboardSquare01Icon,
-      disabledReason:
-        sp.id === ctx.activeSpaceId ? "Current space" : undefined,
+      disabledReason: sp.id === ctx.activeSpaceId ? "Current space" : undefined,
       run: () => ctx.switchSpace(sp.id),
     })),
     {
@@ -302,5 +387,6 @@ export function createCommandItems(
       shortcutId: "ai.askSelection",
       run: ctx.askAiSelection,
     },
+    ...sessionItems(ctx),
   ];
 }

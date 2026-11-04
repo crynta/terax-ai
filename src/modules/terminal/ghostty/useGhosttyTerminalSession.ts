@@ -1,24 +1,27 @@
-import { loadSessionRenderer } from "@/modules/terminal/ghostty/loadSessionRenderer";
-import {
-  ensureGhosttyBlocks,
-  ghosttyBlocks,
-  disposeGhosttyBlocks,
-} from "@/modules/terminal/ghostty/ghosttyBlockSessions";
-import { initializeSessionGeneration as startSessionInitialization } from "@/modules/terminal/ghostty/sessionInitialization";
-import { replaceSessionSurface } from "@/modules/terminal/ghostty/replaceSessionSurface";
 import { ensureMonoFontsLoaded, resolveFontFamily } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { TerminalBackendKind } from "@/modules/terminal/backend/contracts";
+import {
+  disposeGhosttyBlocks,
+  ensureGhosttyBlocks,
+  ghosttyBlocks,
+} from "@/modules/terminal/ghostty/ghosttyBlockSessions";
+import { loadSessionRenderer } from "@/modules/terminal/ghostty/loadSessionRenderer";
+import { replaceSessionSurface } from "@/modules/terminal/ghostty/replaceSessionSurface";
+import { initializeSessionGeneration as startSessionInitialization } from "@/modules/terminal/ghostty/sessionInitialization";
+import { LatestClipboardWrite } from "@/modules/terminal/lib/LatestClipboardWrite";
 import { setLeafPresentation } from "@/modules/terminal/lib/ptyPresentation";
-import { openTerminalLink } from "@/modules/terminal/lib/terminalFileLinks";
 import { PtyResizeDelivery } from "@/modules/terminal/lib/ptyResizeDelivery";
+import {
+  emitTerminalLinkHover,
+  openTerminalLink,
+} from "@/modules/terminal/lib/terminalFileLinks";
 import { useTerminalFont } from "@/modules/terminal/lib/useTerminalFont";
 import type { TerminalSearchController } from "@/modules/terminal/search/TerminalSearchController";
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { openPty, type PtySession } from "../lib/pty-bridge";
 import { writeTerminalClipboard } from "../lib/terminalClipboard";
-import { LatestClipboardWrite } from "@/modules/terminal/lib/LatestClipboardWrite";
 import { GhosttySemanticEventRouter } from "./core/GhosttySemanticEventRouter";
 import { getGhosttyCoreRuntime } from "./GhosttyCoreRuntime";
 import type { GhosttyTerminalModelApi } from "./GhosttyTerminalModel";
@@ -28,8 +31,10 @@ import {
   rgbToInt,
   type TerminalFontSpec,
 } from "./gpu/terminalVisuals";
-import { getWebGpuTerminalRuntime } from "./gpu/WebGpuTerminalRuntime";
-import { webGpuTerminalRuntimeDiagnostics } from "./gpu/WebGpuTerminalRuntime";
+import {
+  getWebGpuTerminalRuntime,
+  webGpuTerminalRuntimeDiagnostics,
+} from "./gpu/WebGpuTerminalRuntime";
 import { WebGpuTerminalSurface } from "./gpu/WebGpuTerminalSurface";
 import { GhosttyInputController } from "./input/GhosttyInputController";
 import { encodeTerminalSubmission } from "./input/terminalInputEncoding";
@@ -133,16 +138,17 @@ export function useGhosttyTerminalSession({
   const letterSpacing = usePreferencesStore(
     (state) => state.terminalLetterSpacing,
   );
+  const lineHeight = usePreferencesStore((state) => state.terminalLineHeight);
   const zoomLevel = usePreferencesStore((state) => state.zoomLevel);
   const font = useMemo<TerminalFontSpec>(
     () => ({
       family: resolveFontFamily(fontFamily),
       size: Math.max(4, Math.round(fontSize * zoomLevel)),
-      lineHeight: 1.2,
+      lineHeight,
       letterSpacing,
       weight: fontWeight,
     }),
-    [fontFamily, fontSize, fontWeight, letterSpacing, zoomLevel],
+    [fontFamily, fontSize, fontWeight, letterSpacing, lineHeight, zoomLevel],
   );
   const fontRef = useRef(font);
   fontRef.current = font;
@@ -337,6 +343,31 @@ export function pasteIntoGhosttySession(leafId: number, text: string): boolean {
 
 export function ghosttySelectionForLeaf(leafId: number): string | null {
   return sessions.get(leafId)?.surface?.getSelection() ?? null;
+}
+
+/** Whether the pane's app asked for bracketed paste (DECSET 2004). */
+export function ghosttyBracketedPasteForLeaf(leafId: number): boolean {
+  return sessions.get(leafId)?.model?.modes().bracketedPaste ?? false;
+}
+
+/** The bottom screenful of the pane's text, or null without a live model. */
+export function ghosttyScreenTextForLeaf(leafId: number): string | null {
+  const model = sessions.get(leafId)?.model;
+  return model ? model.readText(model.rows) : null;
+}
+
+/** The last `lines` lines of the pane, scrollback included. */
+export function ghosttyTailTextForLeaf(
+  leafId: number,
+  lines: number,
+): string | null {
+  const model = sessions.get(leafId)?.model;
+  return model ? model.readText(lines) : null;
+}
+
+/** Leaves with a live terminal session. */
+export function ghosttyLiveLeafIds(): number[] {
+  return [...sessions.keys()];
 }
 
 export function ghosttyCwdForLeaf(leafId: number): string | null {
@@ -561,7 +592,7 @@ function ensureSession(
       ({
         family: "monospace",
         size: 14,
-        lineHeight: 1.2,
+        lineHeight: usePreferencesStore.getState().terminalLineHeight,
         letterSpacing: 0,
         weight: "400",
       } satisfies TerminalFontSpec),
@@ -718,6 +749,15 @@ async function initializeSessionGeneration(
         uri,
         session.lastCwd ?? session.initialCwd ?? null,
         () => focusGhosttySession(session.leafId),
+      );
+    },
+    onLinkHover: (link) => {
+      emitTerminalLinkHover(
+        link && {
+          ...link,
+          leafId: session.leafId,
+          cwd: session.lastCwd ?? session.initialCwd ?? null,
+        },
       );
     },
   };

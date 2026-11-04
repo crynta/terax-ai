@@ -39,7 +39,10 @@ import {
 } from "../gpu/terminalVisuals";
 import { GhosttySearchController } from "../search/GhosttySearchController";
 import { TerminalSelectionController } from "../selection/TerminalSelectionController";
-import { TerminalLinkHover } from "../TerminalLinkHover";
+import {
+  TerminalLinkHover,
+  type TerminalLinkHoverInfo,
+} from "../TerminalLinkHover";
 import {
   damagedRows,
   damageWithRows,
@@ -73,6 +76,7 @@ export type WebGlTerminalSurfaceOptions = {
   readonly onFrame?: () => void;
   readonly onRequestFocus?: () => void;
   readonly onOpenLink?: (uri: string) => void;
+  readonly onLinkHover?: (link: TerminalLinkHoverInfo | null) => void;
 };
 
 export type WebGlTerminalSurfaceStats = {
@@ -250,6 +254,7 @@ export class WebGlTerminalSurface
       ignoreTarget: (target) => this.scrollbar.contains(target as Node),
       underlineColor: () => rgbToCss(this.theme.foreground),
       onOpenLink: options.onOpenLink,
+      onHoverChange: options.onLinkHover,
     });
     this.scrollbar.addEventListener("scroll", this.handleScroll);
     this.unsubscribePresentation = subscribeWindowPresentation(

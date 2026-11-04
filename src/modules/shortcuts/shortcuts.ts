@@ -44,6 +44,7 @@ export type ShortcutId =
   | "ai.toggleMini"
   | "ai.askSelection"
   | "agent.focusAttention"
+  | "agent.toggleReader"
   | "settings.open"
   | "sidebar.toggle"
   | "editor.undo"
@@ -295,6 +296,12 @@ export const SHORTCUTS: Shortcut[] = [
     defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "a" }],
   },
   {
+    id: "agent.toggleReader",
+    label: "Toggle Session Reader",
+    group: "AI",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "r" }],
+  },
+  {
     id: "sidebar.toggle",
     label: "Toggle file explorer",
     group: "View",
@@ -432,7 +439,7 @@ function keyFromCode(code: string): string | null {
 export function matchBinding(
   e: KeyboardEvent,
   binding: KeyBinding,
-  id?: ShortcutId
+  id?: ShortcutId,
 ): boolean {
   const eventKey = e.key.toLowerCase();
   const bindingKey = binding.key.toLowerCase();

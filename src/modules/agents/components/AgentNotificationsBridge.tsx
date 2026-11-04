@@ -1,3 +1,4 @@
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { Tab } from "@/modules/tabs";
 import {
   hasLeaf,
@@ -5,11 +6,13 @@ import {
   subscribeAgentSignals,
 } from "@/modules/terminal";
 import { useEffect, useRef } from "react";
+import { shouldOpenInChat } from "../lib/chatDefault";
 import { displayAgent } from "../lib/format";
 import { maybeTriggerManagedReview } from "../lib/review";
 import { routeAgentNotification } from "../lib/route";
 import type { AgentSession, AgentSignal } from "../lib/types";
 import { useWindowFocus } from "../lib/useWindowFocus";
+import { openReader } from "../reader/readerStore";
 import { useAgentStore } from "../store/agentStore";
 import { useManagedAgentsStore } from "../store/managedAgentsStore";
 
@@ -68,7 +71,17 @@ function handleSignal(sig: AgentSignal, ctx: Ctx): void {
     case "started": {
       const info = tabInfo(ctx.tabs, leafId);
       if (!info) return;
+      const tracked = store.sessions[leafId] !== undefined;
       store.start(leafId, info.tabId, sig.agent ?? "agent");
+      if (
+        shouldOpenInChat(
+          sig.agent,
+          usePreferencesStore.getState().agentOpenInChat,
+          tracked,
+        )
+      ) {
+        openReader(leafId);
+      }
       return;
     }
     case "working":
@@ -87,6 +100,9 @@ function handleSignal(sig: AgentSignal, ctx: Ctx): void {
       maybeTriggerManagedReview(leafId);
       return;
     }
+    case "linked":
+      if (sig.session) store.setClaudeSession(leafId, sig.session);
+      return;
     case "exited":
       store.finish(leafId);
       useManagedAgentsStore.getState().remove(leafId);

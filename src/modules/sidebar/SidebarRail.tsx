@@ -1,5 +1,10 @@
 import { cn } from "@/lib/utils";
-import { FolderGitTwoIcon, FolderTreeIcon } from "@hugeicons/core-free-icons";
+import { useAgentActivityStore } from "@/modules/terminal/lib/agentActivity";
+import {
+  AiChat02Icon,
+  FolderGitTwoIcon,
+  FolderTreeIcon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { SidebarViewId } from "./types";
 
@@ -10,7 +15,20 @@ type RailItem = {
   label: string;
   icon: Parameters<typeof HugeiconsIcon>[0]["icon"];
   badge?: number;
+  /** Badge drawn in the attention colour: something is waiting on the user. */
+  urgent?: boolean;
 };
+
+/** Agent panes waiting on the user; one number, so the rail re-renders rarely. */
+function useNeedsInputCount(): number {
+  return useAgentActivityStore((s) => {
+    let count = 0;
+    for (const phase of Object.values(s.phases)) {
+      if (phase === "attention") count += 1;
+    }
+    return count;
+  });
+}
 
 type Props = {
   activeView: SidebarViewId;
@@ -19,6 +37,7 @@ type Props = {
 };
 
 export function SidebarRail({ activeView, onSelectView, changedCount }: Props) {
+  const needsInput = useNeedsInputCount();
   const items: RailItem[] = [
     { id: "explorer", label: "Files", icon: FolderTreeIcon },
     {
@@ -26,6 +45,13 @@ export function SidebarRail({ activeView, onSelectView, changedCount }: Props) {
       label: "Git",
       icon: FolderGitTwoIcon,
       badge: changedCount,
+    },
+    {
+      id: "sessions",
+      label: "Agents",
+      icon: AiChat02Icon,
+      badge: needsInput,
+      urgent: true,
     },
   ];
 
@@ -60,7 +86,14 @@ export function SidebarRail({ activeView, onSelectView, changedCount }: Props) {
             />
             <span>{item.label}</span>
             {showBadge ? (
-              <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-border/60 bg-card px-1 text-[9px] font-semibold leading-none tabular-nums text-muted-foreground/95">
+              <span
+                className={cn(
+                  "inline-flex h-4 min-w-4 items-center justify-center rounded-full border px-1 text-[9px] font-semibold leading-none tabular-nums",
+                  item.urgent
+                    ? "border-transparent bg-agent-attention text-background"
+                    : "border-border/60 bg-card text-muted-foreground/95",
+                )}
+              >
                 {item.badge! > 99 ? "99+" : item.badge}
               </span>
             ) : null}
