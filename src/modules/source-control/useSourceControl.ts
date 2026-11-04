@@ -1,8 +1,8 @@
 import {
-  native,
+  git,
   type GitRepoInfo,
   type GitStatusSnapshot,
-} from "@/modules/ai/lib/native";
+} from "@/modules/git";
 import { useWorkspaceEnvStore, workspaceScopeKey } from "@/modules/workspace";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -328,7 +328,7 @@ export function useSourceControl(
         if (reusableRoot) {
           try {
             repo = stateRef.current.repo ?? null;
-            status = await native.gitStatus(reusableRoot);
+            status = await git.status(reusableRoot);
             if (!isCurrentRequest()) return;
             if (!repo || repo.repoRoot !== reusableRoot) {
               repo = {
@@ -339,7 +339,7 @@ export function useSourceControl(
               };
             }
           } catch {
-            const snapshot = await native.gitPanelSnapshot(contextPath);
+            const snapshot = await git.panelSnapshot(contextPath);
             if (!isCurrentRequest()) return;
             if (!snapshot.repo) {
               setState((current) => ({
@@ -356,7 +356,7 @@ export function useSourceControl(
             status = snapshot.status ?? null;
           }
         } else {
-          const snapshot = await native.gitPanelSnapshot(contextPath);
+          const snapshot = await git.panelSnapshot(contextPath);
           if (!isCurrentRequest()) return;
           if (!snapshot.repo) {
             setState((current) => ({
@@ -396,11 +396,11 @@ export function useSourceControl(
 
         if (shouldAutoFetch) {
           try {
-            await native.gitFetch(repo.repoRoot);
+            await git.fetch(repo.repoRoot);
             touchAutoFetch(autoFetchByRepoRef.current, repo.repoRoot);
             nextRemoteError = null;
             if (!isCurrentRequest()) return;
-            status = await native.gitStatus(repo.repoRoot);
+            status = await git.status(repo.repoRoot);
             if (!isCurrentRequest()) return;
           } catch (error) {
             nextRemoteError = normalizeError(error);
@@ -482,14 +482,14 @@ export function useSourceControl(
 
       try {
         if (action === "fetch") {
-          await native.gitFetch(repo.repoRoot);
+          await git.fetch(repo.repoRoot);
           touchAutoFetch(autoFetchByRepoRef.current, repo.repoRoot);
         } else if (action === "pull") {
-          await native.gitFetch(repo.repoRoot);
+          await git.fetch(repo.repoRoot);
           touchAutoFetch(autoFetchByRepoRef.current, repo.repoRoot);
-          await native.gitPullFfOnly(repo.repoRoot);
+          await git.pullFfOnly(repo.repoRoot);
         } else {
-          await native.gitPush(repo.repoRoot);
+          await git.push(repo.repoRoot);
         }
         if (isCurrentContext()) {
           setState((current) => ({ ...current, lastRemoteError: null }));
