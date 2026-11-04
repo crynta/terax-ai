@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import type { GhosttyTerminalModelApi } from "@/modules/terminal/ghostty/GhosttyTerminalModel";
 import { TeraxGhostty } from "@terax/ghostty-core/adapted";
 import type { KeyEvent } from "@terax/ghostty-core/protocol";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { FakeElement, FakeTextArea } from "./fakeTextArea";
 import { GhosttyInputController } from "./GhosttyInputController";
 
@@ -19,6 +19,11 @@ import { GhosttyInputController } from "./GhosttyInputController";
  * Expected strings are written out from those documents. Where the encoder
  * deliberately differs from xterm in legacy mode the row says so.
  */
+
+const clipboard = vi.hoisted(() => ({ text: "" }));
+vi.mock("@/modules/terminal/lib/terminalClipboard", () => ({
+  readTerminalClipboard: async () => clipboard.text,
+}));
 
 const E = "\x1b";
 
@@ -654,24 +659,29 @@ const ROWS: Row[] = [
 
 const ARTIFACTS = ["ghostty-vt.wasm", "ghostty-vt-scalar.wasm"] as const;
 
+const cores = new Map<
+  string,
+  Awaited<ReturnType<typeof TeraxGhostty.loadBytes>>
+>();
+
+async function loadCore(artifact: string) {
+  const cached = cores.get(artifact);
+  if (cached) return cached;
+  const bytes = await readFile(
+    new URL(
+      `../../../../../packages/ghostty-core/adapted/${artifact}`,
+      import.meta.url,
+    ),
+  );
+  const core = await TeraxGhostty.loadBytes(Uint8Array.from(bytes).buffer);
+  cores.set(artifact, core);
+  return core;
+}
+
 describe.each(ARTIFACTS)("key encoding conformance (%s)", (artifact) => {
-  let core: Awaited<ReturnType<typeof TeraxGhostty.loadBytes>>;
-
-  const loadCore = async () => {
-    if (core) return core;
-    const bytes = await readFile(
-      new URL(
-        `../../../../../packages/ghostty-core/adapted/${artifact}`,
-        import.meta.url,
-      ),
-    );
-    core = await TeraxGhostty.loadBytes(Uint8Array.from(bytes).buffer);
-    return core;
-  };
-
   describe.each(MODES)("$name", (mode) => {
     it.each(ROWS)("$name", async (row) => {
-      const terminal = (await loadCore()).createTerminal(80, 24);
+      const terminal = (await loadCore(artifact)).createTerminal(80, 24);
       const sent: string[] = [];
       const input = new FakeTextArea();
       const platform = row.platform ?? "linux";
@@ -771,3 +781,229 @@ function terminalModel(
     scrollBy: () => false,
   } as unknown as GhosttyTerminalModelApi;
 }
+
+describe.each(ARTIFACTS)(
+  "key policy with the shipped core (%s)",
+  (artifact) => {
+    async function setup(
+      flags: number,
+      over: Partial<
+        ConstructorParameters<typeof GhosttyInputController>[0]
+      > = {},
+    ) {
+      const terminal = (await loadCore(artifact)).createTerminal(80, 24);
+      terminal.write(new TextEncoder().encode(`${E}[=${flags}u`));
+      const input = new FakeTextArea();
+      const sent: string[] = [];
+      const controller = new GhosttyInputController({
+        model: terminalModel(terminal),
+        input: input as unknown as HTMLTextAreaElement,
+        pointerTarget: new FakeElement() as unknown as HTMLElement,
+        cellSize: () => ({ width: 10, height: 20 }),
+        isMac: false,
+        onCopy: () => false,
+        onData: (bytes) => sent.push(new TextDecoder().decode(bytes)),
+        ...over,
+      });
+      const press = (
+        values: Partial<KeyboardEvent> & { locks?: string[] },
+        type = "keydown",
+      ) => {
+        const { locks = [], ...rest } = values;
+        const event = Object.assign(
+          new Event(type, { bubbles: true, cancelable: true }),
+          {
+            key: "",
+            code: "",
+            keyCode: 0,
+            shiftKey: false,
+            ctrlKey: false,
+            altKey: false,
+            metaKey: false,
+            repeat: false,
+            isComposing: false,
+            getModifierState: (name: string) => locks.includes(name),
+            ...rest,
+          },
+        ) as KeyboardEvent;
+        input.dispatchEvent(event);
+        return event;
+      };
+      const dispose = () => {
+        controller.dispose();
+        terminal.dispose();
+      };
+      return { sent, input, press, dispose };
+    }
+
+    it.each([1, 3, 7])(
+      "keeps Num Lock and Caps Lock out of arrows and Escape below report-all (flags %s)",
+      async (flags) => {
+        const h = await setup(flags);
+        try {
+          for (const locks of [
+            ["NumLock"],
+            ["CapsLock"],
+            ["NumLock", "CapsLock"],
+          ]) {
+            h.sent.length = 0;
+            h.press({ key: "ArrowUp", code: "ArrowUp", locks });
+            h.press({ key: "Home", code: "Home", locks });
+            h.press({ key: "Escape", code: "Escape", locks });
+            expect(h.sent).toEqual([`${E}[A`, `${E}[H`, `${E}[27u`]);
+          }
+        } finally {
+          h.dispose();
+        }
+      },
+    );
+
+    it("reports lock state to applications that asked for every key", async () => {
+      const h = await setup(8);
+      try {
+        h.press({ key: "ArrowUp", code: "ArrowUp", locks: ["NumLock"] });
+        h.press({ key: "a", code: "KeyA", locks: ["CapsLock"] });
+        expect(h.sent).toEqual([`${E}[1;129A`, `${E}[97;65u`]);
+      } finally {
+        h.dispose();
+      }
+    });
+
+    it("ignores Num Lock outside the protocol", async () => {
+      const h = await setup(0);
+      try {
+        h.press({ key: "ArrowUp", code: "ArrowUp", locks: ["NumLock"] });
+        expect(h.sent).toEqual([`${E}[A`]);
+      } finally {
+        h.dispose();
+      }
+    });
+
+    it("spells held-arrow repeats and releases per the protocol", async () => {
+      const h = await setup(3);
+      try {
+        h.press({ key: "ArrowLeft", code: "ArrowLeft" });
+        h.press({ key: "ArrowLeft", code: "ArrowLeft", repeat: true });
+        h.press({ key: "ArrowLeft", code: "ArrowLeft" }, "keyup");
+        expect(h.sent).toEqual([`${E}[D`, `${E}[1;1:2D`, `${E}[1;1:3D`]);
+      } finally {
+        h.dispose();
+      }
+    });
+
+    it("releases held keys when focus leaves, so none stays down", async () => {
+      const h = await setup(3);
+      try {
+        h.press({ key: "ArrowUp", code: "ArrowUp" });
+        h.press({ key: "a", code: "KeyA", ctrlKey: true });
+        h.sent.length = 0;
+        h.input.dispatchEvent(new Event("blur"));
+        expect(h.sent).toEqual([`${E}[1;1:3A`, `${E}[97;5:3u`]);
+        h.sent.length = 0;
+        h.press({ key: "ArrowUp", code: "ArrowUp" }, "keyup");
+        expect(h.sent).toEqual([]);
+      } finally {
+        h.dispose();
+      }
+    });
+
+    it("sends no release for a key that went out as text", async () => {
+      const h = await setup(3);
+      try {
+        h.press({ key: "a", code: "KeyA" });
+        h.press({ key: "a", code: "KeyA" }, "keyup");
+        h.press({ key: ":", code: "Semicolon", shiftKey: true });
+        h.press({ key: ":", code: "Semicolon", shiftKey: true }, "keyup");
+        expect(h.sent).toEqual(["a", ":"]);
+      } finally {
+        h.dispose();
+      }
+    });
+
+    it.each([
+      ["with text on the clipboard", "echo hi", "echo hi"],
+      ["with nothing on the clipboard", "", "\x16"],
+    ])("Windows Ctrl+V %s", async (_name, text, expected) => {
+      clipboard.text = text;
+      const h = await setup(0, { isWindows: true });
+      try {
+        const event = h.press({ key: "v", code: "KeyV", ctrlKey: true });
+        expect(event.defaultPrevented).toBe(true);
+        await vi.waitFor(() => expect(h.sent).toEqual([expected]));
+      } finally {
+        h.dispose();
+      }
+    });
+
+    it("falls back to the Kitty spelling of Ctrl+V when there is nothing to paste", async () => {
+      clipboard.text = "";
+      const h = await setup(1, { isWindows: true });
+      try {
+        h.press({ key: "v", code: "KeyV", ctrlKey: true });
+        await vi.waitFor(() => expect(h.sent).toEqual([`${E}[118;5u`]));
+      } finally {
+        h.dispose();
+      }
+    });
+
+    it.each([
+      ["Shift+Insert", { key: "Insert", code: "Insert", shiftKey: true }],
+      [
+        "Ctrl+Shift+V",
+        { key: "V", code: "KeyV", ctrlKey: true, shiftKey: true },
+      ],
+    ])(
+      "%s pastes on Windows and never forwards a key",
+      async (_name, values) => {
+        clipboard.text = "";
+        const h = await setup(0, { isWindows: true });
+        try {
+          h.press(values);
+          await Promise.resolve();
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          expect(h.sent).toEqual([]);
+          clipboard.text = "ls";
+          h.press(values);
+          await vi.waitFor(() => expect(h.sent).toEqual(["ls"]));
+        } finally {
+          h.dispose();
+        }
+      },
+    );
+
+    it("copies when there is a selection and sends the key when there is none", async () => {
+      let selected = true;
+      const onCopy = vi.fn(() => selected);
+      const h = await setup(0, { onCopy });
+      try {
+        const copy = h.press({
+          key: "C",
+          code: "KeyC",
+          ctrlKey: true,
+          shiftKey: true,
+        });
+        expect(copy.defaultPrevented).toBe(true);
+        expect(h.sent).toEqual([]);
+        selected = false;
+        h.press({ key: "C", code: "KeyC", ctrlKey: true, shiftKey: true });
+        expect(h.sent).toEqual([`${E}[99;6u`]);
+        expect(onCopy).toHaveBeenCalledTimes(2);
+      } finally {
+        h.dispose();
+      }
+    });
+
+    it("types a Dead key and its result as one character", async () => {
+      const h = await setup(31);
+      try {
+        const dead = h.press({ key: "Dead", code: "Quote", keyCode: 229 });
+        expect(dead.defaultPrevented).toBe(false);
+        h.press({ key: "é", code: "KeyE" });
+        // Flag 4 adds the PC-101 key of the physical key (e = 101) after the layout's é.
+        expect(h.sent).toEqual([`${E}[233::101;;233u`]);
+      } finally {
+        h.dispose();
+      }
+    });
+  },
+);

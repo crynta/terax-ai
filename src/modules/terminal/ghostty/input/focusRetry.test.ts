@@ -13,7 +13,7 @@ function env(over: Partial<FocusEnv> = {}) {
       return timer;
     },
     clearTimeout: (handle) => {
-      (handle as { live: boolean } | undefined)!.live = false;
+      if (handle) (handle as { live: boolean }).live = false;
     },
     ...over,
   };
