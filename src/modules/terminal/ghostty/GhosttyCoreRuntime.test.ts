@@ -431,9 +431,20 @@ describe("GhosttyCoreRuntime", () => {
       expect(model.presentationSuppressed()).toBe(false);
       expect(model.consumeDamage().kind).not.toBe("none");
 
+      // An expired update stays over until the application resets the mode, so
+      // one that died inside it does not freeze the screen once a second.
       damage.mockClear();
       model.write(new TextEncoder().encode("second"));
+      expect(damage).toHaveBeenCalledTimes(1);
+      expect(model.presentationSuppressed()).toBe(false);
+      expect(model.deferPresentation()).toBe(false);
+      model.consumeDamage();
+
+      model.write(new TextEncoder().encode("\x1b[?2026l"));
+      damage.mockClear();
+      model.write(new TextEncoder().encode("\x1b[?2026hthird"));
       expect(damage).not.toHaveBeenCalled();
+      expect(model.presentationSuppressed()).toBe(true);
       expect(model.deferPresentation()).toBe(true);
 
       model.write(new TextEncoder().encode("\x1b[?2026l"));
