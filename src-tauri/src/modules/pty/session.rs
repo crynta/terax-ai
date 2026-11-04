@@ -14,6 +14,7 @@ use super::hub::{Command, Hub};
 use super::presentation::PresentationClass;
 use super::queue::{OutputQueue, QueueDiagnostics};
 use super::shell_init;
+use super::terminal_colors::{ColorState, TerminalColors};
 use crate::modules::workspace::WorkspaceEnv;
 
 const AGENT_EVENT: &str = "terax:agent-signal";
@@ -60,6 +61,8 @@ pub struct Session {
     input: mpsc::Sender<InputMessage>,
     pub master: Arc<Mutex<Option<Box<dyn MasterPty + Send>>>>,
     output: Arc<OutputQueue>,
+    /// What the reader answers colour queries from.
+    colors: Arc<ColorState>,
     // Set only after output drains, so registration cannot reap a live queue.
     pub(super) finished: Arc<AtomicBool>,
 }
@@ -96,6 +99,21 @@ impl Session {
         self.output.close();
         #[cfg(unix)]
         self.reader_control.cancel();
+    }
+
+    /// Installs the theme colour queries are answered from. A program that
+    /// asked for scheme change reports (`CSI ? 2031 h`) hears about a flip at
+    /// once, in order with every other terminal reply.
+    pub(super) fn set_colors(&self, colors: TerminalColors) {
+        if let Some(scheme) = self.colors.update(colors) {
+            let queued = self.input.try_send(InputMessage {
+                bytes: scheme.report().to_vec(),
+                done: None,
+            });
+            if queued.is_err() {
+                log::debug!("pty colour scheme report dropped: input queue is full");
+            }
+        }
     }
 
     pub(super) fn resize(&self, size: PtySize) -> Result<(), String> {
@@ -199,6 +217,8 @@ pub(super) struct Host {
     pub signal: Arc<dyn Fn(AgentSignal) + Send + Sync>,
     /// Runs on the waiter thread once the exit frame was delivered.
     pub reap: Box<dyn FnOnce() + Send>,
+    /// The theme colour queries are answered from; unknown until pushed.
+    pub colors: Option<TerminalColors>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -215,6 +235,7 @@ pub fn spawn(
     blocks: bool,
     shell: Option<String>,
     control: Option<crate::modules::control::ShellControlEnv>,
+    colors: Option<TerminalColors>,
 ) -> Result<Arc<Session>, String> {
     let emitter = app.clone();
     spawn_with(
@@ -233,6 +254,7 @@ pub fn spawn(
                     }
                 }
             }),
+            colors,
         },
         PtySize {
             rows,
@@ -259,6 +281,7 @@ pub(super) fn spawn_with(
         class,
         signal,
         reap,
+        colors,
     } = host;
     let pty_system = native_pty_system();
     let pair = pty_system.openpty(size).map_err(|e| e.to_string())?;
@@ -296,6 +319,7 @@ pub(super) fn spawn_with(
     let finished = Arc::new(AtomicBool::new(false));
     let output = Arc::new(OutputQueue::new(Some(hub.wake())));
     let (input, mut input_rx) = mpsc::channel::<InputMessage>(INPUT_QUEUE);
+    let color_state = Arc::new(ColorState::new(colors));
 
     hub.submit(Command::Register {
         id,
@@ -322,6 +346,7 @@ pub(super) fn spawn_with(
         input: input.clone(),
         master: Arc::new(Mutex::new(Some(pair.master))),
         output: output.clone(),
+        colors: color_state.clone(),
         finished: finished.clone(),
     });
 
@@ -354,7 +379,7 @@ pub(super) fn spawn_with(
             let mut buf = [0u8; READ_BUF];
             // Reused for every filtered read: no per-chunk allocation.
             let mut filtered: Vec<u8> = Vec::with_capacity(READ_BUF);
-            let mut da_filter = DaFilter::new();
+            let mut da_filter = DaFilter::with_colors(color_state);
             let mut agent_detect = AgentDetector::new();
             let mut first_byte = false;
             loop {
@@ -601,6 +626,7 @@ mod tests {
                 reap: Box::new(move || {
                     let _ = reaped.send(());
                 }),
+                colors: None,
             },
             reaped_rx,
         )
@@ -729,7 +755,7 @@ mod tests {
     #[test]
     fn terminal_replies_use_the_ordered_input_queue() {
         let (_hub, session, mut frontend, reaped) = start(
-            "stty raw -echo; printf '\\033[c'; dd bs=1 count=7 2>/dev/null | od -An -c; exit 0",
+            "stty raw -echo; printf '\\033[c'; dd bs=1 count=12 2>/dev/null | od -An -c; exit 0",
         );
         frontend.run_until_exit(1, &session);
         let text = String::from_utf8_lossy(&frontend.received).to_string();

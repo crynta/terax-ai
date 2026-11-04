@@ -9,6 +9,7 @@ mod protocol;
 mod queue;
 mod session;
 pub(crate) mod shell_init;
+mod terminal_colors;
 #[cfg(unix)]
 mod unix_reader;
 mod wake;
@@ -28,6 +29,7 @@ use hub::{Command, Hub};
 pub use presentation::PresentationClass;
 pub use protocol::stream_protocol;
 use session::Session;
+use terminal_colors::TerminalColors;
 
 /// Largest `pty_set_presentation` batch accepted; a window never has more
 /// terminals than this, so anything larger is a malformed request.
@@ -155,6 +157,7 @@ pub async fn pty_open(
     shell: Option<String>,
     pane_id: Option<u32>,
     presentation: Option<PresentationClass>,
+    colors: Option<TerminalColors>,
 ) -> Result<u32, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
     let blocks = blocks.unwrap_or(false);
@@ -190,6 +193,7 @@ pub async fn pty_open(
             blocks,
             shell,
             control_env,
+            colors,
         )
     })
     .await
@@ -287,6 +291,25 @@ pub fn pty_resize(
             e
         });
     result
+}
+
+/// Pushes the terminal's theme so colour queries (`OSC 4/10/11/12`,
+/// `CSI ? 996 n`) are answered by the reader without a webview round trip.
+#[tauri::command]
+pub fn pty_set_colors(
+    state: tauri::State<PtyState>,
+    id: u32,
+    colors: TerminalColors,
+) -> Result<(), String> {
+    let session = state
+        .sessions
+        .read()
+        .unwrap()
+        .get(&id)
+        .cloned()
+        .ok_or_else(|| "no session".to_string())?;
+    session.set_colors(colors);
+    Ok(())
 }
 
 #[tauri::command]
@@ -489,6 +512,7 @@ mod tests {
                         session::drop_session(session);
                     }
                 }),
+                colors: None,
             },
             PtySize::default(),
             || {
