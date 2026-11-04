@@ -56,14 +56,17 @@ export function useMarkdownDocument(
   useEffect(() => {
     let alive = true;
     let requestId = 0;
+    const workspace = currentWorkspaceEnv();
+    // The watcher reports canonical paths; the tab may hold an alias spelling.
+    let canonical: string | null = null;
     staleRef.current = false;
     setStatus({ kind: "loading" });
 
-    const read = (initial: boolean) => {
+    const read = () => {
       const id = ++requestId;
       invoke<ReadResult>("fs_read_file", {
         path,
-        workspace: currentWorkspaceEnv(),
+        workspace,
       })
         .then((res) => {
           if (!alive || id !== requestId) return;
@@ -78,44 +81,57 @@ export function useMarkdownDocument(
         })
         .catch((e) => {
           if (!alive || id !== requestId) return;
-          if (initial) setStatus({ kind: "error", message: String(e) });
+          setStatus((prev) =>
+            prev.kind === "loading"
+              ? { kind: "error", message: String(e) }
+              : prev,
+          );
         });
     };
 
-    const coalescer = createCoalescer(() => read(false));
+    const coalescer = createCoalescer(read);
     const onTouched = () => {
       if (visibleRef.current) coalescer.poke();
       else staleRef.current = true;
     };
-    reloadRef.current = () => read(false);
+    reloadRef.current = read;
+
+    const matches = (paths: readonly string[]) =>
+      touchesPath(paths, path) ||
+      (canonical !== null && touchesPath(paths, canonical));
 
     const dir = parentDir(path);
-    watchAdd([dir], [path]);
+    watchAdd([dir], [path], workspace);
     const unlisten: Array<() => void> = [];
     const track = (pending: Promise<() => void>) =>
       void pending.then((un) => (alive ? unlisten.push(un) : un()));
     track(
       listenFsChanged((paths) => {
-        if (touchesPath(paths, path)) onTouched();
+        if (matches(paths)) onTouched();
       }),
     );
     track(
       getCurrentWebviewWindow().listen<{ path: string }>(
         "fs:file-written",
         (e) => {
-          if (touchesPath([e.payload.path], path)) onTouched();
+          if (matches([e.payload.path])) onTouched();
         },
       ),
     );
 
-    read(true);
+    read();
+    invoke<string>("fs_canonicalize", { path, workspace })
+      .then((c) => {
+        if (alive) canonical = c;
+      })
+      .catch(() => {});
 
     return () => {
       alive = false;
       coalescer.cancel();
       reloadRef.current = null;
       for (const un of unlisten) un();
-      watchRemove([dir], [path]);
+      watchRemove([dir], [path], workspace);
     };
   }, [path]);
 

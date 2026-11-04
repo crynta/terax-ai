@@ -383,7 +383,6 @@ export function CommandPalette({
                 rows={fileRows}
                 search={files}
                 line={fileTarget.line}
-                column={fileTarget.column}
                 onOpen={openFile}
               />
             ) : parsed.mode === "content" ? (
@@ -488,7 +487,6 @@ function FilesBody({
   rows,
   search,
   line,
-  column,
   onOpen,
 }: {
   hasRoot: boolean;
@@ -496,7 +494,6 @@ function FilesBody({
   rows: FileHit[];
   search: { loading: boolean; error: string | null; retry: () => void };
   line?: number;
-  column?: number;
   onOpen: (path: string) => void;
 }) {
   if (!hasRoot) {
@@ -517,7 +514,6 @@ function FilesBody({
               key={hit.path}
               hit={hit}
               line={line}
-              column={column}
               onOpen={onOpen}
             />
           ))
@@ -539,7 +535,6 @@ function FilesBody({
             key={hit.path}
             hit={hit}
             line={line}
-            column={column}
             onOpen={onOpen}
           />
         ))}
@@ -551,12 +546,10 @@ function FilesBody({
 const FileRow = memo(function FileRow({
   hit,
   line,
-  column,
   onOpen,
 }: {
   hit: FileHit;
   line?: number;
-  column?: number;
   onOpen: (path: string) => void;
 }) {
   const parts = useMemo(
@@ -589,7 +582,6 @@ const FileRow = memo(function FileRow({
       {line !== undefined ? (
         <CommandShortcut className="font-mono tracking-normal">
           :{line}
-          {column !== undefined ? `:${column}` : ""}
         </CommandShortcut>
       ) : null}
     </CommandItem>

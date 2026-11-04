@@ -28,6 +28,13 @@ export function MarkdownPreviewPane({ path, visible, onSetView }: Props) {
   const scrollTopRef = useRef(0);
   const content = status.kind === "ready" ? status.content : null;
 
+  // A retargeted preview starts at the top, not at the old document's offset.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: path is the trigger.
+  useLayoutEffect(() => {
+    scrollTopRef.current = 0;
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [path]);
+
   const onScroll = useCallback(() => {
     scrollTopRef.current = scrollRef.current?.scrollTop ?? 0;
   }, []);
