@@ -344,6 +344,8 @@ pub fn run() {
             workspace::workspace_current_dir,
             control::control_frontend_ready,
             control::control_respond,
+            modules::agent_events::agent_decisions_ready,
+            modules::agent_events::agent_decision_respond,
             get_launch_dir,
             get_launch_files,
             open_settings_window,

@@ -181,6 +181,15 @@ impl AgentLink {
     /// Records a structured hook and returns the legacy transitions it implies.
     pub fn apply_hook(&self, agent: &str, intent: HookIntent) -> Vec<Transition> {
         let mut out = Vec::new();
+        // Tool and notification hooks can trail the process exit; only hooks
+        // that mark real agent state may start an agent.
+        let starts = matches!(
+            intent,
+            HookIntent::Start | HookIntent::Working | HookIntent::Attention | HookIntent::Finished
+        );
+        if !starts && !self.is_armed() {
+            return out;
+        }
         if self.arm() {
             out.push(Transition::Started { agent: agent.to_string() });
         }
@@ -1177,6 +1186,15 @@ mod tests {
         assert_eq!(hooked(&link, HookIntent::Finished), vec![Transition::Finished]);
         assert_eq!(hooked(&link, HookIntent::Working), vec![Transition::Working]);
         assert!(hooked(&link, HookIntent::Quiet).is_empty());
+    }
+
+    #[test]
+    fn trailing_activity_hooks_do_not_start_an_agent() {
+        let link = AgentLink::new();
+        assert!(hooked(&link, HookIntent::Activity).is_empty());
+        assert!(hooked(&link, HookIntent::Quiet).is_empty());
+        assert!(!link.is_armed());
+        assert!(!link.is_hooked());
     }
 
     #[test]

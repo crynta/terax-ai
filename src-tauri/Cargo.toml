@@ -75,6 +75,7 @@ tempfile = "3"
 which = "8.0.4"
 
 [dev-dependencies]
+terax-cli = { path = "crates/terax-cli" }
 proptest = "1"
 tokio = { version = "1", features = ["macros", "rt", "test-util", "time"] }
 tempfile = "3"
