@@ -67,9 +67,23 @@ if [ -z "$__TERAX_HOOKS_LOADED" ]; then
     printf '\e]133;A\e\\'
   }
 
-  case ":${PROMPT_COMMAND:-}:" in
-    *":_terax_precmd:"*) ;;
-    *) PROMPT_COMMAND="_terax_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}" ;;
+  case "$(declare -p PROMPT_COMMAND 2>/dev/null)" in
+    'declare -a'*)
+      _terax_has_precmd=
+      for _terax_command in "${PROMPT_COMMAND[@]}"; do
+        [ "$_terax_command" = _terax_precmd ] && _terax_has_precmd=1
+      done
+      if [ -z "$_terax_has_precmd" ]; then
+        PROMPT_COMMAND=(_terax_precmd "${PROMPT_COMMAND[@]}")
+      fi
+      unset _terax_has_precmd _terax_command
+      ;;
+    *)
+      case ":${PROMPT_COMMAND:-}:" in
+        *":_terax_precmd:"*) ;;
+        *) PROMPT_COMMAND="_terax_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}" ;;
+      esac
+      ;;
   esac
 
   # Pre-exec marker via PS0 (bash 4.4+). PS0 is expanded just before a command
