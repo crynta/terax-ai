@@ -16,6 +16,7 @@ export type ShortcutId =
   | "tab.next"
   | "tab.prev"
   | "tab.selectByIndex"
+  | "task.new"
   | "space.next"
   | "space.prev"
   | "space.overview"
@@ -23,6 +24,11 @@ export type ShortcutId =
   | "pane.splitDown"
   | "pane.focusNext"
   | "pane.focusPrev"
+  | "pane.focusLeft"
+  | "pane.focusRight"
+  | "pane.focusUp"
+  | "pane.focusDown"
+  | "pane.maximize"
   | "pane.swapLeft"
   | "pane.swapRight"
   | "pane.swapUp"
@@ -55,8 +61,9 @@ export type ShortcutId =
 export type ShortcutGroup =
   | "General"
   | "Tabs"
-  | "Spaces"
-  | "Panes"
+  | "Tasks"
+  | "Projects"
+  | "Cards"
   | "Terminal"
   | "Search"
   | "AI"
@@ -137,56 +144,94 @@ export const SHORTCUTS: Shortcut[] = [
   },
   {
     id: "pane.splitRight",
-    label: "Split pane right",
-    group: "Panes",
+    label: "Split card right",
+    group: "Cards",
     defaultBindings: [{ [MOD_PROP]: true, key: "d" }],
   },
   {
     id: "pane.splitDown",
-    label: "Split pane down",
-    group: "Panes",
+    label: "Split card down",
+    group: "Cards",
     defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "d" }],
   },
   {
     id: "pane.focusNext",
-    label: "Focus next pane",
-    group: "Panes",
+    label: "Focus next card",
+    group: "Cards",
     defaultBindings: [{ [MOD_PROP]: true, key: "]" }],
   },
   {
     id: "pane.focusPrev",
-    label: "Focus previous pane",
-    group: "Panes",
+    label: "Focus previous card",
+    group: "Cards",
     defaultBindings: [{ [MOD_PROP]: true, key: "[" }],
   },
   {
-    id: "pane.swapLeft",
-    label: "Swap pane left",
-    group: "Panes",
+    id: "pane.focusLeft",
+    label: "Focus card left",
+    group: "Cards",
     defaultBindings: [{ [MOD_PROP]: true, alt: true, key: "ArrowLeft" }],
   },
   {
-    id: "pane.swapRight",
-    label: "Swap pane right",
-    group: "Panes",
+    id: "pane.focusRight",
+    label: "Focus card right",
+    group: "Cards",
     defaultBindings: [{ [MOD_PROP]: true, alt: true, key: "ArrowRight" }],
   },
   {
-    id: "pane.swapUp",
-    label: "Swap pane up",
-    group: "Panes",
+    id: "pane.focusUp",
+    label: "Focus card up",
+    group: "Cards",
     defaultBindings: [{ [MOD_PROP]: true, alt: true, key: "ArrowUp" }],
   },
   {
-    id: "pane.swapDown",
-    label: "Swap pane down",
-    group: "Panes",
+    id: "pane.focusDown",
+    label: "Focus card down",
+    group: "Cards",
     defaultBindings: [{ [MOD_PROP]: true, alt: true, key: "ArrowDown" }],
+  },
+  {
+    id: "pane.maximize",
+    label: "Maximize or restore card",
+    group: "Cards",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "Enter" }],
+  },
+  {
+    id: "pane.swapLeft",
+    label: "Swap card left",
+    group: "Cards",
+    defaultBindings: [
+      { [MOD_PROP]: true, alt: true, shift: true, key: "ArrowLeft" },
+    ],
+  },
+  {
+    id: "pane.swapRight",
+    label: "Swap card right",
+    group: "Cards",
+    defaultBindings: [
+      { [MOD_PROP]: true, alt: true, shift: true, key: "ArrowRight" },
+    ],
+  },
+  {
+    id: "pane.swapUp",
+    label: "Swap card up",
+    group: "Cards",
+    defaultBindings: [
+      { [MOD_PROP]: true, alt: true, shift: true, key: "ArrowUp" },
+    ],
+  },
+  {
+    id: "pane.swapDown",
+    label: "Swap card down",
+    group: "Cards",
+    defaultBindings: [
+      { [MOD_PROP]: true, alt: true, shift: true, key: "ArrowDown" },
+    ],
   },
   {
     id: "pane.source",
     label: "Toggle source panel",
-    group: "Panes",
+    group: "Cards",
     defaultBindings: [{ [MOD_PROP]: true, key: "g" }],
   },
   {
@@ -234,26 +279,32 @@ export const SHORTCUTS: Shortcut[] = [
   },
   {
     id: "tab.selectByIndex",
-    label: "Jump to tab 1–9",
-    group: "Tabs",
+    label: "Jump to task 1–9",
+    group: "Tasks",
     defaultBindings: [{ [MOD_PROP]: true, key: "1" }],
   },
   {
+    id: "task.new",
+    label: "New task",
+    group: "Tasks",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "n" }],
+  },
+  {
     id: "space.next",
-    label: "Next space",
-    group: "Spaces",
+    label: "Next project",
+    group: "Projects",
     defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "]" }],
   },
   {
     id: "space.prev",
-    label: "Previous space",
-    group: "Spaces",
+    label: "Previous project",
+    group: "Projects",
     defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "[" }],
   },
   {
     id: "space.overview",
-    label: "Open spaces",
-    group: "Spaces",
+    label: "Open projects",
+    group: "Projects",
     defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "s" }],
   },
   {
@@ -394,8 +445,10 @@ export const SHORTCUTS: Shortcut[] = [
 
 export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   "General",
+  "Tasks",
   "Tabs",
-  "Panes",
+  "Cards",
+  "Projects",
   "Terminal",
   "View",
   "Search",
@@ -432,7 +485,7 @@ function keyFromCode(code: string): string | null {
 export function matchBinding(
   e: KeyboardEvent,
   binding: KeyBinding,
-  id?: ShortcutId
+  id?: ShortcutId,
 ): boolean {
   const eventKey = e.key.toLowerCase();
   const bindingKey = binding.key.toLowerCase();

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import type { Tab } from "./useTabs";
+import type { Tab } from "./tabs";
 
 type Result = {
   explorerRoot: string | null;
@@ -8,7 +8,8 @@ type Result = {
 
 export function useWorkspaceCwd(
   activeTab: Tab | undefined,
-  tabs: Tab[],
+  /** Some open terminal's cwd, for when no terminal was focused yet. */
+  anyTerminalCwd: string | undefined,
   home: string | null,
 ): Result {
   const lastTerminalCwd = useRef<string | null>(null);
@@ -22,10 +23,8 @@ export function useWorkspaceCwd(
   const explorerRoot = useMemo<string | null>(() => {
     if (activeTab?.kind === "terminal" && activeTab.cwd) return activeTab.cwd;
     if (lastTerminalCwd.current) return lastTerminalCwd.current;
-    const anyTerm = tabs.find((t) => t.kind === "terminal" && t.cwd);
-    if (anyTerm?.kind === "terminal" && anyTerm.cwd) return anyTerm.cwd;
-    return home;
-  }, [activeTab, tabs, home]);
+    return anyTerminalCwd ?? home;
+  }, [activeTab, anyTerminalCwd, home]);
 
   const inheritedCwdForNewTab = useCallback((): string | undefined => {
     if (activeTab?.kind === "terminal" && activeTab.cwd) return activeTab.cwd;

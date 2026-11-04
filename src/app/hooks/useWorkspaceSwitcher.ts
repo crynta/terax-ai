@@ -1,7 +1,7 @@
-import { type RefObject, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { homeDir } from "@tauri-apps/api/path";
 import { native } from "@/modules/ai/lib/native";
-import type { Tab } from "@/modules/tabs";
+import { snapshot } from "@/modules/workbench/store";
 import {
   getWslHome,
   LOCAL_WORKSPACE,
@@ -15,12 +15,10 @@ async function resolveEnvHome(env: WorkspaceEnv): Promise<string> {
 }
 
 type Params = {
-  tabsRef: RefObject<Tab[]>;
   workspaceEnv: WorkspaceEnv;
   setWorkspaceEnv: (env: WorkspaceEnv) => void;
+  /** Replaces the active project's tasks with a fresh one at `home`. */
   resetWorkspace: (home?: string) => void;
-  /** Dispose live sessions and clear App-owned pane/handle ref maps. */
-  clearWorkspaceState: () => void;
 };
 
 /**
@@ -29,11 +27,9 @@ type Params = {
  * adoptWorkspaceEnv applies a space's env + home on restore, without teardown.
  */
 export function useWorkspaceSwitcher({
-  tabsRef,
   workspaceEnv,
   setWorkspaceEnv,
   resetWorkspace,
-  clearWorkspaceState,
 }: Params) {
   const [home, setHome] = useState<string | null>(null);
   const [launchCwd, setLaunchCwd] = useState<string | null>(null);
@@ -80,7 +76,7 @@ export function useWorkspaceSwitcher({
       ) {
         return false;
       }
-      const dirty = tabsRef.current.some((t) => t.kind === "editor" && t.dirty);
+      const dirty = snapshot().tabs.some((t) => t.kind === "editor" && t.dirty);
       if (dirty) {
         window.alert(
           "Save or close unsaved editor tabs before switching workspace.",
@@ -96,20 +92,12 @@ export function useWorkspaceSwitcher({
         return false;
       }
 
-      clearWorkspaceState();
       setWorkspaceEnv(env.kind === "local" ? LOCAL_WORKSPACE : env);
       await authorizeHome(nextHome);
       resetWorkspace(nextHome);
       return true;
     },
-    [
-      workspaceEnv,
-      setWorkspaceEnv,
-      resetWorkspace,
-      tabsRef,
-      clearWorkspaceState,
-      authorizeHome,
-    ],
+    [workspaceEnv, setWorkspaceEnv, resetWorkspace, authorizeHome],
   );
 
   const adoptWorkspaceEnv = useCallback(

@@ -1,9 +1,5 @@
 import type { Tab } from "@/modules/tabs";
-import {
-  hasLeaf,
-  leafIdForPty,
-  subscribeAgentSignals,
-} from "@/modules/terminal";
+import { leafIdForPty, subscribeAgentSignals } from "@/modules/terminal";
 import { useEffect, useRef } from "react";
 import { displayAgent } from "../lib/format";
 import { maybeTriggerManagedReview } from "../lib/review";
@@ -15,18 +11,18 @@ import { useManagedAgentsStore } from "../store/managedAgentsStore";
 
 type Activate = (tabId: number, leafId: number) => void;
 type Ctx = {
-  tabs: Tab[];
+  getTabs: () => readonly Tab[];
   activeId: number;
   focused: boolean;
   onActivate: Activate;
 };
 
 function tabInfo(
-  tabs: Tab[],
+  tabs: readonly Tab[],
   leafId: number,
 ): { tabId: number; title: string } | null {
   for (const t of tabs) {
-    if (t.kind === "terminal" && hasLeaf(t.paneTree, leafId)) {
+    if (t.kind === "terminal" && t.id === leafId) {
       return { tabId: t.id, title: t.title };
     }
   }
@@ -38,7 +34,7 @@ function route(
   kind: "attention" | "finished",
   ctx: Ctx,
 ): void {
-  const info = tabInfo(ctx.tabs, session.leafId);
+  const info = tabInfo(ctx.getTabs(), session.leafId);
   const name = displayAgent(session.agent);
   const heading =
     kind === "attention" ? `${name} needs your input` : `${name} finished`;
@@ -66,7 +62,7 @@ function handleSignal(sig: AgentSignal, ctx: Ctx): void {
 
   switch (sig.kind) {
     case "started": {
-      const info = tabInfo(ctx.tabs, leafId);
+      const info = tabInfo(ctx.getTabs(), leafId);
       if (!info) return;
       store.start(leafId, info.tabId, sig.agent ?? "agent");
       return;
@@ -95,17 +91,17 @@ function handleSignal(sig: AgentSignal, ctx: Ctx): void {
 }
 
 export function AgentNotificationsBridge({
-  tabs,
+  getTabs,
   activeId,
   onActivate,
 }: {
-  tabs: Tab[];
+  getTabs: () => readonly Tab[];
   activeId: number;
   onActivate: Activate;
 }) {
   const focused = useWindowFocus();
-  const ctxRef = useRef<Ctx>({ tabs, activeId, focused, onActivate });
-  ctxRef.current = { tabs, activeId, focused, onActivate };
+  const ctxRef = useRef<Ctx>({ getTabs, activeId, focused, onActivate });
+  ctxRef.current = { getTabs, activeId, focused, onActivate };
 
   // Shares the terminal module's single `terax:agent-signal` listener.
   useEffect(

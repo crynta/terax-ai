@@ -6,6 +6,10 @@ import {
 } from "@/modules/terminal/ghostty/ghosttyBlockSessions";
 import { initializeSessionGeneration as startSessionInitialization } from "@/modules/terminal/ghostty/sessionInitialization";
 import { replaceSessionSurface } from "@/modules/terminal/ghostty/replaceSessionSurface";
+import {
+  currentFocus,
+  focusIsMovable,
+} from "@/modules/terminal/lib/focusGuard";
 import { openExternalUrl } from "@/lib/external-link";
 import { ensureMonoFontsLoaded, resolveFontFamily } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
@@ -946,7 +950,9 @@ function attachGhosttySurface(
   surface.setVisible(true);
   surface.setFocused(session.focused);
   applyBlockInputMode(session, surface);
-  if (session.focused) focusSessionSurface(session, surface);
+  // Showing a pane must not pull the caret out of the composer or a dialog.
+  if (session.focused && focusIsMovable(currentFocus()))
+    focusSessionSurface(session, surface);
 }
 
 function createWebGlFallbackSurface(

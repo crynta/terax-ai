@@ -1,23 +1,19 @@
+import type { Tab } from "@/modules/tabs/lib/tabs";
 import { describe, expect, it } from "vitest";
-import type { Tab } from "@/modules/tabs/lib/useTabs";
 import { resolveControlContext } from "./context";
 
 const tabs: Tab[] = [
   {
-    id: 10,
+    id: 12,
     kind: "terminal",
     spaceId: "agent-space",
     title: "agent",
-    paneTree: {
-      kind: "split",
-      id: 11,
-      dir: "row",
-      children: [
-        { kind: "leaf", id: 12 },
-        { kind: "leaf", id: 13 },
-      ],
-    },
-    activeLeafId: 12,
+  },
+  {
+    id: 13,
+    kind: "terminal",
+    spaceId: "agent-space",
+    title: "agent",
   },
   {
     id: 20,
@@ -35,7 +31,7 @@ describe("resolveControlContext", () => {
     expect(resolveControlContext(tabs, 20, "active-space", 13)).toEqual({
       window_id: "main",
       space_id: "agent-space",
-      tab_id: 10,
+      tab_id: 13,
       pane_id: 13,
       source: "caller",
     });

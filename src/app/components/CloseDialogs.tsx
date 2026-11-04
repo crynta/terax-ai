@@ -1,4 +1,7 @@
-import type { CloseManyPending } from "@/app/hooks/tabCloseGuards";
+import type {
+  CloseManyKind,
+  CloseManyPending,
+} from "@/app/hooks/tabCloseGuards";
 import {
   type AppCloseBlocker,
   canOptOutOfAppClosePrompt,
@@ -86,6 +89,22 @@ async function persistOptOut(): Promise<void> {
   }
 }
 
+const CLOSE_MANY_TITLE: Record<CloseManyKind, string> = {
+  right: "Close Tabs to the Right",
+  other: "Close Other Tabs",
+  card: "Close Card",
+  task: "Close Task",
+  tasks: "Close Other Tasks",
+};
+
+const CLOSE_MANY_WHERE: Record<CloseManyKind, (one: boolean) => string> = {
+  right: (one) => `in ${one ? "a tab" : "tabs"} to the right`,
+  other: (one) => `in ${one ? "another tab" : "other tabs"}`,
+  card: () => "in this card",
+  task: () => "in this task",
+  tasks: (one) => `in ${one ? "another task" : "other tasks"}`,
+};
+
 function closeManyMessage(pending: CloseManyPending, tabs: Tab[]): string {
   const { kind, dirtyIds, busyLeafIds } = pending;
   const dirtyCount = dirtyIds.length;
@@ -111,9 +130,7 @@ function closeManyMessage(pending: CloseManyPending, tabs: Tab[]): string {
   }
   const process =
     busyCount === 1 ? "A process is" : `${busyCount} processes are`;
-  return kind === "right"
-    ? `${process} running in ${busyCount === 1 ? "a tab" : "tabs"} to the right. Closing will terminate ${busyCount === 1 ? "it" : "them"}. Close anyway?`
-    : `${process} running in ${busyCount === 1 ? "another tab" : "other tabs"}. Closing will terminate ${busyCount === 1 ? "it" : "them"}. Close anyway?`;
+  return `${process} running ${CLOSE_MANY_WHERE[kind](busyCount === 1)}. Closing will terminate ${busyCount === 1 ? "it" : "them"}. Close anyway?`;
 }
 
 /** Confirmation dialogs for closing dirty editors and terminals with live processes. */
@@ -257,9 +274,9 @@ export function CloseDialogs({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {pendingCloseMany?.kind === "right"
-                ? "Close Tabs to the Right"
-                : "Close Other Tabs"}
+              {pendingCloseMany
+                ? CLOSE_MANY_TITLE[pendingCloseMany.kind]
+                : "Close Tabs"}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {pendingCloseMany ? closeManyMessage(pendingCloseMany, tabs) : ""}

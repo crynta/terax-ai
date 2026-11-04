@@ -1,5 +1,4 @@
-import type { Tab } from "@/modules/tabs/lib/useTabs";
-import { hasLeaf } from "@/modules/terminal/lib/panes";
+import type { Tab } from "@/modules/tabs/lib/tabs";
 
 export type ControlContext = {
   window_id: "main";
@@ -17,7 +16,7 @@ export function resolveControlContext(
 ): ControlContext {
   if (callerPaneId != null) {
     const callerTab = tabs.find(
-      (tab) => tab.kind === "terminal" && hasLeaf(tab.paneTree, callerPaneId),
+      (tab) => tab.kind === "terminal" && tab.id === callerPaneId,
     );
     if (callerTab?.kind === "terminal") {
       return {
@@ -35,7 +34,7 @@ export function resolveControlContext(
     window_id: "main",
     space_id: activeTab?.spaceId ?? activeSpaceId,
     tab_id: activeTab?.id ?? null,
-    pane_id: activeTab?.kind === "terminal" ? activeTab.activeLeafId : null,
+    pane_id: activeTab?.kind === "terminal" ? activeTab.id : null,
     source: "active",
   };
 }

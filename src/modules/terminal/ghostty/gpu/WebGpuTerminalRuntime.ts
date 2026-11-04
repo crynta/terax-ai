@@ -456,6 +456,10 @@ export class WebGpuTerminalRuntime {
     };
   }
 
+  remeasureWindows(): void {
+    for (const target of this.windows.values()) target.remeasure();
+  }
+
   diagnostics(): WebGpuRuntimeStats {
     let atlasBytes = 0;
     let atlasCpuBytes = 0;
@@ -1214,6 +1218,11 @@ export function getWebGpuTerminalRuntime(): Promise<WebGpuTerminalRuntime> {
       throw error;
     });
   return sharedRuntimePromise;
+}
+
+/** Terminal panes moved within their window without resizing; re-read their rectangles. */
+export function remeasureTerminalWindows(): void {
+  sharedRuntime?.remeasureWindows();
 }
 
 export function webGpuTerminalRuntimeDiagnostics(): WebGpuRuntimeStats | null {

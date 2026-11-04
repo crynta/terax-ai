@@ -1,7 +1,6 @@
 import { useEffect } from "react";
+import type { Tab } from "./tabs";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { findLeafCwd } from "@/modules/terminal/lib/panes";
-import type { Tab } from "./useTabs";
 
 const APP_NAME = "Terax";
 
@@ -14,7 +13,7 @@ function basename(path: string): string {
 function tabLabel(tab: Tab | undefined): string {
   if (!tab) return "";
   if (tab.kind === "terminal") {
-    const cwd = findLeafCwd(tab.paneTree, tab.activeLeafId) ?? tab.cwd;
+    const cwd = tab.cwd;
     return cwd ? basename(cwd) : tab.title;
   }
   return tab.title;

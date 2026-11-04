@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 import { native } from "@/modules/ai/lib/native";
 import type { SidebarViewId } from "@/modules/sidebar";
 import type { Tab } from "@/modules/tabs";
@@ -13,7 +13,8 @@ import { useSourceControl } from "./useSourceControl";
 
 type Params = {
   activeTab: Tab | undefined;
-  tabs: Tab[];
+  /** A diff, history or commit-file tab is open. */
+  hasOpenGitTab: boolean;
   activeTerminalLeafCwd: string | null;
   explorerRoot: string | null;
   launchCwd: string | null;
@@ -39,7 +40,7 @@ type Params = {
  */
 export function useSourceControlContext({
   activeTab,
-  tabs,
+  hasOpenGitTab,
   activeTerminalLeafCwd,
   explorerRoot,
   launchCwd,
@@ -61,16 +62,6 @@ export function useSourceControlContext({
     explorerRoot,
     workspaceFallbackPath,
   });
-  const hasOpenGitTab = useMemo(
-    () =>
-      tabs.some(
-        (t) =>
-          t.kind === "git-diff" ||
-          t.kind === "git-history" ||
-          t.kind === "git-commit-file",
-      ),
-    [tabs],
-  );
   // Ambient path tracks the explorer root so the rail badge and explorer git
   // decorations reflect the repo you are actually looking at. cd-within-repo
   // churn is absorbed by the status TTL + reusable-root path in useSourceControl.

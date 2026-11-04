@@ -160,8 +160,8 @@ class ScenarioRun {
       await pause(1500);
     }
     await this.frontWindow();
-    await this.sessionReady(tab.activeLeafId);
-    return { tabId: tab.id, leafId: tab.activeLeafId };
+    await this.sessionReady(tab.id);
+    return { tabId: tab.id, leafId: tab.id };
   }
 
   async sessionReady(leafId: number): Promise<void> {
@@ -209,8 +209,8 @@ class ScenarioRun {
     );
     const tab = this.app().tabs.find((t) => t.id === tabId);
     if (tab?.kind !== "terminal") throw new Error("new tab is not a terminal");
-    await this.sessionReady(tab.activeLeafId);
-    return { tabId, leafId: tab.activeLeafId };
+    await this.sessionReady(tab.id);
+    return { tabId, leafId: tab.id };
   }
 
   select(tabId: number): void {
@@ -461,7 +461,12 @@ async function splitLayout(
   if (kinds[1] === "s") await fill(second, false);
   else await run.startAgent(second, "--history 3000");
   await pause(2000);
-  return { tabId: first.tabId, leaves: [first.leafId, second], dir, promptMarker };
+  return {
+    tabId: first.tabId,
+    leaves: [first.leafId, second],
+    dir,
+    promptMarker,
+  };
 }
 
 /** Copies of the shell prompt and of the agent's live region in the scrollback of both panes. */
@@ -586,7 +591,10 @@ async function dragWithPointer(
       if (wait > 0) await pause(wait);
       const now = performance.now();
       lateMax = Math.max(lateMax, now - due);
-      index = Math.min(events, Math.max(index + 1, Math.floor(((now - began) * hz) / 1000)));
+      index = Math.min(
+        events,
+        Math.max(index + 1, Math.floor(((now - began) * hz) / 1000)),
+      );
       fire("pointermove", document, position(index), 1);
       sent += 1;
     }
@@ -636,7 +644,9 @@ async function splitDragScenario(run: ScenarioRun): Promise<void> {
     const vertical = layout.dir === "col";
     const x0 = rect.left + rect.width / 2;
     const y0 = rect.top + rect.height / 2;
-    const room = vertical ? el.parentElement?.clientHeight ?? 600 : el.parentElement?.clientWidth ?? 1000;
+    const room = vertical
+      ? (el.parentElement?.clientHeight ?? 600)
+      : (el.parentElement?.clientWidth ?? 1000);
     const swing = room * amplitude;
     const events = Math.round(seconds * hz);
     // Alternating drift: the divider never creeps toward its limit over the cycles.
@@ -648,9 +658,7 @@ async function splitDragScenario(run: ScenarioRun): Promise<void> {
       const offset =
         swing * Math.sin((2 * Math.PI * index) / (hz * (seconds / 2))) * ease +
         drift * swing * (index / events);
-      return vertical
-        ? { x: x0, y: y0 + offset }
-        : { x: x0 + offset, y: y0 };
+      return vertical ? { x: x0, y: y0 + offset } : { x: x0 + offset, y: y0 };
     };
     const { result: drag, smooth } = await smoothly(() =>
       dragWithPointer(el, position, events, hz),
