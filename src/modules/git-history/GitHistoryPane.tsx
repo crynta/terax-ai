@@ -743,6 +743,35 @@ const CommitRow = memo(function CommitRow({
           <span className="text-muted-foreground">(no subject)</span>
         )}
       </span>
+      {commit.refs && commit.refs.length > 0 ? (
+        <span className="inline-flex flex-wrap gap-1">
+          {commit.refs.map((r) => {
+            const label = r
+              .replace(/^HEAD -> /, "")
+              .replace(/^refs\/heads\//, "")
+              .replace(/^refs\/remotes\//, "")
+              .replace(/^refs\/tags\//, "")
+              .replace(/^tag: /, "");
+            const isTag = r.includes("tag:") || r.startsWith("refs/tags/");
+            const isRemote = r.includes("origin/") || r.startsWith("refs/remotes/");
+            return (
+              <span
+                key={r}
+                className={cn(
+                  "inline-flex items-center rounded px-1 py-0.5 text-[10px] font-medium",
+                  isTag
+                    ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                    : isRemote
+                      ? "bg-sky-500/15 text-sky-700 dark:text-sky-300"
+                      : "bg-primary/10 text-primary",
+                )}
+              >
+                {label}
+              </span>
+            );
+          })}
+        </span>
+      ) : null}
       <span aria-hidden />
       <span
         className="ml-2 inline-flex h-[18px] max-w-full min-w-0 items-center gap-1.5 justify-self-start self-center overflow-hidden rounded-md bg-foreground/6 pl-1 pr-1.5 text-[10.5px] font-medium text-foreground/85"
@@ -848,6 +877,35 @@ function CommitDetail({
             )}
           </div>
         </div>
+        {commit.refs && commit.refs.length > 0 ? (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {commit.refs.map((r) => {
+              const label = r
+                .replace(/^HEAD -> /, "")
+                .replace(/^refs\/heads\//, "")
+                .replace(/^refs\/remotes\//, "")
+                .replace(/^refs\/tags\//, "")
+                .replace(/^tag: /, "");
+              const isTag = r.includes("tag:") || r.startsWith("refs/tags/");
+              const isRemote = r.includes("origin/") || r.startsWith("refs/remotes/");
+              return (
+                <span
+                  key={r}
+                  className={cn(
+                    "inline-flex items-center rounded px-1.5 py-0.5 text-[10.5px] font-medium",
+                    isTag
+                      ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                      : isRemote
+                        ? "bg-sky-500/15 text-sky-700 dark:text-sky-300"
+                        : "bg-primary/10 text-primary",
+                  )}
+                >
+                  {label}
+                </span>
+              );
+            })}
+          </div>
+        ) : null}
         <div className="mt-2 flex min-w-0 items-center gap-1.5 text-[10.5px] text-muted-foreground">
           <span className="truncate">{commit.author || "Unknown"}</span>
           {commit.authorEmail ? (
