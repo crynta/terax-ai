@@ -4,8 +4,8 @@ use serde_json::Value;
 use super::text::{clean_text, truncate_str};
 use super::{
     is_decision_event, AgentName, HookFacts, HookKind, PermissionInfo, SubagentInfo, SubagentState,
-    Suggestion, ToolInfo, MAX_LABEL, MAX_MESSAGE, MAX_NAME, MAX_PATH, MAX_PREVIEW,
-    MAX_SESSION_ID, MAX_SUGGESTIONS,
+    Suggestion, ToolInfo, MAX_LABEL, MAX_MESSAGE, MAX_NAME, MAX_PATH, MAX_PREVIEW, MAX_SESSION_ID,
+    MAX_SUGGESTIONS,
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -151,16 +151,17 @@ pub fn normalize(
                 facts.message = message(fields.last_assistant_message.as_deref());
                 SubagentState::Done
             };
-            facts.subagent = fields
-                .agent_id
-                .as_deref()
-                .and_then(session_id)
-                .map(|id| SubagentInfo {
-                    id,
-                    agent_type: short(fields.agent_type.as_deref())
-                        .unwrap_or_else(|| "agent".to_string()),
-                    state,
-                });
+            facts.subagent =
+                fields
+                    .agent_id
+                    .as_deref()
+                    .and_then(session_id)
+                    .map(|id| SubagentInfo {
+                        id,
+                        agent_type: short(fields.agent_type.as_deref())
+                            .unwrap_or_else(|| "agent".to_string()),
+                        state,
+                    });
         }
         HookKind::Interrupt => {}
         HookKind::PermissionResolved => return Err(NormalizeError::UnsupportedEvent),
@@ -543,12 +544,19 @@ mod tests {
         );
         assert_eq!(facts.kind, HookKind::PermissionRequest);
         assert!(facts.decision_capable);
-        assert_eq!(facts.message.as_deref(), Some("Remove node_modules directory"));
+        assert_eq!(
+            facts.message.as_deref(),
+            Some("Remove node_modules directory")
+        );
         let permission = facts.permission.unwrap();
         assert_eq!(permission.tool, "Bash");
         assert_eq!(permission.input_preview, "rm -rf node_modules");
         assert_eq!(permission.request_id, None);
-        let labels: Vec<_> = permission.suggestions.iter().map(|s| s.label.as_str()).collect();
+        let labels: Vec<_> = permission
+            .suggestions
+            .iter()
+            .map(|s| s.label.as_str())
+            .collect();
         assert_eq!(
             labels,
             [
@@ -572,7 +580,10 @@ mod tests {
             }),
         );
         assert_eq!(facts.kind, HookKind::Notification);
-        assert_eq!(facts.notification_type.as_deref(), Some("permission_prompt"));
+        assert_eq!(
+            facts.notification_type.as_deref(),
+            Some("permission_prompt")
+        );
         assert_eq!(
             facts.message.as_deref(),
             Some("Claude needs your permission to use Bash")
@@ -759,7 +770,14 @@ mod tests {
             json!({ "session_id": "pi-1", "aborted": true, "last_assistant_message": "stopped" }),
         );
         assert_eq!(stop.reason.as_deref(), Some("aborted"));
-        assert!(!run(AgentName::Pi, "PermissionRequest", json!({ "tool_name": "bash" })).decision_capable);
+        assert!(
+            !run(
+                AgentName::Pi,
+                "PermissionRequest",
+                json!({ "tool_name": "bash" })
+            )
+            .decision_capable
+        );
     }
 
     #[test]
@@ -832,7 +850,11 @@ mod tests {
         );
         assert!(long.tool.unwrap().input_preview.len() <= MAX_PREVIEW + 3);
 
-        let none = run(AgentName::Claude, "PreToolUse", json!({ "tool_name": "Bash" }));
+        let none = run(
+            AgentName::Claude,
+            "PreToolUse",
+            json!({ "tool_name": "Bash" }),
+        );
         assert_eq!(none.tool.unwrap().input_preview, "");
     }
 }

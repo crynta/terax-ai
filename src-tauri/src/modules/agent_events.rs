@@ -123,7 +123,11 @@ impl DecisionBroker {
         if pending.len() >= MAX_PENDING_DECISIONS {
             return Err(Busy::Global);
         }
-        if pending.values().filter(|entry| entry.pane_id == pane_id).count() >= MAX_PENDING_PER_PANE
+        if pending
+            .values()
+            .filter(|entry| entry.pane_id == pane_id)
+            .count()
+            >= MAX_PENDING_PER_PANE
         {
             return Err(Busy::Pane);
         }
@@ -329,7 +333,11 @@ pub fn handle(
     let params: HookParams = match serde_json::from_value(request.params.clone()) {
         Ok(params) => params,
         Err(error) => {
-            return reject(request, "invalid_params", &format!("invalid hook parameters: {error}"));
+            return reject(
+                request,
+                "invalid_params",
+                &format!("invalid hook parameters: {error}"),
+            );
         }
     };
     let Some(agent) = AgentName::parse(&params.agent) else {
@@ -405,7 +413,10 @@ pub fn handle(
     let verdict = await_decision(&receiver, wait, DECISION_POLL, || {
         if !state.broker.ui_ready() {
             Some(Cancel::UiGone)
-        } else if host.pane(pane_id).is_none_or(|live| live.pty_id != target.pty_id) {
+        } else if host
+            .pane(pane_id)
+            .is_none_or(|live| live.pty_id != target.pty_id)
+        {
             Some(Cancel::PaneClosed)
         } else if peer_closed(stream) {
             Some(Cancel::AgentGone)
@@ -439,7 +450,10 @@ pub fn handle(
 }
 
 #[tauri::command]
-pub fn agent_decisions_ready(state: tauri::State<'_, crate::modules::control::ControlState>, ready: bool) {
+pub fn agent_decisions_ready(
+    state: tauri::State<'_, crate::modules::control::ControlState>,
+    ready: bool,
+) {
     state.hooks().broker.set_ui_ready(ready);
 }
 
@@ -479,13 +493,20 @@ pub(crate) mod test_host {
         }
 
         pub(crate) fn kinds(&self) -> Vec<HookKind> {
-            self.events.lock().unwrap().iter().map(|e| e.facts.kind).collect()
+            self.events
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|e| e.facts.kind)
+                .collect()
         }
     }
 
     impl AgentHost for FakeHost {
         fn pane(&self, pane_id: u32) -> Option<PaneTarget> {
-            (pane_id == 3).then(|| self.live.lock().unwrap().clone()).flatten()
+            (pane_id == 3)
+                .then(|| self.live.lock().unwrap().clone())
+                .flatten()
         }
 
         fn emit_event(&self, _: &str, event: &AgentEvent) {
@@ -493,10 +514,11 @@ pub(crate) mod test_host {
         }
 
         fn emit_signal(&self, signal: AgentSignal) {
-            self.signals
-                .lock()
-                .unwrap()
-                .push(format!("{}:{}", signal.kind, signal.agent.unwrap_or_default()));
+            self.signals.lock().unwrap().push(format!(
+                "{}:{}",
+                signal.kind,
+                signal.agent.unwrap_or_default()
+            ));
         }
     }
 }
@@ -513,7 +535,13 @@ mod tests {
 
     use super::test_host::FakeHost;
 
-    fn request(agent: &str, event: &str, payload: Value, wait: Option<u32>, pane: Option<u32>) -> ControlRequest {
+    fn request(
+        agent: &str,
+        event: &str,
+        payload: Value,
+        wait: Option<u32>,
+        pane: Option<u32>,
+    ) -> ControlRequest {
         ControlRequest {
             protocol: PROTOCOL_VERSION,
             id: "req-1".into(),
@@ -546,9 +574,27 @@ mod tests {
         let host = FakeHost::new(true);
         let state = HookState::default();
         let (server, _client) = socket_pair();
-        let prompt = request("claude", "UserPromptSubmit", json!({ "session_id": "s", "prompt": "go" }), None, Some(3));
-        assert_eq!(result(&handle(&server, &prompt, &state, host.as_ref())), HookResult { accepted: true, decision: None });
-        let stop = request("claude", "Stop", json!({ "last_assistant_message": "done" }), None, Some(3));
+        let prompt = request(
+            "claude",
+            "UserPromptSubmit",
+            json!({ "session_id": "s", "prompt": "go" }),
+            None,
+            Some(3),
+        );
+        assert_eq!(
+            result(&handle(&server, &prompt, &state, host.as_ref())),
+            HookResult {
+                accepted: true,
+                decision: None
+            }
+        );
+        let stop = request(
+            "claude",
+            "Stop",
+            json!({ "last_assistant_message": "done" }),
+            None,
+            Some(3),
+        );
         handle(&server, &stop, &state, host.as_ref());
 
         assert_eq!(host.kinds(), vec![HookKind::Prompt, HookKind::Stop]);
@@ -556,7 +602,10 @@ mod tests {
         assert_eq!((events[0].pane_id, events[0].pty_id), (3, 9));
         assert_eq!(events[0].facts.session_id.as_deref(), Some("s"));
         assert_eq!(events[1].facts.message.as_deref(), Some("done"));
-        assert_eq!(*host.signals.lock().unwrap(), vec!["started:claude", "finished:"]);
+        assert_eq!(
+            *host.signals.lock().unwrap(),
+            vec!["started:claude", "finished:"]
+        );
     }
 
     #[test]
@@ -565,11 +614,23 @@ mod tests {
         let state = HookState::default();
         let (server, _client) = socket_pair();
         let code = |request: ControlRequest| {
-            handle(&server, &request, &state, host.as_ref()).error.unwrap().code
+            handle(&server, &request, &state, host.as_ref())
+                .error
+                .unwrap()
+                .code
         };
-        assert_eq!(code(request("claude", "Stop", json!({}), None, None)), "unknown_pane");
-        assert_eq!(code(request("claude", "Stop", json!({}), None, Some(77))), "unknown_pane");
-        assert_eq!(code(request("nobody", "Stop", json!({}), None, Some(3))), "invalid_params");
+        assert_eq!(
+            code(request("claude", "Stop", json!({}), None, None)),
+            "unknown_pane"
+        );
+        assert_eq!(
+            code(request("claude", "Stop", json!({}), None, Some(77))),
+            "unknown_pane"
+        );
+        assert_eq!(
+            code(request("nobody", "Stop", json!({}), None, Some(3))),
+            "invalid_params"
+        );
         let mut malformed = request("claude", "Stop", json!({}), None, Some(3));
         malformed.params = json!({ "agent": 5 });
         assert_eq!(code(malformed), "invalid_params");
@@ -577,7 +638,10 @@ mod tests {
         assert!(host.signals.lock().unwrap().is_empty());
 
         *host.live.lock().unwrap() = None;
-        assert_eq!(code(request("claude", "Stop", json!({}), None, Some(3))), "unknown_pane");
+        assert_eq!(
+            code(request("claude", "Stop", json!({}), None, Some(3))),
+            "unknown_pane"
+        );
     }
 
     #[test]
@@ -585,7 +649,12 @@ mod tests {
         let host = FakeHost::new(true);
         let state = HookState::default();
         let (server, _client) = socket_pair();
-        let response = handle(&server, &request("claude", "PreCompact", json!({}), None, Some(3)), &state, host.as_ref());
+        let response = handle(
+            &server,
+            &request("claude", "PreCompact", json!({}), None, Some(3)),
+            &state,
+            host.as_ref(),
+        );
         assert!(!result(&response).accepted);
         assert!(host.events.lock().unwrap().is_empty());
     }
@@ -596,7 +665,18 @@ mod tests {
         let state = HookState::default();
         let (server, _client) = socket_pair();
         for event in ["PostToolUse", "PreToolUse", "SessionEnd"] {
-            handle(&server, &request("claude", event, json!({ "tool_name": "Bash" }), None, Some(3)), &state, host.as_ref());
+            handle(
+                &server,
+                &request(
+                    "claude",
+                    event,
+                    json!({ "tool_name": "Bash" }),
+                    None,
+                    Some(3),
+                ),
+                &state,
+                host.as_ref(),
+            );
         }
         assert!(host.signals.lock().unwrap().is_empty());
         assert_eq!(host.events.lock().unwrap().len(), 3);
@@ -610,7 +690,13 @@ mod tests {
         let started = Instant::now();
         let response = handle(
             &server,
-            &request("claude", "PermissionRequest", json!({ "tool_name": "Bash" }), Some(600), Some(3)),
+            &request(
+                "claude",
+                "PermissionRequest",
+                json!({ "tool_name": "Bash" }),
+                Some(600),
+                Some(3),
+            ),
             &state,
             host.as_ref(),
         );
@@ -618,8 +704,14 @@ mod tests {
         assert!(started.elapsed() < Duration::from_secs(1));
         let events = host.events.lock().unwrap();
         assert_eq!(events.len(), 1);
-        assert_eq!(events[0].facts.permission.as_ref().unwrap().request_id, None);
-        assert_eq!(*host.signals.lock().unwrap(), vec!["started:claude", "attention:"]);
+        assert_eq!(
+            events[0].facts.permission.as_ref().unwrap().request_id,
+            None
+        );
+        assert_eq!(
+            *host.signals.lock().unwrap(),
+            vec!["started:claude", "attention:"]
+        );
     }
 
     #[test]
@@ -645,22 +737,40 @@ mod tests {
                     }
                     thread::sleep(Duration::from_millis(5));
                 };
-                assert!(state.broker.resolve(&id, HookDecision::Deny { message: Some("no".into()), interrupt: false }));
+                assert!(state.broker.resolve(
+                    &id,
+                    HookDecision::Deny {
+                        message: Some("no".into()),
+                        interrupt: false
+                    }
+                ));
                 assert!(!state.broker.resolve(&id, HookDecision::Ask));
             })
         };
         let response = handle(
             &server,
-            &request("claude", "PermissionRequest", json!({ "tool_name": "Bash", "tool_input": { "command": "ls" } }), Some(30), Some(3)),
+            &request(
+                "claude",
+                "PermissionRequest",
+                json!({ "tool_name": "Bash", "tool_input": { "command": "ls" } }),
+                Some(30),
+                Some(3),
+            ),
             &state,
             host.as_ref(),
         );
         answering.join().unwrap();
         assert_eq!(
             result(&response).decision,
-            Some(HookDecision::Deny { message: Some("no".into()), interrupt: false })
+            Some(HookDecision::Deny {
+                message: Some("no".into()),
+                interrupt: false
+            })
         );
-        assert_eq!(host.kinds(), vec![HookKind::PermissionRequest, HookKind::PermissionResolved]);
+        assert_eq!(
+            host.kinds(),
+            vec![HookKind::PermissionRequest, HookKind::PermissionResolved]
+        );
         let events = host.events.lock().unwrap();
         let resolved = events[1].facts.permission.as_ref().unwrap();
         assert_eq!(resolved.outcome.as_deref(), Some("deny"));
@@ -680,14 +790,29 @@ mod tests {
         });
         let response = handle(
             &server,
-            &request("codex", "PermissionRequest", json!({ "tool_name": "Bash" }), Some(30), Some(3)),
+            &request(
+                "codex",
+                "PermissionRequest",
+                json!({ "tool_name": "Bash" }),
+                Some(30),
+                Some(3),
+            ),
             &state,
             host.as_ref(),
         );
         closer.join().unwrap();
         assert_eq!(result(&response).decision, Some(HookDecision::Ask));
         let events = host.events.lock().unwrap();
-        assert_eq!(events[1].facts.permission.as_ref().unwrap().outcome.as_deref(), Some("agent-gone"));
+        assert_eq!(
+            events[1]
+                .facts
+                .permission
+                .as_ref()
+                .unwrap()
+                .outcome
+                .as_deref(),
+            Some("agent-gone")
+        );
         assert_eq!(state.broker.len(), 0);
     }
 
@@ -706,14 +831,29 @@ mod tests {
         };
         let response = handle(
             &server,
-            &request("claude", "PermissionRequest", json!({ "tool_name": "Bash" }), Some(30), Some(3)),
+            &request(
+                "claude",
+                "PermissionRequest",
+                json!({ "tool_name": "Bash" }),
+                Some(30),
+                Some(3),
+            ),
             &state,
             host.as_ref(),
         );
         closer.join().unwrap();
         assert_eq!(result(&response).decision, Some(HookDecision::Ask));
         let events = host.events.lock().unwrap();
-        assert_eq!(events[1].facts.permission.as_ref().unwrap().outcome.as_deref(), Some("pane-closed"));
+        assert_eq!(
+            events[1]
+                .facts
+                .permission
+                .as_ref()
+                .unwrap()
+                .outcome
+                .as_deref(),
+            Some("pane-closed")
+        );
     }
 
     #[test]
@@ -731,7 +871,13 @@ mod tests {
         };
         let response = handle(
             &server,
-            &request("claude", "PermissionRequest", json!({ "tool_name": "Bash" }), Some(30), Some(3)),
+            &request(
+                "claude",
+                "PermissionRequest",
+                json!({ "tool_name": "Bash" }),
+                Some(30),
+                Some(3),
+            ),
             &state,
             host.as_ref(),
         );
@@ -746,9 +892,18 @@ mod tests {
         state.broker.set_ui_ready(true);
         let (server, _client) = socket_pair();
         let started = Instant::now();
-        for (agent, event) in [("gemini", "Notification"), ("claude", "PreToolUse"), ("pi", "PermissionRequest")] {
+        for (agent, event) in [
+            ("gemini", "Notification"),
+            ("claude", "PreToolUse"),
+            ("pi", "PermissionRequest"),
+        ] {
             let payload = json!({ "tool_name": "Bash", "notification_type": "ToolPermission" });
-            let response = handle(&server, &request(agent, event, payload, Some(30), Some(3)), &state, host.as_ref());
+            let response = handle(
+                &server,
+                &request(agent, event, payload, Some(30), Some(3)),
+                &state,
+                host.as_ref(),
+            );
             assert_eq!(result(&response).decision, None, "{agent} {event}");
         }
         assert!(started.elapsed() < Duration::from_secs(1));
@@ -787,25 +942,45 @@ mod tests {
         let (sender, receiver) = mpsc::sync_channel(1);
         sender.send(HookDecision::Ask).unwrap();
         assert_eq!(
-            await_decision(&receiver, Duration::from_secs(5), Duration::from_millis(5), || None),
+            await_decision(
+                &receiver,
+                Duration::from_secs(5),
+                Duration::from_millis(5),
+                || None
+            ),
             Verdict::Decided(HookDecision::Ask)
         );
         let (_sender, receiver) = mpsc::sync_channel::<HookDecision>(1);
         assert_eq!(
-            await_decision(&receiver, Duration::from_millis(30), Duration::from_millis(5), || None),
+            await_decision(
+                &receiver,
+                Duration::from_millis(30),
+                Duration::from_millis(5),
+                || None
+            ),
             Verdict::Cancelled(Cancel::Timeout)
         );
         let mut ticks = 0;
         assert_eq!(
-            await_decision(&receiver, Duration::from_secs(5), Duration::from_millis(5), || {
-                ticks += 1;
-                (ticks == 3).then_some(Cancel::PaneClosed)
-            }),
+            await_decision(
+                &receiver,
+                Duration::from_secs(5),
+                Duration::from_millis(5),
+                || {
+                    ticks += 1;
+                    (ticks == 3).then_some(Cancel::PaneClosed)
+                }
+            ),
             Verdict::Cancelled(Cancel::PaneClosed)
         );
         drop(_sender);
         assert_eq!(
-            await_decision(&receiver, Duration::from_secs(5), Duration::from_millis(5), || None),
+            await_decision(
+                &receiver,
+                Duration::from_secs(5),
+                Duration::from_millis(5),
+                || None
+            ),
             Verdict::Cancelled(Cancel::UiGone)
         );
     }
@@ -828,13 +1003,29 @@ mod tests {
         let (server, _client) = socket_pair();
         let mut dropped = 0;
         for _ in 0..300 {
-            let response = handle(&server, &request("claude", "PostToolUse", json!({ "tool_name": "Bash" }), None, Some(3)), &state, host.as_ref());
+            let response = handle(
+                &server,
+                &request(
+                    "claude",
+                    "PostToolUse",
+                    json!({ "tool_name": "Bash" }),
+                    None,
+                    Some(3),
+                ),
+                &state,
+                host.as_ref(),
+            );
             if !result(&response).accepted {
                 dropped += 1;
             }
         }
         assert!(dropped >= 150);
-        let stop = handle(&server, &request("claude", "Stop", json!({}), None, Some(3)), &state, host.as_ref());
+        let stop = handle(
+            &server,
+            &request("claude", "Stop", json!({}), None, Some(3)),
+            &state,
+            host.as_ref(),
+        );
         assert!(result(&stop).accepted);
     }
 
@@ -855,16 +1046,36 @@ mod tests {
             (HookKind::PermissionRequest, None, HookIntent::Attention),
             (HookKind::StopFailure, None, HookIntent::Attention),
             (HookKind::Notification, None, HookIntent::Attention),
-            (HookKind::Notification, Some("permission_prompt"), HookIntent::Attention),
-            (HookKind::Notification, Some("idle_prompt"), HookIntent::Attention),
-            (HookKind::Notification, Some("auth_success"), HookIntent::Quiet),
-            (HookKind::Notification, Some("agent_completed"), HookIntent::Quiet),
+            (
+                HookKind::Notification,
+                Some("permission_prompt"),
+                HookIntent::Attention,
+            ),
+            (
+                HookKind::Notification,
+                Some("idle_prompt"),
+                HookIntent::Attention,
+            ),
+            (
+                HookKind::Notification,
+                Some("auth_success"),
+                HookIntent::Quiet,
+            ),
+            (
+                HookKind::Notification,
+                Some("agent_completed"),
+                HookIntent::Quiet,
+            ),
             (HookKind::Stop, None, HookIntent::Finished),
             (HookKind::Interrupt, None, HookIntent::Finished),
             (HookKind::SessionEnd, None, HookIntent::Quiet),
         ];
         for (kind, notification, expected) in table {
-            assert_eq!(intent_for(&facts(kind, notification)), expected, "{kind:?} {notification:?}");
+            assert_eq!(
+                intent_for(&facts(kind, notification)),
+                expected,
+                "{kind:?} {notification:?}"
+            );
         }
     }
 

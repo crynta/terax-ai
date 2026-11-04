@@ -44,7 +44,10 @@ mod tests {
 
     #[test]
     fn cleaning_drops_control_characters_and_empty_text() {
-        assert_eq!(clean_text("  hi\u{1b}[31m there \u{7}", 64).as_deref(), Some("hi[31m there"));
+        assert_eq!(
+            clean_text("  hi\u{1b}[31m there \u{7}", 64).as_deref(),
+            Some("hi[31m there")
+        );
         assert_eq!(clean_text("a\nb\tc", 64).as_deref(), Some("a\nb\tc"));
         assert_eq!(clean_text(" \n\u{0} ", 64), None);
         assert_eq!(clean_text("", 64), None);

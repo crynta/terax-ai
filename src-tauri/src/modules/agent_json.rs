@@ -341,7 +341,11 @@ impl Container<'_> {
                 let interior_blank = text[self.open + 1..self.close].trim().is_empty();
                 Edit {
                     start: self.open + 1,
-                    end: if interior_blank { self.close } else { self.open + 1 },
+                    end: if interior_blank {
+                        self.close
+                    } else {
+                        self.open + 1
+                    },
                     text: body,
                 }
             }
@@ -353,11 +357,7 @@ impl Container<'_> {
         let (start, end) = self.spans[index];
         let count = self.spans.len();
         if count == 1 {
-            let outside = format!(
-                "{}{}",
-                &text[self.open + 1..start],
-                &text[end..self.close]
-            );
+            let outside = format!("{}{}", &text[self.open + 1..start], &text[end..self.close]);
             if outside.chars().all(|c| c.is_whitespace() || c == ',') {
                 return Edit {
                     start: self.open + 1,
@@ -538,7 +538,10 @@ fn remove_item(text: &str, path: &[&str], index: usize) -> Result<String, String
         return Ok(text.to_string());
     };
     let items = array_items(node, path)?;
-    Ok(apply(text, Container::of_array(text, node, items).remove(index)))
+    Ok(apply(
+        text,
+        Container::of_array(text, node, items).remove(index),
+    ))
 }
 
 /// Removes every element of the array at `path` that `is_ours` accepts, then
@@ -584,10 +587,16 @@ fn prune_empty(mut text: String, path: &[&str]) -> Result<String, String> {
         let Kind::Object(members) = &parent.kind else {
             break;
         };
-        let Some(index) = members.iter().position(|member| member.key == path[depth - 1]) else {
+        let Some(index) = members
+            .iter()
+            .position(|member| member.key == path[depth - 1])
+        else {
             break;
         };
-        text = apply(&text, Container::of_object(&text, parent, members).remove(index));
+        text = apply(
+            &text,
+            Container::of_object(&text, parent, members).remove(index),
+        );
     }
     Ok(text)
 }
@@ -637,7 +646,16 @@ mod tests {
         let value = assert_valid(text);
         assert_eq!(value, json!({ "a": [1, 2], "b": { "c": "d\n" } }));
         assert!(parse("\u{feff}{}").is_ok());
-        for bad in ["{", "{\"a\"}", "{\"a\": }", "[1 2]", "{} x", "{\"a\": tru}", "/ {}", "{\"a\": \"x}"] {
+        for bad in [
+            "{",
+            "{\"a\"}",
+            "{\"a\": }",
+            "[1 2]",
+            "{} x",
+            "{\"a\": tru}",
+            "/ {}",
+            "{\"a\": \"x}",
+        ] {
             assert!(parse(bad).is_err(), "{bad}");
         }
         assert!(parse(&"[".repeat(100)).is_err());
@@ -705,7 +723,11 @@ mod tests {
         ] {
             let out = upsert_ours(text, 1);
             let value = assert_valid(&out);
-            assert_eq!(value["hooks"]["Stop"].as_array().unwrap().last().unwrap()["id"], "ours", "{text}");
+            assert_eq!(
+                value["hooks"]["Stop"].as_array().unwrap().last().unwrap()["id"],
+                "ours",
+                "{text}"
+            );
         }
     }
 
@@ -727,7 +749,13 @@ mod tests {
     fn wrong_shapes_are_refused_not_replaced() {
         assert!(upsert("[]", &["hooks", "Stop"], &element(1), &ours).is_err());
         assert!(upsert("{\"hooks\":[]}", &["hooks", "Stop"], &element(1), &ours).is_err());
-        assert!(upsert("{\"hooks\":{\"Stop\":{}}}", &["hooks", "Stop"], &element(1), &ours).is_err());
+        assert!(upsert(
+            "{\"hooks\":{\"Stop\":{}}}",
+            &["hooks", "Stop"],
+            &element(1),
+            &ours
+        )
+        .is_err());
         assert!(upsert("{ nope", &["hooks", "Stop"], &element(1), &ours).is_err());
         assert!(validate("[]").is_err());
         assert!(validate("{}").is_ok());
@@ -749,7 +777,10 @@ mod tests {
         }
         let middle = "{\"hooks\":{\"Stop\":[{\"id\":\"a\"},{\"id\":\"ours\"},{\"id\":\"b\"}]}}";
         let out = remove_matching(middle, &["hooks", "Stop"], &ours).unwrap();
-        assert_eq!(out, "{\"hooks\":{\"Stop\":[{\"id\":\"a\"},{\"id\":\"b\"}]}}");
+        assert_eq!(
+            out,
+            "{\"hooks\":{\"Stop\":[{\"id\":\"a\"},{\"id\":\"b\"}]}}"
+        );
     }
 
     #[test]
@@ -758,9 +789,13 @@ mod tests {
         let out = remove_matching(&installed, &["hooks", "Stop"], &ours).unwrap();
         assert_eq!(assert_valid(&out), json!({ "model": "x" }));
 
-        let kept = "{\"hooks\":{\"Stop\":[{\"id\":\"ours\"}],\"Notification\":[{\"id\":\"theirs\"}]}}";
+        let kept =
+            "{\"hooks\":{\"Stop\":[{\"id\":\"ours\"}],\"Notification\":[{\"id\":\"theirs\"}]}}";
         let out = remove_matching(kept, &["hooks", "Stop"], &ours).unwrap();
-        assert_eq!(assert_valid(&out), json!({ "hooks": { "Notification": [{ "id": "theirs" }] } }));
+        assert_eq!(
+            assert_valid(&out),
+            json!({ "hooks": { "Notification": [{ "id": "theirs" }] } })
+        );
     }
 
     #[test]
@@ -775,21 +810,31 @@ mod tests {
             assert_eq!(assert_valid(&restored), assert_valid(original), "{original}");
         }
         let original = "{\n  \"model\": \"opus\",\n  \"hooks\": {\n    \"Notification\": [\n      { \"id\": \"theirs\" }\n    ]\n  }\n}\n";
-        let restored = remove_matching(&upsert_ours(original, 1), &["hooks", "Stop"], &ours).unwrap();
+        let restored =
+            remove_matching(&upsert_ours(original, 1), &["hooks", "Stop"], &ours).unwrap();
         assert_eq!(restored, original);
     }
 
     #[test]
     fn removal_without_a_match_changes_nothing() {
         let text = "{\n  \"hooks\": {\n    \"Stop\": [ { \"id\": \"theirs\" } ]\n  }\n}\n";
-        assert_eq!(remove_matching(text, &["hooks", "Stop"], &ours).unwrap(), text);
-        assert_eq!(remove_matching("{}", &["hooks", "Stop"], &ours).unwrap(), "{}");
+        assert_eq!(
+            remove_matching(text, &["hooks", "Stop"], &ours).unwrap(),
+            text
+        );
+        assert_eq!(
+            remove_matching("{}", &["hooks", "Stop"], &ours).unwrap(),
+            "{}"
+        );
     }
 
     #[test]
     fn comments_inside_elements_do_not_hide_them() {
         let text = "{\"hooks\":{\"Stop\":[{ /* ours */ \"id\": \"ours\" // x\n}]}}";
-        assert_eq!(array_at(text, &["hooks", "Stop"]).unwrap(), vec![json!({ "id": "ours" })]);
+        assert_eq!(
+            array_at(text, &["hooks", "Stop"]).unwrap(),
+            vec![json!({ "id": "ours" })]
+        );
         let out = remove_matching(text, &["hooks", "Stop"], &ours).unwrap();
         assert_eq!(assert_valid(&out), json!({}));
     }
@@ -797,7 +842,10 @@ mod tests {
     #[test]
     fn array_lookup_reports_absence() {
         assert_eq!(array_at("{}", &["hooks", "Stop"]), None);
-        assert_eq!(array_at("{\"hooks\":{\"Stop\":3}}", &["hooks", "Stop"]), None);
+        assert_eq!(
+            array_at("{\"hooks\":{\"Stop\":3}}", &["hooks", "Stop"]),
+            None
+        );
         assert_eq!(array_at("not json", &["hooks"]), None);
     }
 }

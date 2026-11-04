@@ -48,7 +48,9 @@ impl HookEnvironment {
         let token = get("TERAX_CONTROL_TOKEN").filter(|value| !value.is_empty())?;
         let decision_secs = get("TERAX_HOOK_TIMEOUT")
             .and_then(|value| value.trim().parse::<u32>().ok())
-            .map_or(DEFAULT_DECISION_SECS, |secs| secs.clamp(1, MAX_DECISION_SECS));
+            .map_or(DEFAULT_DECISION_SECS, |secs| {
+                secs.clamp(1, MAX_DECISION_SECS)
+            });
         Some(Self {
             pane_id,
             address,
@@ -252,7 +254,11 @@ mod tests {
             let mut partial: Vec<(&'static str, &'static str)> = full.to_vec();
             partial.remove(skip);
             let partial: &'static [(&'static str, &'static str)] = Box::leak(partial.into());
-            assert_eq!(HookEnvironment::from_lookup(lookup(partial)), None, "{skip}");
+            assert_eq!(
+                HookEnvironment::from_lookup(lookup(partial)),
+                None,
+                "{skip}"
+            );
         }
         assert_eq!(
             HookEnvironment::from_lookup(lookup(&[

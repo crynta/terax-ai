@@ -92,9 +92,9 @@ const AGENTS: &[AgentSpec] = &[
         events: &[
             event("SessionStart"),
             event("UserPromptSubmit"),
-            event("PreToolUse"),
+            background("PreToolUse"),
             timed("PermissionRequest", DECISION_HOOK_TIMEOUT),
-            event("PostToolUse"),
+            background("PostToolUse"),
             event("Stop"),
         ],
     },
@@ -206,12 +206,12 @@ fn shell_for(style: Style, windows: bool) -> Dialect {
 /// agents reject an empty stdout. No user data is interpolated.
 fn hook_command(dialect: Dialect, agent: &str, event: &str) -> String {
     match dialect {
-        Dialect::Posix => format!(
-            r#"[ -n "$TERAX_CLI" ] && "$TERAX_CLI" hook {agent} {event} || printf '{{}}'"#
-        ),
-        Dialect::Cmd => format!(
-            r#"if defined TERAX_CLI ("%TERAX_CLI%" hook {agent} {event}) else (echo {{}})"#
-        ),
+        Dialect::Posix => {
+            format!(r#"[ -n "$TERAX_CLI" ] && "$TERAX_CLI" hook {agent} {event} || printf '{{}}'"#)
+        }
+        Dialect::Cmd => {
+            format!(r#"if defined TERAX_CLI ("%TERAX_CLI%" hook {agent} {event}) else (echo {{}})"#)
+        }
         Dialect::PowerShell => format!(
             r#"if ($env:TERAX_CLI) {{ & $env:TERAX_CLI hook {agent} {event} }} else {{ '{{}}' }}"#
         ),
@@ -239,6 +239,11 @@ fn hook_group(spec: &AgentSpec, event: &EventSpec, windows: bool) -> Value {
             }
             if let Some(timeout) = event.timeout {
                 hook["timeout"] = json!(timeout);
+            }
+            // Codex starts each hook through the login shell, which is too
+            // slow to sit in front of every tool call.
+            if event.background {
+                hook["async"] = json!(true);
             }
         }
         Style::Gemini => {
@@ -311,7 +316,10 @@ fn json_after(
 ) -> Result<Option<String>, String> {
     if let Some(text) = existing.filter(|text| !text.trim().is_empty()) {
         agent_json::validate(text).map_err(|error| {
-            format!("{} is not valid JSON ({error}); refusing to edit", path.display())
+            format!(
+                "{} is not valid JSON ({error}); refusing to edit",
+                path.display()
+            )
         })?;
     }
     let mut text = existing.filter(|_| !blank(existing)).map(str::to_string);
@@ -321,8 +329,9 @@ fn json_after(
             let mut current = text.take().unwrap_or_else(|| "{}".to_string());
             for event in spec.events {
                 let group = hook_group(spec, event, windows);
-                current = agent_json::upsert(&current, &["hooks", event.event], &group, &group_is_ours)
-                    .map_err(|error| format!("{}: {error}", path.display()))?;
+                current =
+                    agent_json::upsert(&current, &["hooks", event.event], &group, &group_is_ours)
+                        .map_err(|error| format!("{}: {error}", path.display()))?;
             }
             if created {
                 current.push('\n');
@@ -334,21 +343,18 @@ fn json_after(
                 return Ok(existing.map(str::to_string));
             };
             for event in spec.events {
-                current = agent_json::remove_matching(&current, &["hooks", event.event], &group_is_ours)
-                    .map_err(|error| format!("{}: {error}", path.display()))?;
+                current =
+                    agent_json::remove_matching(&current, &["hooks", event.event], &group_is_ours)
+                        .map_err(|error| format!("{}: {error}", path.display()))?;
             }
             Ok(Some(current))
         }
     }
 }
 
-fn pi_after(
-    existing: Option<&str>,
-    action: Action,
-    path: &Path,
-) -> Result<Option<String>, String> {
-    let foreign = existing
-        .is_some_and(|text| !text.trim().is_empty() && !text.contains(PI_EXTENSION_FAMILY));
+fn pi_after(existing: Option<&str>, action: Action, path: &Path) -> Result<Option<String>, String> {
+    let foreign =
+        existing.is_some_and(|text| !text.trim().is_empty() && !text.contains(PI_EXTENSION_FAMILY));
     match action {
         Action::Install if foreign => Err(format!(
             "{} is not managed by Terax; refusing to overwrite",
@@ -474,8 +480,7 @@ fn apply_plan(plan: &HooksPlan) -> Result<(), String> {
         Some(contents) => write_atomic(&path, contents),
         None => {
             let target = write_target(&path)?;
-            std::fs::remove_file(&target)
-                .map_err(|e| format!("remove {}: {e}", target.display()))
+            std::fs::remove_file(&target).map_err(|e| format!("remove {}: {e}", target.display()))
         }
     }
 }
@@ -621,9 +626,9 @@ mod tests {
                     let command = group["hooks"][0]["command"].as_str().unwrap();
                     assert!(command.contains("TERAX_CLI"), "{command}");
                     assert!(
-                        command
-                            .chars()
-                            .all(|c| c.is_ascii_alphanumeric() || " \"$%{}()[]&|'-=_:\\".contains(c)),
+                        command.chars().all(
+                            |c| c.is_ascii_alphanumeric() || " \"$%{}()[]&|'-=_:\\".contains(c)
+                        ),
                         "{command}"
                     );
                     assert!(group_is_ours(&group));
@@ -649,20 +654,40 @@ mod tests {
         let windows = parsed(&install("claude", None, true));
         let hook = &windows["hooks"]["Stop"][0]["hooks"][0];
         assert_eq!(hook["shell"], "powershell");
-        assert!(hook["command"].as_str().unwrap().starts_with("if ($env:TERAX_CLI)"));
+        assert!(hook["command"]
+            .as_str()
+            .unwrap()
+            .starts_with("if ($env:TERAX_CLI)"));
     }
 
     #[test]
     fn codex_installs_the_core_events_with_a_windows_override() {
         let unix = parsed(&install("codex", None, false));
-        for event in ["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse", "Stop"] {
+        for event in [
+            "SessionStart",
+            "UserPromptSubmit",
+            "PreToolUse",
+            "PermissionRequest",
+            "PostToolUse",
+            "Stop",
+        ] {
             assert_eq!(commands(&unix, event).len(), 1, "{event}");
         }
-        assert!(unix["hooks"]["Stop"][0]["hooks"][0].get("commandWindows").is_none());
+        assert!(unix["hooks"]["Stop"][0]["hooks"][0]
+            .get("commandWindows")
+            .is_none());
+        assert_eq!(unix["hooks"]["PreToolUse"][0]["hooks"][0]["async"], true);
+        assert!(unix["hooks"]["Stop"][0]["hooks"][0].get("async").is_none());
+        assert!(unix["hooks"]["PermissionRequest"][0]["hooks"][0]
+            .get("async")
+            .is_none());
         let windows = parsed(&install("codex", None, true));
         let hook = &windows["hooks"]["Stop"][0]["hooks"][0];
         assert_eq!(hook["commandWindows"], hook["command"]);
-        assert!(hook["command"].as_str().unwrap().starts_with("if defined TERAX_CLI"));
+        assert!(hook["command"]
+            .as_str()
+            .unwrap()
+            .starts_with("if defined TERAX_CLI"));
     }
 
     #[test]
@@ -691,17 +716,27 @@ mod tests {
     fn user_configuration_is_preserved_byte_for_byte() {
         let original = "{\n    // my tweaks\n    \"permissions\": { \"allow\": [\"Bash(ls)\"] },\n    \"hooks\": {\n        \"Notification\": [\n            { \"hooks\": [ { \"type\": \"command\", \"command\": \"say hi\" } ] }\n        ]\n    },\n    \"model\": \"opus\"\n}\n";
         let out = install("claude", Some(original), false);
-        assert!(out.contains("    // my tweaks\n    \"permissions\": { \"allow\": [\"Bash(ls)\"] },\n"));
-        assert!(out.contains("{ \"hooks\": [ { \"type\": \"command\", \"command\": \"say hi\" } ] }"));
+        assert!(
+            out.contains("    // my tweaks\n    \"permissions\": { \"allow\": [\"Bash(ls)\"] },\n")
+        );
+        assert!(
+            out.contains("{ \"hooks\": [ { \"type\": \"command\", \"command\": \"say hi\" } ] }")
+        );
         assert!(out.contains("\"model\": \"opus\"\n}\n"));
         let value = parsed(&agent_json_strip(&out));
         let notification = commands(&value, "Notification");
         assert_eq!(notification[0], "say hi");
         assert_eq!(notification.len(), 2);
 
-        let removed = json_after(spec("claude"), Some(&out), Action::Uninstall, false, &path())
-            .unwrap()
-            .unwrap();
+        let removed = json_after(
+            spec("claude"),
+            Some(&out),
+            Action::Uninstall,
+            false,
+            &path(),
+        )
+        .unwrap()
+        .unwrap();
         assert_eq!(removed, original);
     }
 
@@ -731,7 +766,9 @@ mod tests {
         let stop = commands(&out, "Stop");
         assert_eq!(stop.len(), 2);
         assert!(stop.contains(&"mine".to_string()));
-        assert!(stop.iter().all(|command| !command.contains("__terax_notify")));
+        assert!(stop
+            .iter()
+            .all(|command| !command.contains("__terax_notify")));
     }
 
     #[test]
@@ -747,9 +784,21 @@ mod tests {
 
     #[test]
     fn invalid_or_unexpected_configs_are_refused() {
-        let error = json_after(spec("claude"), Some("{ not json,"), Action::Install, false, &path()).unwrap_err();
+        let error = json_after(
+            spec("claude"),
+            Some("{ not json,"),
+            Action::Install,
+            false,
+            &path(),
+        )
+        .unwrap_err();
         assert!(error.contains("refusing to edit"));
-        for bad in ["[]", "\"x\"", "{\"hooks\": []}", "{\"hooks\": {\"Stop\": 1}}"] {
+        for bad in [
+            "[]",
+            "\"x\"",
+            "{\"hooks\": []}",
+            "{\"hooks\": {\"Stop\": 1}}",
+        ] {
             assert!(
                 json_after(spec("claude"), Some(bad), Action::Install, false, &path()).is_err(),
                 "{bad}"
@@ -763,9 +812,15 @@ mod tests {
     fn uninstall_removes_everything_it_installed_and_nothing_else() {
         for agent in ["claude", "codex", "gemini"] {
             let installed = install(agent, Some("{\n  \"keep\": true\n}\n"), false);
-            let removed = json_after(spec(agent), Some(&installed), Action::Uninstall, false, &path())
-                .unwrap()
-                .unwrap();
+            let removed = json_after(
+                spec(agent),
+                Some(&installed),
+                Action::Uninstall,
+                false,
+                &path(),
+            )
+            .unwrap()
+            .unwrap();
             assert_eq!(parsed(&removed), json!({ "keep": true }), "{agent}");
         }
         assert_eq!(
@@ -785,7 +840,14 @@ mod tests {
         let again = plan_at("claude", Action::Install, &path, fresh.after.clone(), false).unwrap();
         assert!(!again.changed);
 
-        let remove = plan_at("claude", Action::Uninstall, &path, fresh.after.clone(), false).unwrap();
+        let remove = plan_at(
+            "claude",
+            Action::Uninstall,
+            &path,
+            fresh.after.clone(),
+            false,
+        )
+        .unwrap();
         assert!(remove.changed);
         assert_eq!(parsed(remove.after.as_deref().unwrap()), json!({}));
 
@@ -800,12 +862,24 @@ mod tests {
         let path = dir.path().join(".agent").join("settings.json");
         let first = plan_at("claude", Action::Install, &path, None, false).unwrap();
         apply_plan(&first).unwrap();
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), first.after.clone().unwrap());
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            first.after.clone().unwrap()
+        );
 
         // Second apply of the stale plan: the file is no longer absent.
-        assert!(apply_plan(&first).unwrap_err().contains("changed since the preview"));
+        assert!(apply_plan(&first)
+            .unwrap_err()
+            .contains("changed since the preview"));
 
-        let noop = plan_at("claude", Action::Install, &path, read_existing(&path).unwrap(), false).unwrap();
+        let noop = plan_at(
+            "claude",
+            Action::Install,
+            &path,
+            read_existing(&path).unwrap(),
+            false,
+        )
+        .unwrap();
         assert!(!noop.changed);
         apply_plan(&noop).unwrap();
 
@@ -826,11 +900,23 @@ mod tests {
         let link = dir.path().join("settings.json");
         symlink(&managed, &link).unwrap();
 
-        let plan = plan_at("claude", Action::Install, &link, read_existing(&link).unwrap(), false).unwrap();
+        let plan = plan_at(
+            "claude",
+            Action::Install,
+            &link,
+            read_existing(&link).unwrap(),
+            false,
+        )
+        .unwrap();
         apply_plan(&plan).unwrap();
 
-        assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
-        assert!(std::fs::read_to_string(&managed).unwrap().contains("TERAX_CLI"));
+        assert!(std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert!(std::fs::read_to_string(&managed)
+            .unwrap()
+            .contains("TERAX_CLI"));
         let mode = std::fs::metadata(&managed).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600);
     }
@@ -843,7 +929,14 @@ mod tests {
         assert!(PI_EXTENSION.starts_with("// terax-pi-notifications-v2"));
         assert!(PI_EXTENSION.contains("windowsHide: true"));
         assert!(!PI_EXTENSION.contains("777"));
-        for event in ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "SessionEnd"] {
+        for event in [
+            "SessionStart",
+            "UserPromptSubmit",
+            "PreToolUse",
+            "PostToolUse",
+            "Stop",
+            "SessionEnd",
+        ] {
             assert!(PI_EXTENSION.contains(&format!("\"{event}\"")), "{event}");
         }
     }
@@ -851,16 +944,32 @@ mod tests {
     #[test]
     fn pi_install_replaces_only_terax_owned_files() {
         let p = Path::new("/x/terax-notifications.ts");
-        assert_eq!(pi_after(None, Action::Install, p).unwrap().as_deref(), Some(PI_EXTENSION));
+        assert_eq!(
+            pi_after(None, Action::Install, p).unwrap().as_deref(),
+            Some(PI_EXTENSION)
+        );
         let v1 = "// terax-pi-notifications-v1\nexport default () => {}\n";
-        assert_eq!(pi_after(Some(v1), Action::Install, p).unwrap().as_deref(), Some(PI_EXTENSION));
+        assert_eq!(
+            pi_after(Some(v1), Action::Install, p).unwrap().as_deref(),
+            Some(PI_EXTENSION)
+        );
         assert!(pi_after(Some("export const mine = true;"), Action::Install, p).is_err());
-        assert_eq!(pi_after(Some("  \n"), Action::Install, p).unwrap().as_deref(), Some(PI_EXTENSION));
+        assert_eq!(
+            pi_after(Some("  \n"), Action::Install, p)
+                .unwrap()
+                .as_deref(),
+            Some(PI_EXTENSION)
+        );
 
-        assert_eq!(pi_after(Some(PI_EXTENSION), Action::Uninstall, p).unwrap(), None);
+        assert_eq!(
+            pi_after(Some(PI_EXTENSION), Action::Uninstall, p).unwrap(),
+            None
+        );
         assert_eq!(pi_after(None, Action::Uninstall, p).unwrap(), None);
         assert_eq!(
-            pi_after(Some("export const mine = true;"), Action::Uninstall, p).unwrap().as_deref(),
+            pi_after(Some("export const mine = true;"), Action::Uninstall, p)
+                .unwrap()
+                .as_deref(),
             Some("export const mine = true;")
         );
     }
@@ -873,7 +982,11 @@ mod tests {
         apply_plan(&install).unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), PI_EXTENSION);
         let existing = read_existing(&path).unwrap();
-        assert!(!plan_at("pi", Action::Install, &path, existing.clone(), false).unwrap().changed);
+        assert!(
+            !plan_at("pi", Action::Install, &path, existing.clone(), false)
+                .unwrap()
+                .changed
+        );
         apply_plan(&plan_at("pi", Action::Uninstall, &path, existing, false).unwrap()).unwrap();
         assert!(!path.exists());
     }
