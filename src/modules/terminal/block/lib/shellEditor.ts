@@ -351,6 +351,9 @@ const completionNav = Prec.highest(
   keymap.of([
     { key: "ArrowDown", run: moveCompletionSelection(true) },
     { key: "ArrowUp", run: moveCompletionSelection(false) },
+    { key: "Ctrl-n", run: moveCompletionSelection(true) },
+    { key: "Ctrl-p", run: moveCompletionSelection(false) },
+    { key: "Ctrl-y", run: acceptCompletion },
     { key: "Escape", run: closeCompletion },
   ]),
 );

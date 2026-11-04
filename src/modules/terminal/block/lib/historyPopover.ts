@@ -13,6 +13,7 @@ import {
 } from "@codemirror/view";
 import { Clock01Icon } from "@hugeicons/core-free-icons";
 import { hugeIcon } from "./completionIcons";
+import { createPointerIntent } from "./pointerIntent";
 
 type Fetcher = (query: string, limit: number) => Promise<string[]>;
 
@@ -79,6 +80,7 @@ function historyTooltipView(view: EditorView): TooltipView {
   dom.append(list, footer);
 
   let lastSig = "";
+  const pointerMoved = createPointerIntent();
   const render = () => {
     const h = view.state.field(historyField);
     const sig = `${h.index}|${h.items.length}|${h.items[0] ?? ""}`;
@@ -99,7 +101,8 @@ function historyTooltipView(view: EditorView): TooltipView {
         e.preventDefault();
         acceptIndex(view, i);
       });
-      row.addEventListener("mouseenter", () => {
+      row.addEventListener("mousemove", (e) => {
+        if (!pointerMoved(e.clientX, e.clientY)) return;
         const cur = view.state.field(historyField, false);
         if (cur?.open && cur.index !== i) {
           dispatch(view, { ...cur, index: i });
