@@ -1220,6 +1220,7 @@ export function rendererProfileKey(profile: WebGlRendererProfile): string {
     font.weight,
     font.lineHeight,
     font.letterSpacing,
+    font.symbols ?? 0,
     profile.metrics.deviceCellWidth,
     profile.metrics.deviceCellHeight,
     profile.metrics.deviceBaseline,

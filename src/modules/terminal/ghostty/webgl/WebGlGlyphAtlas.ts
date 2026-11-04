@@ -3,6 +3,7 @@
  * Copyright (c) 2017-2019 The xterm.js authors. MIT licensed.
  */
 
+import { extendedSymbolsPending } from "@/lib/fonts";
 import { CellFlags } from "@terax/ghostty-core/protocol";
 import {
   BuiltinGlyphRenderer,
@@ -10,6 +11,12 @@ import {
   isBuiltinGlyph,
 } from "../gpu/BuiltinGlyphs";
 import { hasIntrinsicColor } from "../gpu/glyphColor";
+import {
+  drawGlyph,
+  glyphBounds,
+  isExtendedSymbol,
+  placeGlyph,
+} from "../gpu/GlyphPlacement";
 import { SkylineAtlasAllocator } from "../gpu/SkylineAtlasAllocator";
 import { fontCss, type TerminalFontMetrics } from "../gpu/terminalVisuals";
 
@@ -296,6 +303,9 @@ export class WebGlGlyphAtlas {
   }
 
   private rasterize(text: string, flags: number): WebGlGlyphEntry {
+    if (isExtendedSymbol(text.codePointAt(0) ?? 0) && extendedSymbolsPending()) {
+      return NULL_GLYPH;
+    }
     const context = this.rasterContext;
     const bold = (flags & CellFlags.BOLD) !== 0;
     const italic = (flags & CellFlags.ITALIC) !== 0;
@@ -313,26 +323,42 @@ export class WebGlGlyphAtlas {
     context.fillStyle = "white";
 
     const measurement = context.measureText(text);
-    const left = Math.max(0, Math.ceil(measurement.actualBoundingBoxLeft || 0));
-    const right = Math.ceil(
-      measurement.actualBoundingBoxRight || this.metrics.deviceCellWidth,
+    const measure = {
+      advance: measurement.width,
+      left: measurement.actualBoundingBoxLeft || 0,
+      right: measurement.actualBoundingBoxRight || 0,
+      ascent: measurement.actualBoundingBoxAscent || 0,
+      descent: measurement.actualBoundingBoxDescent || 0,
+    };
+    const { deviceCellWidth, deviceCellHeight, deviceBaseline } = this.metrics;
+    const placement = placeGlyph(
+      text,
+      measure,
+      deviceCellWidth,
+      deviceCellHeight,
     );
-    const ascent = Math.ceil(
-      measurement.actualBoundingBoxAscent || this.metrics.deviceBaseline,
-    );
-    const descent = Math.ceil(
-      measurement.actualBoundingBoxDescent ||
-        this.metrics.deviceCellHeight - this.metrics.deviceBaseline,
-    );
+    const bounds = glyphBounds(measure, placement, {
+      width: deviceCellWidth,
+      ascent: deviceBaseline,
+      descent: deviceCellHeight - deviceBaseline,
+    });
+    const left = bounds.leftExtent;
+    const ascent = bounds.ascent;
     const width = Math.min(
       RASTER_SIZE,
-      Math.max(1, left + right + GLYPH_PADDING * 2),
+      Math.max(1, left + bounds.rightExtent + GLYPH_PADDING * 2),
     );
     const height = Math.min(
       RASTER_SIZE,
-      Math.max(1, ascent + descent + GLYPH_PADDING * 2),
+      Math.max(1, ascent + bounds.descent + GLYPH_PADDING * 2),
     );
-    context.fillText(text, GLYPH_PADDING + left, GLYPH_PADDING + ascent);
+    drawGlyph(
+      context,
+      text,
+      placement,
+      GLYPH_PADDING + left,
+      GLYPH_PADDING + ascent,
+    );
 
     const rgba = context.getImageData(0, 0, width, height).data;
     const intrinsicColor = hasIntrinsicColor(rgba);

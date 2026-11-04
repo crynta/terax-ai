@@ -1,9 +1,16 @@
+import { extendedSymbolsPending } from "@/lib/fonts";
 import {
   BuiltinGlyphRenderer,
   builtinGlyphSpec,
   isBuiltinGlyph,
 } from "./BuiltinGlyphs";
 import { hasIntrinsicColor } from "./glyphColor";
+import {
+  drawGlyph,
+  glyphBounds,
+  isExtendedSymbol,
+  placeGlyph,
+} from "./GlyphPlacement";
 import { fontCss, type TerminalFontMetrics } from "./terminalVisuals";
 
 const RASTER_SIZE = 256;
@@ -12,6 +19,16 @@ const CLEAR_MARGIN = 8;
 
 export const GLYPH_STYLE_BOLD = 1;
 export const GLYPH_STYLE_ITALIC = 2;
+
+const EMPTY_GLYPH: RasterizedGlyph = {
+  width: 1,
+  height: 1,
+  bearingX: 0,
+  bearingY: 0,
+  intrinsicColor: false,
+  exact: false,
+  pixels: new Uint8Array(1),
+};
 
 export type RasterizedGlyph = {
   readonly width: number;
@@ -77,6 +94,12 @@ export class GlyphRasterizer {
   rasterize(text: string, style: number): RasterizedGlyph {
     const builtin = this.rasterizeBuiltin(text);
     if (builtin) return builtin;
+    // Until the icon face has loaded the glyph would be a missing-glyph box; the atlas
+    // is rebuilt when the face arrives (`TerminalFontSpec.symbols`).
+    const codepoint = text.codePointAt(0) ?? 0;
+    if (isExtendedSymbol(codepoint) && extendedSymbolsPending()) {
+      return EMPTY_GLYPH;
+    }
     const context = this.ensureContext();
     const fontStyle = style & (GLYPH_STYLE_BOLD | GLYPH_STYLE_ITALIC);
     if (fontStyle !== this.activeStyle) {
@@ -87,25 +110,41 @@ export class GlyphRasterizer {
 
     const { deviceCellWidth, deviceCellHeight, deviceBaseline } = this.metrics;
     const measurement = context.measureText(text);
-    const left = Math.max(0, Math.ceil(measurement.actualBoundingBoxLeft || 0));
-    const right = Math.ceil(
-      measurement.actualBoundingBoxRight || deviceCellWidth,
+    const measure = {
+      advance: measurement.width,
+      left: measurement.actualBoundingBoxLeft || 0,
+      right: measurement.actualBoundingBoxRight || 0,
+      ascent: measurement.actualBoundingBoxAscent || 0,
+      descent: measurement.actualBoundingBoxDescent || 0,
+    };
+    const placement = placeGlyph(
+      text,
+      measure,
+      deviceCellWidth,
+      deviceCellHeight,
     );
-    const ascent = Math.ceil(
-      measurement.actualBoundingBoxAscent || deviceBaseline,
-    );
-    const descent = Math.ceil(
-      measurement.actualBoundingBoxDescent || deviceCellHeight - deviceBaseline,
-    );
+    const bounds = glyphBounds(measure, placement, {
+      width: deviceCellWidth,
+      ascent: deviceBaseline,
+      descent: deviceCellHeight - deviceBaseline,
+    });
+    const left = bounds.leftExtent;
+    const ascent = bounds.ascent;
     const width = Math.min(
       RASTER_SIZE,
-      Math.max(1, left + right + GLYPH_PADDING * 2),
+      Math.max(1, left + bounds.rightExtent + GLYPH_PADDING * 2),
     );
     const height = Math.min(
       RASTER_SIZE,
-      Math.max(1, ascent + descent + GLYPH_PADDING * 2),
+      Math.max(1, ascent + bounds.descent + GLYPH_PADDING * 2),
     );
-    context.fillText(text, GLYPH_PADDING + left, GLYPH_PADDING + ascent);
+    drawGlyph(
+      context,
+      text,
+      placement,
+      GLYPH_PADDING + left,
+      GLYPH_PADDING + ascent,
+    );
     this.dirtyWidth = Math.min(RASTER_SIZE, width + CLEAR_MARGIN);
     this.dirtyHeight = Math.min(RASTER_SIZE, height + CLEAR_MARGIN);
 

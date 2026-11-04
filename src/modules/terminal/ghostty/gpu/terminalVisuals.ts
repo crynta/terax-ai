@@ -8,6 +8,11 @@ export type TerminalFontSpec = {
   readonly lineHeight: number;
   readonly letterSpacing: number;
   readonly weight: string;
+  /**
+   * Which lazily loaded symbol faces had arrived (`symbolFontEpoch`). Part of every font
+   * key, so atlases that rasterized before a face arrived are rebuilt when it does.
+   */
+  readonly symbols?: number;
 };
 
 /**
@@ -142,13 +147,14 @@ export function metricsEqual(
   );
 }
 
-function fontSpecKey(font: TerminalFontSpec): string {
+export function fontSpecKey(font: TerminalFontSpec): string {
   return [
     font.family,
     font.size,
     font.lineHeight,
     font.letterSpacing,
     font.weight,
+    font.symbols ?? 0,
   ].join("|");
 }
 
