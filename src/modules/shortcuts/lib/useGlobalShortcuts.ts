@@ -31,7 +31,8 @@ export function useGlobalShortcuts(
         const bindings = userShortcuts[s.id] || s.defaultBindings;
         const isMatch = bindings.some((b) => matchBinding(e, b, s.id));
         if (!isMatch) continue;
-        if (options?.isDisabled?.(s.id, e)) return;
+        // Skip, don't stop: a later shortcut may share the binding (⌘K).
+        if (options?.isDisabled?.(s.id, e)) continue;
         const h = handlers[s.id];
         if (!h) return;
         e.preventDefault();
