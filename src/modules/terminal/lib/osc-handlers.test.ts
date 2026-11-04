@@ -8,6 +8,9 @@ describe("terminal semantic boundaries", () => {
     ["file:///c/Users/leo/project", "C:/Users/leo/project"],
     ["file:///C:/Users/me/project", "C:/Users/me/project"],
     ["file://host/home/me/a%20b", "/home/me/a b"],
+    // cmd.exe prompts: raw backslashes, spaces and characters a URL would escape.
+    ["file://BOX/C:\\Users\\me\\proj", "C:/Users/me/proj"],
+    ["file:///D:\\My Docs\\100% real #1", "D:/My Docs/100% real #1"],
     ["https://example.com/path", null],
   ])("normalizes cwd %s", (uri, expected) =>
     expect(parseOsc7(uri)).toBe(expected),

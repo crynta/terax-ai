@@ -37,21 +37,29 @@ if [ -z "$__TERAX_HOOKS_LOADED" ]; then
     }
   fi
 
+  # URL-encodes $1 into REPLY; no command substitution, a fork per prompt is
+  # pure latency.
   _terax_urlencode() {
     local LC_ALL=C s="$1" i c
+    REPLY=
     for (( i=0; i<${#s}; i++ )); do
       c="${s:i:1}"
       case "$c" in
-        [a-zA-Z0-9/._~-]) printf '%s' "$c" ;;
-        *) printf '%%%02X' "'$c" ;;
+        [a-zA-Z0-9/._~-]) REPLY+="$c" ;;
+        *) printf -v c '%%%02X' "'$c"; REPLY+="$c" ;;
       esac
     done
   }
 
+  # Returns the status it was called with, so the PROMPT_COMMAND entries after
+  # it (starship, direnv, ...) still see the user's `$?`.
   _terax_precmd() {
-    local _terax_ret=$?
+    local _terax_ret=$? _terax_cwd="$PWD"
     printf '\e]133;D;%s\e\\' "$_terax_ret"
-    printf '\e]7;file://%s%s\e\\' "${HOSTNAME:-$(uname -n 2>/dev/null)}" "$(_terax_urlencode "$PWD")"
+    case "$_terax_cwd" in
+      *[!a-zA-Z0-9/._~-]*) _terax_urlencode "$_terax_cwd"; _terax_cwd="$REPLY" ;;
+    esac
+    printf '\e]7;file://%s%s\e\\' "${HOSTNAME:-$(uname -n 2>/dev/null)}" "$_terax_cwd"
     if [ -n "$TERAX_BLOCKS" ]; then
       # Host renders its own input bar: suppress the shell prompt (B marker
       # only) and reserve header/gap rows, mirroring the zsh integration.
@@ -60,11 +68,29 @@ if [ -z "$__TERAX_HOOKS_LOADED" ]; then
       else
         PS1='\n\[\e]133;B\e\\\]'
       fi
-    elif [ -z "$__TERAX_PS1_INJECTED" ]; then
-      PS1="${_terax_prompt_end}${PS1}"
-      __TERAX_PS1_INJECTED=1
+    else
+      # Appended after the prompt text, and again whenever a prompt framework
+      # rebuilt PS1 without it.
+      case "$PS1" in
+        *']133;B'*) ;;
+        *) PS1="${PS1}${_terax_prompt_end}" ;;
+      esac
     fi
     printf '\e]133;A\e\\'
+    return "$_terax_ret"
+  }
+
+  # ble.sh runs this from its own PRECMD hook list (see below). When a
+  # PROMPT_COMMAND that still names _terax_precmd is going to run anyway, as it
+  # does for a ble.sh that attaches from the prompt, this stays out of the way
+  # so the prompt is never reported twice.
+  _terax_ble_precmd() {
+    local _terax_ret=$?
+    case "${PROMPT_COMMAND[*]-}" in
+      *_terax_precmd*) return "$_terax_ret" ;;
+    esac
+    (exit "$_terax_ret")
+    _terax_precmd
   }
 
   case "$(declare -p PROMPT_COMMAND 2>/dev/null)" in
@@ -86,12 +112,13 @@ if [ -z "$__TERAX_HOOKS_LOADED" ]; then
       ;;
   esac
 
-  # ble.sh takes ownership of PROMPT_COMMAND at ble-attach, which the rc file
-  # above has already run. It keeps its own copy, so the hook we just appended
+  # An attached ble.sh keeps its own copy of PROMPT_COMMAND, restores it before
+  # every prompt and drops what was added behind its back, so the hook above
   # is never called and the host sees one OSC 7 at startup and nothing after.
-  # Its own hook list survives that handover.
-  if [ -n "${BLE_VERSION-}" ]; then
-    blehook PRECMD+=_terax_precmd 2>/dev/null
+  # Its own hook list survives that; `!=` adds an entry only once.
+  if [ -n "${BLE_VERSION-}" ] && declare -F blehook >/dev/null 2>&1; then
+    blehook PRECMD!=_terax_ble_precmd 2>/dev/null \
+      || blehook PRECMD+=_terax_ble_precmd 2>/dev/null
   fi
 
   # Pre-exec marker via PS0 (bash 4.4+). PS0 is expanded just before a command
