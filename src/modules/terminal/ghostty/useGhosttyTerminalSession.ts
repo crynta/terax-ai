@@ -31,6 +31,7 @@ import {
 import { getWebGpuTerminalRuntime } from "./gpu/WebGpuTerminalRuntime";
 import { webGpuTerminalRuntimeDiagnostics } from "./gpu/WebGpuTerminalRuntime";
 import { WebGpuTerminalSurface } from "./gpu/WebGpuTerminalSurface";
+import { documentFocusEnv, focusUntilActive } from "./input/focusRetry";
 import { GhosttyInputController } from "./input/GhosttyInputController";
 import { encodeTerminalSubmission } from "./input/terminalInputEncoding";
 import type {
@@ -68,6 +69,7 @@ type GhosttySession = {
   surface: GhosttySurface | null;
   surfaceOptions: GhosttySurfaceBaseOptions | null;
   input: GhosttyInputController | null;
+  cancelFocusRetry: (() => void) | null;
   pty: PtySession | null;
   ptyResize: PtyResizeDelivery;
   writer: BoundedPtyWriter;
@@ -399,6 +401,7 @@ export function disposeGhosttySession(leafId: number): boolean {
   if (!session) return false;
   session.disposed = true;
   session.generation += 1;
+  session.cancelFocusRetry?.();
   session.input?.dispose();
   session.surface?.dispose();
   disposeGhosttyBlocks(leafId);
@@ -540,6 +543,7 @@ function ensureSession(
     surface: null,
     surfaceOptions: null,
     input: null,
+    cancelFocusRetry: null,
     pty: null,
     ptyResize,
     writer: new BoundedPtyWriter((error) => {
@@ -893,8 +897,14 @@ function focusSessionSurface(
   surface: GhosttySurface | null,
 ): void {
   const blocks = ghosttyBlocks(session.leafId);
+  session.cancelFocusRetry?.();
+  session.cancelFocusRetry = null;
   if (blocks?.getMode() === "prompt" && blocks.focus) blocks.focus();
-  else surface?.focus();
+  else if (surface)
+    session.cancelFocusRetry = focusUntilActive(
+      () => surface.focus(),
+      documentFocusEnv(surface.inputElement()),
+    );
 }
 
 function applyBlockInputMode(
