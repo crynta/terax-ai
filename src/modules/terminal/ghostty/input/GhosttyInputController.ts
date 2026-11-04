@@ -2,7 +2,11 @@ import { ImeAnchor } from "@/modules/terminal/ghostty/input/ImeAnchor";
 import { TerminalInputProxy } from "@/modules/terminal/ghostty/input/TerminalInputProxy";
 import { TerminalNativeSelection } from "@/modules/terminal/ghostty/input/TerminalNativeSelection";
 import { readTerminalClipboard } from "@/modules/terminal/lib/terminalClipboard";
-import { type Key, KeyAction, type KeyEvent } from "@terax/ghostty-core/protocol";
+import {
+  type Key,
+  KeyAction,
+  type KeyEvent,
+} from "@terax/ghostty-core/protocol";
 import type { GhosttyTerminalModelApi } from "../GhosttyTerminalModel";
 import {
   buildKeyEvent,
@@ -23,6 +27,7 @@ import {
   WheelAccumulator,
   wheelLines,
   wheelRoute,
+  wheelUnits,
 } from "./terminalWheel";
 
 const DUPLICATE_INPUT_WINDOW_MS = 75;
@@ -445,14 +450,18 @@ export class GhosttyInputController {
         this.wheel.reset();
         return;
       }
-      const whole = this.wheel.push(route, lines);
+      const whole = this.wheel.push(route, wheelUnits(route, lines));
       if (whole !== 0) model.scrollBy(whole);
       consume(event);
       return;
     }
 
     consume(event);
-    const count = this.wheel.push(route, lines, MAX_WHEEL_REPORTS_PER_EVENT);
+    const count = this.wheel.push(
+      route,
+      wheelUnits(route, lines),
+      MAX_WHEEL_REPORTS_PER_EVENT,
+    );
     if (count === 0) return;
     const times = Math.abs(count);
     if (route === "arrows") {
@@ -562,9 +571,11 @@ export class GhosttyInputController {
     this.lastDataAt = now;
     if (editableText && this.options.onText?.(data)) return;
     if (scrollToBottom) this.options.model.scrollToBottom();
-    const bytes = keyed
+    let bytes = keyed
       ? this.encodeKeyDown(keyed.event, keyed.key)
       : this.encoder.encode(data);
+    // Typed text is never dropped because the encoder had no form for the key.
+    if (keyed && bytes.byteLength === 0) bytes = this.encoder.encode(data);
     if (bytes.byteLength > 0) this.options.onData(bytes);
   }
 }

@@ -9,6 +9,13 @@ const DOM_DELTA_PAGE = 2;
  */
 export const MAX_WHEEL_REPORTS_PER_EVENT = 10;
 
+/**
+ * A wheel report is a notch, not a row: the program scrolls a few lines for
+ * each (vim and Neovim three, tmux more). One report per three lines of motion
+ * keeps the content under the finger; a report per line would run it away.
+ */
+export const LINES_PER_WHEEL_REPORT = 3;
+
 export const DEFAULT_SCROLL_SPEED = 1;
 export const MIN_SCROLL_SPEED = 0.1;
 export const MAX_SCROLL_SPEED = 10;
@@ -40,6 +47,11 @@ export function wheelLines(
         ? deltaY * rows
         : deltaY / Math.max(1, cellHeight);
   return lines * speed;
+}
+
+/** What one line of motion is worth on the route: a fraction of a report. */
+export function wheelUnits(route: WheelRoute, lines: number): number {
+  return route === "report" ? lines / LINES_PER_WHEEL_REPORT : lines;
 }
 
 export type WheelRoute =

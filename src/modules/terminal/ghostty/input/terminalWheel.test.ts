@@ -5,9 +5,11 @@ import {
   DEFAULT_SCROLL_SPEED,
   MAX_SCROLL_SPEED,
   MIN_SCROLL_SPEED,
+  LINES_PER_WHEEL_REPORT,
   WheelAccumulator,
   wheelLines,
   wheelRoute,
+  wheelUnits,
 } from "./terminalWheel";
 
 describe("wheelLines", () => {
@@ -152,5 +154,15 @@ describe("clampScrollSpeed", () => {
     [undefined, DEFAULT_SCROLL_SPEED],
   ])("%s -> %s", (value, expected) => {
     expect(clampScrollSpeed(value)).toBe(expected);
+  });
+});
+
+describe("wheelUnits", () => {
+  it("is one report per three lines of motion and one key or row per line", () => {
+    expect(LINES_PER_WHEEL_REPORT).toBe(3);
+    expect(wheelUnits("report", 6)).toBe(2);
+    expect(wheelUnits("report", -1.5)).toBe(-0.5);
+    expect(wheelUnits("arrows", 6)).toBe(6);
+    expect(wheelUnits("scrollback", -2.5)).toBe(-2.5);
   });
 });

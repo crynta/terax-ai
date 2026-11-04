@@ -42,8 +42,8 @@ describe("GhosttyInputController", () => {
       h.controller.dispose();
     });
 
-    it("accumulates small pixels without layout reads or input until a line is due", () => {
-      for (let i = 0; i < 3; i++) {
+    it("accumulates small pixels without layout reads or input until a report is due", () => {
+      for (let i = 0; i < 11; i++) {
         expect(h.wheel(5).defaultPrevented).toBe(true);
       }
       expect(h.onData).not.toHaveBeenCalled();
@@ -55,18 +55,19 @@ describe("GhosttyInputController", () => {
     });
 
     it.each([
-      [0, 20, 1],
-      [0, 60, 3],
-      [0, 79, 3],
-      [1, 2, 2],
-      [2, 0.1, 2],
+      [0, 60, 1],
+      [0, 120, 2],
+      [0, 170, 2],
+      [1, 3, 1],
+      [1, 6, 2],
+      [2, 0.25, 2],
     ])(
-      "reports whole lines in one write (mode %s, delta %s -> %s)",
-      (mode, delta, lines) => {
+      "reports one notch per three lines, in one write (mode %s, delta %s -> %s)",
+      (mode, delta, reports) => {
         h.wheel(delta, mode);
-        expect(h.reports()).toEqual([DOWN.repeat(lines)]);
+        expect(h.reports()).toEqual([DOWN.repeat(reports)]);
         h.wheel(-delta, mode);
-        expect(h.reports()).toEqual([DOWN.repeat(lines), UP.repeat(lines)]);
+        expect(h.reports()).toEqual([DOWN.repeat(reports), UP.repeat(reports)]);
       },
     );
 
@@ -81,51 +82,52 @@ describe("GhosttyInputController", () => {
         h.wheel(delta, mode);
         expect(h.reports()).toEqual([DOWN.repeat(MAX_WHEEL_REPORTS_PER_EVENT)]);
         h.onData.mockClear();
-        h.wheel(-5);
+        h.wheel(-30);
         expect(h.onData).not.toHaveBeenCalled();
-        h.wheel(-15);
+        h.wheel(-30);
         expect(h.reports()).toEqual([UP]);
       },
     );
 
     it("keeps the fraction between events and drops it on reversal", () => {
-      h.wheel(30);
-      h.wheel(30);
-      expect(h.reports()).toEqual([DOWN, DOWN.repeat(2)]);
+      h.wheel(45);
+      expect(h.onData).not.toHaveBeenCalled();
+      h.wheel(45);
+      expect(h.reports()).toEqual([DOWN]);
       h.onData.mockClear();
       h.wheel(15);
       h.wheel(-15);
       expect(h.onData).not.toHaveBeenCalled();
-      h.wheel(-5);
+      h.wheel(-45);
       expect(h.reports()).toEqual([UP]);
     });
 
     it("ignores zero, horizontal-only and non-finite motion without poisoning the remainder", () => {
-      h.wheel(15);
+      h.wheel(30);
       for (const delta of [0, Number.NaN, Infinity, -Infinity]) {
         expect(h.wheel(delta, 0, { deltaX: 100 }).defaultPrevented).toBe(false);
       }
       expect(h.onData).not.toHaveBeenCalled();
       expect(h.bounds).not.toHaveBeenCalled();
-      h.wheel(5);
+      h.wheel(30);
       expect(h.reports()).toEqual([DOWN]);
     });
 
     it("scales the distance by the scroll speed preference at once", () => {
       h.speed.value = 0.5;
-      h.wheel(40);
+      h.wheel(120);
       expect(h.reports()).toEqual([DOWN]);
       h.speed.value = 3;
       h.onData.mockClear();
-      h.wheel(20);
-      expect(h.reports()).toEqual([DOWN.repeat(3)]);
+      h.wheel(40);
+      expect(h.reports()).toEqual([DOWN.repeat(2)]);
     });
 
     it.each([true, false])(
       "keeps encoding and modifiers intact (SGR: %s)",
       (sgr) => {
         h.state.sgr = sgr;
-        h.wheel(20, 0, { ctrlKey: true, altKey: true });
+        h.wheel(60, 0, { ctrlKey: true, altKey: true });
         expect(h.reports()).toEqual([sgr ? "\x1b[<89;1;1M" : "\x1b[My!!"]);
       },
     );
@@ -134,26 +136,26 @@ describe("GhosttyInputController", () => {
       "clears the remainder when switching through %s scrollback",
       (route) => {
         const options = route === "shift" ? { shiftKey: true } : {};
-        h.wheel(15);
+        h.wheel(30);
         if (route === "tracking") h.state.mouseTracking = false;
-        h.wheel(15, 0, options);
+        h.wheel(10, 0, options);
         expect(h.scrollBy).not.toHaveBeenCalled();
         h.state.mouseTracking = true;
-        h.wheel(5);
+        h.wheel(30);
         expect(h.onData).not.toHaveBeenCalled();
         if (route === "tracking") h.state.mouseTracking = false;
-        h.wheel(5, 0, options);
+        h.wheel(10, 0, options);
         expect(h.scrollBy).not.toHaveBeenCalled();
-        h.wheel(15, 0, options);
+        h.wheel(10, 0, options);
         expect(h.scrollBy).toHaveBeenCalledExactlyOnceWith(1);
       },
     );
 
     it("clears mouse motion even when the scrollback route has no history", () => {
-      h.wheel(15);
+      h.wheel(30);
       h.state.history = 0;
-      h.wheel(5, 0, { shiftKey: true });
-      h.wheel(5);
+      h.wheel(10, 0, { shiftKey: true });
+      h.wheel(30);
       expect(h.onData).not.toHaveBeenCalled();
     });
 
@@ -208,7 +210,7 @@ describe("GhosttyInputController", () => {
 
       it("mouse tracking wins over alternate scroll, Shift hands the wheel back", () => {
         h.state.mouseTracking = true;
-        h.wheel(20);
+        h.wheel(60);
         expect(h.reports()).toEqual([DOWN]);
         h.onData.mockClear();
         h.wheel(20, 0, { shiftKey: true });

@@ -191,8 +191,9 @@ Key encoding supplies the base character only where Kitty keyboard mode escape-c
 text (a held Ctrl, Alt or Super, or report-all-keys); Shift-only and plain text stay text,
 lock modifiers are reported only at the report-all-keys level, and key releases follow
 the presses that were escape-coded. The wheel accumulates whole lines scaled by the
-`terminalScrollSpeed` preference and becomes cursor keys on the alternate screen under
-DEC 1007; the input element is moved onto the cursor cell only for the length of an IME
+`terminalScrollSpeed` preference (history and cursor keys move a line at a time, a mouse
+report stands for three lines, at most ten per event) and becomes cursor keys on the
+alternate screen under DEC 1007; the input element is moved onto the cursor cell only for the length of an IME
 composition (`ImeAnchor`).
 Terminal text uses the configured font, an installed Nerd Font when detected,
 or bundled JetBrains Mono. Private-use prompt symbols require an installed font
