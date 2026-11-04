@@ -256,6 +256,7 @@ pub fn run() {
         .manage(shell::ShellState::default())
         .manage(secrets::SecretsState::default())
         .manage(fs::watch::FsWatchState::default())
+        .manage(git::watch::GitWatchState::default())
         .manage(history::HistoryState::default())
         .manage(lsp::LspState::default())
         .manage(fs::supersede::Supersede::default())
@@ -329,6 +330,23 @@ pub fn run() {
             git::commands::git_remote_url,
             git::commands::git_list_branches,
             git::commands::git_checkout_branch,
+            git::commands_review::git_merge_base,
+            git::commands_review::git_diff_summary,
+            git::commands_review::git_diff_file,
+            git::commands_review::git_apply_hunks,
+            git::commands_review::git_worktree_list,
+            git::commands_review::git_worktree_add,
+            git::commands_review::git_worktree_remove,
+            git::commands_review::git_worktree_prune,
+            git::commands_review::git_checkpoint_create,
+            git::commands_review::git_checkpoint_list,
+            git::commands_review::git_checkpoint_restore,
+            git::commands_review::git_checkpoint_prune,
+            git::commands_review::git_branch_create,
+            git::commands_review::git_branch_rename,
+            git::commands_review::git_upstream_info,
+            git::commands_review::git_watch,
+            git::commands_review::git_unwatch,
             shell::shell_run_command,
             shell::shell_session_open,
             shell::shell_session_run,

@@ -1,0 +1,905 @@
+//! Per-agent-turn checkpoints. A checkpoint is a commit object reachable only
+//! from `refs/terax/checkpoints/<task>/<turn>`, built from a private copy of
+//! the index, so the user's index, HEAD, branches and working files are never
+//! touched by creating one. Restoring does write the working tree (and syncs the
+//! index entries of the files it changed), but only the paths that differ.
+
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
+
+use serde::Serialize;
+
+use crate::modules::git::diff::{parse_raw_numstat_z, DiffFileSummary, FileStatus};
+use crate::modules::git::errors::{GitError, Result};
+use crate::modules::git::plumbing::{
+    git_dir, head_commit_opt, lock_for, open_worktree, os_args, resolve_commit, run, run_ok,
+    stdout_text,
+};
+use crate::modules::git::process::{ensure_success, run_git_with, RunOptions};
+use crate::modules::git::refs;
+use crate::modules::git::types::{GitOutput, NETWORK_TIMEOUT_SECS};
+use crate::modules::git::utils::ResolvedGitDirectory;
+use crate::modules::workspace::{WorkspaceEnv, WorkspaceRegistry};
+
+/// Snapshot passes before giving up on a quiet moment. Each extra pass costs a
+/// stat walk, not a rehash, because the private index already knows every file.
+const MAX_PASSES: u32 = 3;
+/// Extra attempts per pass on top of one per excluded file.
+const ADD_ATTEMPTS: u32 = 3;
+const MAX_UNSTABLE_FILES: usize = 50;
+const INDEX_SYNC_CHUNK: usize = 100;
+const MAX_DIRTY_REPORTED: usize = 200;
+const SNAPSHOT_TIMEOUT_SECS: u64 = NETWORK_TIMEOUT_SECS;
+
+static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// A throwaway index file inside the git directory, removed on drop.
+struct TempIndex {
+    path: PathBuf,
+}
+
+impl TempIndex {
+    /// Seeds the copy from the real index when there is one, so unchanged files
+    /// are recognized by their cached stat data and never rehashed.
+    fn seeded(repo: &ResolvedGitDirectory) -> Result<Self> {
+        let dir = git_dir(repo)?;
+        let unique = format!(
+            "terax-snapshot-{}-{}-{}.index",
+            std::process::id(),
+            TEMP_COUNTER.fetch_add(1, Ordering::Relaxed),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        );
+        let path = dir.join(unique);
+        let real = dir.join("index");
+        if real.is_file() {
+            std::fs::copy(&real, &path)?;
+        }
+        Ok(Self { path })
+    }
+
+    fn empty(repo: &ResolvedGitDirectory) -> Result<Self> {
+        let temp = Self::seeded(repo)?;
+        let _ = std::fs::remove_file(&temp.path);
+        Ok(temp)
+    }
+
+    fn options(&self, stdin: Option<Vec<u8>>) -> RunOptions {
+        RunOptions {
+            env: vec![(
+                OsString::from("GIT_INDEX_FILE"),
+                self.path.clone().into_os_string(),
+            )],
+            stdin,
+            stdout_cap: 0,
+        }
+    }
+}
+
+impl Drop for TempIndex {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+        let mut lock = self.path.clone().into_os_string();
+        lock.push(".lock");
+        let _ = std::fs::remove_file(PathBuf::from(lock));
+    }
+}
+
+fn run_indexed(
+    repo: &ResolvedGitDirectory,
+    temp: &TempIndex,
+    args: Vec<OsString>,
+    stdin: Option<Vec<u8>>,
+) -> Result<GitOutput> {
+    run_git_with(
+        &repo.workspace,
+        Some(&repo.git_path),
+        args,
+        SNAPSHOT_TIMEOUT_SECS,
+        temp.options(stdin),
+    )
+}
+
+#[derive(Debug)]
+pub struct Snapshot {
+    pub tree: String,
+    pub consistent: bool,
+    pub passes: u32,
+    pub warnings: Vec<String>,
+    /// Files that kept disappearing under the snapshot and were left out; for a
+    /// tracked file the index's version is recorded instead.
+    pub unstable_paths: Vec<String>,
+}
+
+fn ensure_supported(repo: &ResolvedGitDirectory) -> Result<()> {
+    if repo.workspace.is_wsl() {
+        return Err(GitError::Unsupported(
+            "checkpoints are not supported in WSL workspaces yet",
+        ));
+    }
+    Ok(())
+}
+
+fn warn(warnings: &mut Vec<String>, code: &str) {
+    if !warnings.iter().any(|w| w == code) {
+        warnings.push(code.to_string());
+    }
+}
+
+/// The file git reports it could not `stat`: it was listed by the directory
+/// walk and gone (or being replaced) by the time git looked, i.e. an agent
+/// writing while we snapshot.
+pub fn vanished_path(stderr: &str) -> Option<String> {
+    let line = stderr.lines().find(|l| l.contains("unable to stat '"))?;
+    let rest = line.split_once("unable to stat '")?.1;
+    let end = rest.rfind("': ")?;
+    Some(rest[..end].to_string())
+}
+
+/// Files `git add --ignore-errors` reported as unreadable or changing mid-read.
+pub fn unindexed_paths(stderr: &str) -> Vec<String> {
+    stderr
+        .lines()
+        .filter_map(|line| {
+            let rest = line.strip_prefix("error: unable to index file '")?;
+            Some(rest.strip_suffix('\'')?.to_string())
+        })
+        .collect()
+}
+
+/// One `git add -A` pass over the private index. A file that vanishes aborts
+/// git's whole pass (the index is left unwritten, so a retry starts clean);
+/// the pass is retried with that file excluded and the file is reported in
+/// `unstable` rather than failing the snapshot.
+fn add_everything(
+    repo: &ResolvedGitDirectory,
+    temp: &TempIndex,
+    warnings: &mut Vec<String>,
+    unstable: &mut Vec<String>,
+) -> Result<()> {
+    for attempt in 1..=(ADD_ATTEMPTS + MAX_UNSTABLE_FILES as u32) {
+        let mut args = os_args(["add", "-A", "--ignore-errors", "--", "."]);
+        args.extend(
+            unstable
+                .iter()
+                .map(|path| OsString::from(format!(":(exclude,literal){path}"))),
+        );
+        let output = run_indexed(repo, temp, args, None)?;
+        if output.timed_out {
+            return Err(GitError::TimedOut("git add"));
+        }
+        if output.exit_code == Some(0) {
+            return Ok(());
+        }
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+        if !stderr.contains("fatal:") && stderr.contains("unable to index file") {
+            // `--ignore-errors`: files that could not be read are skipped, the
+            // rest was added and the index written; git only exits non-zero.
+            warn(warnings, "unreadable-files");
+            for path in unindexed_paths(&stderr) {
+                if unstable.len() < MAX_UNSTABLE_FILES && !unstable.contains(&path) {
+                    unstable.push(path);
+                }
+            }
+            return Ok(());
+        }
+        if let Some(path) = vanished_path(&stderr) {
+            if unstable.len() < MAX_UNSTABLE_FILES && !unstable.contains(&path) {
+                warn(warnings, "unstable-files-skipped");
+                unstable.push(path);
+                std::thread::sleep(std::time::Duration::from_millis(
+                    u64::from(attempt.min(5)) * 5,
+                ));
+                continue;
+            }
+        }
+        return ensure_success(&output, "git add failed");
+    }
+    Err(GitError::command(
+        "git add failed",
+        "the working tree kept changing during the snapshot",
+    ))
+}
+
+fn write_tree(repo: &ResolvedGitDirectory, temp: &TempIndex) -> Result<String> {
+    let output = run_indexed(repo, temp, os_args(["write-tree"]), None)?;
+    ensure_success(&output, "git write-tree failed")?;
+    Ok(stdout_text(&output))
+}
+
+/// Freezes the working tree (tracked files plus untracked, non-ignored ones)
+/// into a tree object without touching the real index. With `verify`, the
+/// snapshot is repeated until two consecutive passes agree or `MAX_PASSES` is
+/// reached; `consistent` reports whether they did.
+pub fn snapshot_tree(repo: &ResolvedGitDirectory, verify: bool) -> Result<Snapshot> {
+    ensure_supported(repo)?;
+    let temp = TempIndex::seeded(repo)?;
+    let mut warnings = Vec::new();
+    let mut unstable = Vec::new();
+    add_everything(repo, &temp, &mut warnings, &mut unstable)?;
+    let mut tree = write_tree(repo, &temp)?;
+    let mut passes = 1;
+    let mut consistent = false;
+    while verify && passes < MAX_PASSES {
+        add_everything(repo, &temp, &mut warnings, &mut unstable)?;
+        let again = write_tree(repo, &temp)?;
+        passes += 1;
+        if again == tree {
+            consistent = true;
+            break;
+        }
+        tree = again;
+    }
+    if verify && !consistent {
+        warn(&mut warnings, "concurrent-writes");
+    }
+    Ok(Snapshot {
+        tree,
+        consistent,
+        passes,
+        warnings,
+        unstable_paths: unstable,
+    })
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckpointInfo {
+    #[serde(rename = "ref")]
+    pub ref_name: String,
+    pub task_id: String,
+    pub turn: u32,
+    pub commit: String,
+    pub tree: String,
+    /// HEAD when the checkpoint was taken; `None` for an unborn branch.
+    pub parent: Option<String>,
+    pub created_at_secs: i64,
+}
+
+/// What a checkpoint does and does not capture, stated in the result so the UI
+/// never has to assume.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckpointLimits {
+    /// The snapshot is not atomic: files written while it runs may be mixed.
+    pub atomic: bool,
+    pub captures_ignored_files: bool,
+    /// Submodules are recorded as their commit pointer only.
+    pub captures_submodule_contents: bool,
+    /// Restoring puts files back; what was staged is not recorded.
+    pub captures_index_state: bool,
+}
+
+const LIMITS: CheckpointLimits = CheckpointLimits {
+    atomic: false,
+    captures_ignored_files: false,
+    captures_submodule_contents: false,
+    captures_index_state: false,
+};
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckpointCreated {
+    #[serde(flatten)]
+    pub info: CheckpointInfo,
+    /// Two consecutive snapshot passes produced the same tree.
+    pub consistent: bool,
+    pub passes: u32,
+    pub warnings: Vec<String>,
+    pub unstable_paths: Vec<String>,
+    pub limits: CheckpointLimits,
+    pub duration_ms: u64,
+}
+
+fn now_secs() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+pub fn create(
+    registry: &WorkspaceRegistry,
+    worktree: &str,
+    task_id: &str,
+    turn: u32,
+    workspace: &WorkspaceEnv,
+) -> Result<CheckpointCreated> {
+    if !refs::is_valid_task_id(task_id) {
+        return Err(GitError::InvalidRef(task_id.to_string()));
+    }
+    let started = Instant::now();
+    let repo = open_worktree(registry, worktree, workspace)?;
+    ensure_supported(&repo)?;
+    let lock = lock_for(&git_dir(&repo)?);
+    let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+
+    let mut snapshot = snapshot_tree(&repo, true)?;
+    let parent = head_commit_opt(&repo)?;
+    let name = refs::checkpoint_ref(task_id, turn);
+    let message = format!("terax checkpoint {task_id}/{turn}");
+    let mut args = os_args([
+        "-c",
+        "commit.gpgsign=false",
+        "commit-tree",
+        snapshot.tree.as_str(),
+    ]);
+    if let Some(parent) = parent.as_deref() {
+        args.extend(os_args(["-p", parent]));
+    }
+    args.extend(os_args(["-m", message.as_str()]));
+    let output = run_git_with(
+        &repo.workspace,
+        Some(&repo.git_path),
+        args,
+        crate::modules::git::types::DEFAULT_TIMEOUT_SECS,
+        RunOptions {
+            env: ["AUTHOR", "COMMITTER"]
+                .iter()
+                .flat_map(|who| {
+                    [
+                        (
+                            OsString::from(format!("GIT_{who}_NAME")),
+                            OsString::from("Terax"),
+                        ),
+                        (
+                            OsString::from(format!("GIT_{who}_EMAIL")),
+                            OsString::from("terax@localhost"),
+                        ),
+                    ]
+                })
+                .collect(),
+            ..Default::default()
+        },
+    )?;
+    ensure_success(&output, "git commit-tree failed")?;
+    let commit = stdout_text(&output);
+    run_ok(
+        &repo,
+        os_args(["update-ref", name.as_str(), commit.as_str()]),
+        "git update-ref failed",
+    )?;
+
+    Ok(CheckpointCreated {
+        info: CheckpointInfo {
+            ref_name: name,
+            task_id: task_id.to_string(),
+            turn,
+            commit,
+            tree: snapshot.tree,
+            parent,
+            created_at_secs: now_secs(),
+        },
+        consistent: snapshot.consistent,
+        passes: snapshot.passes,
+        warnings: std::mem::take(&mut snapshot.warnings),
+        unstable_paths: std::mem::take(&mut snapshot.unstable_paths),
+        limits: LIMITS,
+        duration_ms: started.elapsed().as_millis() as u64,
+    })
+}
+
+const LIST_FORMAT: &str =
+    "--format=%(refname)%00%(objectname)%00%(tree)%00%(parent)%00%(committerdate:unix)";
+
+/// Parses `for-each-ref` output in `LIST_FORMAT`, ordered by turn.
+pub fn parse_checkpoint_list(output: &[u8]) -> Vec<CheckpointInfo> {
+    let mut infos: Vec<CheckpointInfo> = String::from_utf8_lossy(output)
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split('\0');
+            let name = fields.next()?;
+            let commit = fields.next()?.to_string();
+            let tree = fields.next()?.to_string();
+            let parent = fields.next()?.split_whitespace().next().map(str::to_string);
+            let created_at_secs = fields.next()?.parse().unwrap_or(0);
+            let (task, turn) = refs::parse_checkpoint_ref(name)?;
+            Some(CheckpointInfo {
+                ref_name: name.to_string(),
+                task_id: task.to_string(),
+                turn,
+                commit,
+                tree,
+                parent,
+                created_at_secs,
+            })
+        })
+        .collect();
+    infos.sort_by_key(|info| info.turn);
+    infos
+}
+
+fn list_for(repo: &ResolvedGitDirectory, task_id: &str) -> Result<Vec<CheckpointInfo>> {
+    let prefix = refs::checkpoint_task_prefix(task_id);
+    let output = run_ok(
+        repo,
+        os_args(["for-each-ref", LIST_FORMAT, prefix.as_str()]),
+        "git for-each-ref failed",
+    )?;
+    Ok(parse_checkpoint_list(&output.stdout))
+}
+
+pub fn list(
+    registry: &WorkspaceRegistry,
+    worktree: &str,
+    task_id: &str,
+    workspace: &WorkspaceEnv,
+) -> Result<Vec<CheckpointInfo>> {
+    if !refs::is_valid_task_id(task_id) {
+        return Err(GitError::InvalidRef(task_id.to_string()));
+    }
+    let repo = open_worktree(registry, worktree, workspace)?;
+    list_for(&repo, task_id)
+}
+
+pub fn prune(
+    registry: &WorkspaceRegistry,
+    worktree: &str,
+    task_id: &str,
+    workspace: &WorkspaceEnv,
+) -> Result<u32> {
+    if !refs::is_valid_task_id(task_id) {
+        return Err(GitError::InvalidRef(task_id.to_string()));
+    }
+    let repo = open_worktree(registry, worktree, workspace)?;
+    let lock = lock_for(&git_dir(&repo)?);
+    let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+    let infos = list_for(&repo, task_id)?;
+    if infos.is_empty() {
+        return Ok(0);
+    }
+    let mut script = String::new();
+    for info in &infos {
+        script.push_str("delete ");
+        script.push_str(&info.ref_name);
+        script.push('\n');
+    }
+    let output = run_git_with(
+        &repo.workspace,
+        Some(&repo.git_path),
+        os_args(["update-ref", "--stdin"]),
+        crate::modules::git::types::DEFAULT_TIMEOUT_SECS,
+        RunOptions {
+            stdin: Some(script.into_bytes()),
+            ..Default::default()
+        },
+    )?;
+    ensure_success(&output, "git update-ref failed")?;
+    Ok(infos.len() as u32)
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangedPath {
+    pub path: String,
+    pub status: FileStatus,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Skipped {
+    pub path: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum RestoreRefusal {
+    /// Files changed since the latest checkpoint; restoring would lose them.
+    ChangedSinceLatest,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RestoreReport {
+    pub restored: bool,
+    pub refusal: Option<RestoreRefusal>,
+    pub latest_ref: Option<String>,
+    /// Files that differ between the working tree and the latest checkpoint
+    /// (capped at `MAX_DIRTY_REPORTED`).
+    pub dirty: Vec<ChangedPath>,
+    pub dirty_total: u32,
+    pub written: u32,
+    pub removed: u32,
+    pub skipped: Vec<Skipped>,
+    /// HEAD is not where it was when the checkpoint was taken (the agent
+    /// committed, or switched branches). Commits are left alone.
+    pub head_moved: bool,
+    /// Index entries of the touched paths were reset to HEAD.
+    pub index_synced: bool,
+    pub consistent: bool,
+    pub atomic: bool,
+}
+
+fn tree_of(repo: &ResolvedGitDirectory, commit: &str) -> Result<String> {
+    let output = run_ok(
+        repo,
+        os_args(["rev-parse", "--verify", &format!("{commit}^{{tree}}")]),
+        "git rev-parse failed",
+    )?;
+    Ok(stdout_text(&output))
+}
+
+fn diff_trees(repo: &ResolvedGitDirectory, a: &str, b: &str) -> Result<Vec<DiffFileSummary>> {
+    let output = run_ok(
+        repo,
+        os_args(["diff-tree", "-r", "-z", "--no-renames", a, b]),
+        "git diff-tree failed",
+    )?;
+    Ok(parse_raw_numstat_z(&output.stdout))
+}
+
+/// A path that may be written or removed during a restore: relative, no `..`,
+/// nothing inside `.git`, no NUL or control characters.
+pub fn is_safe_restore_path(path: &str) -> bool {
+    !path.is_empty()
+        && !path.starts_with('/')
+        && !path.contains('\\')
+        && !path.chars().any(|c| c.is_control())
+        && !path.split('/').any(|part| {
+            part.is_empty() || part == "." || part == ".." || part.eq_ignore_ascii_case(".git")
+        })
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct RestorePlan {
+    pub writes: Vec<String>,
+    pub deletes: Vec<String>,
+    pub skipped: Vec<Skipped>,
+}
+
+/// `changes` is the diff from the current tree to the checkpoint tree: what is
+/// `Added` exists only in the checkpoint (write it), `Deleted` only now (remove
+/// it).
+pub fn plan_restore(changes: &[DiffFileSummary]) -> RestorePlan {
+    let mut plan = RestorePlan::default();
+    for change in changes {
+        let skip = |reason: &str| Skipped {
+            path: change.path.clone(),
+            reason: reason.to_string(),
+        };
+        if !is_safe_restore_path(&change.path) {
+            plan.skipped.push(skip("unsafe-path"));
+            continue;
+        }
+        if change.submodule {
+            plan.skipped.push(skip("submodule"));
+            continue;
+        }
+        match change.status {
+            FileStatus::Added | FileStatus::Modified => plan.writes.push(change.path.clone()),
+            FileStatus::Deleted => plan.deletes.push(change.path.clone()),
+            FileStatus::TypeChanged => {
+                plan.deletes.push(change.path.clone());
+                plan.writes.push(change.path.clone());
+            }
+            _ => plan.skipped.push(skip("unsupported-change")),
+        }
+    }
+    plan
+}
+
+/// Removes a file or symlink without following symlinks in its parent chain,
+/// then prunes directories that became empty. `Ok(false)` when already gone.
+fn remove_tracked_path(root: &Path, rel: &str) -> std::result::Result<bool, String> {
+    let full = root.join(rel);
+    let Some(parent) = full.parent() else {
+        return Err("no parent".into());
+    };
+    let canonical_parent = match std::fs::canonicalize(parent) {
+        Ok(path) => path,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(e.to_string()),
+    };
+    if !canonical_parent.starts_with(root) {
+        return Err("outside-worktree".into());
+    }
+    match std::fs::symlink_metadata(&full) {
+        Ok(meta) if meta.is_dir() => return Err("is-directory".into()),
+        Ok(_) => std::fs::remove_file(&full).map_err(|e| e.to_string())?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(e.to_string()),
+    }
+    let mut dir = full.parent().map(Path::to_path_buf);
+    while let Some(current) = dir {
+        if current == root || !current.starts_with(root) || std::fs::remove_dir(&current).is_err() {
+            break;
+        }
+        dir = current.parent().map(Path::to_path_buf);
+    }
+    Ok(true)
+}
+
+fn sync_index_to_head(repo: &ResolvedGitDirectory, paths: &[String]) -> bool {
+    let has_head = matches!(head_commit_opt(repo), Ok(Some(_)));
+    for chunk in paths.chunks(INDEX_SYNC_CHUNK) {
+        let mut args = if has_head {
+            os_args(["--literal-pathspecs", "reset", "-q", "HEAD", "--"])
+        } else {
+            os_args([
+                "--literal-pathspecs",
+                "rm",
+                "--cached",
+                "-q",
+                "-r",
+                "--ignore-unmatch",
+                "--",
+            ])
+        };
+        args.extend(os_args(chunk));
+        match run(repo, args) {
+            Ok(output) if output.exit_code == Some(0) => {}
+            _ => return false,
+        }
+    }
+    true
+}
+
+pub fn restore(
+    registry: &WorkspaceRegistry,
+    worktree: &str,
+    reference: &str,
+    force: bool,
+    workspace: &WorkspaceEnv,
+) -> Result<RestoreReport> {
+    let Some((task_id, _turn)) = refs::parse_checkpoint_ref(reference) else {
+        return Err(GitError::InvalidRef(reference.to_string()));
+    };
+    let repo = open_worktree(registry, worktree, workspace)?;
+    ensure_supported(&repo)?;
+    let lock = lock_for(&git_dir(&repo)?);
+    let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+
+    let target_commit = resolve_commit(&repo, reference)?;
+    let target_tree = tree_of(&repo, &target_commit)?;
+    let checkpoints = list_for(&repo, task_id)?;
+    let latest = checkpoints.last().cloned();
+    let target_parent = checkpoints
+        .iter()
+        .find(|info| info.ref_name == reference)
+        .and_then(|info| info.parent.clone());
+
+    let snapshot = snapshot_tree(&repo, true)?;
+    let mut report = RestoreReport {
+        restored: false,
+        refusal: None,
+        latest_ref: latest.as_ref().map(|l| l.ref_name.clone()),
+        dirty: Vec::new(),
+        dirty_total: 0,
+        written: 0,
+        removed: 0,
+        skipped: Vec::new(),
+        head_moved: head_commit_opt(&repo)? != target_parent,
+        index_synced: true,
+        consistent: snapshot.consistent,
+        atomic: false,
+    };
+
+    if !force {
+        if let Some(latest) = &latest {
+            let dirty = diff_trees(&repo, &latest.tree, &snapshot.tree)?;
+            if !dirty.is_empty() {
+                report.dirty_total = dirty.len() as u32;
+                report.dirty = dirty
+                    .into_iter()
+                    .take(MAX_DIRTY_REPORTED)
+                    .map(|d| ChangedPath {
+                        path: d.path,
+                        status: d.status,
+                    })
+                    .collect();
+                report.refusal = Some(RestoreRefusal::ChangedSinceLatest);
+                return Ok(report);
+            }
+        }
+    }
+
+    let changes = diff_trees(&repo, &snapshot.tree, &target_tree)?;
+    let mut plan = plan_restore(&changes);
+    report.skipped.append(&mut plan.skipped);
+
+    let mut touched: Vec<String> = Vec::new();
+    for path in &plan.deletes {
+        match remove_tracked_path(&repo.local_path, path) {
+            Ok(true) => {
+                report.removed += 1;
+                touched.push(path.clone());
+            }
+            Ok(false) => {}
+            Err(reason) => report.skipped.push(Skipped {
+                path: path.clone(),
+                reason,
+            }),
+        }
+    }
+
+    // A path that is on disk but was not in the snapshot is an ignored file;
+    // it is never overwritten.
+    let in_snapshot: std::collections::HashSet<&str> = changes
+        .iter()
+        .filter(|c| c.status != FileStatus::Added)
+        .map(|c| c.path.as_str())
+        .collect();
+    let mut writes: Vec<&String> = Vec::new();
+    for path in &plan.writes {
+        let exists = std::fs::symlink_metadata(repo.local_path.join(path)).is_ok();
+        if exists && !in_snapshot.contains(path.as_str()) {
+            report.skipped.push(Skipped {
+                path: path.clone(),
+                reason: "ignored-file-in-the-way".into(),
+            });
+        } else {
+            writes.push(path);
+        }
+    }
+
+    if !writes.is_empty() {
+        let temp = TempIndex::empty(&repo)?;
+        let read = run_indexed(
+            &repo,
+            &temp,
+            os_args(["read-tree", target_tree.as_str()]),
+            None,
+        )?;
+        ensure_success(&read, "git read-tree failed")?;
+        let mut list: Vec<u8> = Vec::new();
+        for path in &writes {
+            list.extend_from_slice(path.as_bytes());
+            list.push(0);
+        }
+        let checkout = run_indexed(
+            &repo,
+            &temp,
+            os_args(["checkout-index", "-f", "-z", "--stdin"]),
+            Some(list),
+        )?;
+        ensure_success(&checkout, "git checkout-index failed")?;
+        report.written = writes.len() as u32;
+        touched.extend(writes.iter().map(|p| (*p).clone()));
+    }
+
+    touched.sort();
+    touched.dedup();
+    if !touched.is_empty() {
+        report.index_synced = sync_index_to_head(&repo, &touched);
+    }
+    report.restored = true;
+    Ok(report)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn change(path: &str, status: FileStatus) -> DiffFileSummary {
+        DiffFileSummary {
+            path: path.into(),
+            old_path: None,
+            status,
+            added: 0,
+            removed: 0,
+            binary: false,
+            submodule: false,
+            symlink: false,
+            approximate: false,
+        }
+    }
+
+    #[test]
+    fn parses_checkpoint_listing_in_turn_order() {
+        let listing = "refs/terax/checkpoints/t1/10\u{0}c10\u{0}tree10\u{0}p10\u{0}1700000010\nrefs/terax/checkpoints/t1/2\u{0}c2\u{0}tree2\u{0}\u{0}1700000002\nrefs/terax/checkpoints/t1/x\u{0}bad\u{0}\u{0}\u{0}0\n";
+        let infos = parse_checkpoint_list(listing.as_bytes());
+        assert_eq!(infos.len(), 2);
+        assert_eq!(infos[0].turn, 2);
+        assert_eq!(infos[0].parent, None);
+        assert_eq!(infos[1].turn, 10);
+        assert_eq!(infos[1].parent.as_deref(), Some("p10"));
+        assert_eq!(infos[1].created_at_secs, 1_700_000_010);
+        assert_eq!(infos[1].task_id, "t1");
+    }
+
+    #[test]
+    fn restore_paths_must_stay_inside_the_worktree() {
+        for ok in [
+            "a.txt",
+            "dir/sub/file.rs",
+            "caf\u{e9}/x y.txt",
+            ".github/workflows/ci.yml",
+        ] {
+            assert!(is_safe_restore_path(ok), "{ok}");
+        }
+        for bad in [
+            "",
+            "/etc/passwd",
+            "../x",
+            "a/../x",
+            "a//b",
+            ".git/config",
+            "sub/.git/hooks/pre-commit",
+            "sub/.GIT/x",
+            "a\\b",
+            "a\nb",
+            "./a",
+        ] {
+            assert!(!is_safe_restore_path(bad), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn plan_writes_additions_and_edits_deletes_extras_and_skips_the_rest() {
+        let mut sub = change("vendor/lib", FileStatus::Modified);
+        sub.submodule = true;
+        let plan = plan_restore(&[
+            change("only-in-checkpoint.txt", FileStatus::Added),
+            change("edited.txt", FileStatus::Modified),
+            change("created-since.txt", FileStatus::Deleted),
+            change("swapped", FileStatus::TypeChanged),
+            change("../escape", FileStatus::Added),
+            change("conflict.txt", FileStatus::Unmerged),
+            sub,
+        ]);
+        assert_eq!(
+            plan.writes,
+            vec!["only-in-checkpoint.txt", "edited.txt", "swapped"]
+        );
+        assert_eq!(plan.deletes, vec!["created-since.txt", "swapped"]);
+        let reasons: Vec<_> = plan.skipped.iter().map(|s| s.reason.as_str()).collect();
+        assert_eq!(
+            reasons,
+            vec!["unsafe-path", "unsupported-change", "submodule"]
+        );
+    }
+
+    #[test]
+    fn the_vanished_file_is_read_out_of_gits_error() {
+        assert_eq!(
+            vanished_path("fatal: unable to stat 'dir/a b.txt': No such file or directory\n"),
+            Some("dir/a b.txt".to_string())
+        );
+        assert_eq!(
+            vanished_path("fatal: unable to stat 'it's': here.txt': No such file or directory"),
+            Some("it's': here.txt".to_string())
+        );
+        assert_eq!(
+            vanished_path("fatal: pathspec 'x' did not match any files"),
+            None
+        );
+        assert_eq!(vanished_path(""), None);
+    }
+
+    #[test]
+    fn unreadable_files_are_read_out_of_gits_error_lines() {
+        let stderr = "error: short read while indexing src/f18.txt\nerror: src/f18.txt: failed to insert into database\nerror: unable to index file 'src/f18.txt'\nerror: open(\"x\"): Permission denied\nerror: unable to index file 'x'\n";
+        assert_eq!(unindexed_paths(stderr), vec!["src/f18.txt", "x"]);
+        assert!(unindexed_paths("").is_empty());
+    }
+
+    #[test]
+    fn limits_serialize_as_explicit_flags() {
+        let json = serde_json::to_value(&LIMITS).unwrap();
+        assert_eq!(json["atomic"], false);
+        assert_eq!(json["capturesIgnoredFiles"], false);
+        assert_eq!(json["capturesSubmoduleContents"], false);
+        assert_eq!(json["capturesIndexState"], false);
+    }
+
+    #[test]
+    fn checkpoint_info_serializes_the_ref_under_its_real_name() {
+        let info = CheckpointInfo {
+            ref_name: "refs/terax/checkpoints/t/1".into(),
+            task_id: "t".into(),
+            turn: 1,
+            commit: "c".into(),
+            tree: "t".into(),
+            parent: None,
+            created_at_secs: 5,
+        };
+        let json = serde_json::to_value(&info).unwrap();
+        assert_eq!(json["ref"], "refs/terax/checkpoints/t/1");
+        assert_eq!(json["createdAtSecs"], 5);
+    }
+}

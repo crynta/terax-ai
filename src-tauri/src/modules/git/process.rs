@@ -246,6 +246,35 @@ where
     run_git_uncached(workspace, cwd, args, timeout_secs, stdout_cap, true)
 }
 
+/// Extras for the few invocations that need environment variables (a private
+/// `GIT_INDEX_FILE`) or bytes on stdin (a patch, a path list).
+#[derive(Default)]
+pub struct RunOptions {
+    pub env: Vec<(OsString, OsString)>,
+    pub stdin: Option<Vec<u8>>,
+    /// Defaults to `MAX_OUTPUT_BYTES` when zero.
+    pub stdout_cap: usize,
+}
+
+pub fn run_git_with<I, S>(
+    workspace: &WorkspaceEnv,
+    cwd: Option<&str>,
+    args: I,
+    timeout_secs: u64,
+    options: RunOptions,
+) -> Result<GitOutput>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let cap = if options.stdout_cap == 0 {
+        MAX_OUTPUT_BYTES
+    } else {
+        options.stdout_cap
+    };
+    run_git_full(workspace, cwd, args, timeout_secs, cap, false, options)
+}
+
 fn run_git_uncached<I, S>(
     workspace: &WorkspaceEnv,
     cwd: Option<&str>,
@@ -258,7 +287,38 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
+    run_git_full(
+        workspace,
+        cwd,
+        args,
+        timeout_secs,
+        stdout_cap,
+        stop_on_stdout_cap,
+        RunOptions::default(),
+    )
+}
+
+fn run_git_full<I, S>(
+    workspace: &WorkspaceEnv,
+    cwd: Option<&str>,
+    args: I,
+    timeout_secs: u64,
+    stdout_cap: usize,
+    stop_on_stdout_cap: bool,
+    options: RunOptions,
+) -> Result<GitOutput>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
     let dur = Duration::from_secs(timeout_secs.clamp(1, MAX_TIMEOUT_SECS));
+    if workspace.is_wsl() && !options.env.is_empty() {
+        // `wsl.exe` does not forward the environment without WSLENV plumbing.
+        return Err(GitError::command(
+            "git",
+            "environment overrides are not supported in WSL workspaces",
+        ));
+    }
     let args: Vec<OsString> = args
         .into_iter()
         .map(|arg| arg.as_ref().to_os_string())
@@ -271,12 +331,24 @@ where
         .env("GCM_INTERACTIVE", "Never")
         .env("GCM_PROVIDER", "")
         .env("LC_ALL", "C")
-        .stdin(Stdio::null())
+        // A repository redirect inherited from the launching shell must never
+        // steer an invocation; callers that want one pass it in `options.env`.
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    for (key, value) in &options.env {
+        cmd.env(key, value);
+    }
+    cmd.stdin(if options.stdin.is_some() {
+        Stdio::piped()
+    } else {
+        Stdio::null()
+    });
     crate::modules::proc::hide_console(&mut cmd);
 
-    let captured = capture::run(
+    let captured = capture::run_with_input(
         &mut cmd,
         dur,
         Limits {
@@ -284,6 +356,7 @@ where
             stderr: MAX_OUTPUT_BYTES,
             stop_on_stdout_cap,
         },
+        options.stdin,
     )
     .map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound | std::io::ErrorKind::PermissionDenied => {
@@ -368,7 +441,7 @@ fn classify_auth_error(stderr: &str) -> Option<GitError> {
     None
 }
 
-fn decode_text(bytes: Vec<u8>) -> TextSource {
+pub(crate) fn decode_text(bytes: Vec<u8>) -> TextSource {
     let sniff_len = bytes.len().min(8192);
     if bytes[..sniff_len].contains(&0) {
         return TextSource::Binary;

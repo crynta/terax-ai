@@ -470,6 +470,7 @@ pub fn commit(
 pub fn push(
     registry: &WorkspaceRegistry,
     repo_root: &str,
+    set_upstream: bool,
     workspace: &WorkspaceEnv,
 ) -> Result<GitPushResult> {
     let repo_root = authorized_repo_root(registry, repo_root, workspace)?;
@@ -481,7 +482,10 @@ pub fn push(
         ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
     )?;
     if upstream.is_none() {
-        return Err(GitError::NoUpstream);
+        if !set_upstream {
+            return Err(GitError::NoUpstream);
+        }
+        return push_set_upstream(&repo_root);
     }
 
     let output = run_git(
@@ -497,6 +501,36 @@ pub fn push(
     Ok(GitPushResult {
         remote,
         branch,
+        pushed: true,
+    })
+}
+
+/// First push of a branch that has no upstream: `git push -u <remote> <branch>`
+/// to the repository's only (or `origin`) remote.
+fn push_set_upstream(repo_root: &ResolvedGitDirectory) -> Result<GitPushResult> {
+    let branch = crate::modules::git::branch::current_branch(repo_root)?
+        .ok_or_else(|| GitError::command("git push", "HEAD is detached; check out a branch first"))?;
+    let remotes = crate::modules::git::branch::list_remotes(repo_root)?;
+    let remote = crate::modules::git::branch::pick_remote(&remotes).ok_or_else(|| {
+        GitError::command(
+            "git push",
+            if remotes.is_empty() {
+                "no remote is configured"
+            } else {
+                "several remotes exist and none is named origin; push once from the terminal"
+            },
+        )
+    })?;
+    let output = run_git(
+        &repo_root.workspace,
+        Some(&repo_root.git_path),
+        ["push", "--set-upstream", remote.as_str(), branch.as_str()],
+        NETWORK_TIMEOUT_SECS,
+    )?;
+    ensure_success(&output, "git push failed")?;
+    Ok(GitPushResult {
+        remote: Some(remote),
+        branch: Some(branch),
         pushed: true,
     })
 }
