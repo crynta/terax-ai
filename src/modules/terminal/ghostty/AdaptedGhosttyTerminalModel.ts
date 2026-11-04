@@ -1,6 +1,11 @@
 import {
+  cellSpanSegments,
   detectTerminalLinks,
+  lowerBound,
+  type TerminalLinkHit,
+  type TerminalLinkSegment,
   type TerminalTextLink,
+  upperBound,
 } from "@/modules/terminal/ghostty/core/terminalLinks";
 import type {
   PackedTerminalViewport,
@@ -50,6 +55,8 @@ import type {
   TerminalBufferSelection,
 } from "./GhosttyTerminalModel";
 
+const MAX_EXPLICIT_LINK_CELLS = 4_096;
+const MAX_LINK_TEXT_LENGTH = 512;
 const MAX_DIMENSION = 4_096;
 const MAX_CELLS = 1_048_576;
 const NO_DAMAGE: TerminalDamage = { kind: "none" };
@@ -514,6 +521,10 @@ export class AdaptedGhosttyTerminalModel implements GhosttyTerminalModelApi {
   }
 
   hyperlinkAtViewportCell(row: number, column: number): string | null {
+    return this.linkAtViewportCell(row, column)?.uri ?? null;
+  }
+
+  linkAtViewportCell(row: number, column: number): TerminalLinkHit | null {
     this.assertLive();
     if (
       row < 0 ||
@@ -524,11 +535,9 @@ export class AdaptedGhosttyTerminalModel implements GhosttyTerminalModelApi {
       return null;
     }
     const state = this.ensureCurrentState();
-    const explicit = this.terminal.hyperlinkAt(
-      state,
-      row * state.cols + column,
-    );
-    if (explicit) return explicit;
+    const index = row * state.cols + column;
+    const explicit = this.terminal.hyperlinkAt(state, index);
+    if (explicit) return this.explicitLinkHit(state, index, explicit);
     const origin = this.viewportOriginLine();
     let cache = this.plainLinks;
     if (
@@ -572,10 +581,73 @@ export class AdaptedGhosttyTerminalModel implements GhosttyTerminalModelApi {
       this.plainLinks = cache;
     }
     const offset = cache.offsets[(row - cache.startRow) * state.cols + column];
-    return (
-      cache.links.find((link) => offset >= link.start && offset < link.end)
-        ?.uri ?? null
+    const link = cache.links.find(
+      (candidate) => offset >= candidate.start && offset < candidate.end,
     );
+    if (!link) return null;
+    // A wide character's spacer shares the next offset, so the cell holding
+    // an offset is the last one at or before it.
+    const first = upperBound(cache.offsets, link.start) - 1;
+    const last = lowerBound(cache.offsets, link.end) - 1;
+    return {
+      kind: link.kind,
+      uri: link.uri,
+      text: link.uri,
+      segments: cellSpanSegments(
+        first,
+        Math.max(first, last),
+        state.cols,
+        cache.startRow,
+      ),
+      path: link.path,
+      line: link.line,
+      column: link.column,
+    };
+  }
+
+  private explicitLinkHit(
+    state: TeraxGhosttyRenderBase,
+    index: number,
+    uri: string,
+  ): TerminalLinkHit {
+    const id = state.linkIds[index];
+    let first = index;
+    let last = index;
+    while (
+      first > 0 &&
+      state.linkIds[first - 1] === id &&
+      index - first < MAX_EXPLICIT_LINK_CELLS
+    )
+      first--;
+    while (
+      last + 1 < state.cellCount &&
+      state.linkIds[last + 1] === id &&
+      last - index < MAX_EXPLICIT_LINK_CELLS
+    )
+      last++;
+    const segments = cellSpanSegments(first, last, state.cols, 0);
+    return { kind: "osc8", uri, text: this.segmentsText(segments), segments };
+  }
+
+  private segmentsText(segments: readonly TerminalLinkSegment[]): string {
+    if (segments.length === 0) return "";
+    const origin = this.viewportOriginLine();
+    const lines = this.readBufferLines(
+      origin + segments[0].row,
+      origin + segments[segments.length - 1].row,
+    );
+    let text = "";
+    for (const segment of segments) {
+      const cells = lines.get(origin + segment.row)?.cells;
+      for (
+        let x = segment.start;
+        x < segment.end && text.length < MAX_LINK_TEXT_LENGTH;
+        x++
+      ) {
+        text += cells?.[x] ?? " ";
+      }
+    }
+    return text;
   }
 
   scrollPosition(): ScrollPosition {
