@@ -14,7 +14,7 @@ export type FocusEnv = {
  * land on the body, so focus is retried a few times, only while nothing else
  * has taken it.
  */
-export const FOCUS_RETRY_DELAYS_MS: readonly number[] = [16, 48, 120, 300];
+const FOCUS_RETRY_DELAYS_MS: readonly number[] = [16, 48, 120, 300];
 
 /** Focuses now and retries until it sticks; returns the cancellation. */
 export function focusUntilActive(

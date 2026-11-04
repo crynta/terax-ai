@@ -9,7 +9,7 @@ import { baseTextForCode, KEY_MAP, unshiftedCodepoint } from "./keyTable";
 
 /** Kitty keyboard protocol flag bits (progressive enhancement). */
 export const KITTY_REPORT_EVENT_TYPES = 0x2;
-export const KITTY_REPORT_ALL_KEYS = 0x8;
+const KITTY_REPORT_ALL_KEYS = 0x8;
 
 export type KeyboardLike = Pick<
   KeyboardEvent,
