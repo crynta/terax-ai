@@ -502,6 +502,15 @@ mod tests {
     use std::time::{Duration, Instant};
 
     fn open(state: &Arc<PtyState>, id: u32, owner: &str) -> Arc<Session> {
+        open_in_pane(state, id, owner, None)
+    }
+
+    fn open_in_pane(
+        state: &Arc<PtyState>,
+        id: u32,
+        owner: &str,
+        pane_id: Option<u32>,
+    ) -> Arc<Session> {
         let reaper = state.clone();
         let session = spawn_with(
             Host {
@@ -511,7 +520,7 @@ mod tests {
                 class: PresentationClass::Hidden,
                 signal: Arc::new(|_| {}),
                 notify: Arc::new(|_| {}),
-                pane_id: None,
+                pane_id,
                 link: agent_detect::AgentLink::new(),
                 reap: Box::new(move || {
                     if let Some(session) = reaper.take(id) {
@@ -558,6 +567,36 @@ mod tests {
         // Both sessions are still registered: only pty_close_all reaps them.
         assert_eq!(state.sessions.read().unwrap().len(), 2);
         for id in [1, 2] {
+            if let Some(session) = state.take(id) {
+                reap(id, session, "test cleanup");
+            }
+        }
+    }
+
+    #[test]
+    fn a_pane_resolves_to_its_newest_live_terminal_only() {
+        let state = Arc::new(PtyState::default());
+        let first = open_in_pane(&state, 1, "main", Some(7));
+        let other = open_in_pane(&state, 2, "main", Some(8));
+        let unbound = open(&state, 3, "main");
+        assert_eq!(state.pane_target(7).map(|t| t.pty_id), Some(1));
+        assert_eq!(state.pane_target(8).map(|t| t.pty_id), Some(2));
+        assert!(state.pane_target(9).is_none());
+
+        // A respawn in the same pane wins over the older terminal.
+        let respawn = open_in_pane(&state, 4, "main", Some(7));
+        let target = state.pane_target(7).unwrap();
+        assert_eq!(target.pty_id, 4);
+        assert_eq!(&*target.owner, "main");
+        assert!(std::sync::Arc::ptr_eq(&target.link, &respawn.link));
+
+        // A closed or finished terminal is no longer reachable.
+        drop(state.take(4));
+        assert_eq!(state.pane_target(7).map(|t| t.pty_id), Some(1));
+        first.finished.store(true, Ordering::Release);
+        assert!(state.pane_target(7).is_none());
+        let _ = (other, unbound);
+        for id in [1, 2, 3] {
             if let Some(session) = state.take(id) {
                 reap(id, session, "test cleanup");
             }

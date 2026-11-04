@@ -371,9 +371,7 @@ pub fn handle(
     }
 
     let intent = intent_for(&facts);
-    for transition in target.link.apply_hook(agent.as_str(), intent) {
-        host.emit_signal(transition.into_signal(target.pty_id));
-    }
+    let transitions = target.link.apply_hook(agent.as_str(), intent);
 
     let wait = params
         .wait_secs
@@ -397,6 +395,9 @@ pub fn handle(
     };
     let preview = facts.permission.clone();
     host.emit_event(&target.owner, &event(facts));
+    for transition in transitions {
+        host.emit_signal(transition.into_signal(target.pty_id));
+    }
 
     let Some((wait, id, receiver)) = pending else {
         return accepted(request, None);

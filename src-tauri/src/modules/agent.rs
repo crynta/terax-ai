@@ -14,7 +14,7 @@ enum Style {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Shell {
+enum Dialect {
     Posix,
     Cmd,
     PowerShell,
@@ -193,26 +193,26 @@ fn find(agent: &str) -> Result<&'static AgentSpec, String> {
         .ok_or_else(|| format!("unknown agent {agent}"))
 }
 
-fn shell_for(style: Style, windows: bool) -> Shell {
+fn shell_for(style: Style, windows: bool) -> Dialect {
     match (style, windows) {
-        (_, false) => Shell::Posix,
-        (Style::Claude, true) => Shell::PowerShell,
-        (Style::Codex | Style::Gemini, true) => Shell::Cmd,
+        (_, false) => Dialect::Posix,
+        (Style::Claude, true) => Dialect::PowerShell,
+        (Style::Codex | Style::Gemini, true) => Dialect::Cmd,
     }
 }
 
 /// Runs the CLI Terax exposes through `TERAX_CLI`, and prints an empty JSON
 /// object where there is none (outside Terax, or a stale path) because some
 /// agents reject an empty stdout. No user data is interpolated.
-fn hook_command(shell: Shell, agent: &str, event: &str) -> String {
-    match shell {
-        Shell::Posix => format!(
+fn hook_command(dialect: Dialect, agent: &str, event: &str) -> String {
+    match dialect {
+        Dialect::Posix => format!(
             r#"[ -n "$TERAX_CLI" ] && "$TERAX_CLI" hook {agent} {event} || printf '{{}}'"#
         ),
-        Shell::Cmd => format!(
+        Dialect::Cmd => format!(
             r#"if defined TERAX_CLI ("%TERAX_CLI%" hook {agent} {event}) else (echo {{}})"#
         ),
-        Shell::PowerShell => format!(
+        Dialect::PowerShell => format!(
             r#"if ($env:TERAX_CLI) {{ & $env:TERAX_CLI hook {agent} {event} }} else {{ '{{}}' }}"#
         ),
     }
@@ -599,15 +599,15 @@ mod tests {
     #[test]
     fn commands_resolve_the_cli_through_the_environment_for_every_shell() {
         assert_eq!(
-            hook_command(Shell::Posix, "codex", "Stop"),
+            hook_command(Dialect::Posix, "codex", "Stop"),
             r#"[ -n "$TERAX_CLI" ] && "$TERAX_CLI" hook codex Stop || printf '{}'"#
         );
         assert_eq!(
-            hook_command(Shell::Cmd, "gemini", "AfterAgent"),
+            hook_command(Dialect::Cmd, "gemini", "AfterAgent"),
             r#"if defined TERAX_CLI ("%TERAX_CLI%" hook gemini AfterAgent) else (echo {})"#
         );
         assert_eq!(
-            hook_command(Shell::PowerShell, "claude", "Stop"),
+            hook_command(Dialect::PowerShell, "claude", "Stop"),
             r#"if ($env:TERAX_CLI) { & $env:TERAX_CLI hook claude Stop } else { '{}' }"#
         );
     }
@@ -738,7 +738,7 @@ mod tests {
     fn a_group_shared_with_user_commands_is_left_alone() {
         let mixed = json!({ "hooks": [
             { "type": "command", "command": "mine" },
-            { "type": "command", "command": hook_command(Shell::Posix, "claude", "Stop") }
+            { "type": "command", "command": hook_command(Dialect::Posix, "claude", "Stop") }
         ] });
         assert!(!group_is_ours(&mixed));
         assert!(!group_is_ours(&json!({ "hooks": [] })));

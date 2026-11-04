@@ -269,6 +269,7 @@ pub struct AgentDetector {
 }
 
 impl AgentDetector {
+    #[cfg(test)]
     pub fn new() -> Self {
         Self::with_link(AgentLink::new())
     }
