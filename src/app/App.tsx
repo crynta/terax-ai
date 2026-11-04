@@ -4,6 +4,7 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { Toaster } from "@/components/ui/sonner";
+import { toast } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { consumeLaunchFiles, getLaunchDir } from "@/lib/launchDir";
 import { IS_MAC } from "@/lib/platform";
@@ -656,7 +657,12 @@ export default function App() {
       if (activeLeafId === null) return;
       const term = terminalRefs.current.get(activeLeafId);
       if (!term) return;
-      term.write(`cd ${quoteShellArg(path)}\r`);
+      if (!term.writeAtPrompt(`cd ${quoteShellArg(path)}\r`)) {
+        toast("Terminal is busy", {
+          description: "Open a new tab to go there, or exit the running program.",
+        });
+        return;
+      }
       term.focus();
     },
     [activeLeafId],

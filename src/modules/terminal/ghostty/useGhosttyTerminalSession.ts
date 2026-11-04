@@ -6,7 +6,7 @@ import {
 } from "@/modules/terminal/ghostty/ghosttyBlockSessions";
 import { initializeSessionGeneration as startSessionInitialization } from "@/modules/terminal/ghostty/sessionInitialization";
 import { replaceSessionSurface } from "@/modules/terminal/ghostty/replaceSessionSurface";
-import { openExternalUrl } from "@/lib/external-link";
+import { activateTerminalLink } from "@/modules/terminal/lib/terminalLinks";
 import { ensureMonoFontsLoaded, resolveFontFamily } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { TerminalBackendKind } from "@/modules/terminal/backend/contracts";
@@ -16,6 +16,8 @@ import { useTerminalFont } from "@/modules/terminal/lib/useTerminalFont";
 import type { TerminalSearchController } from "@/modules/terminal/search/TerminalSearchController";
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { isAgentActivePty } from "../lib/agentActivity";
+import { shellAcceptsInjectedCommand } from "../lib/promptInjection";
 import { openPty, type PtySession } from "../lib/pty-bridge";
 import { writeTerminalClipboard } from "../lib/terminalClipboard";
 import { LatestClipboardWrite } from "@/modules/terminal/lib/LatestClipboardWrite";
@@ -78,6 +80,9 @@ type GhosttySession = {
   startupError: string | null;
   rendererError: string | null;
   shellExited: boolean;
+  /** OSC 133 has been seen, so `commandRunning` can be trusted. */
+  promptIntegrated: boolean;
+  commandRunning: boolean;
   disposed: boolean;
   generation: number;
   initializing: Promise<void> | null;
@@ -229,6 +234,10 @@ export function useGhosttyTerminalSession({
     },
     [leafId],
   );
+  const writeAtPrompt = useCallback(
+    (data: string) => writeToGhosttyPrompt(leafId, data),
+    [leafId],
+  );
   const focus = useCallback(() => focusGhosttySession(leafId), [leafId]);
   const getBuffer = useCallback(
     (maxLines = 200) => sessions.get(leafId)?.model?.readText(maxLines) ?? null,
@@ -249,6 +258,7 @@ export function useGhosttyTerminalSession({
       theme.palette.map(rgbToInt),
     );
     session.surface.setTheme(theme);
+    void session.pty?.setColors(theme).catch(() => {});
     if (session.surfaceOptions)
       session.surfaceOptions = { ...session.surfaceOptions, theme };
   }, [leafId]);
@@ -270,12 +280,23 @@ export function useGhosttyTerminalSession({
       model,
       retry,
       write,
+      writeAtPrompt,
       focus,
       getBuffer,
       getSelection,
       applyTheme,
     }),
-    [write, focus, getBuffer, getSelection, applyTheme, error, retry, model],
+    [
+      write,
+      writeAtPrompt,
+      focus,
+      getBuffer,
+      getSelection,
+      applyTheme,
+      error,
+      retry,
+      model,
+    ],
   );
 }
 
@@ -286,6 +307,23 @@ export function hasGhosttySession(leafId: number): boolean {
 export function writeToGhosttySession(leafId: number, data: string): boolean {
   const session = sessions.get(leafId);
   if (!session || session.shellExited || session.disposed) return false;
+  return session.writer.enqueue(textEncoder.encode(data));
+}
+
+/**
+ * Types a shell command on the user's behalf only when the shell will read it:
+ * never into a running command, a full-screen program or a coding agent.
+ */
+export function writeToGhosttyPrompt(leafId: number, data: string): boolean {
+  const session = sessions.get(leafId);
+  if (!session || session.shellExited || session.disposed) return false;
+  const accepts = shellAcceptsInjectedCommand({
+    integrated: session.promptIntegrated,
+    commandRunning: session.commandRunning,
+    alternateScreen: session.model?.modes().alternateScreen ?? false,
+    agentActive: session.pty ? isAgentActivePty(session.pty.id) : false,
+  });
+  if (!accepts) return false;
   return session.writer.enqueue(textEncoder.encode(data));
 }
 
@@ -433,6 +471,8 @@ async function respawnGhosttySession(
   await session.pty?.close();
   session.pty = null;
   session.shellExited = false;
+  session.promptIntegrated = false;
+  session.commandRunning = false;
   session.lastCwd = null;
   session.initialCwd = cwd ?? session.initialCwd;
   session.startupError = null;
@@ -552,6 +592,8 @@ function ensureSession(
     startupError: null,
     rendererError: null,
     shellExited: false,
+    promptIntegrated: false,
+    commandRunning: false,
     disposed: false,
     generation: 0,
     initializing: null,
@@ -653,6 +695,8 @@ async function initializeSessionGeneration(
       );
     },
     onCommandState: (running) => {
+      session.promptIntegrated = true;
+      session.commandRunning = running;
       if (!running) mark("firstPromptMs");
     },
   });
@@ -713,8 +757,11 @@ async function initializeSessionGeneration(
     onFirstFrame: () => mark("firstFrameMs"),
     onFrame: () => ghosttyBlocks(session.leafId)?.present(),
     onRequestFocus: () => focusGhosttySession(session.leafId),
-    onOpenLink: (uri: string) => {
-      void openExternalUrl(uri, () => focusGhosttySession(session.leafId));
+    onOpenLink: (link) => {
+      void activateTerminalLink(link, {
+        cwd: session.lastCwd ?? session.initialCwd ?? null,
+        focus: () => focusGhosttySession(session.leafId),
+      });
     },
   };
   session.surfaceOptions = surfaceBaseOptions;
@@ -819,6 +866,7 @@ async function initializeSessionGeneration(
     !!ghosttyBlocks(session.leafId),
     preferences.terminalShell || undefined,
     session.leafId,
+    theme,
   );
   if (session.disposed || generation !== session.generation) {
     await pty.close();

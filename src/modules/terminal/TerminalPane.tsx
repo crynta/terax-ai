@@ -21,6 +21,8 @@ import { ghosttyBlocks } from "./ghostty/ghosttyBlockSessions";
 
 export type TerminalPaneHandle = {
   write: (data: string) => void;
+  /** Like `write`, but only when the shell is at its prompt; false if not. */
+  writeAtPrompt: (data: string) => boolean;
   focus: () => void;
   getBuffer: (maxLines?: number) => string | null;
   getSelection: () => string | null;
@@ -96,6 +98,7 @@ const GhosttyTerminalPane = memo(
       ref,
       () => ({
         write: session.write,
+        writeAtPrompt: session.writeAtPrompt,
         focus: session.focus,
         getBuffer: session.getBuffer,
         getSelection: session.getSelection,
