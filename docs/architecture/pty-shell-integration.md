@@ -71,7 +71,7 @@ Integration scripts live in `src-tauri/src/modules/pty/scripts/`:
 - `bashrc.bash` for bash
 - `init.fish` for fish, installed to `~/.config/fish/conf.d/terax.fish`
 
-Zsh is launched with `ZDOTDIR` pointing at a temp directory that sources our scripts and then the user's real configs. Bash uses `--rcfile` with a wrapper that sources the user's `~/.bashrc` after Terax's. Fish uses `conf.d` so no user file is replaced.
+Zsh is launched with `ZDOTDIR` pointing at a temp directory that sources our scripts and then the user's real configs, each with `ZDOTDIR` switched to the user's own directory while it runs. The wrapper `.zshrc` hands `ZDOTDIR` back when it is done. The prompt end marker is also emitted from `zle-line-init`, which runs after the line editor drew whatever powerlevel10k or starship built. Bash uses `--rcfile` with a wrapper that sources the user's `~/.bashrc` after Terax's. Fish uses `conf.d` so no user file is replaced.
 
 All integrated shells emit **OSC 7** (cwd) and **OSC 133 A/B/C/D** (prompt boundaries and exit code) so Terax can track cwd and detect command boundaries without parsing the user's prompt.
 
@@ -81,7 +81,7 @@ On Windows the shell priority is:
 
 1. `pwsh.exe` (PowerShell 7+)
 2. `powershell.exe` (Windows PowerShell 5.1)
-3. `cmd.exe` (no integration)
+3. `cmd.exe` (cwd only, through `PROMPT`)
 
 PowerShell loads `profile.ps1` via:
 
@@ -114,6 +114,8 @@ On macOS and Linux, `Drop for Session` calls `killer.kill()`. Dev `Ctrl-C` of `c
 ### DA filter
 
 PowerShell / PSReadLine sends a cursor-position query (`ESC[6n`) at startup and blocks until it gets an answer. The `DaFilter` (`da_filter.rs`) intercepts that query and replies on the PTY input so the shell does not hang.
+
+The same filter answers colour queries (`OSC 4;n;?`, `OSC 10/11/12;?`, `CSI ? 996 n`) from the theme the page last pushed with `pty_set_colors` (sent at `pty_open` and whenever the theme or light/dark mode changes). Programs such as agent CLIs and pagers give up on a colour query after a short fixed time, and a reply that arrives later is echoed by the tty as visible text, so the answer must not wait for the webview. Replies use the terminator of the query (BEL or ST) and 16-bit channels; a `CSI c` right after an answered colour query is answered in the same pass so it cannot overtake the colour reply. A program that enabled `CSI ? 2031 h` is told when the scheme flips. Sets and resets a program makes are noted (not answered) and leave later queries for that colour to the webview model, which holds the real value. Queries inside strings, including tmux `DCS` passthrough, are never answered.
 
 ### Agent detection
 
