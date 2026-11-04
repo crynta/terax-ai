@@ -352,7 +352,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   terminalScreenReader: false,
   terminalCursorBlink: false,
   terminalCursorStyle: "bar",
-  terminalFontFamily: "",
+  terminalFontFamily: "Red Hat Mono",
   terminalFontWeight: "normal",
   terminalShell: "",
   terminalLetterSpacing: 0,

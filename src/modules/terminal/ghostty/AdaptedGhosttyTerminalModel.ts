@@ -41,6 +41,7 @@ import type {
   GhosttyGpuFrame,
   GhosttyGpuFrameOptions,
   GhosttyGpuGlyph,
+  GhosttyLinkCells,
   GhosttyRenderFormat,
   GhosttySearchStatus,
   GhosttySearchViewportSpan,
@@ -576,6 +577,73 @@ export class AdaptedGhosttyTerminalModel implements GhosttyTerminalModelApi {
       cache.links.find((link) => offset >= link.start && offset < link.end)
         ?.uri ?? null
     );
+  }
+
+  linkCellsInRows(firstRow: number, lastRow: number): GhosttyLinkCells {
+    this.assertLive();
+    const state = this.ensureCurrentState();
+    const cols = state.cols;
+    if (state.rows === 0 || cols === 0) return { start: 0, end: -1, spans: [] };
+    let start = clampInteger(firstRow, 0, state.rows - 1);
+    let end = clampInteger(lastRow, start, state.rows - 1);
+    while (start > 0 && state.rowWrapped[start]) start--;
+    while (end + 1 < state.rows && state.rowWrapped[end + 1]) end++;
+    // Copy everything borrowed from the render state before reading lines:
+    // `readLines` may allocate and replace the views.
+    const lineStarts: number[] = [];
+    const spans: { row: number; start: number; end: number }[] = [];
+    for (let row = start; row <= end; row++) {
+      if (row === start || !state.rowWrapped[row]) lineStarts.push(row);
+      let column = 0;
+      while (column < cols) {
+        if (state.linkIds[row * cols + column] === 0) {
+          column++;
+          continue;
+        }
+        const first = column;
+        while (column < cols && state.linkIds[row * cols + column] !== 0)
+          column++;
+        spans.push({ row, start: first, end: column - 1 });
+      }
+    }
+    lineStarts.push(end + 1);
+    const origin = this.viewportOriginLine();
+    const lines = this.readBufferLines(origin + start, origin + end);
+    for (let index = 0; index + 1 < lineStarts.length; index++) {
+      const lineStart = lineStarts[index];
+      const lineEnd = lineStarts[index + 1] - 1;
+      let text = "";
+      // Text offset -> cell index within the wrapped line.
+      const cellAt: number[] = [];
+      for (let row = lineStart; row <= lineEnd; row++) {
+        const cells = lines.get(origin + row)?.cells;
+        for (let x = 0; x < cols; x++) {
+          const grapheme = cells?.[x] ?? " ";
+          for (let unit = 0; unit < grapheme.length; unit++)
+            cellAt.push((row - lineStart) * cols + x);
+          text += grapheme;
+        }
+      }
+      if (!/[/:@]/.test(text)) continue;
+      for (const link of detectTerminalLinks(text)) {
+        const firstCell = cellAt[link.start];
+        const lastCell = cellAt[link.end - 1];
+        if (firstCell === undefined || lastCell === undefined) continue;
+        for (
+          let row = Math.floor(firstCell / cols);
+          row <= Math.floor(lastCell / cols);
+          row++
+        ) {
+          spans.push({
+            row: lineStart + row,
+            start: row === Math.floor(firstCell / cols) ? firstCell % cols : 0,
+            end:
+              row === Math.floor(lastCell / cols) ? lastCell % cols : cols - 1,
+          });
+        }
+      }
+    }
+    return { start, end, spans };
   }
 
   scrollPosition(): ScrollPosition {

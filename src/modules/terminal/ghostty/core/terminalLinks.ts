@@ -34,5 +34,40 @@ export function detectTerminalLinks(text: string): TerminalTextLink[] {
       /* Incomplete URLs stay ordinary terminal text. */
     }
   }
-  return links;
+  return detectPathLinks(text, links);
+}
+
+const PATH_PATTERN =
+  /(?:(?:~|\.{1,2})?\/)?[\w.@+%=~-]+(?:\/[\w.@+%=~-]+)*(?::\d+(?::\d+)?)?/gu;
+const PATH_BOUNDARY = /[\w./~:@%+=-]/u;
+const PATH_EXTENSION = /\.[A-Za-z][\w-]{0,15}$/u;
+
+/**
+ * Adds file paths (`/abs/a.ts`, `./a.ts`, `~/a.md`, `src/a.ts:12:3`) to `urls`, skipping any
+ * that overlap a URL. A relative path needs a slash and a file extension so prose like
+ * "and/or" or "2026/10/27" stays plain text. The link's uri is the path text as printed.
+ */
+function detectPathLinks(
+  text: string,
+  urls: TerminalTextLink[],
+): TerminalTextLink[] {
+  const links = [...urls];
+  PATH_PATTERN.lastIndex = 0;
+  for (
+    let match = PATH_PATTERN.exec(text);
+    match && links.length < 256;
+    match = PATH_PATTERN.exec(text)
+  ) {
+    const start = match.index;
+    if (start > 0 && PATH_BOUNDARY.test(text[start - 1])) continue;
+    const raw = match[0].replace(/\.+$/, "");
+    const path = raw.replace(/:\d+(?::\d+)?$/, "");
+    const anchored = /^(?:~|\.{1,2})?\//.test(path);
+    if (!path.includes("/") || /^(?:~|\.{1,2})?\/*$/.test(path)) continue;
+    if (!anchored && !PATH_EXTENSION.test(path)) continue;
+    const end = start + raw.length;
+    if (urls.some((url) => start < url.end && end > url.start)) continue;
+    links.push({ start, end, uri: raw });
+  }
+  return links.sort((a, b) => a.start - b.start);
 }

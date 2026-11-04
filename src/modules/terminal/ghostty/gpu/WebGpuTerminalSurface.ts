@@ -1,6 +1,9 @@
 import { terminalWindowFocused } from "@/modules/terminal/ghostty/renderScheduling";
 import { bindTerminalInteraction } from "@/modules/terminal/ghostty/input/terminalInteraction";
-import { isClampedScrollEcho, TerminalScrollbarSync } from "@/modules/terminal/ghostty/gpu/terminalScrollbar";
+import {
+  isClampedScrollEcho,
+  TerminalScrollbarSync,
+} from "@/modules/terminal/ghostty/gpu/terminalScrollbar";
 import { terminalWindowPresentation } from "@/modules/terminal/ghostty/windowPresentation";
 import type { TerminalSurface } from "@/modules/terminal/backend/contracts";
 import { smoothHooks } from "@/bench/smoothHooks";
@@ -17,6 +20,8 @@ import type {
 } from "../GhosttyTerminalModel";
 import { GhosttySearchController } from "../search/GhosttySearchController";
 import { TerminalSelectionController } from "../selection/TerminalSelectionController";
+import { TerminalLinkHover } from "../TerminalLinkHover";
+import { TerminalLinkUnderlines } from "../TerminalLinkUnderlines";
 import { DevicePixelRatioMonitor } from "./DevicePixelRatioMonitor";
 import { TerminalGlyphMap, type RasterBudget } from "./GlyphMap";
 import { type DeviceRect, deviceRectsEqual } from "./PaneRects";
@@ -70,6 +75,8 @@ import type { PaneBinding } from "./WebGpuWindowCanvas";
 const CURSOR_BLINK_MS = 600;
 const TEXT_BLINK_MS = 600;
 const TEXT_CONTRAST_STORAGE_KEY = "terax:terminal-text-contrast";
+/** word0 underline style 1 (single), for link cells the app left undecorated. */
+const LINK_UNDERLINE_BITS = 1 << 24;
 
 export type WebGpuTerminalSurfaceOptions = {
   readonly model: GhosttyTerminalModelApi;
@@ -184,9 +191,11 @@ export class WebGpuTerminalSurface
   private uploadCount = 0;
   private uploadedBytes = 0;
   private contentRevision: number;
-  private hoveredCell = -1;
-  private hoveredLink: string | null = null;
-  private mouseDownLink: string | null = null;
+  private readonly linkHover: TerminalLinkHover;
+  private readonly linkUnderlines = new TerminalLinkUnderlines();
+  /** CPU copy of the uploaded records, so link rows can be re-patched without the borrowed frame. */
+  private cellMirror = new Uint8Array(0);
+  private linkRowScratch = new Uint8Array(0);
   private applyingFit = false;
   private disposed = false;
   /** The window canvas has shown this pane's first frame; until then its DOM covers the canvas. */
@@ -299,10 +308,16 @@ export class WebGpuTerminalSurface
       },
     );
     this.root.addEventListener("pointerdown", this.handlePointerDown);
-    this.root.addEventListener("mousemove", this.handleLinkMouseMove);
-    this.root.addEventListener("mousedown", this.handleLinkMouseDown);
-    this.root.addEventListener("mouseup", this.handleLinkMouseUp);
-    this.root.addEventListener("mouseleave", this.handleLinkMouseLeave);
+    this.linkHover = new TerminalLinkHover({
+      root: this.root,
+      model: options.model,
+      cellSize: () => this.cellSize(),
+      gridShiftY: () => this.gridShiftY(),
+      active: () => this.host !== null,
+      ignoreTarget: (target) => this.scrollbar.contains(target as Node),
+      underlineColor: () => rgbToCss(this.theme.foreground),
+      onOpenLink: options.onOpenLink,
+    });
     this.scrollbar.addEventListener("scroll", this.handleScroll);
   }
 
@@ -578,8 +593,7 @@ export class WebGpuTerminalSurface
     const revision = model.revision();
     if (revision !== this.contentRevision) {
       this.contentRevision = revision;
-      if (this.hoveredCell >= 0) this.clearHoveredLink();
-      this.mouseDownLink = null;
+      this.linkHover.refresh();
     }
     this.selection.reconcile();
     this.search.refreshOverlay();
@@ -613,6 +627,12 @@ export class WebGpuTerminalSurface
       budget,
       device,
     );
+    // Reads the screen, so it runs after the last use of the borrowed `frame.cells`.
+    const linksUploaded = this.uploadLinkUnderlines(
+      frame,
+      bufferReplaced || resync,
+      device,
+    );
 
     const cursor = model.cursor();
     const viewportOrigin = model.viewportOriginLine();
@@ -629,6 +649,7 @@ export class WebGpuTerminalSurface
     const redraw =
       frame.damage.kind !== "none" ||
       cellsUploaded ||
+      linksUploaded ||
       glyphsChanged ||
       searchChanged ||
       uniformChanged ||
@@ -795,42 +816,13 @@ export class WebGpuTerminalSurface
     this.scrollbarSync.dispose();
     this.unsubscribeInteraction();
     this.root.removeEventListener("pointerdown", this.handlePointerDown);
-    this.root.removeEventListener("mousemove", this.handleLinkMouseMove);
-    this.root.removeEventListener("mousedown", this.handleLinkMouseDown);
-    this.root.removeEventListener("mouseup", this.handleLinkMouseUp);
-    this.root.removeEventListener("mouseleave", this.handleLinkMouseLeave);
+    this.linkHover.dispose();
     this.scrollbar.removeEventListener("scroll", this.handleScroll);
   }
 
   private readonly handlePointerDown = (): void => {
     if (this.options.onRequestFocus) this.options.onRequestFocus();
     else this.focus();
-  };
-
-  private readonly handleLinkMouseMove = (event: MouseEvent): void => {
-    this.updateHoveredLink(event);
-  };
-
-  private readonly handleLinkMouseDown = (event: MouseEvent): void => {
-    if (event.button !== 0) return;
-    this.updateHoveredLink(event);
-    this.mouseDownLink = this.hoveredLink;
-  };
-
-  private readonly handleLinkMouseUp = (event: MouseEvent): void => {
-    if (event.button !== 0) return;
-    this.updateHoveredLink(event);
-    const uri = this.hoveredLink;
-    const activate = uri !== null && uri === this.mouseDownLink;
-    this.mouseDownLink = null;
-    if (!activate) return;
-    event.preventDefault();
-    this.options.onOpenLink?.(uri);
-  };
-
-  private readonly handleLinkMouseLeave = (): void => {
-    this.mouseDownLink = null;
-    this.clearHoveredLink();
   };
 
   private readonly handleInteraction = (): void => {
@@ -870,44 +862,6 @@ export class WebGpuTerminalSurface
       this.options.model.scrollTo(history - line);
     }
   };
-
-  private updateHoveredLink(event: MouseEvent): void {
-    if (
-      !this.host ||
-      this.scrollbar.contains(event.target as Node) ||
-      (this.options.model.modes().mouseTracking && !event.shiftKey)
-    ) {
-      this.clearHoveredLink();
-      return;
-    }
-    const rect = this.root.getBoundingClientRect();
-    const column = Math.floor(
-      (event.clientX - rect.left) / this.metrics.cellWidth,
-    );
-    const row = Math.floor(
-      (event.clientY - rect.top + this.gridShiftY()) / this.metrics.cellHeight,
-    );
-    if (
-      column < 0 ||
-      column >= this.options.model.cols ||
-      row < 0 ||
-      row >= this.options.model.rows
-    ) {
-      this.clearHoveredLink();
-      return;
-    }
-    const cell = row * this.options.model.cols + column;
-    if (cell === this.hoveredCell) return;
-    this.hoveredCell = cell;
-    this.hoveredLink = this.options.model.hyperlinkAtViewportCell(row, column);
-    this.root.style.cursor = this.hoveredLink ? "pointer" : "text";
-  }
-
-  private clearHoveredLink(): void {
-    this.hoveredCell = -1;
-    this.hoveredLink = null;
-    this.root.style.cursor = "text";
-  }
 
   private initializeGpuResources(resources: WebGpuSharedResources): void {
     if (!this.host) return;
@@ -987,6 +941,9 @@ export class WebGpuTerminalSurface
     this.bindGroupDirty = true;
     this.searchRevision = -1;
     this.searchScratch = new Uint8Array(0);
+    this.cellMirror = new Uint8Array(0);
+    this.linkRowScratch = new Uint8Array(0);
+    this.linkUnderlines.reset();
     this.atlasLease?.release();
     this.atlasLease = null;
     this.glyphMap = new TerminalGlyphMap();
@@ -1223,14 +1180,78 @@ export class WebGpuTerminalSurface
     const ranges = everything
       ? [{ start: 0, end: frame.rows - 1 }]
       : frame.dirtyRanges;
+    const mirrorStale = this.cellMirror.length !== frame.cells.length;
+    if (mirrorStale) this.cellMirror = new Uint8Array(frame.cells);
     for (const range of ranges) {
       const offset = range.start * rowBytes;
       const length = (range.end - range.start + 1) * rowBytes;
       device.queue.writeBuffer(buffer, offset, frame.cells, offset, length);
+      if (!mirrorStale && offset < this.cellMirror.length) {
+        this.cellMirror.set(
+          frame.cells.subarray(offset, offset + length),
+          offset,
+        );
+      }
       this.uploadCount += 1;
       this.uploadedBytes += length;
     }
     return ranges.length > 0;
+  }
+
+  /**
+   * Underlines every link cell: rows uploaded raw this frame and rows whose
+   * link cells changed are re-sent from the mirror with a single underline on
+   * link cells the app did not already decorate.
+   */
+  private uploadLinkUnderlines(
+    frame: GhosttyGpuFrame,
+    everything: boolean,
+    device: GPUDevice,
+  ): boolean {
+    const buffer = this.cellsBuffer;
+    if (!buffer || frame.rows === 0 || frame.cols === 0) return false;
+    const ranges = everything
+      ? [{ start: 0, end: frame.rows - 1 }]
+      : frame.dirtyRanges;
+    const changed = this.linkUnderlines.update(
+      this.options.model,
+      frame.rows,
+      frame.cols,
+      ranges,
+    );
+    const rows = new Set<number>();
+    for (const range of ranges) {
+      for (let row = range.start; row <= range.end; row++) {
+        if (this.linkUnderlines.rowHasLinks(row)) rows.add(row);
+      }
+    }
+    // Includes rows whose last link vanished: they go back to their plain records.
+    for (const range of changed) {
+      for (let row = range.start; row <= range.end; row++) rows.add(row);
+    }
+    if (rows.size === 0) return false;
+    const rowBytes = frame.cols * CELL_RECORD_BYTES;
+    if (this.linkRowScratch.length !== rowBytes) {
+      this.linkRowScratch = new Uint8Array(rowBytes);
+    }
+    const scratch = this.linkRowScratch;
+    const words = new Uint32Array(scratch.buffer, 0, rowBytes / 4);
+    for (const row of rows) {
+      const offset = row * rowBytes;
+      if (offset + rowBytes > this.cellMirror.length) continue;
+      scratch.set(this.cellMirror.subarray(offset, offset + rowBytes));
+      for (let column = 0; column < frame.cols; column++) {
+        if (!this.linkUnderlines.isLink(row, column)) continue;
+        const word = column * 4;
+        if (((words[word] >>> 24) & 7) === 0) {
+          words[word] = (words[word] | LINK_UNDERLINE_BITS) >>> 0;
+        }
+      }
+      device.queue.writeBuffer(buffer, offset, scratch, 0, rowBytes);
+      this.uploadCount += 1;
+      this.uploadedBytes += rowBytes;
+    }
+    return true;
   }
 
   /**

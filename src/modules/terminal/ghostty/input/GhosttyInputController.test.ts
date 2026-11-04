@@ -221,6 +221,87 @@ describe("GhosttyInputController", () => {
     controller.dispose();
   });
 
+  it("reports one mouse wheel step per line of trackpad travel, not per event", () => {
+    vi.stubGlobal("WheelEvent", {
+      DOM_DELTA_PIXEL: 0,
+      DOM_DELTA_LINE: 1,
+      DOM_DELTA_PAGE: 2,
+    });
+    const pointerTarget = new FakeElement();
+    const onData = vi.fn();
+    const controller = new GhosttyInputController({
+      model: inputModel((mode) => mode === 1006),
+      input: new FakeTextArea() as unknown as HTMLTextAreaElement,
+      pointerTarget: pointerTarget as unknown as HTMLElement,
+      cellSize: () => ({ width: 10, height: 20 }),
+      isMac: true,
+      onCopy: () => false,
+      onData,
+    });
+    const wheel = (deltaY: number) =>
+      pointerTarget.dispatchEvent(
+        Object.assign(new Event("wheel", { cancelable: true }), {
+          deltaY,
+          deltaMode: 0,
+          clientX: 5,
+          clientY: 5,
+          shiftKey: false,
+          altKey: false,
+          ctrlKey: false,
+          metaKey: false,
+        }),
+      );
+    const reports = () =>
+      onData.mock.calls.map(([bytes]) => new TextDecoder().decode(bytes));
+    try {
+      wheel(0);
+      for (let i = 0; i < 4; i++) wheel(4);
+      expect(onData).not.toHaveBeenCalled();
+      wheel(4);
+      expect(reports()).toEqual(["\x1b[<65;1;1M"]);
+      wheel(-25);
+      expect(reports()).toEqual(["\x1b[<65;1;1M", "\x1b[<64;1;1M"]);
+    } finally {
+      controller.dispose();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("keeps Cmd-clicks from a mouse-tracking app but still releases a press it saw", () => {
+    const pointerTarget = new FakeElement();
+    const onData = vi.fn();
+    const controller = new GhosttyInputController({
+      model: inputModel((mode) => mode === 1006),
+      input: new FakeTextArea() as unknown as HTMLTextAreaElement,
+      pointerTarget: pointerTarget as unknown as HTMLElement,
+      cellSize: () => ({ width: 10, height: 20 }),
+      isMac: true,
+      onCopy: () => false,
+      onData,
+    });
+    const mouse = (type: string, metaKey: boolean) =>
+      pointerTarget.dispatchEvent(
+        Object.assign(new Event(type, { cancelable: true }), {
+          button: 0,
+          clientX: 5,
+          clientY: 5,
+          metaKey,
+          shiftKey: false,
+          altKey: false,
+          ctrlKey: false,
+        }),
+      );
+    const reports = () =>
+      onData.mock.calls.map(([bytes]) => new TextDecoder().decode(bytes));
+    mouse("mousedown", true);
+    mouse("mouseup", true);
+    expect(onData).not.toHaveBeenCalled();
+    mouse("mousedown", false);
+    mouse("mouseup", true);
+    expect(reports()).toEqual(["\x1b[<0;1;1M", "\x1b[<0;1;1m"]);
+    controller.dispose();
+  });
+
   it("routes keys and composed text back to the prompt after a native menu", () => {
     const input = new FakeTextArea();
     const onKeyDown = vi.fn(() => true);

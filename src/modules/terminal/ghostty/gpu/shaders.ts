@@ -321,7 +321,9 @@ fn apply_contrast(coverage: f32, foreground: vec3f) -> f32 {
   let correction = screen.contrast.y;
   if (enhanced_contrast <= 0.0 && correction <= 0.0) { return coverage; }
   let lightness = dot(foreground, vec3f(0.30, 0.59, 0.11));
-  let k = enhanced_contrast * saturate(4.0 * (0.75 - lightness));
+  // contrast.z floors the lightness fade so light-on-dark text is thickened too.
+  let k = enhanced_contrast *
+    max(screen.contrast.z, saturate(4.0 * (0.75 - lightness)));
   let enhanced = coverage * (k + 1.0) / (coverage * k + 1.0);
   let intensity = dot(foreground, vec3f(0.25, 0.5, 0.25));
   let g = screen.gamma;

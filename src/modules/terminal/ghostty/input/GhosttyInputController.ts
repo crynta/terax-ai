@@ -412,8 +412,21 @@ export class GhosttyInputController {
     }
   };
 
+  /**
+   * Shift, or Cmd on macOS, keeps a click from the application so it can select text or open
+   * a link while the application tracks the mouse.
+   */
+  private bypassesMouse(event: MouseEvent): boolean {
+    return event.shiftKey || (this.isMac && event.metaKey);
+  }
+
   private readonly handleMouseDown = (event: MouseEvent): void => {
-    if (!this.options.model.modes().mouseTracking || event.shiftKey) return;
+    if (
+      !this.options.model.modes().mouseTracking ||
+      this.bypassesMouse(event)
+    ) {
+      return;
+    }
     const position = this.mousePosition(event);
     if (!position) return;
     this.mouseButtons |= 1 << event.button;
@@ -423,7 +436,14 @@ export class GhosttyInputController {
   };
 
   private readonly handleMouseUp = (event: MouseEvent): void => {
-    if (!this.options.model.modes().mouseTracking || event.shiftKey) return;
+    // A press the application saw always gets its release, whatever is held now.
+    const reported = (this.mouseButtons & (1 << event.button)) !== 0;
+    if (
+      !this.options.model.modes().mouseTracking ||
+      (this.bypassesMouse(event) && !reported)
+    ) {
+      return;
+    }
     const position = this.mousePosition(event);
     if (!position) return;
     this.mouseButtons &= ~(1 << event.button);
@@ -433,7 +453,7 @@ export class GhosttyInputController {
   };
 
   private readonly handleMouseMove = (event: MouseEvent): void => {
-    if (event.shiftKey) {
+    if (this.bypassesMouse(event)) {
       this.lastMouseMotion = null;
       return;
     }
@@ -469,8 +489,13 @@ export class GhosttyInputController {
       const position = this.mousePosition(event);
       if (!position) return;
       consume(event);
+      // Trackpads fire dozens of small wheel events per gesture (plus momentum),
+      // so report one wheel button per line of travel, not one per event —
+      // matching xterm.js. Zero-delta (horizontal) events report nothing.
+      const lines = this.wheelLines(event);
+      if (lines === 0) return;
       this.sendMouse(
-        event.deltaY < 0 ? 64 : 65,
+        lines < 0 ? 64 : 65,
         position.col,
         position.row,
         false,
@@ -480,6 +505,13 @@ export class GhosttyInputController {
     }
 
     if (this.options.model.scrollPosition().history === 0) return;
+    const lines = this.wheelLines(event);
+    if (lines !== 0) this.options.model.scrollBy(lines);
+    consume(event);
+  };
+
+  /** Accumulates wheel travel and returns the whole lines it has crossed. */
+  private wheelLines(event: WheelEvent): number {
     const cellHeight = Math.max(1, this.options.cellSize().height);
     const delta =
       event.deltaMode === WheelEvent.DOM_DELTA_LINE
@@ -487,15 +519,18 @@ export class GhosttyInputController {
         : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
           ? event.deltaY * this.options.model.rows
           : event.deltaY / cellHeight;
+    // A direction change drops leftover travel so reversing responds at once.
+    if (Math.sign(delta) !== Math.sign(this.wheelRemainder)) {
+      this.wheelRemainder = 0;
+    }
     this.wheelRemainder += delta;
     const lines =
       this.wheelRemainder < 0
         ? Math.ceil(this.wheelRemainder)
         : Math.floor(this.wheelRemainder);
     this.wheelRemainder -= lines;
-    if (lines !== 0) this.options.model.scrollBy(lines);
-    consume(event);
-  };
+    return lines;
+  }
 
   private mousePosition(
     event: MouseEvent,

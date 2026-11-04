@@ -110,6 +110,8 @@ export class ScreenUniform {
     uints[SCREEN_OFFSET.decoration / 4 + 3] = state.leftOverhangPadding;
     floats[SCREEN_OFFSET.contrast / 4] = state.contrast.enhancedContrast;
     floats[SCREEN_OFFSET.contrast / 4 + 1] = state.contrast.alphaCorrection;
+    floats[SCREEN_OFFSET.contrast / 4 + 2] =
+      state.contrast.lightTextContrast ?? 0;
     for (let index = 0; index < DWRITE_GAMMA_RATIOS.length; index += 1) {
       floats[SCREEN_OFFSET.gamma / 4 + index] = DWRITE_GAMMA_RATIOS[index];
     }

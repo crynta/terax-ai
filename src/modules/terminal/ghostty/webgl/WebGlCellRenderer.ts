@@ -49,6 +49,8 @@ export type WebGlRendererFrame = {
   readonly textBlinkVisible: boolean;
   readonly selection: TerminalSelectionBounds | null;
   readonly searchMatchAt: (row: number, column: number) => 0 | 1 | 2;
+  /** Link cells get a single underline unless the app decorated them itself. */
+  readonly linkAt?: (row: number, column: number) => boolean;
 };
 
 export type WebGlCellRendererStats = {
@@ -515,9 +517,13 @@ export class WebGlCellRenderer {
             this.profile.theme.selection.alpha,
           );
         }
-        const underlineColor = cells.underlineColorPacked(cellIndex);
-        const decoration =
-          cells.underlineStyle(cellIndex) | (cells.overline(cellIndex) ? 8 : 0);
+        let underlineColor = cells.underlineColorPacked(cellIndex);
+        let underlineStyle = cells.underlineStyle(cellIndex);
+        if (underlineStyle === 0 && frame.linkAt?.(row, column)) {
+          underlineStyle = 1;
+          underlineColor = foreground;
+        }
+        const decoration = underlineStyle | (cells.overline(cellIndex) ? 8 : 0);
         rowRectanglesChanged ||=
           this.backgrounds[cellIndex] !== background ||
           this.decorations[cellIndex] !== decoration ||

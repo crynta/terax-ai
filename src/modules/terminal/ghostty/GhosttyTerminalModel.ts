@@ -114,6 +114,19 @@ export type GhosttyGpuFrame = {
   readonly newGlyphs: readonly GhosttyGpuGlyph[];
 };
 
+/** Link cells of whole soft-wrapped viewport lines, as column spans per row. */
+export type GhosttyLinkCells = {
+  /** First and last viewport rows scanned: the request widened to whole wrapped lines. */
+  readonly start: number;
+  readonly end: number;
+  /** Inclusive column spans of OSC 8 and detected plain-text links. */
+  readonly spans: readonly {
+    readonly row: number;
+    readonly start: number;
+    readonly end: number;
+  }[];
+};
+
 export interface GhosttyTerminalModelApi extends TerminalModel {
   isDisposed?(): boolean;
   /**
@@ -157,6 +170,11 @@ export interface GhosttyTerminalModelApi extends TerminalModel {
   ): void;
   grapheme(row: number, column: number): string;
   hyperlinkAtViewportCell(row: number, column: number): string | null;
+  /**
+   * Link cells in viewport rows `firstRow..lastRow`, widened to whole wrapped lines. Reads the
+   * screen, so call it only when no borrowed frame or cell reader is still in use.
+   */
+  linkCellsInRows?(firstRow: number, lastRow: number): GhosttyLinkCells;
   scrollPosition(): { readonly offset: number; readonly history: number };
   scrollBy(lines: number): boolean;
   scrollTo(offset: number): boolean;

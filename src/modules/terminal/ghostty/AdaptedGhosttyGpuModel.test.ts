@@ -236,6 +236,30 @@ describe.each(["ghostty-vt", "ghostty-vt-scalar"])(
       }
     });
 
+    it("lists OSC 8 and plain link cells per row, widened to whole wrapped lines", () => {
+      const { model, write } = create(20, 6);
+      try {
+        write(
+          "see \x1b]8;;https://example.test/a\x1b\\link\x1b]8;;\x1b\\ ok\r\nopen https://plain.example/long/path now\r\nnone here",
+        );
+        model.consumeGpuFrame();
+        // Row 2 continues the wrapped URL that starts on row 1.
+        const links = model.linkCellsInRows(2, 2);
+        expect(links.start).toBe(1);
+        expect(links.end).toBe(2);
+        expect(links.spans).toEqual([
+          { row: 1, start: 5, end: 19 },
+          { row: 2, start: 0, end: 15 },
+        ]);
+        expect(model.linkCellsInRows(0, 0).spans).toEqual([
+          { row: 0, start: 4, end: 7 },
+        ]);
+        expect(model.linkCellsInRows(4, 4).spans).toEqual([]);
+      } finally {
+        model.dispose();
+      }
+    });
+
     it("answers cursor, link, grapheme and line queries without disturbing the frame", () => {
       const { model, write } = create(60, 6);
       try {

@@ -16,6 +16,11 @@ export type TextContrast = {
   readonly enhancedContrast: number;
   /** 0 keeps the raw coverage, 1 applies the full alpha correction. */
   readonly alphaCorrection: number;
+  /**
+   * Floor for the lightness multiplier, so light-on-dark text is thickened too
+   * (DirectWrite fades the enhancement out above 0.75 lightness). 0 by default.
+   */
+  readonly lightTextContrast?: number;
 };
 
 export const NO_TEXT_CONTRAST: TextContrast = {
@@ -26,6 +31,17 @@ export const NO_TEXT_CONTRAST: TextContrast = {
 const FRACTIONAL_DISPLAY_CONTRAST: TextContrast = {
   enhancedContrast: 0.5,
   alphaCorrection: 0.5,
+};
+
+/**
+ * A 1x Mac display: macOS stopped subpixel antialiasing, and without its stem
+ * darkening the grayscale GPU path leaves light-on-dark strokes thin and soft
+ * at regular weight, so light text gets the enhancement as well.
+ */
+const MAC_LOW_DPI_CONTRAST: TextContrast = {
+  enhancedContrast: 1,
+  alphaCorrection: 0.5,
+  lightTextContrast: 1,
 };
 
 export type TextContrastEnvironment = {
@@ -39,11 +55,12 @@ export type TextContrastEnvironment = {
  * Chooses the contrast for the current display. Windows and Linux render
  * grayscale glyphs without the system's gamma-aware blending, and any display
  * below 2x leaves thin strokes that look washed out. macOS Retina stays as it
- * was unless explicitly overridden.
+ * was unless explicitly overridden; a 1x Mac display gets its own curve.
  */
 export function textContrastFor(env: TextContrastEnvironment): TextContrast {
   const override = parseOverride(env.override);
   if (override) return override;
+  if (env.platform === "mac" && env.scale < 2) return MAC_LOW_DPI_CONTRAST;
   const enabled =
     env.platform === "windows" || env.platform === "linux" || env.scale < 2;
   return enabled ? FRACTIONAL_DISPLAY_CONTRAST : NO_TEXT_CONTRAST;
@@ -69,7 +86,12 @@ export function applyTextContrast(
   }
   const [red, green, blue] = foreground;
   const lightness = red * 0.3 + green * 0.59 + blue * 0.11;
-  const k = contrast.enhancedContrast * saturate(4 * (0.75 - lightness));
+  const k =
+    contrast.enhancedContrast *
+    Math.max(
+      contrast.lightTextContrast ?? 0,
+      saturate(4 * (0.75 - lightness)),
+    );
   const enhanced = (coverage * (k + 1)) / (coverage * k + 1);
   const intensity = red * 0.25 + green * 0.5 + blue * 0.25;
   const [g0, g1, g2, g3] = DWRITE_GAMMA_RATIOS;

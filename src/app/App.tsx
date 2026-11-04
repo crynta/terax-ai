@@ -46,6 +46,7 @@ import {
   type SearchTarget,
 } from "@/modules/header";
 import { setLspNavigator } from "@/modules/lsp";
+import { setTerminalFileOpener } from "@/modules/terminal/lib/terminalFileLinks";
 import type { PreviewPaneHandle } from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
@@ -1370,6 +1371,18 @@ export default function App() {
     setLspNavigator({ openFile: openContentHit });
     return () => setLspNavigator(null);
   }, [openContentHit]);
+
+  useEffect(() => {
+    setTerminalFileOpener((path, line) => {
+      openControlFile({
+        path,
+        line,
+        focus: true,
+        spaceId: activeSpaceIdRef.current ?? DEFAULT_SPACE_ID,
+      });
+    });
+    return () => setTerminalFileOpener(null);
+  }, [openControlFile]);
 
   const insertHistoryCommand = useMemo(
     () =>

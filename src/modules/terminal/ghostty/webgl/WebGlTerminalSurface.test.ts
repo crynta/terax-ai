@@ -124,6 +124,39 @@ describe("WebGL surface resizing", () => {
   });
 });
 
+describe("WebGL link underlines", () => {
+  it("passes link cells to the renderer and redraws undamaged rows of a wrapped link", () => {
+    const h = harness();
+    Object.assign(h.model, {
+      consumeDamage: () => ({ kind: "rows", ranges: [{ start: 3, end: 3 }] }),
+      // Row 3 continues a wrapped link that starts on row 2.
+      linkCellsInRows: vi.fn(() => ({
+        start: 2,
+        end: 3,
+        spans: [
+          { row: 2, start: 100, end: 119 },
+          { row: 3, start: 0, end: 4 },
+        ],
+      })),
+    });
+
+    h.surface.renderFrame(h.renderer as unknown as WebGlCellRenderer);
+
+    const calls = h.renderer.render.mock.calls as unknown as unknown[][];
+    const frame = calls[calls.length - 1][0] as {
+      damage: unknown;
+      linkAt: (row: number, column: number) => boolean;
+    };
+    expect(frame.damage).toEqual({
+      kind: "rows",
+      ranges: [{ start: 2, end: 3 }],
+    });
+    expect(frame.linkAt(2, 100)).toBe(true);
+    expect(frame.linkAt(3, 4)).toBe(true);
+    expect(frame.linkAt(3, 5)).toBe(false);
+  });
+});
+
 const METRICS = {
   font: {
     family: "monospace",
@@ -262,6 +295,7 @@ function harness() {
   surface.attach(hostElement as unknown as HTMLElement);
   return {
     surface,
+    model,
     onResize,
     setHost(width: number, height = 640) {
       hostSize.width = width;

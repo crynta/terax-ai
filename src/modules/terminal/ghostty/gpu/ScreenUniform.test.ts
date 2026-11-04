@@ -30,7 +30,11 @@ const STATE: ScreenUniformState = {
   selectionAlpha: 0.5,
   decoration: { baseline: 16, thickness: 1, strikeY: 10 },
   leftOverhangPadding: 1,
-  contrast: { enhancedContrast: 0.5, alphaCorrection: 0.25 },
+  contrast: {
+    enhancedContrast: 0.5,
+    alphaCorrection: 0.25,
+    lightTextContrast: 0.75,
+  },
 };
 
 function view(uniform: ScreenUniform) {
@@ -113,6 +117,7 @@ describe("ScreenUniform", () => {
     ]).toEqual([16, 1, 10, 1]);
     expect(f[at(SCREEN_OFFSET.contrast)]).toBe(0.5);
     expect(f[at(SCREEN_OFFSET.contrast, 1)]).toBe(0.25);
+    expect(f[at(SCREEN_OFFSET.contrast, 2)]).toBe(0.75);
     expect([
       ...f.slice(at(SCREEN_OFFSET.gamma), at(SCREEN_OFFSET.gamma) + 4),
     ]).toEqual(DWRITE_GAMMA_RATIOS.map(Math.fround));

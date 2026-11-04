@@ -21,9 +21,23 @@ describe("text contrast policy", () => {
     );
   });
 
+  it("thickens light text too on a 1x or fractional Mac display", () => {
+    const macLowDpi = {
+      enhancedContrast: 1,
+      alphaCorrection: 0.5,
+      lightTextContrast: 1,
+    };
+    expect(textContrastFor({ platform: "mac", scale: 1 })).toEqual(macLowDpi);
+    expect(textContrastFor({ platform: "mac", scale: 1.5 })).toEqual(
+      macLowDpi,
+    );
+    expect(applyTextContrast(0.5, WHITE, macLowDpi)).toBeGreaterThan(
+      applyTextContrast(0.5, WHITE, ACTIVE),
+    );
+  });
+
   it("enables on low or fractional ratios and always on Windows and Linux", () => {
-    expect(textContrastFor({ platform: "mac", scale: 1 })).toEqual(ACTIVE);
-    expect(textContrastFor({ platform: "mac", scale: 1.5 })).toEqual(ACTIVE);
+    expect(textContrastFor({ platform: "windows", scale: 1 })).toEqual(ACTIVE);
     expect(textContrastFor({ platform: "windows", scale: 1.25 })).toEqual(
       ACTIVE,
     );
@@ -45,7 +59,7 @@ describe("text contrast policy", () => {
       textContrastFor({ platform: "windows", scale: 1, override: "banana" }),
     ).toEqual(ACTIVE);
     expect(
-      textContrastFor({ platform: "mac", scale: 1, override: "-3" }),
+      textContrastFor({ platform: "linux", scale: 1, override: "-3" }),
     ).toEqual(ACTIVE);
   });
 
