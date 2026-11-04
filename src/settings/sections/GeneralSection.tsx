@@ -31,6 +31,7 @@ import {
   setTerminalFontWeight,
   setTerminalLetterSpacing,
   setTerminalScrollback,
+  setTerminalScrollSpeed,
   setTerminalShell,
   setTerminalRenderer,
   setTerminalScreenReader,
@@ -73,6 +74,7 @@ const TERMINAL_CURSOR_STYLES = [
   { value: "underline", label: "Underline" },
 ] as const;
 const LETTER_SPACINGS = [-4, -3, -2, -1, 0, 1, 2, 3, 4] as const;
+const SCROLL_SPEEDS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4] as const;
 
 type ShellInfo = { name: string; path: string; integrated: boolean };
 const SHELL_AUTO = "auto";
@@ -113,6 +115,7 @@ export function GeneralSection() {
   );
   const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
   const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
+  const terminalScrollSpeed = usePreferencesStore((s) => s.terminalScrollSpeed);
   const confirmCloseRunningTerminal = usePreferencesStore(
     (s) => s.confirmCloseRunningTerminal,
   );
@@ -479,6 +482,29 @@ export function GeneralSection() {
                   className="text-[12px]"
                 >
                   {lines.toLocaleString()} lines
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingRow>
+        <SettingRow
+          title="Scroll speed"
+          description="Lines per wheel or trackpad movement, for history and for programs that read the mouse wheel."
+        >
+          <Select
+            value={String(terminalScrollSpeed)}
+            onValueChange={(v) => void setTerminalScrollSpeed(Number(v))}
+          >
+            <SelectTrigger size="sm" className="h-8 w-28 text-[12px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(SCROLL_SPEEDS.some((v) => v === terminalScrollSpeed)
+                ? SCROLL_SPEEDS
+                : [...SCROLL_SPEEDS, terminalScrollSpeed].sort((a, b) => a - b)
+              ).map((v) => (
+                <SelectItem key={v} value={String(v)} className="text-[12px]">
+                  {v}x
                 </SelectItem>
               ))}
             </SelectContent>

@@ -20,6 +20,10 @@ import {
   normalizeAgentLaunchCommands,
 } from "@/modules/agents/lib/launcher";
 import type { KeyBinding, ShortcutId } from "@/modules/shortcuts/shortcuts";
+import {
+  clampScrollSpeed,
+  DEFAULT_SCROLL_SPEED,
+} from "@/modules/terminal/ghostty/input/terminalWheel";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { LazyStore } from "@tauri-apps/plugin-store";
 
@@ -167,6 +171,7 @@ export type Preferences = {
   terminalLetterSpacing: number;
   terminalFontSize: number;
   terminalScrollback: number;
+  terminalScrollSpeed: number;
   confirmCloseRunningTerminal: boolean;
   lastWslDistro: string | null;
   zoomLevel: number;
@@ -263,6 +268,7 @@ const KEY_TERMINAL_SHELL = "terminalShell";
 const KEY_TERMINAL_LETTER_SPACING = "terminalLetterSpacing";
 const KEY_TERMINAL_FONT_SIZE = "terminalFontSize";
 const KEY_TERMINAL_SCROLLBACK = "terminalScrollback";
+const KEY_TERMINAL_SCROLL_SPEED = "terminalScrollSpeed";
 const KEY_CONFIRM_CLOSE_RUNNING_TERMINAL = "confirmCloseRunningTerminal";
 const KEY_LAST_WSL_DISTRO = "lastWslDistro";
 const KEY_ZOOM_LEVEL = "zoomLevel";
@@ -358,6 +364,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   terminalLetterSpacing: 0,
   terminalFontSize: TERMINAL_FONT_SIZE_DEFAULT,
   terminalScrollback: TERMINAL_SCROLLBACK_DEFAULT,
+  terminalScrollSpeed: DEFAULT_SCROLL_SPEED,
   confirmCloseRunningTerminal: true,
   lastWslDistro: null,
   zoomLevel: 1.0,
@@ -532,6 +539,9 @@ export async function loadPreferences(): Promise<Preferences> {
     terminalScrollback: clampScrollback(
       get<number>(KEY_TERMINAL_SCROLLBACK) ??
         DEFAULT_PREFERENCES.terminalScrollback,
+    ),
+    terminalScrollSpeed: clampScrollSpeed(
+      get<number>(KEY_TERMINAL_SCROLL_SPEED),
     ),
     confirmCloseRunningTerminal:
       get<boolean>(KEY_CONFIRM_CLOSE_RUNNING_TERMINAL) ??
@@ -842,6 +852,10 @@ export async function setTerminalShell(value: string): Promise<void> {
   await writePref(KEY_TERMINAL_SHELL, value.trim());
 }
 
+export async function setTerminalScrollSpeed(value: number): Promise<void> {
+  await writePref(KEY_TERMINAL_SCROLL_SPEED, clampScrollSpeed(value));
+}
+
 export async function setTerminalLetterSpacing(value: number): Promise<void> {
   const clamped = Number.isFinite(value)
     ? Math.max(-10, Math.min(10, Math.round(value)))
@@ -1008,6 +1022,7 @@ export async function onPreferencesChange(
     [KEY_TERMINAL_LETTER_SPACING]: "terminalLetterSpacing",
     [KEY_TERMINAL_FONT_SIZE]: "terminalFontSize",
     [KEY_TERMINAL_SCROLLBACK]: "terminalScrollback",
+    [KEY_TERMINAL_SCROLL_SPEED]: "terminalScrollSpeed",
     [KEY_CONFIRM_CLOSE_RUNNING_TERMINAL]: "confirmCloseRunningTerminal",
     [KEY_LAST_WSL_DISTRO]: "lastWslDistro",
     [KEY_ZOOM_LEVEL]: "zoomLevel",

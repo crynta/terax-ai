@@ -856,6 +856,7 @@ function createGhosttyInput(
       height: surface.cellSize().height,
     }),
     gridShiftY: () => surface.gridShiftY(),
+    scrollSpeed: () => usePreferencesStore.getState().terminalScrollSpeed,
     onData: (bytes) => {
       if (
         ghosttyBlocks(session.leafId)?.getMode() === "prompt" &&
