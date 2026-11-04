@@ -317,6 +317,7 @@ pub fn run() {
             git::commands::git_diff_content,
             git::commands::git_context_diff,
             git::commands::git_head_file_changes,
+            git::commands::git_file_versions,
             git::commands::git_revert_file,
             git::commands::git_stage,
             git::commands::git_unstage,

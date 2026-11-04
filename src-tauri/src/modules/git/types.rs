@@ -78,6 +78,17 @@ pub struct GitHeadFileChange {
     pub truncated: bool,
 }
 
+/// One file at `HEAD` and in the working tree, for the Reader's full-file diff.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitFileVersions {
+    /// The `HEAD` text; `None` when the file isn't in `HEAD`.
+    pub head: Option<String>,
+    /// The working-tree text; `None` when the file no longer exists.
+    pub working: Option<String>,
+    pub binary: bool,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitDiffContentResult {

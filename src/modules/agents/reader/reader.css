@@ -1,10 +1,24 @@
 /* Session Reader: a Claude Code transcript laid out as a readable document. */
 
+/* Defined on :root so every Reader surface (slide-overs, dialogs, the full
+   view) resolves them, not only the document's scroll container. */
+:root,
 .terax-reader {
   --reader-red: var(--terminal-ansi-red);
   --reader-green: var(--terminal-ansi-green);
   --reader-code-bg: color-mix(in oklab, var(--background) 82%, black);
+}
+.terax-reader {
   scroll-behavior: smooth;
+}
+
+/* A folder path that keeps its end visible: the ellipsis eats the start. */
+.terax-left-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
 }
 
 .terax-reader-mono {
@@ -143,6 +157,18 @@
 }
 .terax-reader-diff-remove .terax-reader-diff-sign {
   color: var(--reader-red);
+}
+/* A stronger tint on the line numbers and sign, as in code review tools. */
+.terax-reader-diff-add :is(.terax-reader-diff-gutter, .terax-reader-diff-sign) {
+  background: color-mix(in oklab, var(--reader-green) 22%, transparent);
+}
+.terax-reader-diff-remove
+  :is(.terax-reader-diff-gutter, .terax-reader-diff-sign) {
+  background: color-mix(in oklab, var(--reader-red) 22%, transparent);
+}
+/* The change the full-file dialog moved to. */
+.terax-reader-diff-current > td:first-child {
+  box-shadow: inset 3px 0 0 var(--terminal-ansi-blue, var(--primary));
 }
 
 /* Assistant prose: document typography for Streamdown output. Prose fills the

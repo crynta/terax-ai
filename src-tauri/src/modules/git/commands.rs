@@ -3,8 +3,8 @@ use tauri::{AppHandle, Manager};
 use crate::modules::git::operations;
 use crate::modules::git::types::{
     DiscardEntry, GitBranchListResult, GitCommitFileChange, GitCommitResult, GitDiffContentResult,
-    GitDiffResult, GitHeadFileChange, GitLogEntry, GitPanelSnapshot, GitPushResult, GitRepoInfo,
-    GitStatusSnapshot,
+    GitDiffResult, GitFileVersions, GitHeadFileChange, GitLogEntry, GitPanelSnapshot,
+    GitPushResult, GitRepoInfo, GitStatusSnapshot,
 };
 use crate::modules::workspace::{WorkspaceEnv, WorkspaceRegistry};
 
@@ -101,6 +101,21 @@ pub async fn git_head_file_changes(
     let workspace = WorkspaceEnv::from_option(workspace);
     blocking(app, move |r| {
         operations::head_file_changes(r, &repo_root, &paths, &workspace).map_err(Into::into)
+    })
+    .await
+}
+
+/// One repo-relative file at `HEAD` and in the working tree, for the Reader's full-file diff.
+#[tauri::command]
+pub async fn git_file_versions(
+    repo_root: String,
+    path: String,
+    workspace: Option<WorkspaceEnv>,
+    app: AppHandle,
+) -> Result<GitFileVersions, String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    blocking(app, move |r| {
+        operations::file_versions(r, &repo_root, &path, &workspace).map_err(Into::into)
     })
     .await
 }

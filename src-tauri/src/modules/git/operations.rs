@@ -9,7 +9,8 @@ use crate::modules::git::process::{
 };
 use crate::modules::git::types::{
     DiscardEntry, GitBranchEntry, GitBranchListResult, GitCommitFileChange, GitCommitResult,
-    GitDiffContentResult, GitDiffResult, GitHeadFileChange, GitLogEntry, GitOutput,
+    GitDiffContentResult, GitDiffResult, GitFileVersions, GitHeadFileChange, GitLogEntry,
+    GitOutput,
     GitPanelSnapshot, GitPushResult,
     GitRepoInfo, GitStatusSnapshot, TextSource, DEFAULT_TIMEOUT_SECS, NETWORK_TIMEOUT_SECS,
 };
@@ -419,6 +420,40 @@ pub fn revert_file(
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok("deleted"),
         Err(e) => Err(GitError::Io(e)),
     }
+}
+
+/// Splits text sources into the optional strings the full-file diff wants.
+fn file_versions_from(head: TextSource, working: TextSource) -> GitFileVersions {
+    let binary = matches!(head, TextSource::Binary) || matches!(working, TextSource::Binary);
+    let text = |source: TextSource| match source {
+        TextSource::Text(text) => Some(text),
+        TextSource::Missing | TextSource::Binary => None,
+    };
+    GitFileVersions {
+        head: text(head),
+        working: text(working),
+        binary,
+    }
+}
+
+/// One repo-relative file at `HEAD` and in the working tree. Uses the same
+/// path checks as [`revert_file`], so nothing outside the repository is read.
+pub fn file_versions(
+    registry: &WorkspaceRegistry,
+    repo_root: &str,
+    rel: &str,
+    workspace: &WorkspaceEnv,
+) -> Result<GitFileVersions> {
+    let repo_root = authorized_repo_root(registry, repo_root, workspace)?;
+    ensure_git_available(&repo_root.workspace)?;
+    let (spec, on_disk) = revert_target(&repo_root.local_path, rel)?;
+    let head = git_show_text(
+        &repo_root.workspace,
+        &repo_root.git_path,
+        &format!("HEAD:{spec}"),
+    )?;
+    let working = read_text_file(&on_disk)?;
+    Ok(file_versions_from(head, working))
 }
 
 /// `origin/HEAD`'s target, else a local `main` or `master`.
@@ -1440,6 +1475,28 @@ mod tests {
         // A deleted file still resolves, through its existing parent.
         let (spec, _) = revert_target(&root, "src/gone.ts").unwrap();
         assert_eq!(spec, "src/gone.ts");
+    }
+
+    #[test]
+    fn file_versions_keep_text_and_flag_binary_or_missing_sides() {
+        let both = file_versions_from(
+            TextSource::Text("old\n".into()),
+            TextSource::Text("new\n".into()),
+        );
+        assert_eq!(both.head.as_deref(), Some("old\n"));
+        assert_eq!(both.working.as_deref(), Some("new\n"));
+        assert!(!both.binary);
+
+        let created = file_versions_from(TextSource::Missing, TextSource::Text("x".into()));
+        assert!(created.head.is_none());
+        assert_eq!(created.working.as_deref(), Some("x"));
+
+        let deleted = file_versions_from(TextSource::Text("x".into()), TextSource::Missing);
+        assert!(deleted.working.is_none());
+
+        let binary = file_versions_from(TextSource::Binary, TextSource::Text("x".into()));
+        assert!(binary.binary);
+        assert!(binary.head.is_none());
     }
 
     #[test]

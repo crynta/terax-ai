@@ -17,10 +17,12 @@ import {
   Delete02Icon,
   FileEditIcon,
   GitCompareIcon,
+  LinkSquare02Icon,
   Loading03Icon,
   Note01Icon,
   SquareIcon,
   TextIndentIcon,
+  ViewIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
@@ -47,17 +49,18 @@ import {
   type SessionTodos,
 } from "./lib/sessionPlan";
 import type { ToolCall } from "./lib/transcript";
+import { splitDisplayPath } from "./lib/fullFileDiff";
 import type { CompactItem } from "./lib/viewMode";
 import { answerDialog } from "./ReaderAction";
 import {
   CopyButton,
   DiffView,
-  FileChip,
   KIND_ICON,
   KIND_TONE,
   type ReaderContext,
   ReaderItems,
 } from "./ReaderBlocks";
+import { useFileDiff } from "./ReaderFileDiff";
 
 function useTicker(enabled: boolean, ms = 1000): number {
   const [now, setNow] = useState(() => Date.now());
@@ -697,6 +700,7 @@ function ChangedFileRow({
 }) {
   const [open, setOpen] = useState(false);
   const [revert, setRevert] = useState<RevertStep>({ kind: "idle" });
+  const fileDiff = useFileDiff();
   const live = head.kind === "ready" ? head.byPath.get(file.path) : undefined;
   const diff = useMemo(() => combinedDiff(file), [file]);
   const discard = useMemo(
@@ -722,9 +726,17 @@ function ChangedFileRow({
         setRevert({ kind: "error", message: String(error) }),
       );
   };
+  const { name, dir } = splitDisplayPath(file.path, ctx.cwd, ctx.home);
+  const shownAdded = live && !live.binary ? live.added : file.added;
+  const shownRemoved = live && !live.binary ? live.removed : file.removed;
+  const fromGit =
+    live &&
+    !live.binary &&
+    (live.added !== file.added || live.removed !== file.removed);
+  const countsTitle = `${file.edits} edit${file.edits === 1 ? "" : "s"} in this chat${fromGit ? " · counts from git" : ""}`;
   return (
     <li className="overflow-hidden rounded-lg border border-border/60 bg-card">
-      <div className="flex min-w-0 items-center gap-2 px-3 py-2">
+      <div className="flex min-w-0 items-center gap-2 px-2.5 py-2">
         <button
           type="button"
           aria-expanded={open}
@@ -741,57 +753,62 @@ function ChangedFileRow({
         </button>
         <HugeiconsIcon
           icon={FileEditIcon}
-          size={13}
+          size={14}
           strokeWidth={1.8}
           className="shrink-0 text-muted-foreground"
         />
-        <span className="min-w-0 flex-1">
-          <FileChip path={file.path} ctx={ctx} />
-        </span>
+        <button
+          type="button"
+          title={file.deleted ? file.path : `${file.path} — view changes`}
+          disabled={file.deleted}
+          onClick={() => fileDiff?.open(file.path)}
+          className="min-w-0 flex-1 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-primary/40 enabled:hover:[&>span:first-child]:text-primary"
+        >
+          <span className="block truncate text-[12.5px] font-semibold text-foreground transition-colors">
+            {name}
+          </span>
+          {dir && (
+            <span className="terax-reader-mono terax-left-truncate block text-[10.5px] text-muted-foreground">
+              <bdi>{dir}</bdi>
+            </span>
+          )}
+        </button>
         {file.deleted && <Tag tone="red">deleted</Tag>}
         {!file.deleted && isNew && <Tag tone="green">new</Tag>}
         {unchanged && <Tag tone="muted">no changes now</Tag>}
-        <span className="shrink-0 text-[11.5px] tabular-nums">
-          <span className="text-[var(--terminal-ansi-green)]">
-            +{live && !live.binary ? live.added : file.added}
-          </span>{" "}
-          <span className="text-[var(--terminal-ansi-red)]">
-            −{live && !live.binary ? live.removed : file.removed}
+        <span
+          title={countsTitle}
+          className="flex shrink-0 items-center gap-1 text-[11px] font-medium tabular-nums"
+        >
+          <span className="rounded-md bg-[color-mix(in_oklab,var(--reader-green)_16%,transparent)] px-1.5 py-px text-[var(--reader-green)]">
+            +{shownAdded}
+          </span>
+          <span className="rounded-md bg-[color-mix(in_oklab,var(--reader-red)_16%,transparent)] px-1.5 py-px text-[var(--reader-red)]">
+            −{shownRemoved}
           </span>
         </span>
-      </div>
-      <div className="flex flex-wrap items-center gap-1.5 border-t border-border/40 px-3 py-1.5 text-[11px] text-muted-foreground">
-        <span>
-          {file.edits} edit{file.edits === 1 ? "" : "s"}
-          {live &&
-          !live.binary &&
-          (live.added !== file.added || live.removed !== file.removed)
-            ? " · counts from git"
-            : ""}
-        </span>
-        <span className="ml-auto flex items-center gap-1">
+        <span className="flex shrink-0 items-center">
           {!file.deleted && (
-            <button
-              type="button"
+            <RowAction
+              label="View changes in the whole file"
+              icon={ViewIcon}
+              onClick={() => fileDiff?.open(file.path)}
+            />
+          )}
+          {!file.deleted && (
+            <RowAction
+              label="Open in editor"
+              icon={LinkSquare02Icon}
               onClick={() => void openTerminalLink(file.path, ctx.cwd)}
-              className="rounded-md px-2 py-0.5 outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40"
-            >
-              Open
-            </button>
+            />
           )}
           {repoRoot && !unchanged && !file.deleted && (
-            <button
-              type="button"
+            <RowAction
+              label="Revert file"
+              icon={ArrowTurnBackwardIcon}
+              danger
               onClick={() => setRevert({ kind: "confirm" })}
-              className="flex items-center gap-1 rounded-md px-2 py-0.5 outline-none hover:bg-[color-mix(in_oklab,var(--terminal-ansi-red)_12%,transparent)] hover:text-[var(--terminal-ansi-red)] focus-visible:ring-2 focus-visible:ring-primary/40"
-            >
-              <HugeiconsIcon
-                icon={ArrowTurnBackwardIcon}
-                size={12}
-                strokeWidth={1.8}
-              />
-              Revert file
-            </button>
+            />
           )}
         </span>
       </div>
@@ -862,6 +879,34 @@ function ChangedFileRow({
         </div>
       )}
     </li>
+  );
+}
+
+function RowAction({
+  label,
+  icon,
+  danger,
+  onClick,
+}: {
+  label: string;
+  icon: typeof ViewIcon;
+  danger?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      className={cn(
+        "grid size-6 place-items-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40",
+        danger &&
+          "hover:bg-[color-mix(in_oklab,var(--reader-red)_12%,transparent)] hover:text-[var(--reader-red)]",
+      )}
+    >
+      <HugeiconsIcon icon={icon} size={13} strokeWidth={1.8} />
+    </button>
   );
 }
 

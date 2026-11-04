@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import { LinkifiedText } from "@/components/ai-elements/markdown-link";
 import { copyToClipboard } from "@/modules/explorer/lib/contextActions";
 import { openTerminalLink } from "@/modules/terminal/lib/terminalFileLinks";
+import { useFileDiff } from "./ReaderFileDiff";
 import {
   AiBrain01Icon,
   AlertCircleIcon,
@@ -331,13 +332,17 @@ function StatusBadge({ call }: { call: ToolCall }) {
 }
 
 export function FileChip({ path, ctx }: { path: string; ctx: ReaderContext }) {
+  const fileDiff = useFileDiff();
+  const changed = fileDiff?.resolve(path) ?? null;
   return (
     <button
       type="button"
-      title={path}
+      title={changed ? `${path} — view changes` : path}
       onClick={(event) => {
         event.stopPropagation();
-        void openTerminalLink(path, ctx.cwd);
+        // A file this chat changed opens its diff here; others open in the editor.
+        if (changed && fileDiff) fileDiff.open(changed);
+        else void openTerminalLink(path, ctx.cwd);
       }}
       className="terax-reader-mono min-w-0 truncate rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[12px] text-foreground outline-none transition-colors hover:border-primary/50 hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-primary/40"
     >
@@ -575,10 +580,10 @@ export function DiffView({ diff }: { diff: NonNullable<ToolCall["diff"]> }) {
                   row.kind === "remove" && "terax-reader-diff-remove",
                 )}
               >
-                <td className="w-10 select-none px-2 text-right align-top text-[11px] text-muted-foreground/70 tabular-nums">
+                <td className="terax-reader-diff-gutter w-10 select-none px-2 text-right align-top text-[11px] text-muted-foreground/70 tabular-nums">
                   {row.oldNo ?? ""}
                 </td>
-                <td className="w-10 select-none px-2 text-right align-top text-[11px] text-muted-foreground/70 tabular-nums">
+                <td className="terax-reader-diff-gutter w-10 select-none px-2 text-right align-top text-[11px] text-muted-foreground/70 tabular-nums">
                   {row.newNo ?? ""}
                 </td>
                 <td className="terax-reader-diff-sign w-4 select-none align-top text-muted-foreground">

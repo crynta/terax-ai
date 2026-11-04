@@ -133,6 +133,12 @@ import {
   WorkPanel,
 } from "./ReaderPanels";
 import {
+  type FileDiffApi,
+  FileDiffDialog,
+  FileDiffProvider,
+  fileDiffLookup,
+} from "./ReaderFileDiff";
+import {
   ActivityRow,
   SessionCards,
   SessionPill,
@@ -464,13 +470,36 @@ export default function SessionReader({
     }),
     [ctx],
   );
-  // Links in replies, prompts and output: web in the browser, files in the
-  // editor, resolved against this session's folder.
+  // A file this chat changed opens in a diff dialog over the session.
+  const [diffPath, setDiffPath] = useState<string | null>(null);
+  const fileDiffApi = useMemo<FileDiffApi>(() => {
+    const resolve = fileDiffLookup(
+      files.map((f) => f.path),
+      cwd,
+    );
+    return {
+      open: (path) => setDiffPath(resolve(path) ?? path),
+      has: (path) => resolve(path) !== null,
+      resolve,
+    };
+  }, [files, cwd]);
+  const closeDiff = () => {
+    setDiffPath(null);
+    requestAnimationFrame(() => composer.current?.focus());
+  };
+
+  // Links in replies, prompts and output: web in the browser; files changed
+  // in this chat in the diff dialog; other files in the editor, resolved
+  // against this session's folder.
   const linkRouter = useMemo(
     () => ({
-      openFile: (target: string) => void openTerminalLink(target, cwd),
+      openFile: (target: string) => {
+        const changed = fileDiffApi.resolve(target);
+        if (changed) fileDiffApi.open(changed);
+        else void openTerminalLink(target, cwd);
+      },
     }),
-    [cwd],
+    [cwd, fileDiffApi],
   );
 
   const onReview = (changed: ChangedFile[]) => {
@@ -1063,118 +1092,134 @@ export default function SessionReader({
     />
   );
 
+  const diffDialog = (
+    <FileDiffDialog
+      path={diffPath}
+      cwd={cwd}
+      home={home}
+      doc={doc}
+      onClose={closeDiff}
+    />
+  );
+
   if (full) {
     return createPortal(
-      <section
-        ref={root}
-        aria-label="Session Reader, full view"
-        onKeyDown={onKeyDown}
-        data-terax-reader=""
-        className="terax-reader-full fixed inset-0 z-[900] flex flex-col bg-background"
-      >
-        {header}
-        {pastBanner}
-        <div className="flex shrink-0 items-center gap-3 border-b border-border/60 bg-card/60 px-4 py-2">
-          <SearchBox
-            query={query}
-            onQuery={setQuery}
-            count={search.count}
-            index={search.index}
-            onNext={search.next}
-            onPrev={search.prev}
-          />
-          <FilterBar
-            filters={filters}
-            onFilters={setFilters}
-            onExpandAll={expandAll}
-          />
-          <div className="ml-auto flex items-center gap-2">
-            {!showInfo && (
-              <button
-                type="button"
-                onClick={() => setShowInfo(true)}
-                className="h-7 rounded-lg px-2 text-[11.5px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40"
+      <FileDiffProvider value={fileDiffApi}>
+        <section
+          ref={root}
+          aria-label="Session Reader, full view"
+          onKeyDown={onKeyDown}
+          data-terax-reader=""
+          className="terax-reader-full fixed inset-0 z-[900] flex flex-col bg-background"
+        >
+          {diffDialog}
+          {header}
+          {pastBanner}
+          <div className="flex shrink-0 items-center gap-3 border-b border-border/60 bg-card/60 px-4 py-2">
+            <SearchBox
+              query={query}
+              onQuery={setQuery}
+              count={search.count}
+              index={search.index}
+              onNext={search.next}
+              onPrev={search.prev}
+            />
+            <FilterBar
+              filters={filters}
+              onFilters={setFilters}
+              onExpandAll={expandAll}
+            />
+            <div className="ml-auto flex items-center gap-2">
+              {!showInfo && (
+                <button
+                  type="button"
+                  onClick={() => setShowInfo(true)}
+                  className="h-7 rounded-lg px-2 text-[11.5px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40"
+                >
+                  Session info
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="flex min-h-0 flex-1">
+            <OutlinePanel
+              items={outline}
+              current={currentTurn}
+              onPick={(id) => {
+                setFollowing(false);
+                scrollToTurn(scroller.current, id);
+              }}
+            />
+            <div className="flex min-w-0 flex-1 flex-col">
+              {documentBody}
+              {composerBanners}
+              {composerView}
+            </div>
+            {showChanges || showHistory ? (
+              <aside
+                aria-label={showHistory ? "Chat history" : "Changes"}
+                className="flex min-h-0 w-[420px] shrink-0 flex-col border-l border-border/60 bg-sidebar/60"
               >
-                Session info
-              </button>
+                {showHistory ? historyPanel : changesPanel}
+              </aside>
+            ) : (
+              showInfo && (
+                <InfoPanel
+                  title={title}
+                  cwd={cwd}
+                  phaseLabel={phaseLabel(phase)}
+                  elapsed={
+                    session?.startedAt
+                      ? formatDuration(Date.now() - session.startedAt)
+                      : null
+                  }
+                  stats={stats}
+                  info={info}
+                  live={phase === "working"}
+                  ctx={ctx}
+                  onClose={() => setShowInfo(false)}
+                >
+                  <SessionCards {...sessionProps} showFolder />
+                  {workPanel(false)}
+                </InfoPanel>
+              )
             )}
           </div>
-        </div>
-        <div className="flex min-h-0 flex-1">
-          <OutlinePanel
-            items={outline}
-            current={currentTurn}
-            onPick={(id) => {
-              setFollowing(false);
-              scrollToTurn(scroller.current, id);
-            }}
-          />
-          <div className="flex min-w-0 flex-1 flex-col">
-            {documentBody}
-            {composerBanners}
-            {composerView}
-          </div>
-          {showChanges || showHistory ? (
-            <aside
-              aria-label={showHistory ? "Chat history" : "Changes"}
-              className="flex min-h-0 w-[420px] shrink-0 flex-col border-l border-border/60 bg-sidebar/60"
-            >
-              {showHistory ? historyPanel : changesPanel}
-            </aside>
-          ) : (
-            showInfo && (
-              <InfoPanel
-                title={title}
-                cwd={cwd}
-                phaseLabel={phaseLabel(phase)}
-                elapsed={
-                  session?.startedAt
-                    ? formatDuration(Date.now() - session.startedAt)
-                    : null
-                }
-                stats={stats}
-                info={info}
-                live={phase === "working"}
-                ctx={ctx}
-                onClose={() => setShowInfo(false)}
-              >
-                <SessionCards {...sessionProps} showFolder />
-                {workPanel(false)}
-              </InfoPanel>
-            )
-          )}
-        </div>
-      </section>,
+        </section>
+      </FileDiffProvider>,
       document.body,
     );
   }
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: keyboard shortcuts for the reader
-    <div
-      ref={(el) => {
-        root.current = el;
-      }}
-      onKeyDown={onKeyDown}
-      data-terax-reader=""
-      className="absolute inset-0 z-[6] flex flex-col bg-background"
-    >
-      {header}
-      {pastBanner}
-      <div ref={bodyRef} className="relative flex min-h-0 flex-1">
-        <div className="flex min-w-0 flex-1 flex-col">
-          {documentBody}
-          {composerBanners}
-          {composerView}
-        </div>
-        {showRail && <SessionRail {...sessionProps} />}
-        {(showChanges || showHistory) && (
-          <div className="terax-reader-in absolute inset-y-0 right-0 z-[8] flex w-[min(440px,100%)] flex-col border-l border-border/60 bg-background shadow-[-18px_0_40px_-28px_rgba(0,0,0,0.9)]">
-            {showHistory ? historyPanel : changesPanel}
+    <FileDiffProvider value={fileDiffApi}>
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: keyboard shortcuts for the reader */}
+      <div
+        ref={(el) => {
+          root.current = el;
+        }}
+        onKeyDown={onKeyDown}
+        data-terax-reader=""
+        className="absolute inset-0 z-[6] flex flex-col bg-background"
+      >
+        {diffDialog}
+        {header}
+        {pastBanner}
+        <div ref={bodyRef} className="relative flex min-h-0 flex-1">
+          <div className="flex min-w-0 flex-1 flex-col">
+            {documentBody}
+            {composerBanners}
+            {composerView}
           </div>
-        )}
+          {showRail && <SessionRail {...sessionProps} />}
+          {(showChanges || showHistory) && (
+            <div className="terax-reader-in absolute inset-y-0 right-0 z-[8] flex w-[min(440px,100%)] flex-col border-l border-border/60 bg-background shadow-[-18px_0_40px_-28px_rgba(0,0,0,0.9)]">
+              {showHistory ? historyPanel : changesPanel}
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </FileDiffProvider>
   );
 }
 
