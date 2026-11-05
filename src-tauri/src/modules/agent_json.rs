@@ -392,10 +392,27 @@ impl Container<'_> {
                 text: String::new(),
             };
         }
-        Edit {
-            start: self.spans[index - 1].1,
-            end,
-            text: String::new(),
+        // Last of several: drop the comma before it and the element itself,
+        // keeping whatever comments sit between the two.
+        let previous_end = self.spans[index - 1].1;
+        match comma_after(text, previous_end).filter(|comma| *comma < start) {
+            Some(comma) => {
+                let bytes = text.as_bytes();
+                let mut kept_end = start;
+                while kept_end > comma + 1 && bytes[kept_end - 1].is_ascii_whitespace() {
+                    kept_end -= 1;
+                }
+                Edit {
+                    start: comma,
+                    end,
+                    text: text[comma + 1..kept_end].to_string(),
+                }
+            }
+            None => Edit {
+                start: previous_end,
+                end,
+                text: String::new(),
+            },
         }
     }
 }
@@ -552,6 +569,7 @@ pub fn remove_matching(
     is_ours: &dyn Fn(&Value) -> bool,
 ) -> Result<String, String> {
     let mut out = text.to_string();
+    let mut removed = false;
     loop {
         let root = parse(&out)?;
         let Walk::Found(node) = walk(&root, path)? else {
@@ -562,8 +580,14 @@ pub fn remove_matching(
             break;
         };
         out = apply(&out, Container::of_array(&out, node, items).remove(index));
+        removed = true;
     }
-    prune_empty(out, path)
+    // Only a removal can leave empties behind; arrays the user left empty stay.
+    if removed {
+        prune_empty(out, path)
+    } else {
+        Ok(out)
+    }
 }
 
 fn prune_empty(mut text: String, path: &[&str]) -> Result<String, String> {
@@ -813,6 +837,41 @@ mod tests {
         let restored =
             remove_matching(&upsert_ours(original, 1), &["hooks", "Stop"], &ours).unwrap();
         assert_eq!(restored, original);
+    }
+
+    #[test]
+    fn removing_the_last_element_keeps_comments_around_it() {
+        let text = "{\n  \"hooks\": {\n    \"Stop\": [\n      { \"id\": \"theirs\" }, // keep me\n      /* and me */\n      { \"id\": \"ours\" }\n    ]\n  }\n}\n";
+        let out = remove_matching(text, &["hooks", "Stop"], &ours).unwrap();
+        assert!(out.contains("// keep me"), "{out}");
+        assert!(out.contains("/* and me */"), "{out}");
+        assert!(!out.contains("ours"));
+        assert_eq!(
+            assert_valid(&out)["hooks"]["Stop"],
+            json!([{ "id": "theirs" }])
+        );
+
+        let members =
+            "{\n  \"a\": 1, // about a\n  \"hooks\": { \"Stop\": [ { \"id\": \"ours\" } ] }\n}\n";
+        let out = remove_matching(members, &["hooks", "Stop"], &ours).unwrap();
+        assert!(out.contains("// about a"), "{out}");
+        assert_eq!(assert_valid(&out), json!({ "a": 1 }));
+    }
+
+    #[test]
+    fn empty_containers_the_user_wrote_survive_a_removal_elsewhere() {
+        let text = "{\n  \"hooks\": {\n    \"PreToolUse\": [],\n    \"Stop\": [ { \"id\": \"ours\" } ]\n  }\n}\n";
+        let out = remove_matching(text, &["hooks", "Stop"], &ours).unwrap();
+        assert_eq!(assert_valid(&out), json!({ "hooks": { "PreToolUse": [] } }));
+        // Nothing of ours under the empty array: not touched at all.
+        assert_eq!(
+            remove_matching(text, &["hooks", "PreToolUse"], &ours).unwrap(),
+            text
+        );
+        assert_eq!(
+            remove_matching("{\"hooks\":{}}", &["hooks", "Stop"], &ours).unwrap(),
+            "{\"hooks\":{}}"
+        );
     }
 
     #[test]
