@@ -22,7 +22,7 @@ import { ghosttyBlocks } from "./ghostty/ghosttyBlockSessions";
 export type TerminalPaneHandle = {
   write: (data: string) => void;
   /** Like `write`, but only when the shell is at its prompt; false if not. */
-  writeAtPrompt: (data: string) => boolean;
+  writeAtPrompt: (data: string) => Promise<boolean>;
   focus: () => void;
   getBuffer: (maxLines?: number) => string | null;
   getSelection: () => string | null;

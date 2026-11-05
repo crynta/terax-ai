@@ -661,13 +661,15 @@ export default function App() {
       if (activeLeafId === null) return;
       const term = terminalRefs.current.get(activeLeafId);
       if (!term) return;
-      if (!term.writeAtPrompt(`cd ${quoteShellArg(path)}\r`)) {
+      void term.writeAtPrompt(`cd ${quoteShellArg(path)}\r`).then((typed) => {
+        if (typed) {
+          term.focus();
+          return;
+        }
         toast("Terminal is busy", {
           description: "Open a new tab to go there, or exit the running program.",
         });
-        return;
-      }
-      term.focus();
+      });
     },
     [activeLeafId],
   );

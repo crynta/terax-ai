@@ -64,6 +64,15 @@ describe("GhosttySemanticEventRouter", () => {
     expect(onCwd.mock.calls).toEqual([["/home/me"]]);
   });
 
+  it("says whether a prompt's shell can report that a command started", () => {
+    const onPromptEnd = vi.fn();
+    const router = new GhosttySemanticEventRouter({ onPromptEnd });
+    router.handle({ type: "prompt-end" });
+    // Bash before 4.4 marks its prompts with terax_blocks=0 and has no PS0.
+    router.handle({ type: "prompt-end", blockInput: false });
+    expect(onPromptEnd.mock.calls).toEqual([[true], [false]]);
+  });
+
   it("reports bounded-queue overflow", () => {
     const onOverflow = vi.fn();
     const router = new GhosttySemanticEventRouter({ onOverflow });

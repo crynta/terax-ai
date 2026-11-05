@@ -16,7 +16,6 @@ import type { TerminalSearchController } from "@/modules/terminal/search/Termina
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isAgentActivePty } from "../lib/agentActivity";
-import { shellAcceptsInjectedCommand } from "../lib/promptInjection";
 import { openPty, type PtyColors, type PtySession } from "../lib/pty-bridge";
 import { writeTerminalClipboard } from "../lib/terminalClipboard";
 import { LatestClipboardWrite } from "@/modules/terminal/lib/LatestClipboardWrite";
@@ -82,6 +81,8 @@ type GhosttySession = {
   /** OSC 133 has been seen, so `commandRunning` can be trusted. */
   promptIntegrated: boolean;
   commandRunning: boolean;
+  /** The shell's prompts say whether a command started. */
+  commandTracked: boolean;
   disposed: boolean;
   generation: number;
   initializing: Promise<void> | null;
@@ -320,16 +321,29 @@ export function writeToGhosttySession(leafId: number, data: string): boolean {
  * Types a shell command on the user's behalf only when the shell will read it:
  * never into a running command, a full-screen program or a coding agent.
  */
-function writeToGhosttyPrompt(leafId: number, data: string): boolean {
+async function writeToGhosttyPrompt(
+  leafId: number,
+  data: string,
+): Promise<boolean> {
   const session = sessions.get(leafId);
   if (!session || session.shellExited || session.disposed) return false;
-  const accepts = shellAcceptsInjectedCommand({
-    integrated: session.promptIntegrated,
-    commandRunning: session.commandRunning,
-    alternateScreen: session.model?.modes().alternateScreen ?? false,
-    agentActive: session.pty ? isAgentActivePty(session.pty.id) : false,
-  });
-  if (!accepts) return false;
+  const { shellAcceptsInjectedCommand } = await import(
+    "../lib/promptInjection"
+  );
+  const accepts = await shellAcceptsInjectedCommand(
+    {
+      integrated: session.promptIntegrated,
+      commandRunning: session.commandRunning,
+      commandTracked: session.commandTracked,
+      alternateScreen: session.model?.modes().alternateScreen ?? false,
+      agentActive: session.pty ? isAgentActivePty(session.pty.id) : false,
+    },
+    () =>
+      session.pty
+        ? invoke<boolean>("pty_has_foreground_job", { id: session.pty.id })
+        : Promise.resolve(false),
+  );
+  if (!accepts || session.shellExited || session.disposed) return false;
   return session.writer.enqueue(textEncoder.encode(data));
 }
 
@@ -479,6 +493,7 @@ async function respawnGhosttySession(
   session.shellExited = false;
   session.promptIntegrated = false;
   session.commandRunning = false;
+  session.commandTracked = false;
   session.lastCwd = null;
   session.initialCwd = cwd ?? session.initialCwd;
   session.startupError = null;
@@ -600,6 +615,7 @@ function ensureSession(
     shellExited: false,
     promptIntegrated: false,
     commandRunning: false,
+    commandTracked: false,
     disposed: false,
     generation: 0,
     initializing: null,
@@ -699,6 +715,9 @@ async function initializeSessionGeneration(
       console.warn(
         `[terax] Ghostty semantic event queue dropped ${dropped} event(s)`,
       );
+    },
+    onPromptEnd: (reportsCommandStart) => {
+      session.commandTracked = reportsCommandStart;
     },
     onCommandState: (running) => {
       session.promptIntegrated = true;
