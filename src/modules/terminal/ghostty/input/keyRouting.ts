@@ -120,10 +120,14 @@ export function ignoredForIme(event: KeyboardLike, ctx: KeyContext): boolean {
   if (isOptionMeta(event, ctx)) return false;
   if (key === "Dead") return true;
   if (event.keyCode !== 229) return false;
-  // Backspace edits a preedit, but Option/Ctrl/Command+Backspace never does.
+  // Backspace edits a preedit, but Option/Ctrl/Command+Backspace never does,
+  // and neither does a Ctrl or Command chord (Ctrl+Space toggles the IME and
+  // Ctrl+Alt is AltGr text, so those stay with it).
   const wordDelete =
     key === "Backspace" && (event.altKey || event.ctrlKey || event.metaKey);
-  return !IME_SAFE_KEY.test(key) && !wordDelete;
+  const chord =
+    (event.ctrlKey || event.metaKey) && !event.altKey && key !== " ";
+  return !IME_SAFE_KEY.test(key) && !wordDelete && !chord;
 }
 
 /** Classifies a key press the IME guard let through. */
