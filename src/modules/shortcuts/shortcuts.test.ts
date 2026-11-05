@@ -117,6 +117,41 @@ describe("matchBinding", () => {
     ).toBe(false);
   });
 
+  it("follows a layout that types another letter on the key (Dvorak Ctrl+Shift+C is on KeyI)", () => {
+    const toggleAi = { ctrl: true, shift: true, key: "i" };
+    const dvorakC = event({
+      key: "C",
+      code: "KeyI",
+      ctrlKey: true,
+      shiftKey: true,
+    });
+    expect(matchBinding(dvorakC, toggleAi)).toBe(false);
+    expect(matchBinding(dvorakC, { ctrl: true, shift: true, key: "c" })).toBe(
+      true,
+    );
+    expect(
+      matchBinding(
+        event({ key: "W", code: "Comma", ctrlKey: true, shiftKey: true }),
+        { ctrl: true, shift: true, key: "," },
+      ),
+    ).toBe(false);
+  });
+
+  it("still falls back to the physical key for another script or a dead key", () => {
+    expect(
+      matchBinding(
+        event({ key: "Ш", code: "KeyI", ctrlKey: true, shiftKey: true }),
+        { ctrl: true, shift: true, key: "i" },
+      ),
+    ).toBe(true);
+    expect(
+      matchBinding(
+        event({ key: "Dead", code: "KeyE", altKey: true, metaKey: true }),
+        { alt: true, meta: true, key: "e" },
+      ),
+    ).toBe(true);
+  });
+
   it("does not fall back to the physical code without alt or shift", () => {
     expect(
       matchBinding(event({ key: "ç", code: "KeyC", metaKey: true }), {

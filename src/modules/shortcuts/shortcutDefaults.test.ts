@@ -350,6 +350,33 @@ describe("Windows and Linux defaults", () => {
   });
 });
 
+describe.each([
+  ["Windows and Linux", WIN_LINUX_DEFAULTS],
+  ["macOS", MAC_DEFAULTS],
+])(
+  "%s defaults on a layout that moves letters (Dvorak, Colemak)",
+  (_, table) => {
+    it("never fire for a key that types a different letter", () => {
+      const fired: string[] = [];
+      for (const id of ids) {
+        if (id === "tab.selectByIndex") continue;
+        for (const binding of table[id])
+          for (const letter of "abcdefghijklmnopqrstuvwxyz".split("")) {
+            if (letter === binding.key.toLowerCase()) continue;
+            const event = {
+              ...eventOf(binding),
+              key: binding.shift ? letter.toUpperCase() : letter,
+              code: codeOf(binding.key),
+            } as KeyboardEvent;
+            if (matchBinding(event, binding, id))
+              fired.push(`${id} ${describeBinding(binding)} on ${letter}`);
+          }
+      }
+      expect(fired).toEqual([]);
+    });
+  },
+);
+
 describe("Windows and Linux: Jump to tab", () => {
   const binding = WIN_LINUX_DEFAULTS["tab.selectByIndex"][0];
   const press = (key: string, code: string, extra: Partial<KeyboardEvent>) =>

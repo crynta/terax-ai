@@ -402,6 +402,9 @@ export function matchBinding(
     if (tabDigit(e, !!binding.shift) === null) return false;
   } else if (eventKey !== bindingKey) {
     if (!binding.alt && !binding.shift) return false;
+    // A Latin letter is the layout's own answer (Dvorak, Colemak): only a
+    // symbol, a dead key or another script falls back to the physical key.
+    if (/^[a-z]$/.test(eventKey)) return false;
     if (keyFromCode(e.code) !== bindingKey) return false;
   }
 
