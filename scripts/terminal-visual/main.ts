@@ -337,7 +337,7 @@ if (patternName === "sprites") {
   } else {
     write(glyphPattern.cursorPattern());
     const target =
-      glyphPattern.CURSOR_TARGETS[(params.get("cursorAt") ?? "letter") as "letter" | "wide" | "colored"];
+      glyphPattern.CURSOR_TARGETS[(params.get("cursorAt") ?? "letter") as "letter" | "wide" | "colored" | "flame"];
     glyphCases = target;
     write(`\x1b[${target.row + 1};${target.col + 1}H`);
   }
@@ -511,13 +511,21 @@ const api = {
       };
     } else {
       const style = (params.get("cursor") as "block" | "bar" | "underline") ?? "block";
-      const wide = (params.get("cursorAt") ?? "letter") === "wide";
-      report = check.checkCursor(frame, geometry, glyphCases as never, wide ? 2 : 1, style, {
-        cursor: theme.cursor,
-        cursorText: theme.cursorText,
-        foreground: theme.foreground,
-        background: theme.background,
-      });
+      const at = params.get("cursorAt") ?? "letter";
+      report = check.checkCursor(
+        frame,
+        geometry,
+        glyphCases as never,
+        at === "wide" ? 2 : 1,
+        style,
+        {
+          cursor: theme.cursor,
+          cursorText: theme.cursorText,
+          foreground: theme.foreground,
+          background: theme.background,
+        },
+        at === "flame" && style === "block",
+      );
     }
     const meta = {
       name,

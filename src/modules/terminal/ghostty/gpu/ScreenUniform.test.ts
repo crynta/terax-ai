@@ -303,11 +303,15 @@ describe("shader uniform layout", () => {
     expect(f[at(SCREEN_OFFSET.cursorText)]).toBeCloseTo(51 / 255, 6);
     expect(f[at(SCREEN_OFFSET.cursorText, 1)]).toBeCloseTo(102 / 255, 6);
     expect(f[at(SCREEN_OFFSET.cursorText, 2)]).toBeCloseTo(204 / 255, 6);
-    // The glyph pass recolours the glyph of every cell the block covers; the background
-    // pass widens the block over a wide character.
+    // The vertex stage hands the block's pixel box to the glyphs of the cells it covers and the
+    // fragment stage recolours only the ink inside it, so a roomy glyph that reaches past the
+    // block keeps its own colour there; the background pass widens the block over a wide
+    // character.
+    expect(GLYPH_SHADER).toMatch(/output\.cursor_box = vec4f\(\s*f32\(span\.x \* screen\.cell_size\.x\)/);
     expect(GLYPH_SHADER).toMatch(
-      /output\.color = vec4f\(screen\.cursor_text\.rgb, 1\.0\)/,
+      /local_position\.x < cursor_box\.z && local_position\.y < cursor_box\.w\) \{\s*color = vec4f\(screen\.cursor_text\.rgb, 1\.0\);/,
     );
+    expect(GLYPH_SHADER).not.toMatch(/output\.color = vec4f\(screen\.cursor_text/);
     expect(GLYPH_SHADER).toMatch(/FLAG_CURSOR_BLOCK/);
     expect(BACKGROUND_SHADER).toMatch(/cursor_columns\(cursor_at\)/);
   });

@@ -89,6 +89,7 @@ type GlyphProgram = Program & {
   readonly textBlinkVisible: WebGLUniformLocation;
   readonly cursor: WebGLUniformLocation;
   readonly cursorText: WebGLUniformLocation;
+  readonly cursorBox: WebGLUniformLocation;
   readonly cells: WebGLUniformLocation;
   readonly contrast: WebGLUniformLocation;
   readonly gamma: WebGLUniformLocation;
@@ -829,10 +830,12 @@ export class WebGlCellRenderer {
         1,
       );
     } else {
+      const at = cursor.y * this.cols + cursor.x;
       const span = blockCursorSpan(
         cursor.x,
-        this.widths[cursor.y * this.cols + cursor.x],
+        this.widths[at],
         this.cols,
+        cursor.x > 0 ? this.widths[at - 1] : 1,
       );
       this.writeRectangle(
         vertices,
@@ -977,6 +980,15 @@ export class WebGlCellRenderer {
       text[0] / 255,
       text[1] / 255,
       text[2] / 255,
+    );
+    const { deviceCellWidth: cellWidth, deviceCellHeight: cellHeight } =
+      profile.metrics;
+    gl.uniform4f(
+      resources.glyphProgram.cursorBox,
+      this.blockColumn * cellWidth,
+      this.blockRow * cellHeight,
+      (this.blockColumn + this.blockCount) * cellWidth,
+      (this.blockRow + 1) * cellHeight,
     );
     gl.uniform2f(resources.glyphProgram.cells, this.cols, this.rows);
     gl.uniform2f(
@@ -1145,6 +1157,11 @@ export class WebGlCellRenderer {
       glyphProgramValue,
       "u_cursor_text",
     );
+    const glyphCursorBox = requiredUniform(
+      gl,
+      glyphProgramValue,
+      "u_cursor_box",
+    );
     const glyphCells = requiredUniform(gl, glyphProgramValue, "u_cells");
     const glyphContrast = requiredUniform(gl, glyphProgramValue, "u_contrast");
     const glyphGamma = requiredUniform(gl, glyphProgramValue, "u_gamma");
@@ -1199,6 +1216,7 @@ export class WebGlCellRenderer {
         textBlinkVisible: glyphTextBlinkVisible,
         cursor: glyphCursor,
         cursorText: glyphCursorText,
+        cursorBox: glyphCursorBox,
         cells: glyphCells,
         contrast: glyphContrast,
         gamma: glyphGamma,
@@ -1543,20 +1561,21 @@ layout(location = 7) in vec2 a_cellpos;
 uniform mat4 u_projection;
 uniform vec2 u_resolution;
 uniform vec4 u_cursor;
-uniform vec3 u_cursor_text;
 uniform vec2 u_cells;
 out vec2 v_texcoord;
 out vec4 v_color;
 flat out float v_intrinsic_color;
+flat out float v_cursor_on;
 void main() {
   vec2 zeroToOne = (a_offset / u_resolution) + a_cellpos + a_unitquad * a_size;
   gl_Position = u_projection * vec4(zeroToOne, 0.0, 1.0);
   v_texcoord = a_texcoord + a_unitquad * a_texsize;
   v_color = a_color;
   vec2 cell = floor(a_cellpos * u_cells + 0.5);
+  v_cursor_on = 0.0;
   if (u_cursor.w > 0.5 && cell.y == u_cursor.y && cell.x >= u_cursor.x &&
       cell.x < u_cursor.x + u_cursor.z) {
-    v_color = vec4(u_cursor_text, a_color.a < 0.0 ? -1.0 : 1.0);
+    v_cursor_on = 1.0;
   }
   v_intrinsic_color = a_intrinsic_color;
 }`;
@@ -1569,9 +1588,13 @@ uniform sampler2D u_color_atlas;
 uniform bool u_text_blink_visible;
 uniform vec2 u_contrast;
 uniform vec4 u_gamma;
+uniform vec2 u_resolution;
+uniform vec4 u_cursor_box;
+uniform vec3 u_cursor_text;
 in vec2 v_texcoord;
 in vec4 v_color;
 flat in float v_intrinsic_color;
+flat in float v_cursor_on;
 out vec4 outColor;
 float applyContrast(float coverage, vec3 foreground) {
   float lightness = dot(foreground, vec3(0.30, 0.59, 0.11));
@@ -1583,7 +1606,15 @@ float applyContrast(float coverage, vec3 foreground) {
   return clamp(mix(enhanced, corrected, u_contrast.y), 0.0, 1.0);
 }
 void main() {
+  vec3 rgb = v_color.rgb;
   float alpha = abs(v_color.a);
+  if (v_cursor_on > 0.5) {
+    vec2 at = vec2(gl_FragCoord.x, u_resolution.y - gl_FragCoord.y);
+    if (at.x >= u_cursor_box.x && at.y >= u_cursor_box.y && at.x < u_cursor_box.z && at.y < u_cursor_box.w) {
+      rgb = u_cursor_text;
+      alpha = 1.0;
+    }
+  }
   if (v_color.a < 0.0 && !u_text_blink_visible) alpha = 0.0;
   if (v_intrinsic_color > 0.5 && v_intrinsic_color < 1.5) {
     vec4 color = texture(u_color_atlas, v_texcoord);
@@ -1591,8 +1622,8 @@ void main() {
   } else {
     float coverage = texture(u_atlas, v_texcoord).r;
     if (v_intrinsic_color < 1.5 && (u_contrast.x > 0.0 || u_contrast.y > 0.0)) {
-      coverage = applyContrast(coverage, v_color.rgb);
+      coverage = applyContrast(coverage, rgb);
     }
-    outColor = vec4(v_color.rgb, alpha * coverage);
+    outColor = vec4(rgb, alpha * coverage);
   }
 }`;

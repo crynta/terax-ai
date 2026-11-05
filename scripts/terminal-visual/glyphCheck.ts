@@ -216,6 +216,7 @@ export function checkCursor(
   span: number,
   style: "block" | "bar" | "underline",
   colors: { cursor: Rgb; cursorText: Rgb; foreground: Rgb; background: Rgb },
+  overhang = false,
 ): Report {
   const failures: string[] = [];
   const box = cellBox(geometry, target.row, target.col, span);
@@ -229,9 +230,26 @@ export function checkCursor(
   });
   const area = (box.x1 - box.x0) * (box.y1 - box.y0);
   if (style === "block") {
-    if (cursorPixels < area * 0.25) failures.push(`block covers only ${cursorPixels}/${area} px`);
+    // A solid glyph (a flame) leaves little of the block's own colour showing, so it counts too.
+    const covered = overhang ? cursorPixels + textPixels : cursorPixels;
+    if (covered < area * 0.25) failures.push(`block covers only ${covered}/${area} px`);
     if (textPixels < 3) failures.push("the character under the block is not drawn in the cursor text colour");
     if (foregroundPixels > 0) failures.push(`${foregroundPixels} px kept the foreground colour under the block`);
+    if (overhang) {
+      // A glyph reaching past the block keeps its own colour there: no recolour, no cursor.
+      const next = cellBox(geometry, target.row, target.col + 1);
+      let kept = 0;
+      let recoloured = 0;
+      let painted = 0;
+      each(frame, next, (color) => {
+        if (distance(color, colors.foreground) < 24) kept += 1;
+        if (distance(color, colors.cursorText) < 40) recoloured += 1;
+        if (distance(color, colors.cursor) < 12) painted += 1;
+      });
+      if (kept < 3) failures.push("the part of the glyph past the block lost its colour");
+      if (recoloured > 0) failures.push(`${recoloured} px past the block took the cursor text colour`);
+      if (painted > 0) failures.push(`${painted} px past the block are cursor coloured`);
+    }
     if (span === 2) {
       const tail = cellBox(geometry, target.row, target.col + 1);
       let tailCursor = 0;

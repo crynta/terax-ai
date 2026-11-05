@@ -147,25 +147,34 @@ describe("WebGL shaders", () => {
   });
 
   it("passes the text colour through unquantised and blends it by glyph coverage", () => {
-    expect(GLYPH_FRAGMENT_SHADER).toMatch(
-      /outColor = vec4\(v_color\.rgb, alpha \* coverage\);/,
-    );
+    expect(GLYPH_FRAGMENT_SHADER).toMatch(/outColor = vec4\(rgb, alpha \* coverage\);/);
+    expect(GLYPH_FRAGMENT_SHADER).toMatch(/vec3 rgb = v_color\.rgb;/);
   });
 
-  it("recolours the glyphs under a block cursor in the vertex stage", () => {
+  it("recolours only the ink inside the block, so a roomy glyph keeps its own colour past it", () => {
+    // The vertex stage only marks the glyphs of the cells the block covers; the fragment stage
+    // tests each pixel against the block's box.
     expect(GLYPH_VERTEX_SHADER).toMatch(/uniform vec4 u_cursor;/);
-    expect(GLYPH_VERTEX_SHADER).toMatch(/uniform vec3 u_cursor_text;/);
-    expect(GLYPH_VERTEX_SHADER).toMatch(
-      /v_color = vec4\(u_cursor_text, a_color\.a < 0\.0 \? -1\.0 : 1\.0\);/,
+    expect(GLYPH_VERTEX_SHADER).toMatch(/v_cursor_on = 1\.0;/);
+    expect(GLYPH_VERTEX_SHADER).not.toMatch(/u_cursor_text/);
+    expect(GLYPH_FRAGMENT_SHADER).toMatch(/uniform vec4 u_cursor_box;/);
+    expect(GLYPH_FRAGMENT_SHADER).toMatch(/uniform vec3 u_cursor_text;/);
+    expect(GLYPH_FRAGMENT_SHADER).toMatch(
+      /at\.x < u_cursor_box\.z && at\.y < u_cursor_box\.w\) \{\s*rgb = u_cursor_text;/,
     );
+    // Window coordinates run bottom-up; the box is top-down.
+    expect(GLYPH_FRAGMENT_SHADER).toMatch(/u_resolution\.y - gl_FragCoord\.y/);
   });
 
   it("keeps a blinking character under the cursor blinking, as the WebGPU shader does", () => {
     // Blink is carried by the sign of the colour alpha, which the fragment stage reads.
-    expect(GLYPH_VERTEX_SHADER).not.toMatch(/v_color = vec4\(u_cursor_text, 1\.0\)/);
-    expect(GLYPH_FRAGMENT_SHADER).toMatch(
-      /if \(v_color\.a < 0\.0 && !u_text_blink_visible\) alpha = 0\.0;/,
+    // The blink test runs after the cursor recolour, so it wins over the forced alpha.
+    const recolour = GLYPH_FRAGMENT_SHADER.indexOf("alpha = 1.0;");
+    const blink = GLYPH_FRAGMENT_SHADER.indexOf(
+      "if (v_color.a < 0.0 && !u_text_blink_visible) alpha = 0.0;",
     );
+    expect(recolour).toBeGreaterThan(0);
+    expect(blink).toBeGreaterThan(recolour);
   });
 
   it("applies the same contrast curve as the WebGPU shader, never to cell-exact or colour glyphs", () => {

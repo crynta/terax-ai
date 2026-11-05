@@ -201,6 +201,9 @@ export const CURSOR_TEXT_LINES = [
   "日本語 wide 한국어",
   "",
   `${ESC}31mred${ESC}0m ${ESC}1;32mbold green${ESC}0m ${ESC}38;2;255;120;0mtruecolor${ESC}0m`,
+  "",
+  // A Powerline flame with room: two cells wide, under a block that covers only the first.
+  "\ue0c0",
 ];
 
 /** Text to put a cursor on: a plain letter, a wide character and coloured text. */
@@ -215,4 +218,5 @@ export const CURSOR_TARGETS = {
   letter: { row: 0, col: 4 },
   wide: { row: 2, col: 0 },
   colored: { row: 4, col: 0 },
+  flame: { row: 6, col: 0 },
 } as const satisfies Record<string, CursorTarget>;

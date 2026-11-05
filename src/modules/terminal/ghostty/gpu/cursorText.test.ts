@@ -57,19 +57,25 @@ describe("resolveCursorText", () => {
 
 describe("blockCursorSpan", () => {
   it("covers one cell on a narrow character", () => {
-    expect(blockCursorSpan(4, 1, 80)).toEqual({ start: 4, count: 1 });
+    expect(blockCursorSpan(4, 1, 80, 1)).toEqual({ start: 4, count: 1 });
   });
 
   it("covers both cells of a wide character from its lead", () => {
-    expect(blockCursorSpan(4, 2, 80)).toEqual({ start: 4, count: 2 });
+    expect(blockCursorSpan(4, 2, 80, 1)).toEqual({ start: 4, count: 2 });
   });
 
-  it("moves a cursor on the trailing spacer back onto the lead", () => {
-    expect(blockCursorSpan(5, 0, 80)).toEqual({ start: 4, count: 2 });
+  it("moves a cursor on the trailing spacer back onto the wide lead before it", () => {
+    expect(blockCursorSpan(5, 0, 80, 2)).toEqual({ start: 4, count: 2 });
+  });
+
+  it("leaves a cursor on a wrap spacer head alone: no wide lead before it, nothing to back onto", () => {
+    // A five-column row holding "abcd" with the wide character wrapped to the next row: the
+    // last cell is a spacer head and the cell before it is the narrow "d".
+    expect(blockCursorSpan(4, 0, 5, 1)).toEqual({ start: 4, count: 1 });
   });
 
   it("never reaches past the grid", () => {
-    expect(blockCursorSpan(79, 2, 80)).toEqual({ start: 79, count: 1 });
-    expect(blockCursorSpan(0, 0, 80)).toEqual({ start: 0, count: 1 });
+    expect(blockCursorSpan(79, 2, 80, 1)).toEqual({ start: 79, count: 1 });
+    expect(blockCursorSpan(0, 0, 80, 1)).toEqual({ start: 0, count: 1 });
   });
 });

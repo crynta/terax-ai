@@ -42,17 +42,21 @@ function relativeLuminance(color: Rgb): number {
 }
 
 /**
- * The cells a block cursor covers. A cursor on a wide character covers both
- * cells, whether it sits on the lead or (after explicit movement) on the
- * trailing spacer. `width` is the renderer's per-cell width: 0 for a spacer
- * tail, 2 for a wide lead, 1 otherwise.
+ * The cells a block cursor covers. A cursor on a wide character covers both cells, whether it
+ * sits on the lead or (after explicit movement) on the trailing spacer. `width` is the
+ * renderer's per-cell width: 0 for a spacer, 2 for a wide lead, 1 otherwise. A spacer is
+ * the tail of a wide character only when the cell before it is a wide lead; at the end of a
+ * wrapped row it is a spacer head, which holds no character and has nothing to back onto.
  */
 export function blockCursorSpan(
   column: number,
   width: number,
   columns: number,
+  previousWidth: number,
 ): { readonly start: number; readonly count: 1 | 2 } {
-  if (width === 0 && column > 0) return { start: column - 1, count: 2 };
+  if (width === 0 && column > 0 && previousWidth === 2) {
+    return { start: column - 1, count: 2 };
+  }
   if (width === 2 && column + 1 < columns) return { start: column, count: 2 };
   return { start: column, count: 1 };
 }

@@ -260,6 +260,7 @@ struct VertexOutput {
   @interpolate(flat) @location(1) quad_origin: vec2i,
   @interpolate(flat) @location(2) color: vec4f,
   @interpolate(flat) @location(3) glyph_flags: u32,
+  @interpolate(flat) @location(4) cursor_box: vec4f,
 }
 
 fn degenerate() -> VertexOutput {
@@ -269,6 +270,7 @@ fn degenerate() -> VertexOutput {
   output.quad_origin = vec2i(0);
   output.color = vec4f(0.0);
   output.glyph_flags = 0u;
+  output.cursor_box = vec4f(0.0);
   return output;
 }
 
@@ -354,12 +356,20 @@ fn vertex_main(
   output.texel_origin = vec2i(i32(entry.x & 0xffffu) + skipped, i32(entry.x >> 16u));
   output.quad_origin = origin;
   output.color = unpack4x8unorm(record.y);
+  output.cursor_box = vec4f(0.0);
   if ((screen.flags & FLAG_CURSOR_BLOCK) != 0u) {
     let cursor_at = cursor_cell();
     if (row == cursor_at.y) {
       let span = cursor_columns(cursor_at);
       if (col >= span.x && col < span.x + span.y) {
-        output.color = vec4f(screen.cursor_text.rgb, 1.0);
+        // The fragment stage recolours only the ink inside the block: a roomy glyph that
+        // reaches past it keeps its own colour there.
+        output.cursor_box = vec4f(
+          f32(span.x * screen.cell_size.x),
+          screen.cursor_origin.y,
+          f32((span.x + span.y) * screen.cell_size.x),
+          screen.cursor_origin.y + screen.cursor_size.y,
+        );
       }
     }
   }
@@ -386,9 +396,16 @@ fn fragment_main(
   @builtin(position) position: vec4f,
   @interpolate(flat) @location(0) texel_origin: vec2i,
   @interpolate(flat) @location(1) quad_origin: vec2i,
-  @interpolate(flat) @location(2) color: vec4f,
+  @interpolate(flat) @location(2) base_color: vec4f,
   @interpolate(flat) @location(3) glyph_flags: u32,
+  @interpolate(flat) @location(4) cursor_box: vec4f,
 ) -> @location(0) vec4f {
+  var color = base_color;
+  let local_position = position.xy - vec2f(screen.origin) + vec2f(0.0, f32(screen.shift_y));
+  if (local_position.x >= cursor_box.x && local_position.y >= cursor_box.y &&
+      local_position.x < cursor_box.z && local_position.y < cursor_box.w) {
+    color = vec4f(screen.cursor_text.rgb, 1.0);
+  }
   let texel = texel_origin + vec2i(floor(position.xy)) - vec2i(screen.origin) +
     vec2i(0, i32(screen.shift_y)) - quad_origin;
   if ((glyph_flags & 1u) != 0u) {
