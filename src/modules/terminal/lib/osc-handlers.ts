@@ -6,14 +6,17 @@ export function parseOsc7(data: string): string | null {
   const m = data.match(/^file:\/\/[^/]*(\/.*)$/);
   if (!m) return null;
   let path = m[1];
+  // cmd.exe's PROMPT cannot escape or convert `$P`: its paths arrive literal,
+  // with backslashes, so a folder named `a%20b` must not be percent-decoded.
+  if (/^\/(?:[A-Za-z]:\\|\\\\)/.test(path)) {
+    return path.slice(1).replace(/\\/g, "/");
+  }
   try {
     path = decodeURIComponent(path);
   } catch {}
-  // /C:/Users/foo -> C:/Users/foo so it's a valid Windows path. cmd.exe's
-  // PROMPT cannot escape or convert `$P`, so its drive paths keep backslashes.
+  // /C:/Users/foo -> C:/Users/foo so it's a valid Windows path.
   if (/^\/[A-Za-z]:/.test(path)) {
     path = path.slice(1);
-    if (/^[A-Za-z]:\\/.test(path)) path = path.replace(/\\/g, "/");
   } else if (IS_WINDOWS) {
     // git-bash (MSYS) reports cwd as /c/Users/foo; map it to C:/Users/foo.
     const drive = path.match(/^\/([A-Za-z])(\/.*)?$/);
