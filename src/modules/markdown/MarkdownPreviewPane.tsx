@@ -1,4 +1,5 @@
 import { MarkdownCode } from "@/components/ai-elements/markdown-code";
+import { checkReadable } from "@/modules/ai/lib/security";
 import { cn } from "@/lib/utils";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import {
@@ -9,20 +10,27 @@ import {
   useRef,
 } from "react";
 import { defaultRehypePlugins, Streamdown } from "streamdown";
-import { rehypeLocalImages } from "./lib/assetPath";
+import { previewBoundary, rehypeLocalImages } from "./lib/assetPath";
 import { MarkdownLink } from "./MarkdownLink";
 import { MarkdownViewToggle } from "./MarkdownViewToggle";
 import { useMarkdownDocument } from "./useMarkdownDocument";
 
 type Props = {
   path: string;
+  /** Images load only from beneath this folder (the document's own folder if it lies outside). */
+  workspaceRoot?: string | null;
   visible: boolean;
   onSetView: (mode: "rendered" | "raw") => void;
 };
 
 const components = { a: MarkdownLink, code: MarkdownCode };
 
-export function MarkdownPreviewPane({ path, visible, onSetView }: Props) {
+export function MarkdownPreviewPane({
+  path,
+  workspaceRoot = null,
+  visible,
+  onSetView,
+}: Props) {
   const status = useMarkdownDocument(path, visible);
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollTopRef = useRef(0);
@@ -76,7 +84,13 @@ export function MarkdownPreviewPane({ path, visible, onSetView }: Props) {
               File is {status.size} bytes; limit {status.limit}.
             </p>
           )}
-          {content !== null && <MarkdownBody path={path} content={content} />}
+          {content !== null && (
+            <MarkdownBody
+              path={path}
+              boundary={previewBoundary(path, workspaceRoot)}
+              content={content}
+            />
+          )}
         </div>
       </div>
     </div>
@@ -85,9 +99,11 @@ export function MarkdownPreviewPane({ path, visible, onSetView }: Props) {
 
 const MarkdownBody = memo(function MarkdownBody({
   path,
+  boundary,
   content,
 }: {
   path: string;
+  boundary: string;
   content: string;
 }) {
   const rehypePlugins = useMemo(() => {
@@ -95,10 +111,13 @@ const MarkdownBody = memo(function MarkdownBody({
     return [
       d.raw,
       d.sanitize,
-      rehypeLocalImages(path, (abs) => convertFileSrc(abs)),
+      rehypeLocalImages(path, (abs) => convertFileSrc(abs), {
+        boundary,
+        isReadable: (abs) => checkReadable(abs).ok,
+      }),
       d.harden,
     ];
-  }, [path]);
+  }, [path, boundary]);
 
   return (
     <Streamdown

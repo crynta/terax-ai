@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { rehypeLocalImages, resolveRelativeAsset } from "./assetPath";
+import { checkReadable } from "@/modules/ai/lib/security";
+import {
+  isAllowedLocalImage,
+  isInsideRoot,
+  previewBoundary,
+  rehypeLocalImages,
+  resolveRelativeAsset,
+} from "./assetPath";
 
 describe("resolveRelativeAsset", () => {
   const base = "/work/proj/docs/guide.md";
@@ -49,36 +56,103 @@ describe("resolveRelativeAsset", () => {
   });
 });
 
-describe("rehypeLocalImages", () => {
-  const tree = () => ({
-    type: "root",
-    children: [
-      {
-        type: "element",
-        tagName: "p",
-        children: [
-          {
-            type: "element",
-            tagName: "img",
-            properties: { src: "./a.png" },
-            children: [],
-          },
-          {
-            type: "element",
-            tagName: "img",
-            properties: { src: "https://example.com/b.png" },
-            children: [],
-          },
-        ],
-      },
-    ],
+const policy = (boundary: string) => ({
+  boundary,
+  isReadable: (abs: string) => checkReadable(abs).ok,
+});
+
+describe("isInsideRoot / previewBoundary", () => {
+  it("is lexical and separator-agnostic, never matching siblings", () => {
+    expect(isInsideRoot("/w/p", "/w/p/a/b.png")).toBe(true);
+    expect(isInsideRoot("/w/p/", "/w/p/a.png")).toBe(true);
+    expect(isInsideRoot("/w/p", "/w/p")).toBe(false);
+    expect(isInsideRoot("/w/p", "/w/prod/a.png")).toBe(false);
+    expect(isInsideRoot("C:\\W\\P", "c:/w/p/a.png")).toBe(true);
   });
 
-  it("rewrites only relative images, at any depth", () => {
-    const t = tree();
-    rehypeLocalImages("/d/readme.md", (p) => `asset://${p}`)()(t);
-    const [local, remote] = t.children[0].children;
-    expect(local.properties.src).toBe("asset:///d/a.png");
-    expect(remote.properties.src).toBe("https://example.com/b.png");
+  it("uses the workspace root when it holds the document, else the document folder", () => {
+    expect(previewBoundary("/w/p/docs/a.md", "/w/p")).toBe("/w/p");
+    expect(previewBoundary("/other/docs/a.md", "/w/p")).toBe("/other/docs");
+    expect(previewBoundary("/w/p/docs/a.md", null)).toBe("/w/p/docs");
+  });
+});
+
+describe("isAllowedLocalImage", () => {
+  const p = policy("/w/p");
+
+  it("allows image types inside the boundary", () => {
+    for (const ext of ["png", "JPG", "jpeg", "gif", "webp", "avif", "svg", "bmp", "ico"]) {
+      expect(isAllowedLocalImage(`/w/p/img/a.${ext}`, p)).toBe(true);
+    }
+  });
+
+  it("refuses paths outside the boundary", () => {
+    expect(isAllowedLocalImage("/w/other/a.png", p)).toBe(false);
+    expect(isAllowedLocalImage("/home/me/a.png", p)).toBe(false);
+    expect(isAllowedLocalImage("/w/prod/a.png", p)).toBe(false);
+  });
+
+  it("refuses anything that is not an image type", () => {
+    for (const name of ["notes.md", "id_rsa", "a.png.txt", "a", ".png", "data.json", "x.html"]) {
+      expect(isAllowedLocalImage(`/w/p/${name}`, p)).toBe(false);
+    }
+  });
+
+  it("refuses secret paths even when they look like images", () => {
+    expect(isAllowedLocalImage("/w/p/.ssh/shot.png", p)).toBe(false);
+    expect(isAllowedLocalImage("/w/p/.git/logo.png", p)).toBe(false);
+    expect(isAllowedLocalImage("/w/p/.env.png", p)).toBe(false);
+    expect(isAllowedLocalImage("/w/p/key.pem.png", p)).toBe(false);
+  });
+});
+
+describe("rehypeLocalImages", () => {
+  const img = (src: string) => ({
+    type: "element",
+    tagName: "img",
+    properties: { src } as { src?: string },
+    children: [],
+  });
+  const run = (src: string, doc = "/w/p/docs/readme.md", root = "/w/p") => {
+    const node = img(src);
+    const t = { type: "root", children: [{ type: "element", tagName: "p", children: [node] }] };
+    rehypeLocalImages(doc, (p) => `asset://${p}`, policy(root))()(t);
+    return node.properties.src;
+  };
+
+  it("rewrites allowed relative images at any depth", () => {
+    expect(run("./a.png")).toBe("asset:///w/p/docs/a.png");
+    expect(run("../img/a.svg")).toBe("asset:///w/p/img/a.svg");
+  });
+
+  it("leaves remote images alone", () => {
+    expect(run("https://example.com/b.png")).toBe("https://example.com/b.png");
+  });
+
+  it("does not rewrite traversal out of the workspace", () => {
+    expect(run("../../../../.ssh/id_rsa.png")).toBe("../../../../.ssh/id_rsa.png");
+    expect(run("../../../etc/logo.png")).toBe("../../../etc/logo.png");
+  });
+
+  it("does not rewrite non-image files or secret paths", () => {
+    expect(run("../notes.md")).toBe("../notes.md");
+    expect(run("../.ssh/id_rsa")).toBe("../.ssh/id_rsa");
+    expect(run("../.env.png")).toBe("../.env.png");
+  });
+
+  it("never rewrites absolute references", () => {
+    expect(run("/etc/passwd")).toBe("/etc/passwd");
+    expect(run("C:\\Users\\me\\a.png")).toBe("C:\\Users\\me\\a.png");
+  });
+
+  it("drops asset-protocol URLs written in the document", () => {
+    expect(run("asset://localhost/%2Fetc%2Fpasswd")).toBeUndefined();
+    expect(run("https://asset.localhost/C%3A%2Fsecret.png")).toBeUndefined();
+    expect(run("//asset.localhost/x.png")).toBeUndefined();
+  });
+
+  it("confines a document outside the workspace to its own folder", () => {
+    expect(run("./a.png", "/elsewhere/d/r.md", "/elsewhere/d")).toBe("asset:///elsewhere/d/a.png");
+    expect(run("../a.png", "/elsewhere/d/r.md", "/elsewhere/d")).toBe("../a.png");
   });
 });

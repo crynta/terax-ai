@@ -120,20 +120,12 @@ pub fn run_search(
     }
     let cap = limit.unwrap_or(DEFAULT_SEARCH_LIMIT).min(MAX_SEARCH_LIMIT);
     let workspace = WorkspaceEnv::from_option(workspace);
-    let root_path = resolve_path(&root, &workspace);
-    if !root_path.is_dir() {
-        return Err(format!("not a directory: {root}"));
-    }
+    let root_path = search_root(&root, &workspace)?;
     if cancelled() {
         return Ok(SearchResult::cancelled());
     }
 
-    let key = IndexKey {
-        root: root_path.clone(),
-        show_hidden: show_hidden.unwrap_or(false),
-        max_depth: None,
-    };
-    let file_index = index.get_or_build(&key);
+    let file_index = index.get_or_build(&search_key(&root_path, show_hidden));
     let Some(ranked) = rank_fuzzy(&file_index.entries, q, cap, options.files_only, cancelled)
     else {
         return Ok(SearchResult::cancelled());
@@ -162,6 +154,49 @@ pub fn run_search(
         truncated: file_index.truncated,
         cancelled: false,
     })
+}
+
+/// Resolves and validates the root a search runs over; shared by every entry
+/// point that reads the index so none of them can reach a different root.
+fn search_root(root: &str, workspace: &WorkspaceEnv) -> Result<std::path::PathBuf, String> {
+    let root_path = resolve_path(root, workspace);
+    if !root_path.is_dir() {
+        return Err(format!("not a directory: {root}"));
+    }
+    Ok(root_path)
+}
+
+fn search_key(root_path: &Path, show_hidden: Option<bool>) -> IndexKey {
+    IndexKey {
+        root: root_path.to_path_buf(),
+        show_hidden: show_hidden.unwrap_or(false),
+        max_depth: None,
+    }
+}
+
+/// Builds (or reuses) the file index of `root` without ranking anything, so
+/// the first real query does not pay for the walk.
+#[tauri::command]
+pub async fn fs_warm_index(
+    index: State<'_, FileIndexState>,
+    root: String,
+    workspace: Option<WorkspaceEnv>,
+    show_hidden: Option<bool>,
+) -> Result<(), String> {
+    let index = index.inner().clone();
+    blocking(move || run_warm_index(&index, root, workspace, show_hidden)).await
+}
+
+pub fn run_warm_index(
+    index: &FileIndexState,
+    root: String,
+    workspace: Option<WorkspaceEnv>,
+    show_hidden: Option<bool>,
+) -> Result<(), String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let root_path = search_root(&root, &workspace)?;
+    index.get_or_build(&search_key(&root_path, show_hidden));
+    Ok(())
 }
 
 fn abs_path(rel: &str, root_path: &Path, root_display: &str, workspace: &WorkspaceEnv) -> String {
@@ -428,5 +463,41 @@ mod tests {
 
         let marked = search(true);
         assert_eq!(marked[0].indices, vec![0, 3, 5]);
+    }
+
+    #[test]
+    fn warming_builds_the_index_once_so_the_first_search_reuses_it() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("alpha.rs"), "").unwrap();
+        let root = dir.path().to_string_lossy().into_owned();
+        let state = FileIndexState::default();
+        run_warm_index(&state, root.clone(), None, None).unwrap();
+
+        // A file added after the warm-up is invisible: the search reused the cache.
+        std::fs::write(dir.path().join("alphabet.rs"), "").unwrap();
+        let hits = run_search(
+            &state,
+            root,
+            "alpha".into(),
+            None,
+            None,
+            None,
+            SearchOptions::default(),
+            &|| false,
+        )
+        .unwrap()
+        .hits;
+        assert_eq!(hits.len(), 1);
+    }
+
+    #[test]
+    fn warming_rejects_roots_that_are_not_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("f.txt");
+        std::fs::write(&file, "").unwrap();
+        let state = FileIndexState::default();
+        let err = run_warm_index(&state, file.to_string_lossy().into_owned(), None, None);
+        assert!(err.unwrap_err().starts_with("not a directory"));
+        assert!(run_warm_index(&state, "/definitely/not/here".into(), None, None).is_err());
     }
 }
