@@ -446,10 +446,10 @@ pub fn add(
         .map(|e| PathBuf::from(&e.path))
         .unwrap_or_else(|| repo.local_path.clone());
     let target = choose_target(registry, &repo, &main_path, worktrees_dir, request)?;
-    let target_display = target.path.to_string_lossy().into_owned();
+    let target_arg = crate::modules::git::utils::git_arg(&target.path);
 
     git_args.push("--".into());
-    git_args.push(target_display.clone().into());
+    git_args.push(target_arg);
     match &request.branch {
         WorktreeBranch::NewBranch { .. } | WorktreeBranch::Detach => {
             git_args.push(base_id.clone().into())

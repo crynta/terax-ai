@@ -151,7 +151,7 @@ impl TempIndex {
         RunOptions {
             env: vec![(
                 OsString::from("GIT_INDEX_FILE"),
-                self.path.clone().into_os_string(),
+                crate::modules::git::utils::git_arg(&self.path),
             )],
             stdin,
             stdout_cap: 0,
@@ -175,7 +175,7 @@ impl Drop for TempIndex {
 /// `core.safecrlf`.
 pub fn plumbing_config(hooks: &Path) -> Vec<OsString> {
     let mut hooks_arg = OsString::from("core.hooksPath=");
-    hooks_arg.push(hooks);
+    hooks_arg.push(crate::modules::git::utils::git_arg(hooks));
     let mut args = os_args(["-c", "core.fsmonitor=false", "-c"]);
     args.push(hooks_arg);
     args.extend(os_args(["-c", "core.safecrlf=false"]));

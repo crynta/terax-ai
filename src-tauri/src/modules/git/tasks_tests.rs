@@ -7,14 +7,8 @@ use crate::modules::git::branch;
 use crate::modules::git::checkpoint::{self, RestoreRefusal};
 use crate::modules::git::errors::GitError;
 use crate::modules::git::operations;
-use crate::modules::git::testutil::{git_in, TestRepo};
+use crate::modules::git::testutil::{authorized, git_in, scratch, TestRepo};
 use crate::modules::git::worktree::{self, RemoveBlocker, WorktreeAddRequest, WorktreeBranch};
-
-fn scratch() -> (tempfile::TempDir, PathBuf) {
-    let dir = tempfile::tempdir().unwrap();
-    let path = std::fs::canonicalize(dir.path()).unwrap();
-    (dir, path)
-}
 
 fn add_request(branch: WorktreeBranch, task: &str) -> WorktreeAddRequest {
     WorktreeAddRequest {
@@ -53,8 +47,8 @@ fn a_new_worktree_gets_a_collision_safe_default_location_and_is_authorized() {
     assert!(path.join("README.md").is_file());
     assert_eq!(first.branch.as_deref(), Some("task/one"));
     assert!(!first.detached);
-    assert!(repo.registry.is_authorized(&path));
-    assert!(repo.registry.is_authorized(&path.join("sub/dir")));
+    assert!(authorized(&repo.registry, &path));
+    assert!(authorized(&repo.registry, &path.join("sub/dir")));
 
     let second = add_worktree(
         &repo,
@@ -299,13 +293,13 @@ fn removing_reports_dirty_and_unmerged_work_instead_of_deleting_it() {
     assert_eq!(blocked.untracked_count, 1);
     assert_eq!(blocked.unmerged_commits, 1);
     assert!(path.is_dir(), "nothing was deleted");
-    assert!(repo.registry.is_authorized(&path));
+    assert!(authorized(&repo.registry, &path));
 
     let forced =
         worktree::remove(&repo.registry, &repo.path(), &added.path, true, &repo.ws).unwrap();
     assert!(forced.removed);
     assert!(!path.exists());
-    assert!(!repo.registry.is_authorized(&path), "the grant is revoked");
+    assert!(!authorized(&repo.registry, &path), "the grant is revoked");
     assert!(
         repo.git(&["branch", "--list", "task"]).contains("task"),
         "the branch and its commit survive"
@@ -430,7 +424,7 @@ fn prune_forgets_deleted_worktrees_and_revokes_their_grant() {
 
     let report = worktree::prune(&repo.registry, &repo.path(), &repo.ws).unwrap();
     assert_eq!(report.pruned.len(), 1);
-    assert!(!repo.registry.is_authorized(&path));
+    assert!(!authorized(&repo.registry, &path));
     assert_eq!(
         worktree::list(&repo.registry, &repo.path(), &repo.ws)
             .unwrap()
@@ -460,10 +454,10 @@ fn listing_reauthorizes_existing_worktrees_but_only_with_a_backlink() {
     .unwrap();
     let path = PathBuf::from(&added.path);
     repo.registry.revoke_derived(&path);
-    assert!(!repo.registry.is_authorized(&path));
+    assert!(!authorized(&repo.registry, &path));
     worktree::list(&repo.registry, &repo.path(), &repo.ws).unwrap();
     assert!(
-        repo.registry.is_authorized(&path),
+        authorized(&repo.registry, &path),
         "restored after a restart"
     );
 
@@ -472,7 +466,7 @@ fn listing_reauthorizes_existing_worktrees_but_only_with_a_backlink() {
     repo.registry.revoke_derived(&path);
     std::fs::write(path.join(".git"), "gitdir: /somewhere/else\n").unwrap();
     worktree::list(&repo.registry, &repo.path(), &repo.ws).ok();
-    assert!(!repo.registry.is_authorized(&path));
+    assert!(!authorized(&repo.registry, &path));
 }
 
 // ---------------------------------------------------------- checkpoints

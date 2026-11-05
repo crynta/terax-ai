@@ -8,15 +8,9 @@ use crate::modules::git::checkpoint::{self, RestoreRefusal};
 use crate::modules::git::process::run_git;
 use crate::modules::git::review::{ApplyMode, ApplySelection, GitDiffScope, HunkSelection};
 use crate::modules::git::review_tests::{apply, file_diff, numbered};
-use crate::modules::git::testutil::TestRepo;
+use crate::modules::git::testutil::{scratch, TestRepo};
 use crate::modules::git::worktree::{self, RemoveBlocker, WorktreeAddRequest, WorktreeBranch};
 use crate::modules::workspace::WorkspaceEnv;
-
-fn scratch() -> (tempfile::TempDir, PathBuf) {
-    let dir = tempfile::tempdir().unwrap();
-    let path = std::fs::canonicalize(dir.path()).unwrap();
-    (dir, path)
-}
 
 fn one(id: &str) -> ApplySelection {
     ApplySelection::Hunks {

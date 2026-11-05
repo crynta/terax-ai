@@ -10,15 +10,9 @@ use crate::modules::git::review::{
     self, ApplyMode, ApplySelection, CheckpointEndpoint, GitDiffScope, RefusalCode,
 };
 use crate::modules::git::review_tests::{apply, file_diff, numbered, summary};
-use crate::modules::git::testutil::TestRepo;
+use crate::modules::git::testutil::{scratch, TestRepo};
 use crate::modules::git::worktree::{self, RemoveBlocker, WorktreeAddRequest, WorktreeBranch};
 use crate::modules::workspace::WorkspaceEnv;
-
-fn scratch() -> (tempfile::TempDir, PathBuf) {
-    let dir = tempfile::tempdir().unwrap();
-    let path = std::fs::canonicalize(dir.path()).unwrap();
-    (dir, path)
-}
 
 fn add_worktree(repo: &TestRepo, base: &Path, branch: &str) -> worktree::WorktreeAdded {
     worktree::add(

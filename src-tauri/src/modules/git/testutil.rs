@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Once;
 
+use crate::modules::git::utils::plain_path;
 use crate::modules::workspace::{WorkspaceEnv, WorkspaceRegistry};
 
 static ENV: Once = Once::new();
@@ -26,9 +27,50 @@ fn pin_environment() {
 
 pub struct TestRepo {
     _dir: tempfile::TempDir,
+    /// Canonical and, on Windows, without the `\\?\` prefix: a path git is given
+    /// as a location (clone URL, remote, worktree) must not be verbatim.
     pub root: PathBuf,
     pub registry: WorkspaceRegistry,
     pub ws: WorkspaceEnv,
+}
+
+/// The canonical form of `path` as git prints and accepts it.
+pub fn canonical_plain(path: &Path) -> PathBuf {
+    plain_path(&std::fs::canonicalize(path).expect("canonicalize"))
+}
+
+/// A scratch directory outside any repository, canonical and git-safe (see
+/// `TestRepo::root`).
+pub fn scratch() -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = canonical_plain(dir.path());
+    (dir, path)
+}
+
+/// Whether the registry covers `path`. The registry holds canonical paths, as
+/// every product caller canonicalizes first; a test path spelled differently
+/// (forward slashes, 8.3 names) must be canonicalized the same way.
+pub fn authorized(registry: &WorkspaceRegistry, path: &Path) -> bool {
+    // The deepest existing ancestor is canonicalized and the rest re-attached,
+    // so a path that does not exist yet is judged like one that does.
+    let mut tail: Vec<&std::ffi::OsStr> = Vec::new();
+    let mut cursor = path;
+    let mut canonical = loop {
+        if let Ok(found) = std::fs::canonicalize(cursor) {
+            break found;
+        }
+        match (cursor.file_name(), cursor.parent()) {
+            (Some(name), Some(parent)) => {
+                tail.push(name);
+                cursor = parent;
+            }
+            _ => return registry.is_authorized(path),
+        }
+    };
+    for name in tail.iter().rev() {
+        canonical.push(name);
+    }
+    registry.is_authorized(&canonical)
 }
 
 pub fn git_in(dir: &Path, args: &[&str]) -> String {
@@ -51,7 +93,7 @@ impl TestRepo {
     pub fn unborn() -> Self {
         pin_environment();
         let dir = tempfile::tempdir().expect("tempdir");
-        let root = std::fs::canonicalize(dir.path()).expect("canonicalize");
+        let root = canonical_plain(dir.path());
         git_in(&root, &["init", "-q", "-b", "main"]);
         git_in(&root, &["config", "commit.gpgsign", "false"]);
         git_in(&root, &["config", "core.autocrlf", "false"]);

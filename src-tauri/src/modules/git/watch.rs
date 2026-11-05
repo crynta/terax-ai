@@ -968,8 +968,8 @@ mod tests {
     #[test]
     fn a_linked_worktree_watches_the_shared_refs_and_its_own_head() {
         let repo = TestRepo::new();
-        let scratch = tempfile::tempdir().unwrap();
-        let linked = std::fs::canonicalize(scratch.path()).unwrap().join("wt");
+        let (_scratch_keep, scratch_root) = crate::modules::git::testutil::scratch();
+        let linked = scratch_root.join("wt");
         repo.git(&[
             "worktree",
             "add",
@@ -1190,8 +1190,8 @@ mod tests {
     #[test]
     fn a_watch_is_released_by_its_key_after_the_worktree_is_gone() {
         let repo = TestRepo::new();
-        let scratch = tempfile::tempdir().unwrap();
-        let linked = std::fs::canonicalize(scratch.path()).unwrap().join("wt");
+        let (_scratch_keep, scratch_root) = crate::modules::git::testutil::scratch();
+        let linked = scratch_root.join("wt");
         repo.git(&[
             "worktree",
             "add",
