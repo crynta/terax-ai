@@ -107,17 +107,25 @@ impl WorkspaceRegistry {
 
     /// Authorizes `child` on the strength of `parent`, which must itself be
     /// authorized. Revoking the child (or losing the parent) removes the grant.
+    ///
+    /// A child that is already authorized, by a root or by a live grant, keeps
+    /// what it has: replacing `task -> main` by `task -> task`, as listing the
+    /// worktrees from inside the task itself would, leaves a grant whose parent
+    /// covers nothing. The checks and the insertion share one critical section.
     pub fn authorize_derived(&self, child: &Path, parent: &Path) -> std::io::Result<PathBuf> {
         let child = std::fs::canonicalize(child)?;
         let parent = std::fs::canonicalize(parent)?;
-        if !self.is_authorized(&parent) {
+        let roots = self.roots.lock().expect("workspace registry poisoned");
+        let mut derived = self.derived.lock().expect("workspace registry poisoned");
+        if !covered(&parent, &roots, &derived, 0) {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
                 "parent is not an authorized root",
             ));
         }
-        let mut derived = self.derived.lock().expect("workspace registry poisoned");
-        derived.insert(child.clone(), parent);
+        if !covered(&child, &roots, &derived, 0) {
+            derived.insert(child.clone(), parent);
+        }
         Ok(child)
     }
 
@@ -978,6 +986,70 @@ mod auth_tests {
         assert!(reg.revoke_derived(&a));
         assert!(!reg.is_authorized(&a));
         assert!(reg.is_authorized(&b));
+    }
+
+    #[test]
+    fn a_child_that_is_already_authorized_keeps_its_grant() {
+        let reg = WorkspaceRegistry::default();
+        let main = tempdir("keep-main");
+        let task = tempdir("keep-task");
+        reg.authorize(&main).unwrap();
+        reg.authorize_derived(&task, &main).unwrap();
+
+        // Listing the worktrees from inside the task itself derives the task
+        // from the task; that must not replace `task -> main`.
+        reg.authorize_derived(&task, &task).unwrap();
+        assert!(reg.is_authorized(&task), "the grant still reaches a root");
+        assert_eq!(reg.derived.lock().unwrap().get(&task), Some(&main));
+        assert!(reg.revoke_derived(&task));
+        assert!(!reg.is_authorized(&task));
+
+        // Neither does a second grant through another authorized parent.
+        let other = tempdir("keep-other");
+        reg.authorize(&other).unwrap();
+        reg.authorize_derived(&task, &main).unwrap();
+        reg.authorize_derived(&task, &other).unwrap();
+        assert_eq!(reg.derived.lock().unwrap().get(&task), Some(&main));
+    }
+
+    #[test]
+    fn a_child_inside_a_root_needs_no_grant_of_its_own() {
+        let reg = WorkspaceRegistry::default();
+        let main = tempdir("inside-main");
+        reg.authorize(&main).unwrap();
+        let nested = main.join("worktrees/task");
+        fs::create_dir_all(&nested).unwrap();
+        let nested = fs::canonicalize(&nested).unwrap();
+        reg.authorize_derived(&nested, &main).unwrap();
+        assert!(reg.is_authorized(&nested));
+        assert!(reg.derived.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn concurrent_authorizations_never_leave_a_self_parented_grant() {
+        let reg = std::sync::Arc::new(WorkspaceRegistry::default());
+        let main = tempdir("race-main");
+        reg.authorize(&main).unwrap();
+        let tasks: Vec<PathBuf> = (0..8).map(|i| tempdir(&format!("race-task-{i}"))).collect();
+        let threads: Vec<_> = tasks
+            .iter()
+            .map(|task| {
+                let (reg, task, main) = (reg.clone(), task.clone(), main.clone());
+                std::thread::spawn(move || {
+                    for _ in 0..50 {
+                        reg.authorize_derived(&task, &main).unwrap();
+                        reg.authorize_derived(&task, &task).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for thread in threads {
+            thread.join().unwrap();
+        }
+        for task in &tasks {
+            assert!(reg.is_authorized(task), "{task:?}");
+            assert_eq!(reg.derived.lock().unwrap().get(task), Some(&main));
+        }
     }
 
     #[test]

@@ -105,8 +105,45 @@ pub fn upstream_refs(remote: &str, merge: &str) -> Option<(String, String)> {
     }
 }
 
-/// The remote a first push should go to: `origin` when it exists, otherwise the
-/// only remote, otherwise none.
+/// The remote a first push should go to: the one git is configured to push this
+/// branch to (`branch.<name>.pushRemote`, then `remote.pushDefault`), and only
+/// when none is configured `origin` if it exists, otherwise the only remote.
+/// A configured name that is not a remote yields `None` instead of a guess: the
+/// branch would otherwise be published somewhere the user did not choose.
+pub fn choose_push_remote(
+    branch_push_remote: Option<&str>,
+    push_default: Option<&str>,
+    remotes: &[String],
+) -> Option<String> {
+    fn set(value: Option<&str>) -> Option<&str> {
+        value.filter(|r| !r.is_empty())
+    }
+    match set(branch_push_remote).or(set(push_default)) {
+        Some(configured) => remotes
+            .iter()
+            .any(|r| r == configured)
+            .then(|| configured.to_string()),
+        None => pick_remote(remotes),
+    }
+}
+
+/// `choose_push_remote` with the configuration read from the repository.
+pub fn push_remote_for(
+    repo: &ResolvedGitDirectory,
+    branch: &str,
+    remotes: &[String],
+) -> Result<Option<String>> {
+    let branch_push = config_value(repo, &format!("branch.{branch}.pushRemote"))?;
+    let push_default = config_value(repo, "remote.pushDefault")?;
+    Ok(choose_push_remote(
+        branch_push.as_deref(),
+        push_default.as_deref(),
+        remotes,
+    ))
+}
+
+/// The fallback remote when nothing is configured: `origin` when it exists,
+/// otherwise the only remote, otherwise none.
 pub fn pick_remote(remotes: &[String]) -> Option<String> {
     if remotes.iter().any(|r| r == "origin") {
         return Some("origin".to_string());
@@ -154,13 +191,44 @@ pub fn list_remotes(repo: &ResolvedGitDirectory) -> Result<Vec<String>> {
         .collect())
 }
 
+/// The checked-out branch, or `None` on a detached HEAD. The full name is
+/// shortened here: `--short` prints `heads/topic` when a tag is also called
+/// `topic`, which names no branch at all.
 pub fn current_branch(repo: &ResolvedGitDirectory) -> Result<Option<String>> {
-    let output = run(repo, os_args(["symbolic-ref", "-q", "--short", "HEAD"]))?;
+    let output = run(repo, os_args(["symbolic-ref", "-q", "HEAD"]))?;
     if output.exit_code != Some(0) {
         return Ok(None);
     }
-    let name = stdout_text(&output);
-    Ok((!name.is_empty()).then_some(name))
+    let full = stdout_text(&output);
+    Ok(full
+        .strip_prefix("refs/heads/")
+        .filter(|name| !name.is_empty())
+        .map(str::to_string))
+}
+
+/// `(full ref, short name)` of the remote-tracking branch git resolves for
+/// `branch`'s upstream, or `None` when none is configured or none maps.
+fn tracking_ref_of(
+    repo: &ResolvedGitDirectory,
+    branch: &str,
+) -> Result<Option<(String, String)>> {
+    let output = run(
+        repo,
+        os_args([
+            "for-each-ref",
+            "--format=%(upstream)%00%(upstream:short)",
+            &format!("refs/heads/{branch}"),
+        ]),
+    )?;
+    if output.exit_code != Some(0) {
+        return Ok(None);
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let line = text.lines().next().unwrap_or("");
+    let mut fields = line.split('\0');
+    let full = fields.next().unwrap_or("");
+    let short = fields.next().unwrap_or("");
+    Ok((!full.is_empty() && !short.is_empty()).then(|| (full.to_string(), short.to_string())))
 }
 
 pub fn upstream_info(
@@ -188,13 +256,19 @@ pub fn upstream_info(
         return Ok(info);
     };
     info.branch = Some(branch.clone());
+    info.suggested_remote = push_remote_for(&repo, &branch, &remotes)?;
 
     let remote = config_value(&repo, &format!("branch.{branch}.remote"))?;
     let merge = config_value(&repo, &format!("branch.{branch}.merge"))?;
     let (Some(remote), Some(merge)) = (remote, merge) else {
         return Ok(info);
     };
-    let Some((tracking_ref, display)) = upstream_refs(&remote, &merge) else {
+    // The tracking ref is whatever the fetch refspec maps the upstream to
+    // (`+refs/heads/*:refs/remotes/company/*` is legal); only when git cannot
+    // say is the conventional `refs/remotes/<remote>/<branch>` assumed.
+    let Some((tracking_ref, display)) =
+        tracking_ref_of(&repo, &branch)?.or_else(|| upstream_refs(&remote, &merge))
+    else {
         return Ok(info);
     };
     info.upstream = Some(display);
@@ -273,5 +347,35 @@ mod tests {
         assert_eq!(pick_remote(&names(&["fork"])).as_deref(), Some("fork"));
         assert_eq!(pick_remote(&names(&["a", "b"])), None);
         assert_eq!(pick_remote(&[]), None);
+    }
+
+    #[test]
+    fn a_configured_push_remote_beats_origin_and_a_bogus_one_beats_nothing() {
+        let names = |items: &[&str]| items.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let remotes = names(&["origin", "fork"]);
+        let choose = |branch: Option<&str>, default: Option<&str>| {
+            choose_push_remote(branch, default, &remotes)
+        };
+        assert_eq!(choose(None, None).as_deref(), Some("origin"));
+        assert_eq!(choose(None, Some("fork")).as_deref(), Some("fork"));
+        assert_eq!(choose(Some("fork"), None).as_deref(), Some("fork"));
+        assert_eq!(
+            choose(Some("origin"), Some("fork")).as_deref(),
+            Some("origin"),
+            "the branch's own setting wins over the repository default"
+        );
+        assert_eq!(
+            choose(Some(""), Some("fork")).as_deref(),
+            Some("fork"),
+            "an empty setting is no setting"
+        );
+        // A configured name that is not a remote is never replaced by a guess.
+        assert_eq!(choose(Some("gone"), None), None);
+        assert_eq!(choose(None, Some("gone")), None);
+        assert_eq!(
+            choose_push_remote(None, None, &names(&["a", "b"])),
+            None,
+            "nothing configured and nothing obvious"
+        );
     }
 }

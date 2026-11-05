@@ -184,4 +184,21 @@ describe("subscribeGitChanges", () => {
     );
     await vi.waitFor(() => expect(mocks.unlisten).toHaveBeenCalledTimes(1));
   });
+
+  it("does not watch when the event listener could not be registered, and retries it next time", async () => {
+    mocks.listen.mockRejectedValueOnce(new Error("listen denied"));
+    await expect(subscribeGitChanges("/repo", vi.fn())).rejects.toThrow(
+      "listen denied",
+    );
+    expect(mocks.watch).not.toHaveBeenCalled();
+
+    const handler = vi.fn();
+    const unsubscribe = await subscribeGitChanges("/repo", handler);
+    expect(mocks.listen).toHaveBeenCalledTimes(2);
+    expect(mocks.watch).toHaveBeenCalledTimes(1);
+    emit({ repo: "/repo", kinds: ["head"] });
+    expect(handler).toHaveBeenCalledWith(["head"]);
+    unsubscribe();
+    await vi.waitFor(() => expect(mocks.unlisten).toHaveBeenCalledTimes(1));
+  });
 });

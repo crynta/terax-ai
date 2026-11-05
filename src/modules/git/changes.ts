@@ -58,13 +58,18 @@ const dispatcher = createChangeDispatcher();
 let listener: Promise<UnlistenFn> | null = null;
 let listeners = 0;
 
-function acquireListener() {
+function acquireListener(): Promise<UnlistenFn> {
   listeners += 1;
   if (!listener) {
-    listener = listen<GitChangedEvent>(GIT_CHANGED_EVENT, (event) =>
+    const pending = listen<GitChangedEvent>(GIT_CHANGED_EVENT, (event) =>
       dispatcher.dispatch(event.payload),
     );
+    listener = pending;
+    pending.catch(() => {
+      if (listener === pending) listener = null;
+    });
   }
+  return listener;
 }
 
 function releaseListener() {
@@ -88,9 +93,10 @@ export async function subscribeGitChanges(
   handler: GitChangeHandler,
   filter?: GitChangeFilter,
 ): Promise<() => void> {
-  acquireListener();
+  const registered = acquireListener();
   let info: Awaited<ReturnType<typeof git.watch>>;
   try {
+    await registered;
     info = await git.watch(repoRoot);
   } catch (error) {
     releaseListener();

@@ -116,7 +116,7 @@ export type GitDiffScope =
   | { kind: "commit"; sha: string }
   | { kind: "checkpoint"; from: CheckpointEndpoint; to: CheckpointEndpoint };
 
-export type GitFileStatus =
+type GitFileStatus =
   | "added"
   | "modified"
   | "deleted"
@@ -131,7 +131,7 @@ export type DiffSide =
   | { kind: "index" }
   | { kind: "worktree"; tree?: string };
 
-export type DiffFileSummary = {
+type DiffFileSummary = {
   path: string;
   oldPath: string | null;
   status: GitFileStatus;
@@ -144,7 +144,7 @@ export type DiffFileSummary = {
   approximate: boolean;
 };
 
-export type DiffTotals = {
+type DiffTotals = {
   files: number;
   added: number;
   removed: number;
@@ -161,7 +161,7 @@ export type GitDiffSummary = {
   mergeBase: string | null;
 };
 
-export type DiffLineKind = "context" | "add" | "remove";
+type DiffLineKind = "context" | "add" | "remove";
 
 export type DiffLine = {
   kind: DiffLineKind;
@@ -186,7 +186,7 @@ export type DiffHunk = {
   removed: number;
 };
 
-export type ContentsOmitted = "tooLarge" | "binary" | "submodule" | "disabled";
+type ContentsOmitted = "tooLarge" | "binary" | "submodule" | "disabled";
 
 export type GitFileDiff = {
   path: string;
@@ -209,7 +209,7 @@ export type GitFileDiff = {
   to: DiffSide;
 };
 
-export type ApplyMode = "stage" | "unstage" | "revert";
+type ApplyMode = "stage" | "unstage" | "revert";
 
 export type HunkSelection = {
   id: string;
@@ -229,7 +229,7 @@ export type ApplyHunksRequest = {
   selection: ApplySelection;
 };
 
-export type ApplyRefusalCode =
+type ApplyRefusalCode =
   | "unchanged"
   | "staleHunks"
   | "wholeFileOnly"
@@ -264,7 +264,7 @@ export type WorktreeEntry = {
   exists: boolean;
 };
 
-export type WorktreeBranch =
+type WorktreeBranch =
   | { mode: "newBranch"; name: string }
   | { mode: "existingBranch"; name: string }
   | { mode: "detach" };
@@ -279,7 +279,7 @@ export type WorktreeAddRequest = {
   include?: string[];
 };
 
-export type SkippedPath = { path: string; reason: string };
+type SkippedPath = { path: string; reason: string };
 
 export type WorktreeAdded = {
   path: string;
@@ -291,17 +291,18 @@ export type WorktreeAdded = {
   includeTruncated: boolean;
 };
 
-export type ChangedPath = { path: string; status: GitFileStatus };
+type ChangedPath = { path: string; status: GitFileStatus };
 
 /**
  * `ignored`: files git ignores but that are not regenerable (`.env`, local
  * databases), which removal would delete without a word.
  */
-export type WorktreeRemoveBlocker =
+type WorktreeRemoveBlocker =
   | "locked"
   | "dirty"
   | "unmerged"
-  | "ignored";
+  | "ignored"
+  | "inconclusive";
 
 export type WorktreeRemoveReport = {
   removed: boolean;
@@ -319,6 +320,8 @@ export type WorktreeRemoveReport = {
   ignoredRegenerable: number;
   /** Ignored entries byte-identical to the main checkout's copy (what `include` copied in and nobody changed): not blockers. */
   ignoredIdentical: number;
+  /** Safety probes that could not finish (`ignored-files`, `unmerged-commits`); removal is refused until they can, unless forced. */
+  inconclusive: string[];
   lockReason: string | null;
 };
 
@@ -336,7 +339,7 @@ export type CheckpointInfo = {
   createdAtSecs: number;
 };
 
-export type CheckpointLimits = {
+type CheckpointLimits = {
   atomic: boolean;
   capturesIgnoredFiles: boolean;
   capturesSubmoduleContents: boolean;
@@ -383,7 +386,7 @@ export type RestoreReport = {
   atomic: boolean;
 };
 
-export type SafetySnapshot = { ref: string; commit: string; tree: string };
+type SafetySnapshot = { ref: string; commit: string; tree: string };
 
 // ------------------------------------------------------------- branches
 

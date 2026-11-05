@@ -15,7 +15,7 @@ use serde::Serialize;
 use crate::modules::git::diff::{parse_raw_numstat_z, DiffFileSummary, FileStatus};
 use crate::modules::git::errors::{GitError, Result};
 use crate::modules::git::plumbing::{
-    git_dir, head_commit_opt, lock_for, open_worktree, os_args, run, run_ok, stdout_text,
+    git_dir, head_commit_opt, lock_for_repo, open_worktree, os_args, run, run_ok, stdout_text,
     verify_tree,
 };
 use crate::modules::git::process::{ensure_success, run_git_with, RunOptions};
@@ -80,7 +80,6 @@ impl Admin {
     /// The id every checkpoint of this worktree is stamped with, created once
     /// from the system's random source and kept in the git directory.
     fn worktree_id(&self) -> Result<String> {
-        let path = self.dir.join(WORKTREE_ID_FILE);
         let read = || self.existing_worktree_id();
         if let Some(id) = read() {
             return Ok(id);
@@ -93,19 +92,83 @@ impl Admin {
         getrandom::fill(&mut bytes)
             .map_err(|e| GitError::command("git checkpoint", format!("no random source: {e}")))?;
         let id: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
-        // Written whole under a temporary name, then published without
-        // replacing an existing file, so a reader never sees half an id.
-        let staging = self.dir.join(format!("{WORKTREE_ID_FILE}.{id}"));
-        std::fs::write(&staging, &id)?;
-        let published = std::fs::hard_link(&staging, &path);
-        let _ = std::fs::remove_file(&staging);
-        match published {
-            Ok(()) => Ok(id),
-            Err(_) => read().ok_or_else(|| {
-                GitError::command("git checkpoint", "could not record the worktree id")
-            }),
-        }
+        publish_worktree_id(&self.dir, &id, &|from, to| std::fs::hard_link(from, to))?;
+        read().ok_or_else(|| GitError::command("git checkpoint", "could not record the worktree id"))
     }
+}
+
+/// Writes `id` to the worktree-id file without ever replacing an existing one.
+/// The preferred way is to write the id whole under a temporary name and hard
+/// link it into place, so a reader never sees half an id. File systems without
+/// hard links (FAT32, exFAT, some network mounts) fall back to creating the
+/// final file exclusively; a reader that catches it half written rejects it,
+/// because a valid id is exactly 32 hex digits, and a lost race is not an error
+/// either way.
+fn publish_worktree_id(
+    dir: &Path,
+    id: &str,
+    link: &dyn Fn(&Path, &Path) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    use std::io::Write;
+    let path = dir.join(WORKTREE_ID_FILE);
+    let staging = dir.join(format!("{WORKTREE_ID_FILE}.{id}"));
+    std::fs::write(&staging, id)?;
+    let linked = link(&staging, &path);
+    let _ = std::fs::remove_file(&staging);
+    match linked {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+        Err(_) => match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(mut file) => file.write_all(id.as_bytes()),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+            Err(e) => Err(e),
+        },
+    }
+}
+
+/// Gives the private copy of the index the real one's modification time.
+///
+/// Git trusts an entry's cached stat data only if the entry is older than the
+/// index file itself ("racy git"): a file rewritten within the timestamp
+/// granularity of the moment it was indexed, with the same size, looks unchanged
+/// otherwise. A plain copy carries a fresh mtime and would hide exactly those
+/// edits. The copy of a read-only index is read-only too, so it is made
+/// owner-writable first (only that bit: never group or world).
+fn keep_modification_time(real: &Path, copy: &Path) -> std::io::Result<()> {
+    let modified = std::fs::metadata(real)?.modified()?;
+    make_owner_writable(copy)?;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(copy)?
+        .set_modified(modified)
+}
+
+#[cfg(unix)]
+fn make_owner_writable(path: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let mut permissions = std::fs::metadata(path)?.permissions();
+    permissions.set_mode(permissions.mode() | 0o200);
+    std::fs::set_permissions(path, permissions)
+}
+
+#[cfg(windows)]
+#[allow(
+    clippy::permissions_set_readonly_false,
+    reason = "on Windows this only clears FILE_ATTRIBUTE_READONLY of our own private copy"
+)]
+fn make_owner_writable(path: &Path) -> std::io::Result<()> {
+    let mut permissions = std::fs::metadata(path)?.permissions();
+    permissions.set_readonly(false);
+    std::fs::set_permissions(path, permissions)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn make_owner_writable(_path: &Path) -> std::io::Result<()> {
+    Ok(())
 }
 
 /// A throwaway index file inside the git directory, removed on drop.
@@ -130,26 +193,22 @@ impl TempIndex {
                 .map(|d| d.as_nanos())
                 .unwrap_or(0)
         );
-        let path = dir.join(unique);
+        // Built before anything can fail, so `Drop` removes the copy on every path.
+        let temp = Self {
+            path: dir.join(unique),
+            hooks: admin.hooks,
+        };
         let real = dir.join("index");
         if real.is_file() {
-            std::fs::copy(&real, &path)?;
-            // Git trusts an entry's cached stat data only if the entry is older
-            // than the index file itself ("racy git"): a file rewritten within
-            // the timestamp granularity of the moment it was indexed, with the
-            // same size, looks unchanged otherwise. The copy would carry a fresh
-            // mtime and hide exactly those edits, so it keeps the original's.
-            if let Ok(modified) = std::fs::metadata(&real).and_then(|m| m.modified()) {
-                let _ = std::fs::OpenOptions::new()
-                    .write(true)
-                    .open(&path)
-                    .and_then(|file| file.set_modified(modified));
+            std::fs::copy(&real, &temp.path)?;
+            if keep_modification_time(&real, &temp.path).is_err() {
+                // A copy that cannot be dated like the original would hide edits
+                // (see `keep_modification_time`). An index that knows nothing is
+                // slower, since every file is read again, but exact.
+                let _ = std::fs::remove_file(&temp.path);
             }
         }
-        Ok(Self {
-            path,
-            hooks: admin.hooks,
-        })
+        Ok(temp)
     }
 
     fn empty(repo: &ResolvedGitDirectory) -> Result<Self> {
@@ -480,7 +539,7 @@ pub fn create(
     let repo = open_worktree(registry, worktree, workspace)?;
     ensure_supported(&repo)?;
     let admin = Admin::new(&repo)?;
-    let lock = lock_for(&admin.dir);
+    let lock = lock_for_repo(&repo);
     let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
 
     let name = refs::checkpoint_ref(task_id, turn);
@@ -687,7 +746,7 @@ pub fn prune(
     }
     let repo = open_worktree(registry, worktree, workspace)?;
     let admin = Admin::new(&repo)?;
-    let lock = lock_for(&admin.dir);
+    let lock = lock_for_repo(&repo);
     let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
     // Turn checkpoints and the safety snapshots of restores, this worktree's
     // only: another worktree may use the same task id.
@@ -967,7 +1026,7 @@ pub fn restore(
     let repo = open_worktree(registry, worktree, workspace)?;
     ensure_supported(&repo)?;
     let admin = Admin::new(&repo)?;
-    let lock = lock_for(&admin.dir);
+    let lock = lock_for_repo(&repo);
     let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
 
     // The refs are shared by every worktree of the repository; only a
@@ -1242,6 +1301,107 @@ mod tests {
         let stderr = "error: short read while indexing src/f18.txt\nerror: src/f18.txt: failed to insert into database\nerror: unable to index file 'src/f18.txt'\nerror: open(\"x\"): Permission denied\nerror: unable to index file 'x'\n";
         assert_eq!(unindexed_paths(stderr), vec!["src/f18.txt", "x"]);
         assert!(unindexed_paths("").is_empty());
+    }
+
+    const SOME_ID: &str = "0123456789abcdef0123456789abcdef";
+    const OTHER_ID: &str = "fedcba9876543210fedcba9876543210";
+
+    fn no_hard_links(_: &Path, _: &Path) -> std::io::Result<()> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "this file system has no hard links",
+        ))
+    }
+
+    fn names_in(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn the_worktree_id_is_published_by_hard_link_when_the_file_system_has_them() {
+        let dir = tempfile::tempdir().unwrap();
+        publish_worktree_id(dir.path(), SOME_ID, &|from, to| std::fs::hard_link(from, to)).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join(WORKTREE_ID_FILE)).unwrap(),
+            SOME_ID
+        );
+        assert_eq!(names_in(dir.path()), vec![WORKTREE_ID_FILE.to_string()]);
+    }
+
+    #[test]
+    fn the_worktree_id_is_created_exclusively_where_hard_links_fail() {
+        let dir = tempfile::tempdir().unwrap();
+        publish_worktree_id(dir.path(), SOME_ID, &no_hard_links).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join(WORKTREE_ID_FILE)).unwrap(),
+            SOME_ID
+        );
+        assert_eq!(
+            names_in(dir.path()),
+            vec![WORKTREE_ID_FILE.to_string()],
+            "the staging file is cleaned up"
+        );
+
+        // Never replaces an id another caller published first, on either path.
+        publish_worktree_id(dir.path(), OTHER_ID, &no_hard_links).unwrap();
+        publish_worktree_id(dir.path(), OTHER_ID, &|from, to| std::fs::hard_link(from, to)).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join(WORKTREE_ID_FILE)).unwrap(),
+            SOME_ID
+        );
+        assert_eq!(names_in(dir.path()), vec![WORKTREE_ID_FILE.to_string()]);
+    }
+
+    #[test]
+    fn publishing_the_worktree_id_reports_a_directory_it_cannot_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("not-there");
+        assert!(publish_worktree_id(&missing, SOME_ID, &no_hard_links).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_read_only_index_copy_is_dated_like_the_original_and_made_owner_writable_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("index");
+        let copy = dir.path().join("copy");
+        std::fs::write(&real, "index bytes").unwrap();
+        let long_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(7200);
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&real)
+            .unwrap()
+            .set_modified(long_ago)
+            .unwrap();
+        std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o444)).unwrap();
+        std::fs::copy(&real, &copy).unwrap();
+        assert_eq!(
+            std::fs::metadata(&copy).unwrap().permissions().mode() & 0o777,
+            0o444,
+            "the copy of a read-only file is read-only"
+        );
+
+        keep_modification_time(&real, &copy).unwrap();
+        assert_eq!(std::fs::metadata(&copy).unwrap().modified().unwrap(), long_ago);
+        assert_eq!(
+            std::fs::metadata(&copy).unwrap().permissions().mode() & 0o777,
+            0o644,
+            "only the owner's write bit was added"
+        );
+    }
+
+    #[test]
+    fn dating_a_copy_after_a_missing_original_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let copy = dir.path().join("copy");
+        std::fs::write(&copy, "x").unwrap();
+        assert!(keep_modification_time(&dir.path().join("index"), &copy).is_err());
     }
 
     #[test]

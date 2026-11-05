@@ -370,6 +370,24 @@ impl<L: Link> Inner<L> {
         Ok(answer)
     }
 
+    /// Forgets a subscriber the worker refused. The worker holds nothing for
+    /// it, so nothing is sent: an `Unsubscribe` could cancel a different
+    /// subscription of the same key that the worker did accept.
+    fn forget(&mut self, key: &str) {
+        let Some(count) = self.counts.get_mut(key) else {
+            return;
+        };
+        *count -= 1;
+        if *count == 0 {
+            self.counts.remove(key);
+        }
+        if self.counts.is_empty() {
+            if let Some(link) = self.link.take() {
+                link.retire();
+            }
+        }
+    }
+
     /// Drops one subscriber of `key`. A key nobody holds is ignored.
     fn release(&mut self, key: &str) {
         let Some(count) = self.counts.get_mut(key) else {
@@ -620,6 +638,12 @@ impl<H: Host> Engine<H> {
                             kinds.refs = true;
                         }
                         Some(DirKind::Worktree) => {
+                            // The shared watcher also reports directories only
+                            // the explorer watches (an ignored build tree, say):
+                            // those are none of this repository's business.
+                            if !watch.worktree_dirs.contains(Path::new(dir.as_str())) {
+                                continue;
+                            }
                             kinds.worktree = true;
                             worktree_dirs.push(dir.clone());
                         }
@@ -787,7 +811,7 @@ impl GitWatchState {
         match answer.recv_timeout(SUBSCRIBE_TIMEOUT) {
             Ok(info) if info.watching => Ok(info),
             Ok(refused) => {
-                self.lock().release(&key);
+                self.lock().forget(&key);
                 Ok(refused)
             }
             Err(_) => {
@@ -1099,6 +1123,65 @@ mod tests {
             .load(std::sync::atomic::Ordering::SeqCst));
         assert_eq!(inner.counts.get("/a"), Some(&1));
         assert_eq!(*started[0].0.messages.lock().unwrap(), vec!["subscribe /a"]);
+    }
+
+    #[test]
+    fn a_refused_subscriber_is_forgotten_without_telling_the_worker() {
+        use std::sync::atomic::Ordering::SeqCst;
+        let mut inner = Inner::<FakeLink>::default();
+        let mut started = Vec::new();
+        attach(&mut inner, "/a", &mut started);
+        attach(&mut inner, "/a", &mut started);
+
+        // The second subscription was refused by the worker: an `Unsubscribe`
+        // would cancel the first one, which the worker did accept.
+        inner.forget("/a");
+        let log = &started[0].0;
+        assert_eq!(
+            *log.messages.lock().unwrap(),
+            vec!["subscribe /a", "subscribe /a"],
+            "nothing is sent for a subscriber the worker never held"
+        );
+        assert_eq!(inner.counts.get("/a"), Some(&1));
+        assert!(!log.retired.load(SeqCst));
+
+        inner.forget("/never-subscribed");
+        assert_eq!(inner.counts.get("/a"), Some(&1));
+        assert!(!log.retired.load(SeqCst));
+
+        inner.forget("/a");
+        assert!(log.retired.load(SeqCst), "nobody left: the worker goes");
+        assert!(inner.link.is_none() && inner.counts.is_empty());
+        assert_eq!(log.messages.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn a_touch_in_a_directory_the_repository_does_not_watch_reports_nothing() {
+        let repo = TestRepo::new();
+        repo.write(".gitignore", "build/\n");
+        repo.write("src/a.rs", "a\n");
+        repo.commit_all("base");
+        std::fs::create_dir_all(repo.root.join("build/out")).unwrap();
+        let (mut engine, host, key, layout) = engine_for(&repo);
+        engine.subscribe(key, layout);
+        assert!(!host
+            .watched
+            .lock()
+            .unwrap()
+            .contains(&repo.root.join("build")));
+
+        // The shared watcher reports every directory anyone watches, such as
+        // the explorer's view of an ignored build tree.
+        engine.flush(touched(&[
+            &to_canon(repo.root.join("build")),
+            &to_canon(repo.root.join("build/out")),
+        ]));
+        assert!(events(&host).is_empty());
+        assert_eq!((engine.rescans, engine.resyncs), (0, 0));
+
+        engine.flush(touched(&[&to_canon(repo.root.join("src"))]));
+        assert_eq!(events(&host), vec![vec!["worktree"]]);
+        assert_eq!(engine.rescans, 1);
     }
 
     #[test]

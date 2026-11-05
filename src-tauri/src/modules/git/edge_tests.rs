@@ -260,9 +260,7 @@ fn non_utf8_files_stage_hunks_byte_exactly() {
         hunks(&[diff.hunks[0].id.clone()]),
     );
     assert!(outcome.applied, "{:?}", outcome.refusal);
-    let staged = std::process::Command::new("git")
-        .args(["show", ":latin1.txt"])
-        .current_dir(&repo.root)
+    let staged = crate::modules::git::testutil::git_command(&repo.root, &["show", ":latin1.txt"])
         .output()
         .unwrap()
         .stdout;

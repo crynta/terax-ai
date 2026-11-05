@@ -506,21 +506,23 @@ pub fn push(
 }
 
 /// First push of a branch that has no upstream: `git push -u <remote> <branch>`
-/// to the repository's only (or `origin`) remote.
+/// to the remote git is configured to push the branch to (`pushRemote`, then
+/// `remote.pushDefault`), else `origin`, else the only remote.
 fn push_set_upstream(repo_root: &ResolvedGitDirectory) -> Result<GitPushResult> {
     let branch = crate::modules::git::branch::current_branch(repo_root)?
         .ok_or_else(|| GitError::command("git push", "HEAD is detached; check out a branch first"))?;
     let remotes = crate::modules::git::branch::list_remotes(repo_root)?;
-    let remote = crate::modules::git::branch::pick_remote(&remotes).ok_or_else(|| {
-        GitError::command(
-            "git push",
-            if remotes.is_empty() {
-                "no remote is configured"
-            } else {
-                "several remotes exist and none is named origin; push once from the terminal"
-            },
-        )
-    })?;
+    let remote = crate::modules::git::branch::push_remote_for(repo_root, &branch, &remotes)?
+        .ok_or_else(|| {
+            GitError::command(
+                "git push",
+                if remotes.is_empty() {
+                    "no remote is configured"
+                } else {
+                    "no usable push remote: check branch.<name>.pushRemote and remote.pushDefault, or push once from the terminal"
+                },
+            )
+        })?;
     crate::modules::git::plumbing::check_branch_name(repo_root, &branch)?;
     let output = run_git(
         &repo_root.workspace,
@@ -536,9 +538,12 @@ fn push_set_upstream(repo_root: &ResolvedGitDirectory) -> Result<GitPushResult> 
     })
 }
 
-/// `--` ends option parsing, so neither name can ever be read as a flag.
+/// `--` ends option parsing, so neither name can ever be read as a flag, and the
+/// branch is a fully qualified refspec: a tag of the same name would otherwise
+/// make a short `<branch>` ambiguous and the push fail.
 fn set_upstream_args(remote: &str, branch: &str) -> Vec<String> {
-    ["push", "--set-upstream", "--", remote, branch]
+    let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");
+    ["push", "--set-upstream", "--", remote, refspec.as_str()]
         .into_iter()
         .map(str::to_string)
         .collect()
@@ -1229,9 +1234,20 @@ mod tests {
     #[test]
     fn set_upstream_push_ends_option_parsing_before_the_names() {
         let args = set_upstream_args("origin", "feature/x");
-        assert_eq!(args, ["push", "--set-upstream", "--", "origin", "feature/x"]);
+        assert_eq!(
+            args,
+            [
+                "push",
+                "--set-upstream",
+                "--",
+                "origin",
+                "refs/heads/feature/x:refs/heads/feature/x"
+            ]
+        );
         let dashes = args.iter().position(|a| a == "--").unwrap();
-        assert!(args[..dashes].iter().all(|a| a == "push" || a.starts_with("--")));
+        assert!(args[..dashes]
+            .iter()
+            .all(|a| a == "push" || a.starts_with("--")));
         assert!(args[dashes + 1..].iter().all(|a| !a.starts_with("--")));
     }
 

@@ -7,6 +7,8 @@ pub mod diff;
 mod edge_tests;
 pub mod errors;
 #[cfg(test)]
+mod feedback_tests;
+#[cfg(test)]
 mod followup_tests;
 #[cfg(test)]
 mod hardening_tests;

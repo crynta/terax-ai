@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::modules::git::errors::{GitError, Result};
@@ -16,15 +16,17 @@ use crate::modules::workspace::{WorkspaceEnv, WorkspaceRegistry};
 
 static LOCKS: OnceLock<Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>> = OnceLock::new();
 
-/// One mutex per worktree (or git directory), so operations that read and then
-/// write repository state (hunk apply, checkpoint create / restore) never
-/// interleave with each other inside this process.
-pub fn lock_for(path: &Path) -> Arc<Mutex<()>> {
+/// The mutex that serializes every operation which reads and then writes a
+/// worktree's state (hunk apply, checkpoint create / restore / prune). It is
+/// keyed by the worktree's canonical top level, the one identity every caller
+/// has once it has opened the repository, so no two such operations on the same
+/// worktree can interleave inside this process.
+pub fn lock_for_repo(repo: &ResolvedGitDirectory) -> Arc<Mutex<()>> {
     let mut map = LOCKS
         .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    map.entry(path.to_path_buf()).or_default().clone()
+    map.entry(repo.local_path.clone()).or_default().clone()
 }
 
 pub fn os_args<I, S>(items: I) -> Vec<OsString>
@@ -205,6 +207,16 @@ pub fn common_dir(repo: &ResolvedGitDirectory) -> Result<PathBuf> {
     Ok(std::fs::canonicalize(&path).unwrap_or(path))
 }
 
+/// Backslashes are separators only on Windows. On Unix `a\b.txt` is one file
+/// name, and turning it into `a/b.txt` would act on a different file.
+pub(crate) fn forward_slashes(path: &str) -> String {
+    if cfg!(windows) {
+        path.replace('\\', "/")
+    } else {
+        path.to_string()
+    }
+}
+
 /// Path relative to the worktree root with forward slashes; the form pathspecs
 /// and patches use.
 ///
@@ -213,7 +225,7 @@ pub fn common_dir(repo: &ResolvedGitDirectory) -> Result<PathBuf> {
 /// never swapped for the file it points to.
 pub fn relative_spec(repo: &ResolvedGitDirectory, rel: &str) -> Result<String> {
     use crate::modules::git::utils::{is_safe_pathspec, resolve_within_repo};
-    let normalized = rel.replace('\\', "/");
+    let normalized = forward_slashes(rel);
     if !is_safe_pathspec(&normalized) {
         return Err(GitError::InvalidPath(rel.to_string()));
     }
@@ -226,7 +238,7 @@ pub fn relative_spec(repo: &ResolvedGitDirectory, rel: &str) -> Result<String> {
     let resolved = resolve_within_repo(&repo.local_path, dir)?;
     let dir_spec = resolved
         .strip_prefix(&repo.local_path)
-        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .map(|p| forward_slashes(&p.to_string_lossy()))
         .map_err(|_| GitError::InvalidPath(rel.to_string()))?;
     Ok(if dir_spec.is_empty() {
         name.to_string()

@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 
-use globset::{Glob, GlobSetBuilder};
+use globset::{GlobBuilder, GlobSetBuilder};
 use serde::{Deserialize, Serialize};
 
 use crate::modules::git::checkpoint::{ChangedPath, Skipped};
@@ -599,6 +599,21 @@ fn create_dirs_confined(root: &Path, rel: &str) -> std::result::Result<PathBuf, 
     Ok(current)
 }
 
+/// How deep below the static prefix a match can sit: a pattern without `**`
+/// (or braces, which may hide a slash) names a fixed number of components.
+pub fn walk_depth(pattern: &str, prefix: &str) -> Option<usize> {
+    if pattern.contains("**") || pattern.contains('{') {
+        return None;
+    }
+    let components = pattern.split('/').count();
+    let skipped = if prefix.is_empty() {
+        0
+    } else {
+        prefix.split('/').count()
+    };
+    Some(components.saturating_sub(skipped).max(1))
+}
+
 /// Copies the files matching `patterns` from `src_root` into `dst_root`, never
 /// overwriting, never following symlinks, never leaving either root, within
 /// file-count and byte budgets. Literal patterns are `stat`ed directly; only a
@@ -618,7 +633,9 @@ pub fn copy_included(src_root: &Path, dst_root: &Path, patterns: &[String]) -> C
             push(pattern.trim_end_matches('/').to_string(), &mut candidates);
             continue;
         }
-        let Ok(glob) = Glob::new(pattern) else {
+        // `*` stays inside one path component and only `**` crosses `/`, so
+        // `apps/*/.env` is not `apps/a/b/c/.env`.
+        let Ok(glob) = GlobBuilder::new(pattern).literal_separator(true).build() else {
             report.skipped.push(skip(pattern, "invalid-glob"));
             continue;
         };
@@ -637,15 +654,20 @@ pub fn copy_included(src_root: &Path, dst_root: &Path, patterns: &[String]) -> C
         if !start.is_dir() {
             continue;
         }
+        let max_depth = walk_depth(pattern, &prefix);
         let walker = ignore::WalkBuilder::new(&start)
             .standard_filters(false)
             .follow_links(false)
+            .max_depth(max_depth)
             .filter_entry(|entry| {
+                // The repository's own directory and dependency / cache trees
+                // are never walked below the start directory: a `.env.*` found
+                // only after 100k entries of `target/` would be a missed file.
                 entry.depth() == 0
-                    || !matches!(
-                        entry.file_name().to_str(),
-                        Some(".git") | Some("node_modules")
-                    )
+                    || !entry
+                        .file_name()
+                        .to_str()
+                        .is_some_and(|name| name == ".git" || REGENERABLE.contains(&name))
             })
             .build();
         let mut visited = 0usize;
@@ -661,7 +683,7 @@ pub fn copy_included(src_root: &Path, dst_root: &Path, patterns: &[String]) -> C
             let Ok(rel) = entry.path().strip_prefix(src_root) else {
                 continue;
             };
-            let rel = rel.to_string_lossy().replace('\\', "/");
+            let rel = crate::modules::git::plumbing::forward_slashes(&rel.to_string_lossy());
             if set.is_match(&rel) {
                 push(rel, &mut candidates);
             }
@@ -699,10 +721,35 @@ pub enum RemoveBlocker {
     /// Ignored files that are not regenerable (`.env`, local databases...):
     /// git itself would delete them without a word.
     Ignored,
+    /// A safety check could not finish (failed, timed out or was cut short), so
+    /// nothing is known about what removal would lose. `inconclusive` names
+    /// the checks.
+    Inconclusive,
 }
 
 const MAX_IGNORED_SAMPLE: usize = 20;
 const IGNORED_LISTING_CAP_BYTES: usize = 256 * 1024;
+
+/// Size limits of the checks `remove` runs; the defaults are the real ones and
+/// the tests shrink them to force an inconclusive check.
+#[derive(Debug, Clone, Copy)]
+pub struct RemoveLimits {
+    pub ignored_listing_bytes: usize,
+}
+
+impl Default for RemoveLimits {
+    fn default() -> Self {
+        Self {
+            ignored_listing_bytes: IGNORED_LISTING_CAP_BYTES,
+        }
+    }
+}
+
+/// A check's answer can be trusted only if git finished it: exit 0, in time, and
+/// not cut at the output cap.
+pub(crate) fn probe_conclusive(output: &crate::modules::git::types::GitOutput) -> bool {
+    output.exit_code == Some(0) && !output.timed_out && !output.truncated
+}
 
 /// Ignored entries a rebuild brings back (dependency and tool caches); losing
 /// them costs time, not data.
@@ -869,6 +916,9 @@ pub struct WorktreeRemoveReport {
     /// Ignored entries byte-identical to the main checkout's copy (not
     /// blockers): what `include` copied in and nobody changed.
     pub ignored_identical: u32,
+    /// Checks that could not finish (`ignored-files`, `unmerged-commits`);
+    /// each also raises the `inconclusive` blocker.
+    pub inconclusive: Vec<String>,
     pub lock_reason: Option<String>,
 }
 
@@ -926,6 +976,24 @@ pub fn remove(
     force: bool,
     workspace: &WorkspaceEnv,
 ) -> Result<WorktreeRemoveReport> {
+    remove_with_limits(
+        registry,
+        repo_root,
+        path,
+        force,
+        workspace,
+        RemoveLimits::default(),
+    )
+}
+
+pub fn remove_with_limits(
+    registry: &WorkspaceRegistry,
+    repo_root: &str,
+    path: &str,
+    force: bool,
+    workspace: &WorkspaceEnv,
+    limits: RemoveLimits,
+) -> Result<WorktreeRemoveReport> {
     if workspace.is_wsl() {
         return Err(GitError::Unsupported(WSL_WORKTREES_UNSUPPORTED));
     }
@@ -967,6 +1035,7 @@ pub fn remove(
         ignored_total: 0,
         ignored_regenerable: 0,
         ignored_identical: 0,
+        inconclusive: Vec::new(),
         lock_reason: entry.lock_reason.clone(),
     };
     if entry.locked {
@@ -1010,8 +1079,12 @@ pub fn remove(
                 "-z",
             ]),
             DEFAULT_TIMEOUT_SECS,
-            IGNORED_LISTING_CAP_BYTES,
+            limits.ignored_listing_bytes,
         )?;
+        if !probe_conclusive(&ignored) {
+            // What was listed may be only a part of the ignored files.
+            report.inconclusive.push("ignored-files".to_string());
+        }
         let summary = summarize_ignored(&ignored.stdout, |entry| {
             identical_to_main(&main.local_path, &worktree.local_path, entry)
         });
@@ -1031,12 +1104,19 @@ pub fn remove(
         }
         args.extend(os_args(["--branches", "--remotes", "--tags"]));
         let counted = run(&main, args)?;
-        if counted.exit_code == Some(0) {
-            report.unmerged_commits = stdout_text(&counted).parse().unwrap_or(0);
+        match stdout_text(&counted).parse::<u32>() {
+            Ok(count) if probe_conclusive(&counted) => report.unmerged_commits = count,
+            _ => report.inconclusive.push("unmerged-commits".to_string()),
         }
         if report.unmerged_commits > 0 {
             report.blockers.push(RemoveBlocker::Unmerged);
         }
+    }
+
+    // Fail closed: a check that could not finish proves nothing, and `force`
+    // is how the caller overrides it.
+    if !report.inconclusive.is_empty() {
+        report.blockers.push(RemoveBlocker::Inconclusive);
     }
 
     if !force && !report.blockers.is_empty() {
@@ -1233,6 +1313,99 @@ mod tests {
         assert_eq!(static_prefix("apps/web/.env*"), "apps/web");
         assert_eq!(static_prefix("apps/*/.env"), "apps");
         assert_eq!(static_prefix("a/b/c/*.json"), "a/b/c");
+    }
+
+    #[test]
+    fn walk_depth_counts_the_components_a_pattern_can_reach() {
+        assert_eq!(walk_depth(".env.*", ""), Some(1));
+        assert_eq!(walk_depth("*/.env", ""), Some(2));
+        assert_eq!(walk_depth("apps/*/.env", "apps"), Some(2));
+        assert_eq!(walk_depth("apps/web/.env*", "apps/web"), Some(1));
+        assert_eq!(walk_depth("a/b/c/*.json", "a/b/c"), Some(1));
+        assert_eq!(walk_depth("**/.env", ""), None);
+        assert_eq!(walk_depth("apps/**/.env", "apps"), None);
+        assert_eq!(walk_depth("{a,b/c}/.env", ""), None);
+    }
+
+    fn sources(files: &[&str]) -> (tempfile::TempDir, PathBuf, tempfile::TempDir, PathBuf) {
+        let src = tempfile::tempdir().unwrap();
+        let dst = tempfile::tempdir().unwrap();
+        let src_root = std::fs::canonicalize(src.path()).unwrap();
+        let dst_root = std::fs::canonicalize(dst.path()).unwrap();
+        for file in files {
+            let path = src_root.join(file);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "x\n").unwrap();
+        }
+        (src, src_root, dst, dst_root)
+    }
+
+    #[test]
+    fn a_single_star_stays_inside_one_directory_and_a_double_star_crosses_them() {
+        let files = [
+            "apps/a/.env",
+            "apps/a/deep/.env",
+            "apps/a/deep/er/.env",
+            ".env.local",
+            "sub/.env.local",
+            "top.local",
+            "sub/nested.local",
+        ];
+        let (_s, src, _d, dst) = sources(&files);
+        let report = copy_included(
+            &src,
+            &dst,
+            &["apps/*/.env".into(), ".env.*".into(), "*.local".into()],
+        );
+        assert_eq!(
+            report.copied,
+            vec![".env.local", "apps/a/.env", "top.local"],
+            "{report:?}"
+        );
+
+        let (_s, src, _d, dst) = sources(&files);
+        let report = copy_included(&src, &dst, &["apps/**/.env".into()]);
+        assert_eq!(
+            report.copied,
+            vec!["apps/a/.env", "apps/a/deep/.env", "apps/a/deep/er/.env"]
+        );
+    }
+
+    #[test]
+    fn a_wildcard_include_never_walks_the_repository_dependency_and_cache_trees() {
+        let (_s, src, _d, dst) = sources(&[
+            "src/.env.local",
+            "target/debug/.env.local",
+            "node_modules/pkg/.env.local",
+            ".venv/lib/.env.local",
+            ".cache/x/.env.local",
+            "packages/web/.next/.env.local",
+            "packages/web/.env.local",
+        ]);
+        let report = copy_included(&src, &dst, &["**/.env.local".into()]);
+        assert_eq!(
+            report.copied,
+            vec!["packages/web/.env.local", "src/.env.local"],
+            "{report:?}"
+        );
+        assert!(!dst.join("target").exists() && !dst.join(".venv").exists());
+    }
+
+    #[test]
+    fn a_probe_is_conclusive_only_when_git_finished_it() {
+        use crate::modules::git::types::GitOutput;
+        let output = |exit_code, timed_out, truncated| GitOutput {
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+            exit_code,
+            timed_out,
+            truncated,
+        };
+        assert!(probe_conclusive(&output(Some(0), false, false)));
+        assert!(!probe_conclusive(&output(Some(1), false, false)));
+        assert!(!probe_conclusive(&output(None, false, false)));
+        assert!(!probe_conclusive(&output(Some(0), true, false)));
+        assert!(!probe_conclusive(&output(Some(0), false, true)));
     }
 
     #[test]

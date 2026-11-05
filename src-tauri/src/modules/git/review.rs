@@ -17,7 +17,7 @@ use crate::modules::git::diff::{
 use crate::modules::git::errors::{GitError, Result};
 use crate::modules::git::patch::{build_patch, Anchor, HunkPick, PatchError};
 use crate::modules::git::plumbing::{
-    empty_tree, head_commit_opt, lock_for, open_worktree, os_args, relative_spec, resolve_commit,
+    empty_tree, head_commit_opt, lock_for_repo, open_worktree, os_args, relative_spec, resolve_commit,
     resolve_commit_opt, run, run_ok, stdout_text, verify_tree,
 };
 use crate::modules::git::process::{
@@ -887,7 +887,7 @@ pub fn apply_hunks(
         .map(|p| relative_spec(&repo, p))
         .transpose()?;
 
-    let lock = lock_for(&repo.local_path);
+    let lock = lock_for_repo(&repo);
     let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
 
     let scope = resolve_scope(&repo, &request.scope)?;

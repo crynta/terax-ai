@@ -73,13 +73,24 @@ pub fn authorized(registry: &WorkspaceRegistry, path: &Path) -> bool {
     registry.is_authorized(&canonical)
 }
 
-pub fn git_in(dir: &Path, args: &[&str]) -> String {
+/// `git <args>` in `dir`, with the repository-location variables a hook or a
+/// shell may have exported removed (the same set the product strips): without
+/// that, a test run from a git hook would init, stage and commit its fixtures in
+/// the developer's real repository.
+pub fn git_command(dir: &Path, args: &[&str]) -> Command {
     pin_environment();
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .expect("spawn git");
+    let mut command = Command::new("git");
+    command.args(args).current_dir(dir);
+    for name in crate::modules::git::process::inherited_git_env_to_strip(
+        std::env::vars_os().map(|(key, _)| key),
+    ) {
+        command.env_remove(name);
+    }
+    command
+}
+
+pub fn git_in(dir: &Path, args: &[&str]) -> String {
+    let output = git_command(dir, args).output().expect("spawn git");
     assert!(
         output.status.success(),
         "git {args:?} failed: {}",
