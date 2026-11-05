@@ -145,3 +145,47 @@ describe("SHORTCUTS registry", () => {
     );
   });
 });
+
+describe("palette shortcuts", () => {
+  const defaults = (id: string) =>
+    SHORTCUTS.find((s) => s.id === id)?.defaultBindings ?? [];
+  const press = (key: string, over: Partial<KeyboardEvent>) =>
+    event({ key, ...over });
+
+  it("opens files on the primary modifier + P and commands with Shift", () => {
+    const [files] = defaults("commandPalette.files");
+    const [commands] = defaults("commandPalette.open");
+    expect(matchBinding(press("p", { ctrlKey: true }), files)).toBe(true);
+    expect(
+      matchBinding(press("P", { ctrlKey: true, shiftKey: true }), commands),
+    ).toBe(true);
+    expect(
+      matchBinding(press("p", { ctrlKey: true, shiftKey: true }), files),
+    ).toBe(false);
+  });
+
+  it("keeps the macOS terminal clear ahead of the palette on the shared key", () => {
+    const ids = SHORTCUTS.map((s) => s.id);
+    expect(ids.indexOf("terminal.clear")).toBeLessThan(
+      ids.indexOf("commandPalette.open"),
+    );
+  });
+
+  it("gives no default binding to two shortcuts in the same context", () => {
+    const seen = new Map<string, string>();
+    for (const s of SHORTCUTS) {
+      if (s.id === "tab.selectByIndex") continue;
+      for (const b of s.defaultBindings) {
+        const sig = [b.ctrl, b.shift, b.alt, b.meta, b.key.toLowerCase()].join(
+          "|",
+        );
+        const other = seen.get(sig);
+        // Documented overlaps: ⌘K (clear vs palette) is resolved by scope.
+        if (other && !(sig.endsWith("|k") && s.id === "commandPalette.open")) {
+          throw new Error(`${s.id} and ${other} share ${sig}`);
+        }
+        seen.set(sig, s.id);
+      }
+    }
+  });
+});
