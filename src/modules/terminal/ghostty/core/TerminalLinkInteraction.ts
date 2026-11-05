@@ -66,6 +66,11 @@ export class TerminalLinkInteraction {
     return this.hit !== null || this.pointer?.modifier === true;
   }
 
+  /** Takes over a pointer movement that happened while this was still loading. */
+  ingest(event: PointerEvent): void {
+    this.handleMove(event);
+  }
+
   /** The cells under the pointer changed meaning (output, scroll): look again. */
   invalidate(): void {
     if (this.disposed || !this.active || this.refreshScheduled) return;
@@ -227,7 +232,7 @@ function defaultSchedule(callback: () => void): void {
   requestAnimationFrame(callback);
 }
 
-export function hitContains(hit: TerminalLinkHit, cell: LinkCell): boolean {
+function hitContains(hit: TerminalLinkHit, cell: LinkCell): boolean {
   return hit.segments.some(
     (segment) =>
       segment.row === cell.row &&

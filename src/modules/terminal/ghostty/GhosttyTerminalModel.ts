@@ -11,7 +11,7 @@ import type {
   KeyEvent,
 } from "@terax/ghostty-core/protocol";
 import type { TerminalCellReader } from "@/modules/terminal/ghostty/core/packedCells";
-import type { TerminalLinkHit } from "@/modules/terminal/ghostty/core/terminalLinks";
+import type { ViewportLinkSource } from "@/modules/terminal/ghostty/core/ViewportLinkResolver";
 
 export type GhosttyTerminalModelOptions = {
   readonly backend: Extract<TerminalBackendKind, `ghostty-${string}`>;
@@ -157,8 +157,7 @@ export interface GhosttyTerminalModelApi extends TerminalModel {
     blinking: boolean,
   ): void;
   grapheme(row: number, column: number): string;
-  hyperlinkAtViewportCell(row: number, column: number): string | null;
-  linkAtViewportCell(row: number, column: number): TerminalLinkHit | null;
+  linkSource(): ViewportLinkSource;
   scrollPosition(): { readonly offset: number; readonly history: number };
   scrollBy(lines: number): boolean;
   scrollTo(offset: number): boolean;

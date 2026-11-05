@@ -1,4 +1,4 @@
-export type TerminalLinkKind = "osc8" | "url" | "path";
+type TerminalLinkKind = "osc8" | "url" | "path";
 
 export type TerminalTextLink = {
   /** UTF-16 offsets into the scanned text, end exclusive. */
@@ -37,7 +37,7 @@ const MAX_LINKS = 256;
 const MAX_PATH_LENGTH = 1024;
 const MAX_LINE_NUMBER = 9_999_999;
 
-export function urlLinkMatcher(text: string): TerminalTextLink[] {
+function urlLinkMatcher(text: string): TerminalTextLink[] {
   const links: TerminalTextLink[] = [];
   const pattern =
     /(?:https?:\/\/|mailto:|file:\/\/)[^\s<>"'`\u0000-\u001f\u007f]+/giu;
@@ -103,7 +103,7 @@ const TLD_LIKE_EXTENSIONS = new Set([
   "us",
 ]);
 
-export function pathLinkMatcher(text: string): TerminalTextLink[] {
+function pathLinkMatcher(text: string): TerminalTextLink[] {
   const links: TerminalTextLink[] = [];
   const length = text.length;
   let index = 0;
@@ -236,7 +236,7 @@ function isPathDelimiter(code: number): boolean {
   }
 }
 
-export const DEFAULT_LINK_MATCHERS: readonly LinkMatcher[] = [
+const DEFAULT_LINK_MATCHERS: readonly LinkMatcher[] = [
   urlLinkMatcher,
   pathLinkMatcher,
 ];
@@ -311,17 +311,4 @@ export function upperBound(values: readonly number[], target: number): number {
     else high = mid;
   }
   return low;
-}
-
-/** The grid cell for fractional cell coordinates, or null outside the grid. */
-export function cellAtPoint(
-  column: number,
-  row: number,
-  cols: number,
-  rows: number,
-): { readonly row: number; readonly column: number } | null {
-  const c = Math.floor(column);
-  const r = Math.floor(row);
-  if (!(c >= 0 && c < cols && r >= 0 && r < rows)) return null;
-  return { row: r, column: c };
 }

@@ -11,10 +11,10 @@ import {
   terminalResizeInteractionActive,
 } from "@/modules/terminal/lib/terminalResizeInteraction";
 import { TerminalResizeSync } from "@/modules/terminal/lib/terminalResizeSync";
-import { LinkUnderlineOverlay } from "../core/LinkUnderlineOverlay";
+import { LazyTerminalLinks } from "../core/LazyTerminalLinks";
 import type { Rgb } from "../core/packedCells";
-import { TerminalLinkInteraction } from "../core/TerminalLinkInteraction";
-import { cellAtPoint, type TerminalLinkHit } from "../core/terminalLinks";
+import { cellAtPoint } from "../core/linkCells";
+import type { TerminalLinkHit } from "../core/terminalLinks";
 import type {
   GhosttyGpuFrame,
   GhosttyTerminalModelApi,
@@ -188,8 +188,7 @@ export class WebGpuTerminalSurface
   private uploadCount = 0;
   private uploadedBytes = 0;
   private contentRevision: number;
-  private readonly links: TerminalLinkInteraction;
-  private readonly linkOverlay: LinkUnderlineOverlay;
+  private readonly links: LazyTerminalLinks;
   private applyingFit = false;
   private disposed = false;
   /** The window canvas has shown this pane's first frame; until then its DOM covers the canvas. */
@@ -269,13 +268,7 @@ export class WebGpuTerminalSurface
       },
     });
     this.root.style.cursor = "text";
-    this.linkOverlay = new LinkUnderlineOverlay(this.root, () => ({
-      cellWidth: this.metrics.cellWidth,
-      cellHeight: this.metrics.cellHeight,
-      shiftY: this.gridShiftY(),
-      color: rgbToCss(this.theme.foreground),
-    }));
-    this.links = new TerminalLinkInteraction({
+    this.links = new LazyTerminalLinks({
       target: this.root,
       keyTarget: window,
       isModifier: isPrimaryModifierPressed,
@@ -291,8 +284,13 @@ export class WebGpuTerminalSurface
       blocked: (shift, target) =>
         (target instanceof Node && this.scrollbar.contains(target)) ||
         (options.model.modes().mouseTracking && !shift),
-      hitAt: (cell) => options.model.linkAtViewportCell(cell.row, cell.column),
-      overlay: this.linkOverlay,
+      model: options.model,
+      geometry: () => ({
+        cellWidth: this.metrics.cellWidth,
+        cellHeight: this.metrics.cellHeight,
+        shiftY: this.gridShiftY(),
+        color: rgbToCss(this.theme.foreground),
+      }),
       setPointerCursor: (pointer) => {
         this.root.style.cursor = pointer ? "pointer" : "text";
       },
@@ -825,7 +823,6 @@ export class WebGpuTerminalSurface
     this.unsubscribeInteraction();
     this.root.removeEventListener("pointerdown", this.handlePointerDown);
     this.links.dispose();
-    this.linkOverlay.dispose();
     this.scrollbar.removeEventListener("scroll", this.handleScroll);
   }
 

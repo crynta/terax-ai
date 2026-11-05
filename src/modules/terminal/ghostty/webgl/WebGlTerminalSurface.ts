@@ -14,9 +14,9 @@ import {
   terminalResizeInteractionActive,
 } from "@/modules/terminal/lib/terminalResizeInteraction";
 import { TerminalResizeSync } from "@/modules/terminal/lib/terminalResizeSync";
-import { LinkUnderlineOverlay } from "../core/LinkUnderlineOverlay";
-import { TerminalLinkInteraction } from "../core/TerminalLinkInteraction";
-import { cellAtPoint, type TerminalLinkHit } from "../core/terminalLinks";
+import { LazyTerminalLinks } from "../core/LazyTerminalLinks";
+import { cellAtPoint } from "../core/linkCells";
+import type { TerminalLinkHit } from "../core/terminalLinks";
 import type { GhosttyTerminalModelApi } from "../GhosttyTerminalModel";
 import type { GestureGrowth } from "../gpu/CanvasBackingStore";
 import { DevicePixelRatioMonitor } from "../gpu/DevicePixelRatioMonitor";
@@ -132,8 +132,7 @@ export class WebGlTerminalSurface
   private consecutiveRendererErrors = 0;
   private recoveringRenderer = false;
   private contentRevision: number;
-  private readonly links: TerminalLinkInteraction;
-  private readonly linkOverlay: LinkUnderlineOverlay;
+  private readonly links: LazyTerminalLinks;
   private applyingFit = false;
   private readonly unsubscribePresentation: () => void;
   private disposed = false;
@@ -206,13 +205,7 @@ export class WebGlTerminalSurface
       },
     });
     this.root.style.cursor = "text";
-    this.linkOverlay = new LinkUnderlineOverlay(this.root, () => ({
-      cellWidth: this.metrics.cellWidth,
-      cellHeight: this.metrics.cellHeight,
-      shiftY: 0,
-      color: rgbToCss(this.theme.foreground),
-    }));
-    this.links = new TerminalLinkInteraction({
+    this.links = new LazyTerminalLinks({
       target: this.root,
       keyTarget: window,
       isModifier: isPrimaryModifierPressed,
@@ -228,8 +221,13 @@ export class WebGlTerminalSurface
       blocked: (shift, target) =>
         (target instanceof Node && this.scrollbar.contains(target)) ||
         (options.model.modes().mouseTracking && !shift),
-      hitAt: (cell) => options.model.linkAtViewportCell(cell.row, cell.column),
-      overlay: this.linkOverlay,
+      model: options.model,
+      geometry: () => ({
+        cellWidth: this.metrics.cellWidth,
+        cellHeight: this.metrics.cellHeight,
+        shiftY: 0,
+        color: rgbToCss(this.theme.foreground),
+      }),
       setPointerCursor: (pointer) => {
         this.root.style.cursor = pointer ? "pointer" : "text";
       },
@@ -558,7 +556,6 @@ export class WebGlTerminalSurface
     this.unsubscribeInteraction();
     this.root.removeEventListener("pointerdown", this.handlePointerDown);
     this.links.dispose();
-    this.linkOverlay.dispose();
     this.scrollbar.removeEventListener("scroll", this.handleScroll);
     this.unsubscribePresentation();
   }

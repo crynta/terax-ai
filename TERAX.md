@@ -206,7 +206,7 @@ Bare shells keep direct terminal input. Bash before 4.4 reports
 
 Settings offer Automatic or WebGL for new terminals, plus opt-in screen reader
 output. Accessible text is limited to 256 rows / 64 KiB and refreshes at most four
-times per second while visible. Link detection (URLs, file paths with `:line:col`) runs on pointer demand while Cmd (Ctrl elsewhere) is held;
+times per second while visible. Link detection (URLs, file paths with `:line:col`) runs on pointer demand while Cmd (Ctrl elsewhere) is held, and its code (`terminalLinksRuntime`: detection, hover chip, confirmation and activation) loads on the first such movement or click so the first terminal does not pay for it (`LazyTerminalLinks` is two listeners and a dynamic import; `eager-budget.test.ts` locks the boundary);
 OSC 8 links take precedence. Links use pointer events (the selection controller cancels `pointerdown`, which suppresses mouse events), underline across wrapped rows, open http and https directly, confirm mailto, tel, credentials, punycode and any OSC 8 link whose text is not its address (a chip names the destination while the modifier is held), block other schemes, and open existing files in the editor at their line. OSC 52 side effects retain one in-flight write and
 only the latest pending value across the window.
 

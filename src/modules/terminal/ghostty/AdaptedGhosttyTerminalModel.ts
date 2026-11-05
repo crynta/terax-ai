@@ -1,12 +1,4 @@
-import {
-  cellSpanSegments,
-  detectTerminalLinks,
-  lowerBound,
-  type TerminalLinkHit,
-  type TerminalLinkSegment,
-  type TerminalTextLink,
-  upperBound,
-} from "@/modules/terminal/ghostty/core/terminalLinks";
+import type { ViewportLinkSource } from "@/modules/terminal/ghostty/core/ViewportLinkResolver";
 import type {
   PackedTerminalViewport,
   TerminalCursor,
@@ -55,8 +47,6 @@ import type {
   TerminalBufferSelection,
 } from "./GhosttyTerminalModel";
 
-const MAX_EXPLICIT_LINK_CELLS = 4_096;
-const MAX_LINK_TEXT_LENGTH = 512;
 const MAX_DIMENSION = 4_096;
 const MAX_CELLS = 1_048_576;
 const NO_DAMAGE: TerminalDamage = { kind: "none" };
@@ -102,15 +92,6 @@ export class AdaptedGhosttyTerminalModel implements GhosttyTerminalModelApi {
   readonly requestedScrollbackBytes: number;
 
   private readonly terminal: TeraxGhosttyTerminal;
-  private plainLinks: {
-    revision: number;
-    origin: number;
-    cols: number;
-    startRow: number;
-    endRow: number;
-    offsets: number[];
-    links: TerminalTextLink[];
-  } | null = null;
   private blockMatch: { line: number; col: number; len: number } | null = null;
   private readonly directCellReader = new GhosttyRenderCellView();
   private readonly damageListeners = new Set<() => void>();
@@ -264,7 +245,6 @@ export class AdaptedGhosttyTerminalModel implements GhosttyTerminalModelApi {
   releasePresentationResources(): void {
     this.assertLive();
     if (this.presentationResourcesReleased) return;
-    this.plainLinks = null;
     this.renderState = null;
     this.gpuState = null;
     this.directCellReader.clear();
@@ -520,135 +500,26 @@ export class AdaptedGhosttyTerminalModel implements GhosttyTerminalModelApi {
     return this.terminal.graphemeAt(state, row * state.cols + column);
   }
 
-  hyperlinkAtViewportCell(row: number, column: number): string | null {
-    return this.linkAtViewportCell(row, column)?.uri ?? null;
-  }
-
-  linkAtViewportCell(row: number, column: number): TerminalLinkHit | null {
+  /**
+   * The cell data link lookups read. Scanning for links lives in the chunk that
+   * loads on the first hover with the modifier held, not in this model.
+   */
+  linkSource(): ViewportLinkSource {
     this.assertLive();
-    if (
-      row < 0 ||
-      row >= this.rowsValue ||
-      column < 0 ||
-      column >= this.colsValue
-    ) {
-      return null;
-    }
     const state = this.ensureCurrentState();
-    const index = row * state.cols + column;
-    const explicit = this.terminal.hyperlinkAt(state, index);
-    if (explicit) return this.explicitLinkHit(state, index, explicit);
-    const origin = this.viewportOriginLine();
-    let cache = this.plainLinks;
-    if (
-      !cache ||
-      cache.revision !== this.contentRevision ||
-      cache.origin !== origin ||
-      cache.cols !== state.cols ||
-      row < cache.startRow ||
-      row > cache.endRow
-    ) {
-      let startRow = row;
-      let endRow = row;
-      while (startRow > 0 && row - startRow < 8 && state.rowWrapped[startRow])
-        startRow--;
-      while (
-        endRow + 1 < state.rows &&
-        endRow - startRow < 8 &&
-        state.rowWrapped[endRow + 1]
-      )
-        endRow++;
-      let text = "";
-      const offsets: number[] = [];
-      const lines = this.readBufferLines(origin + startRow, origin + endRow);
-      for (let y = startRow; y <= endRow; y++) {
-        const cells = lines.get(origin + y)?.cells;
-        for (let x = 0; x < state.cols; x++) {
-          offsets.push(text.length);
-          // Wide-character spacers read as "" and contribute no text.
-          text += cells?.[x] ?? " ";
-        }
-      }
-      cache = {
-        revision: this.contentRevision,
-        origin,
-        cols: state.cols,
-        startRow,
-        endRow,
-        offsets,
-        links: detectTerminalLinks(text),
-      };
-      this.plainLinks = cache;
-    }
-    const offset = cache.offsets[(row - cache.startRow) * state.cols + column];
-    const link = cache.links.find(
-      (candidate) => offset >= candidate.start && offset < candidate.end,
-    );
-    if (!link) return null;
-    // A wide character's spacer shares the next offset, so the cell holding
-    // an offset is the last one at or before it.
-    const first = upperBound(cache.offsets, link.start) - 1;
-    const last = lowerBound(cache.offsets, link.end) - 1;
     return {
-      kind: link.kind,
-      uri: link.uri,
-      text: link.uri,
-      segments: cellSpanSegments(
-        first,
-        Math.max(first, last),
-        state.cols,
-        cache.startRow,
-      ),
-      path: link.path,
-      line: link.line,
-      column: link.column,
+      cols: state.cols,
+      rows: state.rows,
+      revision: this.contentRevision,
+      origin: this.viewportOriginLine(),
+      cellCount: state.cellCount,
+      linkIds: state.linkIds,
+      rowWrapped: state.rowWrapped,
+      hyperlinkAt: (index) => this.terminal.hyperlinkAt(state, index),
+      readLines: (first, last) => this.readBufferLines(first, last),
     };
   }
 
-  private explicitLinkHit(
-    state: TeraxGhosttyRenderBase,
-    index: number,
-    uri: string,
-  ): TerminalLinkHit {
-    const id = state.linkIds[index];
-    let first = index;
-    let last = index;
-    while (
-      first > 0 &&
-      state.linkIds[first - 1] === id &&
-      index - first < MAX_EXPLICIT_LINK_CELLS
-    )
-      first--;
-    while (
-      last + 1 < state.cellCount &&
-      state.linkIds[last + 1] === id &&
-      last - index < MAX_EXPLICIT_LINK_CELLS
-    )
-      last++;
-    const segments = cellSpanSegments(first, last, state.cols, 0);
-    return { kind: "osc8", uri, text: this.segmentsText(segments), segments };
-  }
-
-  private segmentsText(segments: readonly TerminalLinkSegment[]): string {
-    if (segments.length === 0) return "";
-    const origin = this.viewportOriginLine();
-    const lines = this.readBufferLines(
-      origin + segments[0].row,
-      origin + segments[segments.length - 1].row,
-    );
-    let text = "";
-    for (const segment of segments) {
-      const cells = lines.get(origin + segment.row)?.cells;
-      for (
-        let x = segment.start;
-        x < segment.end && text.length < MAX_LINK_TEXT_LENGTH;
-        x++
-      ) {
-        text += cells?.[x] ?? " ";
-      }
-    }
-    return text;
-  }
 
   scrollPosition(): ScrollPosition {
     this.assertLive();
@@ -922,7 +793,6 @@ export class AdaptedGhosttyTerminalModel implements GhosttyTerminalModelApi {
     this.renderState = null;
     this.gpuState = null;
     this.directCellReader.clear();
-    this.plainLinks = null;
     this.blockMatch = null;
     this.packedViewport = new Uint8Array(0);
     this.promptPresentation.dispose();

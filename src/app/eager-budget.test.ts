@@ -35,6 +35,18 @@ describe("startup bundle budget", () => {
       [...files].filter((file) => /[/\\]ghostty[/\\]webgl[/\\]/.test(file)),
     ).toEqual([]);
   });
+  it("loads link detection, hover, confirmation and activation only on use", () => {
+    const { files } = traceEager(
+      "src/modules/terminal/ghostty/useGhosttyTerminalSession.ts",
+    );
+    const lazy =
+      /[/\\](?:terminalLinksRuntime|ViewportLinkResolver|TerminalLinkInteraction|LinkUnderlineOverlay|terminalLinks|terminalLinkTargets)\.ts$/;
+    expect([...files].filter((file) => lazy.test(file))).toEqual([]);
+    // What stays eager is two listeners and a dynamic import.
+    expect(
+      [...files].some((file) => /[/\\]LazyTerminalLinks\.ts$/.test(file)),
+    ).toBe(true);
+  });
   it("ships no xterm model or addons, including lazy dependencies", () => {
     const manifest = JSON.parse(
       readFileSync(new URL("../../package.json", import.meta.url), "utf8"),

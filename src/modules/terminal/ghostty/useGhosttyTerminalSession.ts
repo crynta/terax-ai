@@ -6,7 +6,6 @@ import {
 } from "@/modules/terminal/ghostty/ghosttyBlockSessions";
 import { initializeSessionGeneration as startSessionInitialization } from "@/modules/terminal/ghostty/sessionInitialization";
 import { replaceSessionSurface } from "@/modules/terminal/ghostty/replaceSessionSurface";
-import { activateTerminalLink } from "@/modules/terminal/lib/terminalLinks";
 import { ensureMonoFontsLoaded, resolveFontFamily } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { TerminalBackendKind } from "@/modules/terminal/backend/contracts";
@@ -319,7 +318,7 @@ export function writeToGhosttySession(leafId: number, data: string): boolean {
  * Types a shell command on the user's behalf only when the shell will read it:
  * never into a running command, a full-screen program or a coding agent.
  */
-export function writeToGhosttyPrompt(leafId: number, data: string): boolean {
+function writeToGhosttyPrompt(leafId: number, data: string): boolean {
   const session = sessions.get(leafId);
   if (!session || session.shellExited || session.disposed) return false;
   const accepts = shellAcceptsInjectedCommand({
@@ -762,11 +761,20 @@ async function initializeSessionGeneration(
     onFirstFrame: () => mark("firstFrameMs"),
     onFrame: () => ghosttyBlocks(session.leafId)?.present(),
     onRequestFocus: () => focusGhosttySession(session.leafId),
+    // Opening, confirming and resolving links is only needed on a click.
     onOpenLink: (link) => {
-      void activateTerminalLink(link, {
-        cwd: session.lastCwd ?? session.initialCwd ?? null,
-        focus: () => focusGhosttySession(session.leafId),
-      });
+      const focus = () => focusGhosttySession(session.leafId);
+      void import("@/modules/terminal/lib/terminalLinks")
+        .then(({ activateTerminalLink }) =>
+          activateTerminalLink(link, {
+            cwd: session.lastCwd ?? session.initialCwd ?? null,
+            focus,
+          }),
+        )
+        .catch((error: unknown) => {
+          console.error("[terax] terminal link support failed to load:", error);
+          focus();
+        });
     },
   };
   session.surfaceOptions = surfaceBaseOptions;

@@ -83,7 +83,7 @@ export function planLinkActivation(hit: TerminalLinkHit): LinkPlan {
   return { type: "block", reason: "scheme", scheme };
 }
 
-export function fileUrlToLocal(
+function fileUrlToLocal(
   parsed: URL,
 ): { host: string; path: string } | null {
   let path: string;
