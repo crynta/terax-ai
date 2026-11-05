@@ -43,7 +43,7 @@ export type LinkActivationDeps = {
 const CONFIRM_REASONS: Record<LinkConfirmReason, string> = {
   userinfo: "This link carries a username or password.",
   punycode: "This link uses an international domain name.",
-  mismatch: "The text shown for this link names a different site.",
+  mismatch: "The text shown for this link is not its address.",
   scheme: "This opens another app.",
 };
 

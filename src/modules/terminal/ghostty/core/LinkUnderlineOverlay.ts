@@ -1,4 +1,5 @@
 import type { LinkOverlay } from "./TerminalLinkInteraction";
+import { linkDestinationLabel } from "./terminalLinkTargets";
 import type { TerminalLinkHit } from "./terminalLinks";
 
 export type LinkUnderlineGeometry = {
@@ -10,9 +11,10 @@ export type LinkUnderlineGeometry = {
 };
 
 /**
- * Underline for the highlighted link: plain absolutely positioned bars, one per
- * row segment, created only while a link is hovered with the modifier held. No
- * frame cost and no compositing layer of their own.
+ * Underline for the highlighted link plus a status chip naming where it leads,
+ * so an OSC 8 link cannot hide its destination behind friendly text. Plain
+ * absolutely positioned elements, created only while a link is hovered with the
+ * modifier held: no frame cost and no compositing layer of their own.
  */
 export class LinkUnderlineOverlay implements LinkOverlay {
   private layer: HTMLElement | null = null;
@@ -35,6 +37,7 @@ export class LinkUnderlineOverlay implements LinkOverlay {
       return bar;
     });
     layer.replaceChildren(...bars);
+    this.showDestination(layer, linkDestinationLabel(hit));
   }
 
   hide(): void {
@@ -44,6 +47,21 @@ export class LinkUnderlineOverlay implements LinkOverlay {
   dispose(): void {
     this.layer?.remove();
     this.layer = null;
+  }
+
+  private showDestination(layer: HTMLElement, label: string): void {
+    if (label === "") return;
+    const chip = this.root.ownerDocument.createElement("div");
+    chip.textContent = label;
+    chip.style.cssText =
+      "position:absolute;left:0;top:0;max-width:min(80vw,60rem);overflow:hidden;" +
+      "text-overflow:ellipsis;white-space:nowrap;pointer-events:none;" +
+      "padding:2px 8px;border:1px solid var(--border,#444);border-left:0;" +
+      "border-radius:0 6px 0 0;background:var(--popover,#222);" +
+      "color:var(--popover-foreground,#eee);font:12px/1.4 system-ui,sans-serif;";
+    // Bottom left of the pane, like a browser status line.
+    chip.style.top = `${Math.max(0, this.root.clientHeight - 24)}px`;
+    layer.append(chip);
   }
 
   private createLayer(): HTMLElement {

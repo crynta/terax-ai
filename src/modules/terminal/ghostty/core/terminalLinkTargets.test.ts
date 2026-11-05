@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  hostShownByText,
   isLocalFileHost,
-  linkTextMismatch,
+  linkDestinationLabel,
+  linkTextIsDestination,
   MAX_LINK_URI_LENGTH,
   pathCandidates,
   planLinkActivation,
@@ -17,13 +17,21 @@ const hit = (
 ): TerminalLinkHit => ({ kind, uri, text, segments: [] });
 
 describe("planLinkActivation", () => {
-  it("opens http, https and mailto directly", () => {
+  it("opens http and https directly", () => {
     expect(planLinkActivation(hit("https://example.com/a?b=c"))).toEqual({
       type: "open-url",
       url: "https://example.com/a?b=c",
     });
-    expect(planLinkActivation(hit("mailto:me@example.com"))).toMatchObject({
+    expect(planLinkActivation(hit("http://example.com/"))).toMatchObject({
       type: "open-url",
+    });
+  });
+
+  it("asks before handing an address to the mail app", () => {
+    expect(planLinkActivation(hit("mailto:me@example.com"))).toMatchObject({
+      type: "confirm-url",
+      reason: "scheme",
+      destination: "me@example.com",
     });
   });
 
@@ -55,18 +63,31 @@ describe("planLinkActivation", () => {
     });
   });
 
-  it("confirms an OSC 8 link whose visible text names another site", () => {
-    expect(
-      planLinkActivation(hit("https://evil.test/", "osc8", "paypal.com")),
-    ).toMatchObject({ type: "confirm-url", reason: "mismatch" });
-    expect(
-      planLinkActivation(hit("https://evil.test/", "osc8", "click here")),
-    ).toMatchObject({ type: "open-url" });
+  it("confirms an OSC 8 link whose visible text is not its address", () => {
+    for (const text of ["paypal.com", "click here", "www.example.com/a", ""]) {
+      expect(
+        planLinkActivation(hit("https://evil.test/", "osc8", text)),
+        text,
+      ).toMatchObject({ type: "confirm-url", reason: "mismatch" });
+    }
     expect(
       planLinkActivation(
         hit("https://docs.example.com/a", "osc8", "www.example.com/a"),
       ),
-    ).toMatchObject({ type: "open-url" });
+    ).toMatchObject({ type: "confirm-url", reason: "mismatch" });
+  });
+
+  it("opens an OSC 8 link that shows its own address", () => {
+    for (const text of [
+      "https://example.com/a",
+      "example.com/a",
+      "HTTPS://EXAMPLE.COM/a/",
+    ]) {
+      expect(
+        planLinkActivation(hit("https://example.com/a", "osc8", text)),
+        text,
+      ).toMatchObject({ type: "open-url" });
+    }
   });
 
   it("rejects control characters and oversized addresses", () => {
@@ -106,12 +127,34 @@ describe("planLinkActivation", () => {
 });
 
 describe("link text and hosts", () => {
-  it("only reads host-like text as a claim", () => {
-    expect(hostShownByText("click here")).toBeNull();
-    expect(hostShownByText("main.rs")).toBeNull();
-    expect(hostShownByText("example.com/path")).toBe("example.com");
-    expect(linkTextMismatch("https://github.com/x", "gitlab.com")).toBe(true);
-    expect(linkTextMismatch("github.com", "www.github.com")).toBe(false);
+  it("accepts link text only when it is the address", () => {
+    const uri = "https://example.com/a?b=1";
+    expect(linkTextIsDestination(uri, uri)).toBe(true);
+    expect(linkTextIsDestination("example.com/a?b=1", uri)).toBe(true);
+    expect(linkTextIsDestination("http://example.com/a?b=1", uri)).toBe(false);
+    expect(linkTextIsDestination("example.com", uri)).toBe(false);
+    expect(linkTextIsDestination("click here", uri)).toBe(false);
+    expect(linkTextIsDestination("  ", uri)).toBe(false);
+  });
+
+  it("labels a hovered link with where it leads, bounded and printable", () => {
+    expect(linkDestinationLabel(hit("https://example.com/a"))).toBe(
+      "https://example.com/a",
+    );
+    expect(
+      linkDestinationLabel({
+        ...hit("src/a.ts:3:4", "path"),
+        path: "src/a.ts",
+        line: 3,
+        column: 4,
+      }),
+    ).toBe("src/a.ts:3:4");
+    expect(linkDestinationLabel(hit("https://x.test/\u001b[31m"))).toBe(
+      "https://x.test/[31m",
+    );
+    expect(linkDestinationLabel(hit(`https://x.test/${"a".repeat(1000)}`))).toHaveLength(
+      303,
+    );
   });
 
   it("treats only this machine as a local file host", () => {

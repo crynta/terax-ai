@@ -19,9 +19,10 @@ export type LinkPlan =
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 
 /**
- * Decides what activating a link may do. Only http, https and mailto open
- * directly; file URLs and paths are resolved against the file system by the
- * caller; everything else is blocked or needs an explicit confirmation.
+ * Decides what activating a link may do. Only http and https open directly,
+ * and an OSC 8 link only when its visible text is its address; mailto and tel
+ * ask first. File URLs and paths are resolved against the file system by the
+ * caller; everything else is blocked.
  */
 export function planLinkActivation(hit: TerminalLinkHit): LinkPlan {
   if (hit.kind === "path") {
@@ -61,13 +62,12 @@ export function planLinkActivation(hit: TerminalLinkHit): LinkPlan {
     if (parsed.hostname.split(".").some((label) => label.startsWith("xn--"))) {
       return { type: "confirm-url", url, reason: "punycode", destination };
     }
-    if (hit.kind === "osc8" && linkTextMismatch(hit.text, parsed.hostname)) {
+    if (hit.kind === "osc8" && !linkTextIsDestination(hit.text, uri, url)) {
       return { type: "confirm-url", url, reason: "mismatch", destination };
     }
     return { type: "open-url", url };
   }
-  if (scheme === "mailto") return { type: "open-url", url: parsed.href };
-  if (scheme === "tel") {
+  if (scheme === "mailto" || scheme === "tel") {
     return {
       type: "confirm-url",
       url: parsed.href,
@@ -109,62 +109,47 @@ export function isLocalFileHost(
   return name === local || name.split(".")[0] === local.split(".")[0];
 }
 
-const COMMON_TLDS = new Set([
-  "com",
-  "org",
-  "net",
-  "io",
-  "dev",
-  "app",
-  "ai",
-  "co",
-  "edu",
-  "gov",
-  "me",
-  "us",
-  "uk",
-  "de",
-  "fr",
-  "jp",
-  "cn",
-  "ru",
-  "in",
-  "br",
-  "ca",
-  "au",
-  "info",
-  "biz",
-  "xyz",
-  "cloud",
-  "tech",
-  "online",
-  "site",
-]);
+const SCHEMED = /^[a-z][a-z0-9+.-]*:\/\//i;
 
-function normalizeHost(host: string): string {
-  return host.toLowerCase().replace(/\.$/, "").replace(/^www\./, "");
+function comparable(text: string, keepScheme: boolean): string {
+  const trimmed = text.trim().replace(/\/+$/, "").toLowerCase();
+  return keepScheme ? trimmed : trimmed.replace(SCHEMED, "");
 }
 
-/** The host a piece of link text claims to point at, when it looks like one. */
-export function hostShownByText(text: string): string | null {
-  const match =
-    /^\s*(?:([a-z][a-z0-9+.-]*):\/\/)?(?:[^\s/@?#]*@)?([a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+)(?::\d+)?(?:[/?#\s]|$)/i.exec(
-      text,
-    );
-  if (!match) return null;
-  const host = match[2];
-  const tld = host.slice(host.lastIndexOf(".") + 1).toLowerCase();
-  if (match[1] || host.toLowerCase().startsWith("www.")) return host;
-  return COMMON_TLDS.has(tld) ? host : null;
+/**
+ * Whether the text drawn for an OSC 8 link is its address. Anything else, from
+ * "click here" to another site's name, is the classic bait-and-switch and gets
+ * a confirmation that shows the real destination. Text without a scheme may
+ * leave it out ("example.com/a" for https://example.com/a).
+ */
+export function linkTextIsDestination(
+  text: string,
+  uri: string,
+  href: string = uri,
+): boolean {
+  const keepScheme = SCHEMED.test(text.trim());
+  const shown = comparable(text, keepScheme);
+  if (shown === "") return false;
+  return (
+    shown === comparable(uri, keepScheme) ||
+    shown === comparable(href, keepScheme)
+  );
 }
 
-export function linkTextMismatch(text: string, hostname: string): boolean {
-  const shown = hostShownByText(text);
-  if (!shown) return false;
-  const a = normalizeHost(shown);
-  const b = normalizeHost(hostname);
-  return a !== b && !a.endsWith(`.${b}`) && !b.endsWith(`.${a}`);
+const MAX_DESTINATION_LABEL = 300;
+
+/** What a hovered link points at, for the preview chip and tooltip. */
+export function linkDestinationLabel(hit: TerminalLinkHit): string {
+  const base =
+    hit.kind === "path" && hit.path
+      ? `${hit.path}${hit.line === undefined ? "" : `:${hit.line}${hit.column === undefined ? "" : `:${hit.column}`}`}`
+      : hit.uri;
+  const clean = base.replace(/[\u0000-\u001f\u007f]/g, "");
+  return clean.length > MAX_DESTINATION_LABEL
+    ? `${clean.slice(0, MAX_DESTINATION_LABEL)}...`
+    : clean;
 }
+
 
 export type PathContext = {
   readonly cwd: string | null;
