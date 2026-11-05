@@ -68,7 +68,11 @@ integration() {
   HOME="$empty_home" TERAX_FAKE_BLE="$fake_ble" TERAX_PROBE="$probe" \
     TERAX_PC="$prompt_command" bash --norc --noprofile -c '
     PS1="user> "
-    if [ -n "$TERAX_PC" ]; then PROMPT_COMMAND="$TERAX_PC"; fi
+    case "$TERAX_PC" in
+      "") ;;
+      "("*) eval "PROMPT_COMMAND=$TERAX_PC" ;;
+      *) PROMPT_COMMAND="$TERAX_PC" ;;
+    esac
     if [ -n "$TERAX_FAKE_BLE" ]; then
       BLE_VERSION=0.4.0-test
       BLEHOOKS=
@@ -126,16 +130,78 @@ expect_contains "scalar PROMPT_COMMAND is kept after the hook" "_terax_precmd;ec
 status_after="$(integration "" '(exit 7); _terax_precmd >/dev/null; printf "%s" "$?"')"
 check "precmd returns the status it was given" 7 "$status_after"
 
-# Bash before 4.4 tags the marker as having no PS0 to pair with.
-prompt_end="$(integration "" 'PS1="user> "; _terax_precmd >/dev/null; printf "%s" "$PS1"')"
+# The prompt end runs last in PROMPT_COMMAND, after every framework that rebuilds
+# PS1. Bash before 4.4 tags the marker as having no PS0 to pair with.
+prompt_end="$(integration "" 'PS1="user> "; _terax_finish_prompt; printf "%s" "$PS1"')"
 check "prompt end follows the prompt text" 'user> \[\e]133;B\e\\\]' "${prompt_end/;terax_blocks=0/}"
 
 reinjected="$(integration "" '
-  _terax_precmd >/dev/null
+  _terax_finish_prompt
   PS1="framework> "
-  _terax_precmd >/dev/null
-  _terax_precmd >/dev/null
+  _terax_finish_prompt
+  _terax_finish_prompt
   printf "%s" "$PS1"')"
 check "prompt end is restored once after a framework rebuilt PS1" 'framework> \[\e]133;B\e\\\]' "${reinjected/;terax_blocks=0/}"
+
+finish_status="$(integration "" '(exit 9); _terax_finish_prompt; printf "%s" "$?"')"
+check "the prompt end hook keeps the status too" 9 "$finish_status"
+
+last_scalar="$(integration "" 'printf "%s" "$PROMPT_COMMAND"' 'starship_precmd')"
+check "the prompt end is the last PROMPT_COMMAND entry" "$(printf '_terax_precmd;starship_precmd\n_terax_finish_prompt')" "$last_scalar"
+
+# On bash before 5.1 an array PROMPT_COMMAND runs only element 0, so that
+# element has to carry both hooks; from 5.1 every element runs.
+array_last="$(integration "" 'printf "%s|" "${PROMPT_COMMAND[@]}"' '(one two)')"
+case "${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}" in
+  5.[1-9]*|[6-9].*) check "an array PROMPT_COMMAND gets the hooks as elements" "_terax_precmd|one|two|_terax_finish_prompt|" "$array_last" ;;
+  *) check "an old bash array keeps its element 0 as one command" "_terax_precmd;one"$'\n'"_terax_finish_prompt|two|" "$array_last" ;;
+esac
+
+nounset="$(integration "" 'set -u; unset TERAX_BLOCKS _terax_block_seen; unset PS1; _terax_precmd >/dev/null; _terax_finish_prompt; printf ok')"
+check "the hooks do not abort under set -u" ok "$nounset"
+
+ble_last="$(integration 1 'PROMPT_COMMAND=; _terax_ble_precmd >/dev/null; printf "%s" "$PROMPT_COMMAND"')"
+check "the ble.sh entry puts the prompt end back last" _terax_finish_prompt "$ble_last"
+
+# A prompt framework that rebuilds PS1 on every prompt, the way starship does,
+# must still end each prompt with the marker: drive a real bash through it.
+framework_prompts() {
+  local home="$1"
+  printf 'fw() { PS1="fw> "; }\nPROMPT_COMMAND=fw\n' > "$home/.bashrc"
+  HOME="$home" python3 - "$rcfile" <<'PY'
+import os, pty, re, select, sys, time
+
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp("bash", ["bash", "--rcfile", sys.argv[1], "-i"])
+out = b""
+
+def drain(seconds):
+    global out
+    end = time.time() + seconds
+    while time.time() < end:
+        if select.select([fd], [], [], 0.2)[0]:
+            try:
+                out += os.read(fd, 65536)
+            except OSError:
+                return
+drain(2.0)
+for line in ("true\n", "false\n", "exit\n"):
+    os.write(fd, line.encode())
+    drain(1.0)
+
+text = out.decode("utf-8", "replace")
+a = len(re.findall(r"\x1b\]133;A", text))
+b = len(re.findall(r"\x1b\]133;B", text))
+after_text = len(re.findall(r"fw> \x1b\]133;B", text))
+print(f"A={a} B={b} AFTER={after_text}")
+PY
+}
+framework_home="$(mktemp -d)"
+result="$(framework_prompts "$framework_home")"
+rm -rf "$framework_home"
+a="${result#A=}"; a="${a%% *}"
+after="${result##*AFTER=}"
+check "every prompt of a PS1-rebuilding framework ends with the prompt end after its text" 1 "$([ "$a" -ge 3 ] && [ "$after" -ge 3 ] && echo 1 || echo "$result")"
 
 exit $((failures > 0))

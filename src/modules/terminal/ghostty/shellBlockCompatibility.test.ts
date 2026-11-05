@@ -22,6 +22,7 @@ source() { :; }
 export TERAX_BLOCKS=1
 PS1='test> '
 . "$1" >/dev/null
+eval "$PROMPT_COMMAND" >/dev/null
 if (( BASH_VERSINFO[0] > 4 || BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4 )); then
   test "$TERAX_BLOCKS" = 1 || exit 10
   case "$PS0" in *'133;C'*) ;; *) exit 11 ;; esac

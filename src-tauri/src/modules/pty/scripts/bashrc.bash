@@ -7,7 +7,7 @@
 #   skip it — a fragile DEBUG-trap alternative would clobber the user's own
 #   traps and interact badly with debuggers.
 
-if [ -z "$__TERAX_HOOKS_LOADED" ]; then
+if [ -z "${__TERAX_HOOKS_LOADED-}" ]; then
   __TERAX_HOOKS_LOADED=1
 
   [ -f /etc/profile ] && source /etc/profile
@@ -31,7 +31,7 @@ if [ -z "$__TERAX_HOOKS_LOADED" ]; then
     _terax_prompt_end='\[\e]133;B;terax_blocks=0\e\\\]'
   fi
 
-  if [ -n "$TERAX_CLI" ] && [ -x "$TERAX_CLI" ]; then
+  if [ -n "${TERAX_CLI-}" ] && [ -x "${TERAX_CLI-}" ]; then
     terax() {
       command "$TERAX_CLI" "$@"
     }
@@ -60,57 +60,98 @@ if [ -z "$__TERAX_HOOKS_LOADED" ]; then
       *[!a-zA-Z0-9/._~-]*) _terax_urlencode "$_terax_cwd"; _terax_cwd="$REPLY" ;;
     esac
     printf '\e]7;file://%s%s\e\\' "${HOSTNAME:-$(uname -n 2>/dev/null)}" "$_terax_cwd"
-    if [ -n "$TERAX_BLOCKS" ]; then
+    printf '\e]133;A\e\\'
+    return "$_terax_ret"
+  }
+
+  # Runs last in PROMPT_COMMAND, after every prompt framework (starship, ...)
+  # rebuilt PS1: the prompt end goes after the prompt text, and in block mode
+  # the shell prompt is suppressed for the host's input bar. Appended again
+  # whenever a framework dropped it; forks nothing.
+  _terax_finish_prompt() {
+    local _terax_ret=$?
+    if [ -n "${TERAX_BLOCKS-}" ]; then
       # Host renders its own input bar: suppress the shell prompt (B marker
       # only) and reserve header/gap rows, mirroring the zsh integration.
-      if [ -n "$_terax_block_seen" ]; then
+      if [ -n "${_terax_block_seen-}" ]; then
         PS1='\n\n\[\e]133;B\e\\\]'
       else
         PS1='\n\[\e]133;B\e\\\]'
       fi
     else
-      # Appended after the prompt text, and again whenever a prompt framework
-      # rebuilt PS1 without it.
-      case "$PS1" in
+      case "${PS1-}" in
         *']133;B'*) ;;
-        *) PS1="${PS1}${_terax_prompt_end}" ;;
+        *) PS1="${PS1-}${_terax_prompt_end}" ;;
       esac
     fi
-    printf '\e]133;A\e\\'
     return "$_terax_ret"
+  }
+
+  # bash 5.1 runs every element of an array PROMPT_COMMAND; older versions run
+  # only element 0, where the array has to be treated as one command string.
+  _terax_pc_runs_arrays() {
+    [ "${BASH_VERSINFO[0]:-0}" -gt 5 ] \
+      || { [ "${BASH_VERSINFO[0]:-0}" -eq 5 ] && [ "${BASH_VERSINFO[1]:-0}" -ge 1 ]; }
+  }
+
+  # Puts _terax_finish_prompt last in PROMPT_COMMAND, once. Called again by the
+  # ble.sh hook, which restores a PROMPT_COMMAND that never saw it.
+  _terax_pc_finish_last() {
+    case "${PROMPT_COMMAND[*]-}" in *_terax_finish_prompt*) return 0 ;; esac
+    case "$(declare -p PROMPT_COMMAND 2>/dev/null)" in
+      'declare -a'*)
+        if _terax_pc_runs_arrays; then
+          PROMPT_COMMAND+=(_terax_finish_prompt)
+        else
+          PROMPT_COMMAND[0]="${PROMPT_COMMAND[0]-}"$'\n'"_terax_finish_prompt"
+        fi
+        ;;
+      *)
+        PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND$'\n'}_terax_finish_prompt"
+        ;;
+    esac
   }
 
   # ble.sh runs this from its own PRECMD hook list (see below). When a
   # PROMPT_COMMAND that still names _terax_precmd is going to run anyway, as it
-  # does for a ble.sh that attaches from the prompt, this stays out of the way
-  # so the prompt is never reported twice.
+  # does for a ble.sh that attaches from the prompt, this only makes sure the
+  # prompt end still runs last, so the prompt is never reported twice.
   _terax_ble_precmd() {
     local _terax_ret=$?
     case "${PROMPT_COMMAND[*]-}" in
-      *_terax_precmd*) return "$_terax_ret" ;;
+      *_terax_precmd*) ;;
+      *) (exit "$_terax_ret"); _terax_precmd ;;
     esac
-    (exit "$_terax_ret")
-    _terax_precmd
+    _terax_pc_finish_last
+    return "$_terax_ret"
   }
 
   case "$(declare -p PROMPT_COMMAND 2>/dev/null)" in
     'declare -a'*)
-      _terax_has_precmd=
-      for _terax_command in "${PROMPT_COMMAND[@]}"; do
-        [ "$_terax_command" = _terax_precmd ] && _terax_has_precmd=1
-      done
-      if [ -z "$_terax_has_precmd" ]; then
-        PROMPT_COMMAND=(_terax_precmd "${PROMPT_COMMAND[@]}")
+      if _terax_pc_runs_arrays; then
+        _terax_has_precmd=
+        for _terax_command in "${PROMPT_COMMAND[@]}"; do
+          [ "$_terax_command" = _terax_precmd ] && _terax_has_precmd=1
+        done
+        if [ -z "$_terax_has_precmd" ]; then
+          PROMPT_COMMAND=(_terax_precmd "${PROMPT_COMMAND[@]}")
+        fi
+        unset _terax_has_precmd _terax_command
+      else
+        case "${PROMPT_COMMAND[0]-}" in
+          *_terax_precmd*) ;;
+          *) PROMPT_COMMAND[0]="_terax_precmd${PROMPT_COMMAND[0]:+;${PROMPT_COMMAND[0]}}" ;;
+        esac
       fi
-      unset _terax_has_precmd _terax_command
       ;;
     *)
-      case ":${PROMPT_COMMAND:-}:" in
-        *":_terax_precmd:"*) ;;
+      case "${PROMPT_COMMAND:-}" in
+        *_terax_precmd*) ;;
         *) PROMPT_COMMAND="_terax_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}" ;;
       esac
       ;;
   esac
+  _terax_pc_finish_last
 
   # An attached ble.sh keeps its own copy of PROMPT_COMMAND, restores it before
   # every prompt and drops what was added behind its back, so the hook above
@@ -126,10 +167,10 @@ if [ -z "$__TERAX_HOOKS_LOADED" ]; then
   # on every command including inside PROMPT_COMMAND.
   if [ "${BASH_VERSINFO[0]:-0}" -gt 4 ] \
      || { [ "${BASH_VERSINFO[0]:-0}" -eq 4 ] && [ "${BASH_VERSINFO[1]:-0}" -ge 4 ]; }; then
-    if [ -n "$TERAX_BLOCKS" ]; then
+    if [ -n "${TERAX_BLOCKS-}" ]; then
       # PS0 only expands, never executes: the arithmetic inside the array
       # subscript sets the seen flag while the unset array expands to nothing.
-      PS0='\[\e]133;C\e\\\]${_terax_noop[$((_terax_block_seen=1))]}'"${PS0:-}"
+      PS0='\[\e]133;C\e\\\]${_terax_noop[$((_terax_block_seen=1))]-}'"${PS0:-}"
     else
       PS0='\[\e]133;C\e\\\]'"${PS0:-}"
     fi
