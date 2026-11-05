@@ -75,9 +75,11 @@ describe("GhosttyInputController cold modules", () => {
 
   it("retries a failed load once and then reports the mouse", async () => {
     const { controller, onData, wheel, loads } = await controllerWithMouse(1);
-    await vi.dynamicImportSettled();
-    wheel();
-    expect(onData).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => {
+      onData.mockClear();
+      wheel();
+      expect(onData).toHaveBeenCalledTimes(1);
+    });
     expect(loads.count).toBe(2);
     expect(warn).not.toHaveBeenCalled();
     controller.dispose();
@@ -85,18 +87,19 @@ describe("GhosttyInputController cold modules", () => {
 
   it("warns once when the retry fails too, and never throws", async () => {
     const { controller, onData, wheel, loads } = await controllerWithMouse(2);
-    await vi.dynamicImportSettled();
+    await vi.waitFor(() => expect(warn).toHaveBeenCalledTimes(1));
     expect(() => wheel()).not.toThrow();
     expect(onData).not.toHaveBeenCalled();
     expect(loads.count).toBe(2);
-    expect(warn).toHaveBeenCalledTimes(1);
     controller.dispose();
   });
 
-  it("stays silent when the controller is gone before the load fails", async () => {
-    const { controller } = await controllerWithMouse(2);
+  it("neither retries nor warns once the controller is gone", async () => {
+    const { controller, loads } = await controllerWithMouse(2);
     controller.dispose();
-    await vi.dynamicImportSettled();
+    await vi.waitFor(() => expect(loads.count).toBe(1));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(loads.count).toBe(1);
     expect(warn).not.toHaveBeenCalled();
   });
 });
