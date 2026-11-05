@@ -306,6 +306,7 @@ pub fn run() {
             lsp::lsp_send,
             lsp::lsp_kill,
             fs::search::fs_search,
+            fs::search::fs_warm_index,
             fs::search::fs_list_files,
             fs::grep::fs_grep,
             fs::grep::fs_grep_interactive,

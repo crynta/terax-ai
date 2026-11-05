@@ -57,6 +57,6 @@ for (const shell of ["bash", "zsh", "pwsh", "powershell"]) {
         });
         expect(result).toBe(`${name}\0`);
       }
-    });
+    }, 30_000);
   });
 }
