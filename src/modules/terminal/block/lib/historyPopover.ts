@@ -13,7 +13,7 @@ import {
 } from "@codemirror/view";
 import { Clock01Icon } from "@hugeicons/core-free-icons";
 import { hugeIcon } from "./completionIcons";
-import { createPointerIntent } from "./pointerIntent";
+import { createPointerIntent, trackPointer } from "./pointerIntent";
 
 type Fetcher = (query: string, limit: number) => Promise<string[]>;
 
@@ -127,6 +127,7 @@ function historyTooltipView(view: EditorView): TooltipView {
 }
 
 export function historyPopover(fetch: Fetcher) {
+  trackPointer();
   let timer: ReturnType<typeof setTimeout> | null = null;
 
   const open = (view: EditorView) => {
