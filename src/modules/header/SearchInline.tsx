@@ -3,6 +3,7 @@ import { Input } from "@/components/ui/input";
 import { KEY_SEP } from "@/lib/platform";
 import type { EditorPaneHandle } from "@/modules/editor";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import { effectiveBindings, useInTerminalFocus } from "@/modules/shortcuts";
 import { getBindingTokens, SHORTCUTS } from "@/modules/shortcuts/shortcuts";
 import type { TerminalSearchController } from "@/modules/terminal/search/TerminalSearchController";
 import { Cancel01Icon, Search01Icon } from "@hugeicons/core-free-icons";
@@ -58,15 +59,21 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
     }, []);
 
     const userShortcuts = usePreferencesStore((s) => s.shortcuts);
+    const inTerminal = useInTerminalFocus();
 
     const shortcutText = useMemo(() => {
       const s = SHORTCUTS.find((s) => s.id === "search.focus");
       if (!s) return "";
-      const bindings = userShortcuts["search.focus"] || s.defaultBindings;
-      if (!bindings || bindings.length === 0) return "";
+      const bindings = effectiveBindings(
+        "search.focus",
+        s.defaultBindings,
+        userShortcuts["search.focus"],
+        inTerminal,
+      );
+      if (bindings.length === 0) return "";
       const tokens = getBindingTokens(bindings[0]);
       return tokens.join(KEY_SEP);
-    }, [userShortcuts]);
+    }, [userShortcuts, inTerminal]);
 
     const baseLabel = target?.kind === "git-history" ? "Git search" : "Search";
 

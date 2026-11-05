@@ -21,6 +21,7 @@ import {
   type Shortcut,
   type ShortcutId,
 } from "@/modules/shortcuts/shortcuts";
+import { terminalFocusDifference } from "@/modules/shortcuts/lib/terminalFocusPolicy";
 import {
   ArrowTurnBackwardIcon,
   Delete02Icon,
@@ -184,11 +185,21 @@ function ShortcutRow({
     userBindings !== undefined ? userBindings : shortcut.defaultBindings;
   const isModified = userBindings !== undefined;
   const hasBindings = bindings && bindings.length > 0;
+  const inTerminal = terminalFocusDifference(
+    shortcut.id,
+    shortcut.defaultBindings,
+    userBindings,
+  );
 
   return (
     <div className="group flex items-center justify-between px-3 py-2.5 transition-colors hover:bg-muted/30">
       <div className="flex flex-col gap-0.5">
         <span className="text-[12.5px] font-medium">{shortcut.label}</span>
+        {inTerminal && inTerminal.length > 0 && (
+          <span className="text-[11px] text-muted-foreground">
+            In a terminal: {getBindingTokens(inTerminal[0]).join(" ")}
+          </span>
+        )}
       </div>
 
       <div className="flex items-center gap-2">
