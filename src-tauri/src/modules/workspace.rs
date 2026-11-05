@@ -30,6 +30,50 @@ pub struct WorkspaceRegistry {
     canonical_cache: Mutex<HashMap<PathBuf, CanonicalEntry>>,
 }
 
+/// `path` canonicalized when it exists, otherwise its deepest existing ancestor
+/// canonicalized with the missing tail re-attached: the form a grant on it was
+/// stored under, even though the directory itself is gone.
+fn canonical_or_resolved(path: &Path) -> PathBuf {
+    let mut tail: Vec<&std::ffi::OsStr> = Vec::new();
+    let mut cursor = path;
+    loop {
+        if let Ok(mut found) = std::fs::canonicalize(cursor) {
+            for name in tail.iter().rev() {
+                found.push(name);
+            }
+            return found;
+        }
+        match (cursor.file_name(), cursor.parent()) {
+            (Some(name), Some(parent)) => {
+                tail.push(name);
+                cursor = parent;
+            }
+            _ => return path.to_path_buf(),
+        }
+    }
+}
+
+/// A comparison key for a location: on Windows the verbatim prefix is dropped,
+/// both separators are one, and case does not matter (all three are properties
+/// of the file system there); elsewhere only a trailing separator is ignored.
+/// Pure, with `windows` a parameter, so it is tested on every host.
+fn normalize_location(path: &str, windows: bool) -> String {
+    if !windows {
+        return path.trim_end_matches('/').to_string();
+    }
+    let stripped = if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{rest}")
+    } else if let Some(rest) = path.strip_prefix(r"\\?\") {
+        rest.to_string()
+    } else {
+        path.to_string()
+    };
+    stripped
+        .replace('\\', "/")
+        .trim_end_matches('/')
+        .to_ascii_lowercase()
+}
+
 fn covered(
     target: &Path,
     roots: &HashSet<PathBuf>,
@@ -77,11 +121,21 @@ impl WorkspaceRegistry {
         Ok(child)
     }
 
-    /// Drops a derived grant. The path need not exist any more.
+    /// Drops a derived grant. The path need not exist any more, and may be
+    /// spelled differently from the canonical form the grant was stored under
+    /// (git prints `C:/Users/x/wt`; the registry holds `\\?\C:\Users\x\wt`).
     pub fn revoke_derived(&self, child: &Path) -> bool {
-        let canonical = std::fs::canonicalize(child).unwrap_or_else(|_| child.to_path_buf());
+        let windows = cfg!(windows);
+        let wanted: Vec<String> = [child.to_path_buf(), canonical_or_resolved(child)]
+            .iter()
+            .map(|p| normalize_location(&p.to_string_lossy(), windows))
+            .collect();
         let mut derived = self.derived.lock().expect("workspace registry poisoned");
-        derived.remove(&canonical).is_some() || derived.remove(child).is_some()
+        let before = derived.len();
+        derived.retain(|key, _| {
+            !wanted.contains(&normalize_location(&key.to_string_lossy(), windows))
+        });
+        derived.len() != before
     }
 
     pub fn canonicalize_cached<P: AsRef<Path>>(&self, path: P) -> std::io::Result<PathBuf> {
@@ -847,6 +901,83 @@ mod auth_tests {
         assert!(reg.revoke_derived(&child));
         assert!(!reg.is_authorized(&child));
         assert!(!reg.revoke_derived(&child), "second revoke is a no-op");
+    }
+
+    #[test]
+    fn locations_compare_equal_across_windows_spellings_only_on_windows() {
+        let verbatim = normalize_location(r"\\?\C:\Users\Runner\Temp\wt", true);
+        for spelling in [
+            "C:/Users/Runner/Temp/wt",
+            r"C:\Users\Runner\Temp\wt",
+            r"c:\users\runner\temp\WT",
+            "C:/Users/Runner/Temp/wt/",
+        ] {
+            assert_eq!(normalize_location(spelling, true), verbatim, "{spelling}");
+        }
+        assert_eq!(
+            normalize_location(r"\\?\UNC\server\share\wt", true),
+            normalize_location("//server/share/wt", true)
+        );
+        assert_ne!(
+            normalize_location(r"C:\Users\a", true),
+            normalize_location(r"C:\Users\b", true)
+        );
+        // Elsewhere a backslash is a name character and case matters.
+        assert_ne!(
+            normalize_location(r"/tmp/a\b", false),
+            normalize_location("/tmp/a/b", false)
+        );
+        assert_ne!(
+            normalize_location("/tmp/Wt", false),
+            normalize_location("/tmp/wt", false)
+        );
+        assert_eq!(
+            normalize_location("/tmp/wt/", false),
+            normalize_location("/tmp/wt", false)
+        );
+    }
+
+    #[test]
+    fn a_grant_on_a_deleted_directory_is_revoked_whatever_the_spelling() {
+        let reg = WorkspaceRegistry::default();
+        let parent = tempdir("revoke-parent");
+        reg.authorize(&parent).unwrap();
+        // Deliberately not canonical (on macOS /var/folders is /private/var/...).
+        let spelled = env::temp_dir().join(format!(
+            "terax-revoke-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        fs::create_dir_all(&spelled).unwrap();
+        let canonical = fs::canonicalize(&spelled).unwrap();
+        reg.authorize_derived(&spelled, &parent).unwrap();
+        assert!(reg.is_authorized(&canonical));
+
+        fs::remove_dir_all(&spelled).unwrap();
+        assert!(
+            reg.revoke_derived(&spelled),
+            "the grant is found although the directory is gone"
+        );
+        assert!(!reg.is_authorized(&canonical));
+        assert!(reg.derived.lock().unwrap().is_empty());
+        assert!(!reg.revoke_derived(&spelled), "nothing is left to revoke");
+    }
+
+    #[test]
+    fn revoking_one_grant_leaves_the_others() {
+        let reg = WorkspaceRegistry::default();
+        let parent = tempdir("revoke-keep-parent");
+        let a = tempdir("revoke-keep-a");
+        let b = tempdir("revoke-keep-b");
+        reg.authorize(&parent).unwrap();
+        reg.authorize_derived(&a, &parent).unwrap();
+        reg.authorize_derived(&b, &parent).unwrap();
+        assert!(reg.revoke_derived(&a));
+        assert!(!reg.is_authorized(&a));
+        assert!(reg.is_authorized(&b));
     }
 
     #[test]
