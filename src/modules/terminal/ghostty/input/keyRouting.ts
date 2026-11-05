@@ -83,17 +83,18 @@ const IME_SAFE_KEY =
 
 /**
  * AltGr types a character through Ctrl+Alt on Windows. Chromium reports it as
- * `AltGraph`; if a WebView2 build does not, a Ctrl+Alt press whose character
- * differs from the key's US character (`@`, `{`, `[`, a euro sign, accented
- * letters on German, French and Polish layouts) is AltGr, while Ctrl+Alt+letter
- * on a US layout types the letter itself and stays a chord.
+ * `AltGraph`, and that report decides. Where a WebView2 build reports nothing,
+ * a Ctrl+Alt press is still AltGr when it types a symbol or an accented letter
+ * that is not the key's US character (`@`, `{`, `\`, a euro sign, `ą`). A
+ * letter from A to Z stays a chord on any layout, since AZERTY and Dvorak move
+ * letters between keys.
  */
 function isAltGraph(event: KeyboardLike, ctx: KeyContext): boolean {
   if (event.getModifierState("AltGraph")) return true;
   if (!ctx.isWindows || !event.ctrlKey || !event.altKey) return false;
-  if (event.key.length !== 1) return false;
-  const base = baseTextForCode(event.code, event.shiftKey);
-  return base === null || base.toLowerCase() !== event.key.toLowerCase();
+  const { key } = event;
+  if (key.length !== 1 || /^[a-z]$/i.test(key)) return false;
+  return key !== baseTextForCode(event.code, event.shiftKey);
 }
 
 function isOptionMeta(event: KeyboardLike, ctx: KeyContext): boolean {

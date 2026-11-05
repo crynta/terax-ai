@@ -429,6 +429,8 @@ describe("routeKeyDown on a layout with AltGr", () => {
     ["{", "Digit7"],
     ["[", "Digit8"],
     ["~", "Digit2"],
+    ["\\", "Minus"],
+    ["|", "IntlBackslash"],
   ])(
     "types %s when AltGr is not reported but the character is not the US key",
     (key, code) => {
@@ -453,6 +455,25 @@ describe("routeKeyDown on a layout with AltGr", () => {
       expect(routeKeyDown(event, ctx).kind).toBe("key");
     },
   );
+
+  it.each([
+    ["a", "KeyQ"],
+    ["z", "KeyW"],
+    ["x", "KeyB"],
+    ["Z", "KeyY"],
+  ])(
+    "keeps Ctrl+Alt+%s on the %s key of AZERTY, QWERTZ and Dvorak a chord",
+    (key, code) => {
+      const event = { ...press(false), key, code, shiftKey: key === "Z" };
+      expect(routeKeyDown(event, ctx)).toMatchObject({ kind: "key" });
+    },
+  );
+
+  it("types an ASCII character when the browser reports AltGraph", () => {
+    expect(
+      routeKeyDown({ ...press(true), key: "q", code: "KeyW" }, ctx),
+    ).toEqual({ kind: "text", text: "q", key: null });
+  });
 
   it("does not guess AltGr away from Windows", () => {
     expect(
