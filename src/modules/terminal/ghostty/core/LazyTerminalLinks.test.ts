@@ -31,11 +31,9 @@ function setup() {
     target,
     keyTarget: keys as unknown as Window,
     isModifier: (event) => event.metaKey || event.ctrlKey,
-    cellAt: () => null,
-    blocked: () => false,
-    model: { linkSource: vi.fn() },
+    model: { linkSource: vi.fn(), cols: 80, rows: 24, modes: vi.fn() },
+    scrollbar: {} as Node,
     geometry: () => ({ cellWidth: 8, cellHeight: 16, shiftY: 0, color: "red" }),
-    setPointerCursor: vi.fn(),
     onActivate: vi.fn(),
   });
   const tick = () => new Promise((resolve) => setTimeout(resolve, 0));

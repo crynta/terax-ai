@@ -1,6 +1,5 @@
 import type { GhosttyTerminalModelApi } from "../GhosttyTerminalModel";
 import type { LinkUnderlineGeometry } from "./LinkUnderlineOverlay";
-import type { LinkCell } from "./TerminalLinkInteraction";
 import type { TerminalLinkHit } from "./terminalLinks";
 
 export type LazyTerminalLinksOptions = {
@@ -11,11 +10,10 @@ export type LazyTerminalLinksOptions = {
     readonly metaKey: boolean;
     readonly ctrlKey: boolean;
   }) => boolean;
-  readonly cellAt: (clientX: number, clientY: number) => LinkCell | null;
-  readonly blocked: (shift: boolean, target: EventTarget | null) => boolean;
-  readonly model: Pick<GhosttyTerminalModelApi, "linkSource">;
+  readonly model: Pick<GhosttyTerminalModelApi, "linkSource" | "cols" | "rows" | "modes">;
+  /** The pane's scrollbar; the pointer over it belongs to the scrollbar. */
+  readonly scrollbar: Node;
   readonly geometry: () => LinkUnderlineGeometry;
-  readonly setPointerCursor: (pointer: boolean) => void;
   readonly onActivate: (hit: TerminalLinkHit) => void;
 };
 

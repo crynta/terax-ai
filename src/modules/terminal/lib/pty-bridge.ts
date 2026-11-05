@@ -106,15 +106,6 @@ export type PtySession = {
   close: () => Promise<void>;
 };
 
-function ptyColorsArgument(colors: PtyColors) {
-  return {
-    foreground: colors.foreground,
-    background: colors.background,
-    cursor: colors.cursor,
-    palette: colors.palette.slice(0, 16),
-  };
-}
-
 export async function openPty(
   cols: number,
   rows: number,
@@ -181,7 +172,7 @@ export async function openPty(
       shell: shell ?? null,
       paneId: paneId ?? null,
       presentation: presentation ?? null,
-      colors: colors ? ptyColorsArgument(colors) : null,
+      colors: colors ?? null,
     });
   } catch (error) {
     releaseHandlers();
@@ -222,10 +213,7 @@ export async function openPty(
     setColors: (next) =>
       closed
         ? Promise.resolve()
-        : invoke("pty_set_colors", {
-            id: sessionId,
-            colors: ptyColorsArgument(next),
-          }),
+        : invoke("pty_set_colors", { id: sessionId, colors: next }),
     close: async () => {
       if (closed) return;
       closed = true;

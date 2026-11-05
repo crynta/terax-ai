@@ -57,12 +57,6 @@ export class PromptPresentationGate {
     this.release();
   }
 
-  private allowanceMs(): number {
-    if (this.missedEnds === 0) return PROMPT_PRESENTATION_WATCHDOG_MS;
-    if (this.missedEnds === 1) return PROMPT_PRESENTATION_SUSPECT_MS;
-    return PROMPT_PRESENTATION_MISSING_MS;
-  }
-
   private armWatchdog(): void {
     this.clearWatchdog();
     this.watchdog = globalThis.setTimeout(() => {
@@ -71,7 +65,11 @@ export class PromptPresentationGate {
       this.suppressedValue = false;
       this.missedEnds = Math.min(this.missedEnds + 1, 2);
       this.release();
-    }, this.allowanceMs());
+    }, [
+      PROMPT_PRESENTATION_WATCHDOG_MS,
+      PROMPT_PRESENTATION_SUSPECT_MS,
+      PROMPT_PRESENTATION_MISSING_MS,
+    ][this.missedEnds]);
   }
 
   private clearWatchdog(): void {

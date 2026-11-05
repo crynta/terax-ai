@@ -15,7 +15,6 @@ import {
 } from "@/modules/terminal/lib/terminalResizeInteraction";
 import { TerminalResizeSync } from "@/modules/terminal/lib/terminalResizeSync";
 import { LazyTerminalLinks } from "../core/LazyTerminalLinks";
-import { cellAtPoint } from "../core/linkCells";
 import type { TerminalLinkHit } from "../core/terminalLinks";
 import type { GhosttyTerminalModelApi } from "../GhosttyTerminalModel";
 import type { GestureGrowth } from "../gpu/CanvasBackingStore";
@@ -209,28 +208,14 @@ export class WebGlTerminalSurface
       target: this.root,
       keyTarget: window,
       isModifier: isPrimaryModifierPressed,
-      cellAt: (clientX, clientY) => {
-        const rect = this.root.getBoundingClientRect();
-        return cellAtPoint(
-          (clientX - rect.left) / this.metrics.cellWidth,
-          (clientY - rect.top) / this.metrics.cellHeight,
-          options.model.cols,
-          options.model.rows,
-        );
-      },
-      blocked: (shift, target) =>
-        (target instanceof Node && this.scrollbar.contains(target)) ||
-        (options.model.modes().mouseTracking && !shift),
       model: options.model,
+      scrollbar: this.scrollbar,
       geometry: () => ({
         cellWidth: this.metrics.cellWidth,
         cellHeight: this.metrics.cellHeight,
         shiftY: 0,
         color: rgbToCss(this.theme.foreground),
       }),
-      setPointerCursor: (pointer) => {
-        this.root.style.cursor = pointer ? "pointer" : "text";
-      },
       onActivate: (hit) => options.onOpenLink?.(hit),
     });
     this.search = new GhosttySearchController(options.model, () => {

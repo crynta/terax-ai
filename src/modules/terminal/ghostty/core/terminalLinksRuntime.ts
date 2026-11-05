@@ -2,6 +2,7 @@ import type {
   ActiveTerminalLinks,
   LazyTerminalLinksOptions,
 } from "./LazyTerminalLinks";
+import { cellAtPoint } from "./linkCells";
 import { LinkUnderlineOverlay } from "./LinkUnderlineOverlay";
 import { TerminalLinkInteraction } from "./TerminalLinkInteraction";
 import { ViewportLinkResolver } from "./ViewportLinkResolver";
@@ -16,11 +17,26 @@ export function createTerminalLinks(
     target: options.target,
     keyTarget: options.keyTarget,
     isModifier: options.isModifier,
-    cellAt: options.cellAt,
-    blocked: options.blocked,
+    cellAt: (clientX, clientY) => {
+      const { cellWidth, cellHeight, shiftY } = options.geometry();
+      const rect = options.target.getBoundingClientRect();
+      return cellAtPoint(
+        (clientX - rect.left) / cellWidth,
+        (clientY - rect.top + shiftY) / cellHeight,
+        options.model.cols,
+        options.model.rows,
+      );
+    },
+    // The scrollbar owns its pointer, and so does an application that tracks
+    // the mouse unless Shift is held.
+    blocked: (shift, target) =>
+      (target instanceof Node && options.scrollbar.contains(target)) ||
+      (options.model.modes().mouseTracking && !shift),
     hitAt: (cell) => resolver.at(cell.row, cell.column),
     overlay,
-    setPointerCursor: options.setPointerCursor,
+    setPointerCursor: (pointer) => {
+      options.target.style.cursor = pointer ? "pointer" : "text";
+    },
     onActivate: options.onActivate,
   });
   return {

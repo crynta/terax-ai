@@ -17,8 +17,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isAgentActivePty } from "../lib/agentActivity";
 import { shellAcceptsInjectedCommand } from "../lib/promptInjection";
-import { sameTerminalColors } from "../lib/terminalThemeColors";
-import { openPty, type PtySession } from "../lib/pty-bridge";
+import { openPty, type PtyColors, type PtySession } from "../lib/pty-bridge";
 import { writeTerminalClipboard } from "../lib/terminalClipboard";
 import { LatestClipboardWrite } from "@/modules/terminal/lib/LatestClipboardWrite";
 import { GhosttySemanticEventRouter } from "./core/GhosttySemanticEventRouter";
@@ -288,6 +287,9 @@ export function useGhosttyTerminalSession({
     ],
   );
 }
+
+const themeKey = (theme: PtyColors) =>
+  JSON.stringify([theme.foreground, theme.background, theme.cursor, theme.palette]);
 
 function applyThemeToSession(session: GhosttySession): void {
   if (!session.model || !session.surface) return;
@@ -771,10 +773,7 @@ async function initializeSessionGeneration(
             focus,
           }),
         )
-        .catch((error: unknown) => {
-          console.error("[terax] terminal link support failed to load:", error);
-          focus();
-        });
+        .catch(focus);
     },
   };
   session.surfaceOptions = surfaceBaseOptions;
@@ -856,10 +855,6 @@ async function initializeSessionGeneration(
 
   const startCols = model.cols;
   const startRows = model.rows;
-  // The theme read at the start of initialization can be stale by now (fonts,
-  // WASM and the renderer were awaited since); native answers colour queries
-  // from what it is given here.
-  const openTheme = readTerminalGpuTheme();
   const pty = await openPty(
     startCols,
     startRows,
@@ -883,7 +878,7 @@ async function initializeSessionGeneration(
     !!ghosttyBlocks(session.leafId),
     preferences.terminalShell || undefined,
     session.leafId,
-    openTheme,
+    theme,
   );
   if (session.disposed || generation !== session.generation) {
     await pty.close();
@@ -899,12 +894,10 @@ async function initializeSessionGeneration(
   if (model.cols !== startCols || model.rows !== startRows) {
     session.ptyResize.send(model.cols, model.rows);
   }
-  // A theme change while the PTY was opening found no PTY to tell and, with no
-  // model or surface yet, nothing to repaint either.
-  const latest = readTerminalGpuTheme();
-  if (!sameTerminalColors(latest, theme)) applyThemeToSession(session);
-  else if (!sameTerminalColors(latest, openTheme)) {
-    void pty.setColors(latest).catch(() => {});
+  // The theme can change while fonts, WASM and the renderer load; a change
+  // before the PTY was attached found no PTY to tell, so look again.
+  if (themeKey(readTerminalGpuTheme()) !== themeKey(theme)) {
+    applyThemeToSession(session);
   }
 }
 
