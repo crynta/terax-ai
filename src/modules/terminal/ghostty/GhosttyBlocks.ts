@@ -30,6 +30,12 @@ type Entry = {
   cwd: string;
   start: number;
   end: number | null;
+  /**
+   * Set when the next prompt ended the command without a D: lines from the
+   * start marker to the cursor when that prompt began, since only D and C
+   * carry markers of their own.
+   */
+  implicitEndLines?: number;
   exitCode: number | null;
   startedAt: number;
   finishedAt: number;
@@ -103,7 +109,13 @@ export class GhosttyBlocks {
     // A shell that replaced itself (exec zsh) or died inside a command never
     // reports its end; the next prompt does, or the block would run forever.
     if (event.type === "prompt-start" && this.live) {
-      this.finish(this.live.start, null);
+      const live = this.live;
+      const startLine = this.model.semanticMarkerLine(live.start);
+      const cursorLine = this.model.bufferCursorLine();
+      this.finish(live.start, null);
+      if (startLine != null && cursorLine > startLine) {
+        live.implicitEndLines = cursorLine - startLine;
+      }
       this.entryRevision++;
     }
     if (event.type === "end-of-input") {
@@ -183,16 +195,21 @@ export class GhosttyBlocks {
     empty: boolean;
   } | null {
     const start = this.model.semanticMarkerLine?.(entry.start);
+    const implicit = entry.implicitEndLines;
     const end =
       entry.end === null
         ? this.model.bufferCursorLine?.()
-        : this.model.semanticMarkerLine?.(entry.end);
+        : implicit !== undefined && start != null
+          ? start + implicit
+          : this.model.semanticMarkerLine?.(entry.end);
     if (start == null || end == null) return null;
     const startCol = this.model.semanticMarkerColumn?.(entry.start) ?? 0;
     const endCol =
       entry.end === null
         ? this.model.cols
-        : (this.model.semanticMarkerColumn?.(entry.end) ?? 0);
+        : implicit !== undefined
+          ? 0
+          : (this.model.semanticMarkerColumn?.(entry.end) ?? 0);
     const empty = end === start && endCol <= startCol;
     return {
       start,

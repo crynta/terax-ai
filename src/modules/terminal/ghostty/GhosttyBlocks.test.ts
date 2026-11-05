@@ -109,6 +109,30 @@ describe.each(["ghostty-vt", "ghostty-vt-scalar"])(
       }
     });
 
+    it("keeps the output of a command ended by the next prompt instead of closing it empty", () => {
+      const { blocks, write, dispose } = create();
+      try {
+        write("$ \x1b]133;B\x07\x1b]133;C;long\x07one\r\ntwo\r\nthree\r\n");
+        // The shell died or replaced itself: no D, the next prompt follows.
+        write("\x1b]133;A\x07new> \x1b]133;B\x07");
+        const [block] = blocks.visibleBlocks(20).blocks;
+        expect(block.running).toBe(false);
+        expect(block.exitCode).toBeNull();
+        expect(blocks.readById("1")).toEqual({
+          command: "long",
+          cwd: "/workspace",
+          exitCode: null,
+          output: "one\ntwo\nthree",
+        });
+        // And the following command still gets its own block.
+        write("\x1b]133;C;next\x07out\r\n\x1b]133;D;0\x07");
+        expect(blocks.readById("2")?.output).toBe("out");
+        expect(blocks.readById("1")?.output).toBe("one\ntwo\nthree");
+      } finally {
+        dispose();
+      }
+    });
+
     it("leaves a blank row before the divider without including padding in copied output", () => {
       const { model, blocks, write, dispose } = create();
       try {
