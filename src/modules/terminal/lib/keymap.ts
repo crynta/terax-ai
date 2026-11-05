@@ -30,11 +30,12 @@ export function terminalLineNavigationSequence(
 /** Modifier+Backspace deletion:
  *   macOS  Cmd+Backspace    → Ctrl+U (kill-to-line-start)
  *   macOS  Option+Backspace → Ctrl+W (kill-word-backward)
- *   Other  Ctrl+Backspace   → Ctrl+W (kill-word-backward)
+ *   Other  Ctrl+Backspace   → Ctrl+W (kill-word-backward), unless the
+ *          application enabled the Kitty protocol: it gets `CSI 127;5u`
  */
 export function terminalDeleteSequence(
   event: TerminalKeyEvent,
-  opts: PlatformOpts,
+  opts: PlatformOpts & { kittyKeys?: () => boolean },
 ): string | null {
   if (event.key !== "Backspace" && event.code !== "Backspace") return null;
   if (opts.isMac) {
@@ -42,7 +43,8 @@ export function terminalDeleteSequence(
     if (event.altKey && !event.metaKey && !event.ctrlKey) return "\x17";
     return null;
   }
-  if (event.ctrlKey && !event.altKey && !event.metaKey) return "\x17";
+  if (event.ctrlKey && !event.altKey && !event.metaKey)
+    return opts.kittyKeys?.() ? null : "\x17";
   return null;
 }
 
@@ -54,7 +56,10 @@ export function terminalDeleteSequence(
  */
 export function terminalReadlineSequence(
   event: TerminalKeyEvent,
-  opts: PlatformOpts & { isAlternateScreen: boolean },
+  opts: PlatformOpts & {
+    isAlternateScreen: boolean;
+    kittyKeys?: () => boolean;
+  },
 ): string | null {
   const command =
     terminalLineNavigationSequence(event, opts) ??

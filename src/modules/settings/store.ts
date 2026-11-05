@@ -21,6 +21,11 @@ import {
 } from "@/modules/agents/lib/launcher";
 import type { KeyBinding, ShortcutId } from "@/modules/shortcuts/shortcuts";
 import {
+  coerceMacOptionAsAlt,
+  DEFAULT_MAC_OPTION_AS_ALT,
+  type MacOptionAsAlt,
+} from "@/modules/terminal/ghostty/input/macOptionAsAlt";
+import {
   clampScrollSpeed,
   DEFAULT_SCROLL_SPEED,
 } from "@/modules/terminal/ghostty/input/terminalWheel";
@@ -172,6 +177,7 @@ export type Preferences = {
   terminalFontSize: number;
   terminalScrollback: number;
   terminalScrollSpeed: number;
+  terminalMacOptionAsAlt: MacOptionAsAlt;
   confirmCloseRunningTerminal: boolean;
   lastWslDistro: string | null;
   zoomLevel: number;
@@ -269,6 +275,7 @@ const KEY_TERMINAL_LETTER_SPACING = "terminalLetterSpacing";
 const KEY_TERMINAL_FONT_SIZE = "terminalFontSize";
 const KEY_TERMINAL_SCROLLBACK = "terminalScrollback";
 const KEY_TERMINAL_SCROLL_SPEED = "terminalScrollSpeed";
+const KEY_TERMINAL_MAC_OPTION_AS_ALT = "terminalMacOptionAsAlt";
 const KEY_CONFIRM_CLOSE_RUNNING_TERMINAL = "confirmCloseRunningTerminal";
 const KEY_LAST_WSL_DISTRO = "lastWslDistro";
 const KEY_ZOOM_LEVEL = "zoomLevel";
@@ -365,6 +372,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   terminalFontSize: TERMINAL_FONT_SIZE_DEFAULT,
   terminalScrollback: TERMINAL_SCROLLBACK_DEFAULT,
   terminalScrollSpeed: DEFAULT_SCROLL_SPEED,
+  terminalMacOptionAsAlt: DEFAULT_MAC_OPTION_AS_ALT,
   confirmCloseRunningTerminal: true,
   lastWslDistro: null,
   zoomLevel: 1.0,
@@ -542,6 +550,9 @@ export async function loadPreferences(): Promise<Preferences> {
     ),
     terminalScrollSpeed: clampScrollSpeed(
       get<number>(KEY_TERMINAL_SCROLL_SPEED),
+    ),
+    terminalMacOptionAsAlt: coerceMacOptionAsAlt(
+      get<unknown>(KEY_TERMINAL_MAC_OPTION_AS_ALT),
     ),
     confirmCloseRunningTerminal:
       get<boolean>(KEY_CONFIRM_CLOSE_RUNNING_TERMINAL) ??
@@ -852,6 +863,12 @@ export async function setTerminalShell(value: string): Promise<void> {
   await writePref(KEY_TERMINAL_SHELL, value.trim());
 }
 
+export async function setTerminalMacOptionAsAlt(
+  value: MacOptionAsAlt,
+): Promise<void> {
+  await writePref(KEY_TERMINAL_MAC_OPTION_AS_ALT, coerceMacOptionAsAlt(value));
+}
+
 export async function setTerminalScrollSpeed(value: number): Promise<void> {
   await writePref(KEY_TERMINAL_SCROLL_SPEED, clampScrollSpeed(value));
 }
@@ -1023,6 +1040,7 @@ export async function onPreferencesChange(
     [KEY_TERMINAL_FONT_SIZE]: "terminalFontSize",
     [KEY_TERMINAL_SCROLLBACK]: "terminalScrollback",
     [KEY_TERMINAL_SCROLL_SPEED]: "terminalScrollSpeed",
+    [KEY_TERMINAL_MAC_OPTION_AS_ALT]: "terminalMacOptionAsAlt",
     [KEY_CONFIRM_CLOSE_RUNNING_TERMINAL]: "confirmCloseRunningTerminal",
     [KEY_LAST_WSL_DISTRO]: "lastWslDistro",
     [KEY_ZOOM_LEVEL]: "zoomLevel",

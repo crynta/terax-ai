@@ -193,3 +193,31 @@ describe("terminalReadlineSequence", () => {
     ).toBeNull();
   });
 });
+
+describe("Ctrl+Backspace under the Kitty protocol", () => {
+  const event = evt({ ctrlKey: true, key: "Backspace", code: "Backspace" });
+  const opts = { isMac: false, isAlternateScreen: false };
+
+  it("kills a word outside the protocol and leaves the key to the encoder inside it", () => {
+    expect(terminalReadlineSequence(event, opts)).toBe("\x17");
+    expect(
+      terminalReadlineSequence(event, { ...opts, kittyKeys: () => false }),
+    ).toBe("\x17");
+    expect(
+      terminalReadlineSequence(event, { ...opts, kittyKeys: () => true }),
+    ).toBeNull();
+  });
+
+  it("does not ask the application's mode for keys it never remaps", () => {
+    let asked = 0;
+    const kittyKeys = () => {
+      asked += 1;
+      return true;
+    };
+    terminalReadlineSequence(evt({ key: "a", code: "KeyA" }), {
+      ...opts,
+      kittyKeys,
+    });
+    expect(asked).toBe(0);
+  });
+});

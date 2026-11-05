@@ -51,6 +51,8 @@ type Row = {
   platform?: Platform;
   /** Run on the alternate screen. */
   alt?: true;
+  /** The layout's AltGr key is down (Windows reports it as Ctrl+Alt). */
+  altGr?: true;
   /** Bytes for the press, per mode; "" when nothing is sent. */
   press: Expected;
   /** Bytes for the release that follows, per mode; omitted modes send nothing. */
@@ -405,11 +407,11 @@ const ROWS: Row[] = [
     press: { ...all(`${E}[32;5u`), legacy: "\0", decckm: "\0" },
   },
   {
-    name: "Ctrl+Backspace kills a word on Windows and Linux",
+    name: "Ctrl+Backspace kills a word on Windows and Linux, the key under Kitty",
     key: "Backspace",
     code: "Backspace",
     mods: "C",
-    press: all("\x17"),
+    press: { ...all(`${E}[127;5u`), legacy: "\x17", decckm: "\x17" },
   },
   {
     name: "Ctrl+Backspace on the alternate screen",
@@ -420,22 +422,24 @@ const ROWS: Row[] = [
     press: { ...all(`${E}[127;5u`), legacy: "\b", decckm: "\b" },
   },
 
-  // Ctrl+Shift: escape-coded with both modifiers (mod value 1 + 1 + 4 = 6).
-  // In legacy mode there is no C0 byte for it; the encoder uses the same CSI u
-  // form (xterm would send the unshifted control byte).
+  // Ctrl+Shift: escape-coded with both modifiers (mod value 1 + 1 + 4 = 6)
+  // under the protocol; xterm's control byte without it.
   ...(
     [
-      ["P", "KeyP", 112],
-      ["A", "KeyA", 97],
+      ["P", "KeyP", 112, "\x10"],
+      ["A", "KeyA", 97, "\x01"],
+      ["J", "KeyJ", 106, "\n"],
     ] as const
   ).map(
-    ([key, code, base]): Row => ({
+    ([key, code, base, control]): Row => ({
       name: `Ctrl+Shift+${key}`,
       key,
       code,
       mods: "CS",
       press: {
         ...all(`${E}[${base};6u`),
+        legacy: control,
+        decckm: control,
         k31: `${E}[${base}:${key.charCodeAt(0)};6u`,
       },
       release: {
@@ -652,8 +656,21 @@ const ROWS: Row[] = [
     key: "@",
     code: "KeyQ",
     mods: "CA",
+    altGr: true,
     platform: "windows",
     press: all("@"),
+  },
+  {
+    name: "Ctrl+Alt+a on a layout without AltGr is Ctrl+Alt",
+    key: "a",
+    code: "KeyA",
+    mods: "CA",
+    platform: "windows",
+    press: {
+      ...all(`${E}[97;7u`),
+      legacy: `${E}\x01`,
+      decckm: `${E}\x01`,
+    },
   },
 ];
 
@@ -693,7 +710,7 @@ describe.each(ARTIFACTS)("key encoding conformance (%s)", (artifact) => {
         cellSize: () => ({ width: 10, height: 20 }),
         isMac: platform === "mac" || platform === "macMeta",
         isWindows: platform === "windows",
-        macOptionIsMeta: platform === "macMeta",
+        macOptionAsAlt: () => (platform === "macMeta" ? "both" : "off"),
         onCopy: () => false,
         onData: (bytes) => sent.push(decoder.decode(bytes)),
       });
@@ -753,7 +770,8 @@ function keyEvent(row: Row, type: "keydown" | "keyup"): KeyboardEvent {
     repeat: false,
     isComposing: false,
     getModifierState: (name: string) =>
-      name === "NumLock" && row.code.startsWith("Numpad"),
+      (name === "NumLock" && row.code.startsWith("Numpad")) ||
+      (name === "AltGraph" && row.altGr === true),
   }) as KeyboardEvent;
 }
 
@@ -971,23 +989,78 @@ describe.each(ARTIFACTS)(
       },
     );
 
-    it("copies when there is a selection and sends the key when there is none", async () => {
-      let selected = true;
-      const onCopy = vi.fn(() => selected);
-      const h = await setup(0, { onCopy });
-      try {
-        const copy = h.press({
-          key: "C",
-          code: "KeyC",
-          ctrlKey: true,
-          shiftKey: true,
+    it.each([
+      [0, ""],
+      [1, `${E}[99;6u`],
+    ])(
+      "copies a selection; with none it sends nothing in legacy mode and the key under the protocol (flags %s)",
+      async (flags, expected) => {
+        let selected = true;
+        const onCopy = vi.fn(() => selected);
+        const h = await setup(flags, { onCopy });
+        try {
+          const copy = h.press({
+            key: "C",
+            code: "KeyC",
+            ctrlKey: true,
+            shiftKey: true,
+          });
+          expect(copy.defaultPrevented).toBe(true);
+          expect(h.sent).toEqual([]);
+          selected = false;
+          const none = h.press({
+            key: "C",
+            code: "KeyC",
+            ctrlKey: true,
+            shiftKey: true,
+          });
+          expect(h.sent).toEqual(expected === "" ? [] : [expected]);
+          expect(none.defaultPrevented).toBe(expected !== "");
+          expect(onCopy).toHaveBeenCalledTimes(2);
+        } finally {
+          h.dispose();
+        }
+      },
+    );
+
+    it.each([
+      ["off", "AltLeft", "\u222b"],
+      ["both", "AltLeft", `${E}b`],
+      ["both", "AltRight", `${E}b`],
+      ["left", "AltLeft", `${E}b`],
+      ["left", "AltRight", "\u222b"],
+      ["right", "AltRight", `${E}b`],
+      ["right", "AltLeft", "\u222b"],
+    ] as const)(
+      "Option as Alt = %s with the %s key held",
+      async (setting, side, expected) => {
+        const h = await setup(0, {
+          isMac: true,
+          macOptionAsAlt: () => setting,
         });
-        expect(copy.defaultPrevented).toBe(true);
-        expect(h.sent).toEqual([]);
-        selected = false;
-        h.press({ key: "C", code: "KeyC", ctrlKey: true, shiftKey: true });
-        expect(h.sent).toEqual([`${E}[99;6u`]);
-        expect(onCopy).toHaveBeenCalledTimes(2);
+        try {
+          h.press({ key: "Alt", code: side, altKey: true });
+          h.press({ key: "\u222b", code: "KeyB", altKey: true });
+          expect(h.sent).toEqual([expected]);
+          h.press({ key: "Alt", code: side, altKey: false }, "keyup");
+          h.sent.length = 0;
+          h.press({ key: "b", code: "KeyB" });
+          expect(h.sent).toEqual(["b"]);
+        } finally {
+          h.dispose();
+        }
+      },
+    );
+
+    it("follows the setting as it changes, with no restart", async () => {
+      let setting: "off" | "both" = "off";
+      const h = await setup(0, { isMac: true, macOptionAsAlt: () => setting });
+      try {
+        h.press({ key: "Alt", code: "AltLeft", altKey: true });
+        h.press({ key: "\u222b", code: "KeyB", altKey: true });
+        setting = "both";
+        h.press({ key: "\u222b", code: "KeyB", altKey: true });
+        expect(h.sent).toEqual(["\u222b", `${E}b`]);
       } finally {
         h.dispose();
       }

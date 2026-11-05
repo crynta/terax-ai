@@ -2,11 +2,7 @@ import { ImeAnchor } from "@/modules/terminal/ghostty/input/ImeAnchor";
 import { TerminalInputProxy } from "@/modules/terminal/ghostty/input/TerminalInputProxy";
 import { TerminalNativeSelection } from "@/modules/terminal/ghostty/input/TerminalNativeSelection";
 import { readTerminalClipboard } from "@/modules/terminal/lib/terminalClipboard";
-import {
-  type Key,
-  KeyAction,
-  type KeyEvent,
-} from "@terax/ghostty-core/protocol";
+import { Key, KeyAction, type KeyEvent } from "@terax/ghostty-core/protocol";
 import type { GhosttyTerminalModelApi } from "../GhosttyTerminalModel";
 import {
   buildKeyEvent,
@@ -18,7 +14,7 @@ import {
   keyModifiers,
   routeKeyDown,
 } from "./keyRouting";
-import { KEY_MAP } from "./keyTable";
+import { type MacOptionAsAlt, optionActsAsMeta } from "./macOptionAsAlt";
 import { encodeTerminalPaste } from "./terminalInputEncoding";
 import {
   cursorKeySequence,
@@ -49,7 +45,8 @@ export type GhosttyInputControllerOptions = {
   readonly onPaste?: (text: string) => boolean;
   readonly onText?: (text: string) => boolean;
   readonly onKeyDown?: (event: KeyboardEvent) => boolean;
-  readonly macOptionIsMeta?: boolean;
+  /** Which Option key acts as Alt (Meta); read per key so a preference change applies at once. */
+  readonly macOptionAsAlt?: () => MacOptionAsAlt;
   readonly isMac?: boolean;
   readonly isWindows?: boolean;
   /** Selected-placeholder input proxy (a macOS WebKit fix); defaults to `isMac`. */
@@ -68,6 +65,8 @@ export class GhosttyInputController {
   private readonly pressedKeys = new Map<string, KeyEvent>();
   private readonly wheel = new WheelAccumulator();
   private composing = false;
+  private optionLeft = false;
+  private optionRight = false;
   private mouseButtons = 0;
   private lastData = "";
   private lastSource: InputSource | null = null;
@@ -84,7 +83,11 @@ export class GhosttyInputController {
     this.keyContext = {
       isMac: this.isMac,
       isWindows,
-      macOptionIsMeta: options.macOptionIsMeta === true,
+      optionIsMeta: () =>
+        optionActsAsMeta(options.macOptionAsAlt?.() ?? "off", {
+          left: this.optionLeft,
+          right: this.optionRight,
+        }),
       composing: () => this.composing,
       alternateScreen: () => options.model.modes().alternateScreen,
       kittyFlags: () => this.kittyFlags(),
@@ -161,8 +164,18 @@ export class GhosttyInputController {
     return this.options.model.kittyKeyboardFlags?.() ?? 0;
   }
 
+  private trackOptionKeys(event: KeyboardEvent, down: boolean): void {
+    if (event.code === "AltLeft") this.optionLeft = down;
+    else if (event.code === "AltRight") this.optionRight = down;
+    if (!event.altKey) {
+      this.optionLeft = false;
+      this.optionRight = false;
+    }
+  }
+
   private readonly handleKeyDown = (event: KeyboardEvent): void => {
     this.nativeSelection?.reset();
+    this.trackOptionKeys(event, true);
     if (ignoredForIme(event, this.keyContext)) return;
 
     let route = routeKeyDown(event, this.keyContext);
@@ -220,13 +233,11 @@ export class GhosttyInputController {
   ): void {
     // Ctrl+V is also a key: an application that reads the clipboard itself (an
     // image paste) gets it when there is no text to paste.
-    const key = route.forwardKeyWhenEmpty ? KEY_MAP[event.code] : undefined;
-    const fallback =
-      key === undefined
-        ? null
-        : this.options.model.encodeKey(
-            buildKeyEvent(event, key, KeyAction.PRESS, this.kittyFlags()),
-          );
+    const fallback = route.forwardKeyWhenEmpty
+      ? this.options.model.encodeKey(
+          buildKeyEvent(event, Key.V, KeyAction.PRESS, this.kittyFlags()),
+        )
+      : null;
     void readTerminalClipboard().then((text) => {
       if (this.disposed) return;
       if (text) this.paste(text);
@@ -253,6 +264,7 @@ export class GhosttyInputController {
   }
 
   private readonly handleKeyUp = (event: KeyboardEvent): void => {
+    this.trackOptionKeys(event, false);
     const pressed = this.pressedKeys.get(event.code);
     if (!pressed) return;
     this.pressedKeys.delete(event.code);
@@ -349,6 +361,8 @@ export class GhosttyInputController {
 
   private readonly handleBlur = (): void => {
     this.releasePressedKeys();
+    this.optionLeft = false;
+    this.optionRight = false;
     this.composing = false;
     this.imeAnchor.end();
     this.wheel.reset();

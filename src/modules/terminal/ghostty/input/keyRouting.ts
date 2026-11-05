@@ -29,7 +29,8 @@ export type KeyboardLike = Pick<
 export type KeyContext = {
   readonly isMac: boolean;
   readonly isWindows: boolean;
-  readonly macOptionIsMeta: boolean;
+  /** Option acts as Meta for the key being pressed (the setting and the side held). */
+  readonly optionIsMeta: () => boolean;
   /** An IME composition is in progress on the input element. */
   readonly composing: () => boolean;
   readonly alternateScreen: () => boolean;
@@ -94,10 +95,10 @@ const IME_SAFE_KEYS: ReadonlySet<string> = new Set([
 function isOptionMeta(event: KeyboardLike, ctx: KeyContext): boolean {
   return (
     ctx.isMac &&
-    ctx.macOptionIsMeta &&
     event.altKey &&
     !event.ctrlKey &&
-    !event.metaKey
+    !event.metaKey &&
+    ctx.optionIsMeta()
   );
 }
 
@@ -130,7 +131,10 @@ export function routeKeyDown(
   const optionMeta = isOptionMeta(event, ctx);
 
   if (isPasteShortcut(event, ctx))
-    return ctx.isWindows && event.code === "KeyV" && !event.shiftKey
+    return ctx.isWindows &&
+      event.ctrlKey &&
+      !event.shiftKey &&
+      isLayoutKey(event, "v")
       ? PASTE_OR_KEY
       : PASTE;
   if (!skipCopy && isCopyShortcut(event, ctx)) return COPY;
@@ -138,6 +142,7 @@ export function routeKeyDown(
   const readline = terminalReadlineSequence(event, {
     isMac: ctx.isMac,
     isAlternateScreen: ctx.alternateScreen(),
+    kittyKeys: () => ctx.kittyFlags() !== 0,
   });
   if (readline) return { kind: "bytes", text: readline };
 
@@ -166,6 +171,25 @@ export function routeKeyDown(
       return { kind: "bytes", text: control };
   }
 
+  // xterm sends the control byte for Ctrl+Shift+letter; the encoder's CSI u
+  // form would arrive as typed text in an application that never asked for it.
+  if (
+    event.ctrlKey &&
+    event.shiftKey &&
+    !event.altKey &&
+    !event.metaKey &&
+    ctx.kittyFlags() === 0
+  ) {
+    const letter = layoutLetter(event);
+    if (letter !== null)
+      return isCopyShortcut(event, ctx)
+        ? IGNORE
+        : {
+            kind: "bytes",
+            text: String.fromCharCode(letter.charCodeAt(0) & 0x1f),
+          };
+  }
+
   if (optionMeta) {
     const text = baseTextForCode(event.code, event.shiftKey);
     const mapped = KEY_MAP[event.code];
@@ -177,7 +201,7 @@ export function routeKeyDown(
     key.length === 1 &&
     !event.metaKey &&
     ((!event.ctrlKey && !event.altKey) ||
-      (event.ctrlKey && event.altKey) ||
+      event.getModifierState("AltGraph") ||
       (ctx.isMac && event.altKey && !event.ctrlKey && !optionMeta));
   if (printable) {
     const mapped = KEY_MAP[event.code];
@@ -286,37 +310,70 @@ export function canonicalKittyPress(bytes: Uint8Array): Uint8Array {
   return Uint8Array.from(out);
 }
 
+/**
+ * Whether the key is the Latin letter, by what the layout types (Dvorak and
+ * Workman move letters around, so the physical code is the wrong question).
+ * Layouts without Latin letters type something else on the key and are matched
+ * by position.
+ */
+function isLayoutKey(
+  event: Pick<KeyboardEvent, "key" | "code">,
+  letter: string,
+): boolean {
+  return layoutLetter(event) === letter;
+}
+
+/** The Latin letter a key stands for under Ctrl, or null. */
+function layoutLetter(
+  event: Pick<KeyboardEvent, "key" | "code">,
+): string | null {
+  const key = event.key.toLowerCase();
+  if (/^[a-z]$/.test(key)) return key;
+  if (key.length >= 1 && /^\p{L}$/u.test(key) && /^Key[A-Z]$/.test(event.code))
+    return event.code.slice(3).toLowerCase();
+  return null;
+}
+
+const isInsert = (event: Pick<KeyboardEvent, "key" | "code">): boolean =>
+  event.key === "Insert" || event.code === "Insert";
+
 export function isPasteShortcut(
   event: Pick<
     KeyboardEvent,
-    "ctrlKey" | "shiftKey" | "altKey" | "metaKey" | "code"
+    "ctrlKey" | "shiftKey" | "altKey" | "metaKey" | "key" | "code"
   >,
   platform: Pick<KeyContext, "isMac" | "isWindows">,
 ): boolean {
   if (platform.isMac) {
     return (
-      event.metaKey && !event.ctrlKey && !event.altKey && event.code === "KeyV"
+      event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      isLayoutKey(event, "v")
     );
   }
   if (event.altKey || event.metaKey) return false;
-  if (event.code === "Insert") return event.shiftKey && !event.ctrlKey;
-  if (event.code !== "KeyV" || !event.ctrlKey) return false;
+  if (isInsert(event)) return event.shiftKey && !event.ctrlKey;
+  if (!event.ctrlKey || !isLayoutKey(event, "v")) return false;
   return platform.isWindows || event.shiftKey;
 }
 
 export function isCopyShortcut(
   event: Pick<
     KeyboardEvent,
-    "ctrlKey" | "shiftKey" | "altKey" | "metaKey" | "code"
+    "ctrlKey" | "shiftKey" | "altKey" | "metaKey" | "key" | "code"
   >,
   platform: Pick<KeyContext, "isMac">,
 ): boolean {
   if (platform.isMac) {
     return (
-      event.metaKey && !event.ctrlKey && !event.altKey && event.code === "KeyC"
+      event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      isLayoutKey(event, "c")
     );
   }
   if (event.altKey || event.metaKey || !event.ctrlKey) return false;
-  if (event.code === "Insert") return !event.shiftKey;
-  return event.shiftKey && event.code === "KeyC";
+  if (isInsert(event)) return !event.shiftKey;
+  return event.shiftKey && isLayoutKey(event, "c");
 }

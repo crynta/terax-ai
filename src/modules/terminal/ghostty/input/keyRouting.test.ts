@@ -118,7 +118,7 @@ describe("ignoredForIme", () => {
   const ctx = (composing = false): KeyContext => ({
     isMac: true,
     isWindows: false,
-    macOptionIsMeta: false,
+    optionIsMeta: () => false,
     composing: () => composing,
     alternateScreen: () => false,
     kittyFlags: () => 0,
@@ -156,7 +156,7 @@ describe("ignoredForIme", () => {
   });
 
   it("lets Option act as Meta through the dead-key and 229 tagging of macOS", () => {
-    const meta = { ...ctx(), macOptionIsMeta: true };
+    const meta = { ...ctx(), optionIsMeta: () => true };
     const option = press({ key: "Dead", keyCode: 229, altKey: true });
     expect(ignoredForIme(option, meta)).toBe(false);
     expect(ignoredForIme(option, ctx())).toBe(true);
@@ -168,7 +168,9 @@ describe("clipboard shortcuts", () => {
   const event = (
     code: string,
     mods: "" | "C" | "S" | "CS" | "M" | "CA" = "",
+    key = code === "Insert" ? "Insert" : code.slice(3).toLowerCase(),
   ) => ({
+    key,
     code,
     ctrlKey: mods.includes("C"),
     shiftKey: mods.includes("S"),
@@ -209,11 +211,44 @@ describe("clipboard shortcuts", () => {
   });
 });
 
+describe("clipboard shortcuts on other layouts", () => {
+  const press = (key: string, code: string, mods: "C" | "CS" | "M") => ({
+    key,
+    code,
+    ctrlKey: mods.includes("C"),
+    shiftKey: mods.includes("S"),
+    altKey: false,
+    metaKey: mods === "M",
+  });
+  const windows = { isMac: false, isWindows: true };
+  const linux = { isMac: false, isWindows: false };
+  const mac = { isMac: true, isWindows: false };
+
+  it("follows the letter the layout types, not the physical key (Dvorak, Workman)", () => {
+    // Dvorak types V where QWERTY has Period, and "." where QWERTY has V.
+    expect(isPasteShortcut(press("v", "Period", "C"), windows)).toBe(true);
+    expect(isPasteShortcut(press("V", "Period", "CS"), linux)).toBe(true);
+    expect(isPasteShortcut(press("v", "Period", "M"), mac)).toBe(true);
+    expect(isCopyShortcut(press("C", "KeyJ", "CS"), linux)).toBe(true);
+    expect(isCopyShortcut(press("c", "KeyJ", "M"), mac)).toBe(true);
+    expect(isPasteShortcut(press(".", "KeyV", "C"), windows)).toBe(false);
+    expect(isPasteShortcut(press(".", "KeyV", "CS"), linux)).toBe(false);
+    expect(isCopyShortcut(press("j", "KeyC", "CS"), linux)).toBe(false);
+  });
+
+  it("falls back to the physical key on layouts without Latin letters", () => {
+    expect(isPasteShortcut(press("\u043c", "KeyV", "C"), windows)).toBe(true);
+    expect(isCopyShortcut(press("\u0441", "KeyC", "CS"), linux)).toBe(true);
+    expect(isPasteShortcut(press("\u043c", "KeyV", "M"), mac)).toBe(true);
+    expect(isPasteShortcut(press("\u043c", "KeyB", "C"), windows)).toBe(false);
+  });
+});
+
 describe("routeKeyDown", () => {
   const ctx = (over: Partial<KeyContext> = {}): KeyContext => ({
     isMac: false,
     isWindows: false,
-    macOptionIsMeta: false,
+    optionIsMeta: () => false,
     composing: () => false,
     alternateScreen: () => false,
     kittyFlags: () => 0,
@@ -249,7 +284,7 @@ describe("routeKeyDown", () => {
     ).toEqual({ kind: "paste", forwardKeyWhenEmpty: false });
   });
 
-  it("falls back to the key when copy has nothing to copy", () => {
+  it("sends nothing in legacy mode and the key in the protocol when copy has nothing to copy", () => {
     const event = press({
       key: "C",
       code: "KeyC",
@@ -257,7 +292,8 @@ describe("routeKeyDown", () => {
       shiftKey: true,
     });
     expect(routeKeyDown(event, ctx())).toEqual({ kind: "copy" });
-    expect(routeKeyDown(event, ctx(), true)).toEqual({
+    expect(routeKeyDown(event, ctx(), true).kind).toBe("ignore");
+    expect(routeKeyDown(event, ctx({ kittyFlags: () => 1 }), true)).toEqual({
       kind: "key",
       key: Key.C,
     });
@@ -287,9 +323,6 @@ describe("routeKeyDown", () => {
       expect(routeKeyDown(event, ctx({ kittyFlags: () => 1 })).kind).toBe(
         "key",
       );
-      expect(routeKeyDown({ ...event, shiftKey: true }, ctx()).kind).not.toBe(
-        "bytes",
-      );
     }
   });
 
@@ -305,7 +338,13 @@ describe("routeKeyDown", () => {
   it("types AltGr and macOS Option characters as plain text", () => {
     expect(
       routeKeyDown(
-        press({ key: "@", code: "KeyQ", ctrlKey: true, altKey: true }),
+        press({
+          key: "@",
+          code: "KeyQ",
+          ctrlKey: true,
+          altKey: true,
+          getModifierState: (name: string) => name === "AltGraph",
+        }),
         ctx({ isWindows: true }),
       ),
     ).toEqual({ kind: "text", text: "@", key: null });
@@ -321,13 +360,13 @@ describe("routeKeyDown", () => {
     expect(
       routeKeyDown(
         press({ key: "∫", code: "KeyB", altKey: true }),
-        ctx({ isMac: true, macOptionIsMeta: true }),
+        ctx({ isMac: true, optionIsMeta: () => true }),
       ),
     ).toEqual({ kind: "key", key: Key.B, utf8: "b" });
     expect(
       routeKeyDown(
         press({ key: "Ï", code: "KeyF", altKey: true, shiftKey: true }),
-        ctx({ isMac: true, macOptionIsMeta: true }),
+        ctx({ isMac: true, optionIsMeta: () => true }),
       ),
     ).toEqual({ kind: "key", key: Key.F, utf8: "F" });
   });
@@ -342,5 +381,93 @@ describe("routeKeyDown", () => {
     expect(
       routeKeyDown(press({ key: "Unmapped", code: "Lang1" }), ctx()).kind,
     ).toBe("ignore");
+  });
+});
+
+describe("routeKeyDown on a layout with AltGr", () => {
+  const ctx: KeyContext = {
+    isMac: false,
+    isWindows: true,
+    optionIsMeta: () => false,
+    composing: () => false,
+    alternateScreen: () => false,
+    kittyFlags: () => 0,
+  };
+  const press = (altGraph: boolean) =>
+    ({
+      key: "a",
+      code: "KeyA",
+      keyCode: 65,
+      shiftKey: false,
+      ctrlKey: true,
+      altKey: true,
+      metaKey: false,
+      repeat: false,
+      isComposing: false,
+      defaultPrevented: false,
+      getModifierState: (name: string) => altGraph && name === "AltGraph",
+    }) as KeyboardLike;
+
+  it("encodes a real Ctrl+Alt+letter on a layout without AltGr as Ctrl+Alt", () => {
+    expect(routeKeyDown(press(false), ctx)).toEqual({
+      kind: "key",
+      key: Key.A,
+    });
+  });
+
+  it("types the character AltGr produces", () => {
+    expect(routeKeyDown({ ...press(true), key: "\u00e6" }, ctx)).toEqual({
+      kind: "text",
+      text: "\u00e6",
+      key: null,
+    });
+  });
+});
+
+describe("Ctrl+Shift+letter without the Kitty protocol", () => {
+  const ctx = (flags: number): KeyContext => ({
+    isMac: false,
+    isWindows: false,
+    optionIsMeta: () => false,
+    composing: () => false,
+    alternateScreen: () => false,
+    kittyFlags: () => flags,
+  });
+  const press = (key: string, code: string) =>
+    ({
+      key,
+      code,
+      keyCode: 0,
+      shiftKey: true,
+      ctrlKey: true,
+      altKey: false,
+      metaKey: false,
+      repeat: false,
+      isComposing: false,
+      defaultPrevented: false,
+      getModifierState: () => false,
+    }) as KeyboardLike;
+
+  it.each([
+    ["A", "KeyA", "\x01"],
+    ["P", "KeyP", "\x10"],
+    ["Z", "KeyZ", "\x1a"],
+    ["J", "KeyJ", "\n"],
+  ])("Ctrl+Shift+%s is the control byte, as in xterm", (key, code, byte) => {
+    expect(routeKeyDown(press(key, code), ctx(0))).toEqual({
+      kind: "bytes",
+      text: byte,
+    });
+  });
+
+  it("keeps the escape code under the Kitty protocol", () => {
+    expect(routeKeyDown(press("A", "KeyA"), ctx(1)).kind).toBe("key");
+    expect(routeKeyDown(press("P", "KeyP"), ctx(31)).kind).toBe("key");
+  });
+
+  it("never turns the copy shortcut into an interrupt", () => {
+    const copy = press("C", "KeyC");
+    expect(routeKeyDown(copy, ctx(0), true).kind).toBe("ignore");
+    expect(routeKeyDown(copy, ctx(1), true).kind).toBe("key");
   });
 });
