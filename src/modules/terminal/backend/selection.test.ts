@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  defaultTerminalBackend,
   detectPlatform,
   resolveTerminalBackend,
   selectedTerminalBackend,
   setSelectedTerminalBackend,
+  terminalBackendFor,
   terminalRendererReport,
 } from "./selection";
 
@@ -49,54 +49,60 @@ describe("terminal backend selection", () => {
     expect(detectPlatform("")).toBe("other");
   });
 
-  it("starts Windows on WebGL until WebGPU is selected, and everything else on WebGPU", () => {
-    expect(defaultTerminalBackend("windows")).toBe("ghostty-webgl");
-    for (const platform of ["mac", "linux", "other"] as const) {
-      expect(defaultTerminalBackend(platform)).toBe("ghostty-webgpu");
-    }
-  });
+  describe("renderer setting", () => {
+    const gpu = { userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", gpu: {} };
+    const noGpu = { userAgent: gpu.userAgent };
 
-  describe("on Windows", () => {
-    const windows = {
-      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/150",
-      gpu: {},
-    };
+    it("is WebGPU under Automatic and WebGPU on every platform, with WebGL only by choice", () => {
+      for (const userAgent of [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+        "Mozilla/5.0 (X11; Linux x86_64)",
+      ]) {
+        vi.stubGlobal("navigator", { userAgent, gpu: {} });
+        vi.stubGlobal("window", { localStorage: createStorage() });
+        expect(terminalBackendFor("auto"), userAgent).toBe("ghostty-webgpu");
+        expect(terminalBackendFor("webgpu"), userAgent).toBe("ghostty-webgpu");
+        expect(terminalBackendFor("webgl"), userAgent).toBe("ghostty-webgl");
+      }
+    });
 
-    it("uses WebGL by default and WebGPU only when explicitly stored", () => {
+    it("falls back to WebGL where the webview has no WebGPU, whatever was chosen", () => {
+      vi.stubGlobal("navigator", noGpu);
+      vi.stubGlobal("window", { localStorage: createStorage() });
+      for (const setting of ["auto", "webgpu", "webgl"] as const) {
+        expect(terminalBackendFor(setting), setting).toBe("ghostty-webgl");
+      }
+    });
+
+    it("lets the experimental override steer Automatic but not an explicit choice", () => {
       const storage = createStorage();
+      storage.setItem(STORAGE_KEY, "ghostty-webgl");
+      vi.stubGlobal("navigator", gpu);
       vi.stubGlobal("window", { localStorage: storage });
-      vi.stubGlobal("navigator", windows);
-      expect(selectedTerminalBackend()).toBe("ghostty-webgl");
-
-      setSelectedTerminalBackend("ghostty-webgpu");
-      expect(storage.getItem(STORAGE_KEY)).toBe("ghostty-webgpu");
-      expect(selectedTerminalBackend()).toBe("ghostty-webgpu");
-
-      setSelectedTerminalBackend("ghostty-webgl");
-      expect(storage.getItem(STORAGE_KEY)).toBeNull();
-      expect(selectedTerminalBackend()).toBe("ghostty-webgl");
+      expect(terminalBackendFor("auto")).toBe("ghostty-webgl");
+      expect(terminalBackendFor("webgpu")).toBe("ghostty-webgpu");
     });
 
     it("reports which renderer new terminals use and why", () => {
+      vi.stubGlobal("navigator", gpu);
       vi.stubGlobal("window", { localStorage: createStorage() });
-      vi.stubGlobal("navigator", windows);
       expect(terminalRendererReport()).toEqual({
         platform: "windows",
-        platformDefault: "ghostty-webgl",
-        preferred: "ghostty-webgl",
-        resolved: "ghostty-webgl",
-        webGpuAvailable: true,
-        reason: "platform default",
-      });
-      const storage = createStorage();
-      storage.setItem(STORAGE_KEY, "ghostty-webgpu");
-      vi.stubGlobal("window", { localStorage: storage });
-      expect(terminalRendererReport()).toMatchObject({
+        setting: "auto",
+        preferred: "ghostty-webgpu",
         resolved: "ghostty-webgpu",
-        reason: "explicit selection",
+        webGpuAvailable: true,
+        reason: "automatic",
       });
-      vi.stubGlobal("navigator", { userAgent: windows.userAgent });
-      expect(terminalRendererReport()).toMatchObject({
+      expect(terminalRendererReport("webgl")).toMatchObject({
+        setting: "webgl",
+        resolved: "ghostty-webgl",
+        reason: "settings",
+      });
+      vi.stubGlobal("navigator", noGpu);
+      expect(terminalRendererReport("webgpu")).toMatchObject({
+        preferred: "ghostty-webgpu",
         resolved: "ghostty-webgl",
         webGpuAvailable: false,
         reason: "WebGPU unavailable",

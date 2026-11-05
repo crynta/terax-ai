@@ -1,3 +1,4 @@
+import type { TerminalRendererSetting } from "@/modules/settings/store";
 import type { TerminalBackendKind } from "./contracts";
 
 const STORAGE_KEY = "terax.experimental.terminal-backend";
@@ -16,16 +17,6 @@ const GHOSTTY_BACKENDS = new Set<TerminalBackendKind>([
   "ghostty-webgpu",
 ]);
 
-/**
- * What "Automatic" means on a platform. WebView2 has shown soft WebGPU text next to sharp
- * WebGL on the same layout (#1357) and the cause could not be reproduced off Windows, so
- * Windows starts on WebGL until WebGPU is explicitly selected
- * (`localStorage["terax.experimental.terminal-backend"] = "ghostty-webgpu"`).
- */
-export function defaultTerminalBackend(platform: Platform): TerminalBackendKind {
-  return platform === "windows" ? "ghostty-webgl" : DEFAULT_BACKEND;
-}
-
 function currentPlatform(): Platform {
   return detectPlatform(
     typeof navigator === "undefined" ? "" : navigator.userAgent,
@@ -37,24 +28,22 @@ export function selectedTerminalBackend(): TerminalBackendKind {
     import.meta.env.VITE_TERMINAL_BACKEND,
   );
   if (configured) return configured;
-  const fallback = defaultTerminalBackend(currentPlatform());
-  if (typeof window === "undefined") return fallback;
+  if (typeof window === "undefined") return DEFAULT_BACKEND;
   try {
     return (
       parseTerminalBackend(window.localStorage.getItem(STORAGE_KEY)) ??
-      fallback
+      DEFAULT_BACKEND
     );
   } catch {
-    return fallback;
+    return DEFAULT_BACKEND;
   }
 }
 
 export function setSelectedTerminalBackend(kind: TerminalBackendKind): void {
   if (typeof window === "undefined") return;
   try {
-    if (kind === defaultTerminalBackend(currentPlatform())) {
-      window.localStorage.removeItem(STORAGE_KEY);
-    } else window.localStorage.setItem(STORAGE_KEY, kind);
+    if (kind === DEFAULT_BACKEND) window.localStorage.removeItem(STORAGE_KEY);
+    else window.localStorage.setItem(STORAGE_KEY, kind);
   } catch {
     // Storage can be disabled by the webview policy. The build default remains.
   }
@@ -79,28 +68,49 @@ export function resolveTerminalBackend(
   return "ghostty-webgl";
 }
 
-export function resolvedTerminalBackend(): TerminalBackendKind {
+function resolvedTerminalBackend(): TerminalBackendKind {
   const preferred = selectedTerminalBackend();
   if (preferred === "ghostty-webgpu" && canUseWebGpu()) return preferred;
   return "ghostty-webgl";
 }
 
+/**
+ * The backend new terminals use for a Settings choice. WebGPU (also under Automatic, which
+ * additionally honours the experimental override) falls back to WebGL where the webview has
+ * no WebGPU; WebGL is always WebGL.
+ */
+export function terminalBackendFor(
+  setting: TerminalRendererSetting,
+): TerminalBackendKind {
+  if (setting === "webgl") return "ghostty-webgl";
+  if (setting === "webgpu") {
+    return canUseWebGpu() ? "ghostty-webgpu" : "ghostty-webgl";
+  }
+  return resolvedTerminalBackend();
+}
+
 /** Why new terminals draw with the renderer they do, for the diagnostics readout. */
-export function terminalRendererReport() {
-  const platform = currentPlatform();
-  const preferred = selectedTerminalBackend();
-  const resolved = resolvedTerminalBackend();
+export function terminalRendererReport(
+  setting: TerminalRendererSetting = "auto",
+) {
+  const resolved = terminalBackendFor(setting);
+  const wanted: TerminalBackendKind =
+    setting === "webgl"
+      ? "ghostty-webgl"
+      : setting === "webgpu"
+        ? "ghostty-webgpu"
+        : selectedTerminalBackend();
   return {
-    platform,
-    platformDefault: defaultTerminalBackend(platform),
-    preferred,
+    platform: currentPlatform(),
+    setting,
+    preferred: wanted,
     resolved,
     webGpuAvailable: canUseWebGpu(),
     reason:
-      resolved === preferred
-        ? preferred === defaultTerminalBackend(platform)
-          ? "platform default"
-          : "explicit selection"
+      resolved === wanted
+        ? setting === "auto"
+          ? "automatic"
+          : "settings"
         : "WebGPU unavailable",
   };
 }

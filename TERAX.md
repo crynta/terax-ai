@@ -128,9 +128,11 @@ milliseconds per frame across surfaces, leftover glyphs draw on follow-up frames
 and a backlog from scrolled-away output keeps only visible glyphs queued.
 Both renderers draw identical glyph pixels at every ratio (visual harness parity
 at 1, 1.25, 1.5 and 2), so grayscale text gets no contrast curve unless
-`localStorage["terax:terminal-text-contrast"]` is `on` or a strength. Private-use
-icons are fitted to their cell (`gpu/GlyphPlacement.ts`): shrunk, never enlarged,
-centred, clipped to the cell (two for a double-width font). A solid block cursor
+`localStorage["terax:terminal-text-contrast"]` is `on` or a strength; when set, both
+renderers apply the same curve. Private-use glyphs follow a constraint per range
+(`gpu/GlyphPlacement.ts`): version-control icons as designed, other icons as designed
+but shrunk past two cells or the cell height, Powerline separators and extras
+stretched to fill one or two cells exactly. A solid block cursor
 draws the glyph it covers in the theme's cursor accent (both cells of a wide
 character), and the fit keeps a 14 px gutter free at the right of the grid.
 Box drawing, block elements, braille, powerline separators and common legacy
@@ -212,8 +214,8 @@ The shared command bar activates after shell integration confirms prompt input.
 Bare shells keep direct terminal input. Bash before 4.4 reports
 `OSC 133;B;terax_blocks=0` and keeps its native prompt because it lacks PS0.
 
-Settings offer Automatic or WebGL for new terminals (Automatic is WebGL on
-Windows until WebGPU is selected through `terax.experimental.terminal-backend`;
+Settings offer Automatic, WebGPU or WebGL for new terminals (Automatic and WebGPU
+use WebGPU where the webview has it, WebGL otherwise on every platform;
 `window.__teraxTerm().renderer` reports the choice), plus opt-in screen reader
 output. Accessible text is limited to 256 rows / 64 KiB and refreshes at most four
 times per second while visible. Ordinary URL detection runs on pointer demand;

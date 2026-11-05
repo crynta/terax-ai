@@ -95,12 +95,21 @@ translated by the negative fractional device offset of the terminal area
 frame), and pane rectangles are rounded edge by edge relative to it.
 `devicePixelContentBoxSize` supplies the exact size where the engine reports it.
 
-Grayscale antialiasing at ratios below 2 (and on Windows/Linux) gets
-DirectWrite-style contrast (`DWrite_EnhanceContrast` scaled by foreground
-lightness, blended toward `DWrite_ApplyAlphaCorrection` with Windows Terminal's
-1.8 gamma ratios). macOS Retina output is unchanged.
-`localStorage["terax:terminal-text-contrast"]` (`off`, `on` or a strength) tunes
-it without a build; the defaults (0.5 / 0.5) still need a look on real Windows.
+Grayscale antialiasing carries no contrast curve by default, so the WebGL and WebGPU
+renderers draw identical glyph pixels at every ratio (`scripts/terminal-visual`
+`parity` at 1, 1.25, 1.5 and 2). `localStorage["terax:terminal-text-contrast"]`
+(`on` or a strength, `off` to clear) turns on DirectWrite-style contrast
+(`DWrite_EnhanceContrast` scaled by foreground lightness, blended toward
+`DWrite_ApplyAlphaCorrection` with Windows Terminal's 1.8 gamma ratios, 0.5 / 0.5
+for `on`) in both renderers' glyph shaders, never on colour glyphs or cell-exact
+shapes. The curve is a tuning aid: enabled by default it made WebGPU text heavier
+and softer than WebGL on Windows and on 1x displays (#1357, #1372).
+
+Private-use glyphs are placed by a constraint per codepoint range
+(`gpu/GlyphPlacement.ts`, after Ghostty's Nerd Font attributes): the version-control
+icons are drawn as designed, other icons as designed but shrunk past two cells or the
+cell height, and Powerline separators and extras are stretched so their ink box fills
+exactly one or two cells (flush edges, no seam).
 
 ## Window canvas
 

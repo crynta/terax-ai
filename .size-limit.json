@@ -34,7 +34,7 @@
       "dist/assets/WebGlTerminalSurface-*.js",
       "dist/assets/WebGlTerminalRuntime-*.js"
     ],
-    "limit": "15 KB",
+    "limit": "16 KB",
     "gzip": true
   },
   {
