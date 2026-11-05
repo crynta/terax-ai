@@ -58,6 +58,7 @@ import { setShowHidden } from "@/modules/settings/store";
 import {
   type ShortcutHandlers,
   type ShortcutId,
+  shouldDisableAskSelection,
   shouldDisablePaneSwapShortcut,
   tabDigit,
   useGlobalShortcuts,
@@ -1016,15 +1017,13 @@ export default function App() {
         return activeTab?.kind !== "editor";
       }
       if (id === "ai.askSelection") {
-        // Ctrl+Shift+J is the app's alone on Windows/Linux: with nothing selected it
-        // focuses the AI input instead of reaching the shell as Ctrl+J (a newline).
-        if (!IS_MAC) return false;
         const target =
           (e.target as HTMLElement | null) ?? document.activeElement;
-        const inTerminal = isTerminalSurfaceTarget(target);
-        if (!inTerminal) return false;
-        const sel = captureActiveSelection();
-        return !sel?.trim();
+        return shouldDisableAskSelection(
+          e,
+          () => isTerminalSurfaceTarget(target),
+          () => !!captureActiveSelection()?.trim(),
+        );
       }
       if (id === "terminal.clear") {
         // Only intercept ⌘K while a terminal is focused; elsewhere let the key
