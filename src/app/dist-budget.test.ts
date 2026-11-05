@@ -13,6 +13,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   analyzeDist,
   chunkName,
+  findDuplicatePackages,
+  findDuplicatePackagesInDist,
   findViolations,
   packagesFromMap,
   parseHtmlAssets,
@@ -80,6 +82,36 @@ describe("dist graph analyzer", () => {
       "zod",
     ]);
     expect(packagesFromMap(null)).toBeNull();
+  });
+
+  it("reports a package bundled in more than one version", () => {
+    const map = (...sources: string[]) => JSON.stringify({ sources });
+    const pnpm = (dir: string, pkg: string) =>
+      `../../node_modules/.pnpm/${dir}/node_modules/${pkg}/dist/index.js`;
+    expect(
+      findDuplicatePackages([
+        map(
+          pnpm(
+            "@ai-sdk+provider-utils@4.0.30_zod@4.6.5",
+            "@ai-sdk/provider-utils",
+          ),
+          pnpm("marked@17.0.6", "marked"),
+          "../../src/main.tsx",
+        ),
+        map(
+          pnpm(
+            "@ai-sdk+provider-utils@4.0.36_zod@4.6.5",
+            "@ai-sdk/provider-utils",
+          ),
+          pnpm("marked@17.0.6", "marked"),
+          pnpm("zod@4.6.5", "zod"),
+        ),
+        null,
+      ]),
+    ).toEqual([
+      { name: "@ai-sdk/provider-utils", versions: ["4.0.30", "4.0.36"] },
+    ]);
+    expect(findDuplicatePackages([])).toEqual([]);
   });
 
   it("follows transitive static imports and flags forbidden chunks with their importer", () => {
@@ -216,6 +248,13 @@ describe("built startup graph", () => {
         true,
       );
     }
+  });
+
+  it("bundles one version of every npm package", () => {
+    // A second copy is pure download and parse cost. Typical causes: an @ai-sdk
+    // package pinning its own provider-utils, a library pinning an old marked.
+    // Fix with `pnpm why <name>` and a pnpm override (pnpm-workspace.yaml).
+    expect(findDuplicatePackagesInDist(outDir)).toEqual([]);
   });
 
   it("bundles one shared Lezer highlighter for parsers and themes", () => {
