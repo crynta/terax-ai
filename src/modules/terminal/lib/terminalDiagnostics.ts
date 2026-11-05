@@ -1,6 +1,7 @@
 import { BoundedResourceTrace } from "@/modules/terminal/lib/BoundedResourceTrace";
 import { subscribeWindowPresentation } from "@/modules/terminal/ghostty/windowPresentation";
 import { invoke } from "@tauri-apps/api/core";
+import { terminalRendererReport } from "@/modules/terminal/backend/selection";
 import { supportsWasmSimd } from "@terax/ghostty-core/adapted";
 import { ghosttyCoreRuntimeDiagnostics } from "@/modules/terminal/ghostty/GhosttyCoreRuntime";
 import { webGpuTerminalRuntimeDiagnostics } from "@/modules/terminal/ghostty/gpu/WebGpuTerminalRuntime";
@@ -19,6 +20,7 @@ export function terminalDebugStats() {
     timestamp: Date.now(),
     presentation: windowPresentationDiagnostics(),
     wasmVariant: supportsWasmSimd() ? "simd" : "scalar",
+    renderer: terminalRendererReport(),
     ptyTransport: ptyTransportDiagnostics(),
     ghosttyCore: ghosttyCoreRuntimeDiagnostics(),
     ghosttyWebGpu: webGpuTerminalRuntimeDiagnostics(),
