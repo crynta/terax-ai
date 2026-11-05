@@ -26,6 +26,8 @@ struct EventSpec {
     timeout: Option<u32>,
     /// Observe-only events that never need to delay the agent.
     background: bool,
+    /// Installed when true; a Terax group for an unwanted event is removed.
+    wanted: bool,
 }
 
 const fn event(event: &'static str) -> EventSpec {
@@ -33,6 +35,7 @@ const fn event(event: &'static str) -> EventSpec {
         event,
         timeout: None,
         background: false,
+        wanted: true,
     }
 }
 
@@ -41,6 +44,7 @@ const fn background(event: &'static str) -> EventSpec {
         event,
         timeout: None,
         background: true,
+        wanted: true,
     }
 }
 
@@ -49,6 +53,15 @@ const fn timed(event: &'static str, timeout: u32) -> EventSpec {
         event,
         timeout: Some(timeout),
         background: false,
+        wanted: true,
+    }
+}
+
+impl EventSpec {
+    /// Supported by the adapters but not installed until something consumes it.
+    const fn off(mut self) -> Self {
+        self.wanted = false;
+        self
     }
 }
 
@@ -72,15 +85,15 @@ const AGENTS: &[AgentSpec] = &[
         events: &[
             event("SessionStart"),
             event("UserPromptSubmit"),
-            background("PreToolUse"),
+            background("PreToolUse").off(),
             timed("PermissionRequest", DECISION_HOOK_TIMEOUT),
-            background("PostToolUse"),
-            background("PostToolUseFailure"),
+            background("PostToolUse").off(),
+            background("PostToolUseFailure").off(),
             event("Notification"),
             event("Stop"),
-            event("StopFailure"),
-            event("SubagentStart"),
-            event("SubagentStop"),
+            event("StopFailure").off(),
+            event("SubagentStart").off(),
+            event("SubagentStop").off(),
             timed("SessionEnd", 5),
         ],
     },
@@ -92,9 +105,9 @@ const AGENTS: &[AgentSpec] = &[
         events: &[
             event("SessionStart"),
             event("UserPromptSubmit"),
-            background("PreToolUse"),
+            background("PreToolUse").off(),
             timed("PermissionRequest", DECISION_HOOK_TIMEOUT),
-            background("PostToolUse"),
+            background("PostToolUse").off(),
             event("Stop"),
         ],
     },
@@ -106,8 +119,8 @@ const AGENTS: &[AgentSpec] = &[
         events: &[
             event("SessionStart"),
             event("BeforeAgent"),
-            event("BeforeTool"),
-            event("AfterTool"),
+            event("BeforeTool").off(),
+            event("AfterTool").off(),
             event("Notification"),
             event("AfterAgent"),
             event("SessionEnd"),
@@ -118,7 +131,54 @@ const AGENTS: &[AgentSpec] = &[
 const PI_EXTENSION_DIR: &str = ".pi/agent/extensions";
 const PI_EXTENSION_FILE: &str = "terax-notifications.ts";
 const PI_EXTENSION_FAMILY: &str = "terax-pi-notifications-v";
-const PI_EXTENSION: &str = r#"// terax-pi-notifications-v2
+struct PiHook {
+    pi_event: &'static str,
+    hook: &'static str,
+    /// JavaScript object literal of payload fields, from the Pi event `e`.
+    fields: &'static str,
+    wanted: bool,
+}
+
+const PI_HOOKS: &[PiHook] = &[
+    PiHook {
+        pi_event: "session_start",
+        hook: "SessionStart",
+        fields: "{ source: e.reason }",
+        wanted: true,
+    },
+    PiHook {
+        pi_event: "before_agent_start",
+        hook: "UserPromptSubmit",
+        fields: "{ prompt: e.prompt }",
+        wanted: true,
+    },
+    PiHook {
+        pi_event: "tool_execution_start",
+        hook: "PreToolUse",
+        fields: "{ tool_name: e.toolName, tool_use_id: e.toolCallId, tool_input: e.args }",
+        wanted: false,
+    },
+    PiHook {
+        pi_event: "tool_execution_end",
+        hook: "PostToolUse",
+        fields: "{ tool_name: e.toolName, tool_use_id: e.toolCallId, is_error: e.isError }",
+        wanted: false,
+    },
+    PiHook {
+        pi_event: "agent_settled",
+        hook: "Stop",
+        fields: "{ aborted: e.aborted, last_assistant_message: takeMessage() }",
+        wanted: true,
+    },
+    PiHook {
+        pi_event: "session_shutdown",
+        hook: "SessionEnd",
+        fields: "{ reason: e.reason }",
+        wanted: true,
+    },
+];
+
+const PI_HEAD: &str = r#"// terax-pi-notifications-v2
 import { spawn } from "node:child_process";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
@@ -154,15 +214,12 @@ export default function (pi: ExtensionAPI) {
   };
 
   let lastMessage: string | undefined;
+  const takeMessage = () => {
+    const text = lastMessage;
+    lastMessage = undefined;
+    return text;
+  };
 
-  pi.on("session_start", (e: any, ctx: any) => send("SessionStart", ctx, { source: e.reason }));
-  pi.on("before_agent_start", (e: any, ctx: any) => send("UserPromptSubmit", ctx, { prompt: e.prompt }));
-  pi.on("tool_execution_start", (e: any, ctx: any) =>
-    send("PreToolUse", ctx, { tool_name: e.toolName, tool_use_id: e.toolCallId, tool_input: e.args }),
-  );
-  pi.on("tool_execution_end", (e: any, ctx: any) =>
-    send("PostToolUse", ctx, { tool_name: e.toolName, tool_use_id: e.toolCallId, is_error: e.isError }),
-  );
   pi.on("message_end", (e: any) => {
     const message = e.message;
     if (message?.role !== "assistant") return;
@@ -174,13 +231,21 @@ export default function (pi: ExtensionAPI) {
     );
     if (text) lastMessage = text;
   });
-  pi.on("agent_settled", (e: any, ctx: any) => {
-    send("Stop", ctx, { aborted: e.aborted, last_assistant_message: lastMessage });
-    lastMessage = undefined;
-  });
-  pi.on("session_shutdown", (e: any, ctx: any) => send("SessionEnd", ctx, { reason: e.reason }));
-}
+
 "#;
+
+/// The Pi extension: one handler per wanted entry of `PI_HOOKS`.
+fn pi_extension() -> String {
+    let mut out = String::from(PI_HEAD);
+    for hook in PI_HOOKS.iter().filter(|hook| hook.wanted) {
+        out.push_str(&format!(
+            "  pi.on(\"{}\", (e: any, ctx: any) => send(\"{}\", ctx, {}));\n",
+            hook.pi_event, hook.hook, hook.fields
+        ));
+    }
+    out.push_str("}\n");
+    out
+}
 
 /// Hook commands that older Terax versions wrote (OSC markers, a CONOUT$
 /// helper); recognised so an install migrates them.
@@ -328,10 +393,13 @@ fn json_after(
             let created = text.is_none();
             let mut current = text.take().unwrap_or_else(|| "{}".to_string());
             for event in spec.events {
-                let group = hook_group(spec, event, windows);
-                current =
+                let edited = if event.wanted {
+                    let group = hook_group(spec, event, windows);
                     agent_json::upsert(&current, &["hooks", event.event], &group, &group_is_ours)
-                        .map_err(|error| format!("{}: {error}", path.display()))?;
+                } else {
+                    agent_json::remove_matching(&current, &["hooks", event.event], &group_is_ours)
+                };
+                current = edited.map_err(|error| format!("{}: {error}", path.display()))?;
             }
             if created {
                 current.push('\n');
@@ -360,7 +428,7 @@ fn pi_after(existing: Option<&str>, action: Action, path: &Path) -> Result<Optio
             "{} is not managed by Terax; refusing to overwrite",
             path.display()
         )),
-        Action::Install => Ok(Some(PI_EXTENSION.to_string())),
+        Action::Install => Ok(Some(pi_extension())),
         Action::Uninstall if foreign => Ok(existing.map(str::to_string)),
         Action::Uninstall => Ok(None),
     }
@@ -637,17 +705,41 @@ mod tests {
         }
     }
 
+    fn wanted(agent: &str) -> Vec<&'static str> {
+        spec(agent)
+            .events
+            .iter()
+            .filter(|event| event.wanted)
+            .map(|event| event.event)
+            .collect()
+    }
+
     #[test]
-    fn claude_installs_every_event_with_platform_shells() {
+    fn claude_installs_only_the_lifecycle_events_with_platform_shells() {
+        assert_eq!(
+            wanted("claude"),
+            [
+                "SessionStart",
+                "UserPromptSubmit",
+                "PermissionRequest",
+                "Notification",
+                "Stop",
+                "SessionEnd"
+            ]
+        );
         let unix = parsed(&install("claude", None, false));
-        for event in spec("claude").events {
-            assert_eq!(commands(&unix, event.event).len(), 1, "{}", event.event);
+        let mut keys: Vec<_> = unix["hooks"].as_object().unwrap().keys().cloned().collect();
+        keys.sort();
+        let mut expected = wanted("claude");
+        expected.sort();
+        assert_eq!(keys, expected);
+        for event in wanted("claude") {
+            assert_eq!(commands(&unix, event).len(), 1, "{event}");
         }
         let hook = &unix["hooks"]["PermissionRequest"][0]["hooks"][0];
         assert_eq!(hook["timeout"], DECISION_HOOK_TIMEOUT);
         assert!(hook.get("async").is_none());
         assert!(hook.get("shell").is_none());
-        assert_eq!(unix["hooks"]["PreToolUse"][0]["hooks"][0]["async"], true);
         assert_eq!(unix["hooks"]["SessionEnd"][0]["hooks"][0]["timeout"], 5);
         assert!(commands(&unix, "Stop")[0].starts_with("[ -n \"$TERAX_CLI\" ]"));
 
@@ -661,26 +753,27 @@ mod tests {
     }
 
     #[test]
-    fn codex_installs_the_core_events_with_a_windows_override() {
+    fn codex_installs_the_lifecycle_events_with_a_windows_override() {
+        assert_eq!(
+            wanted("codex"),
+            [
+                "SessionStart",
+                "UserPromptSubmit",
+                "PermissionRequest",
+                "Stop"
+            ]
+        );
         let unix = parsed(&install("codex", None, false));
-        for event in [
-            "SessionStart",
-            "UserPromptSubmit",
-            "PreToolUse",
-            "PermissionRequest",
-            "PostToolUse",
-            "Stop",
-        ] {
+        assert_eq!(unix["hooks"].as_object().unwrap().len(), 4);
+        for event in wanted("codex") {
             assert_eq!(commands(&unix, event).len(), 1, "{event}");
         }
         assert!(unix["hooks"]["Stop"][0]["hooks"][0]
             .get("commandWindows")
             .is_none());
-        assert_eq!(unix["hooks"]["PreToolUse"][0]["hooks"][0]["async"], true);
-        assert!(unix["hooks"]["Stop"][0]["hooks"][0].get("async").is_none());
-        assert!(unix["hooks"]["PermissionRequest"][0]["hooks"][0]
-            .get("async")
-            .is_none());
+        for event in wanted("codex") {
+            assert!(unix["hooks"][event][0]["hooks"][0].get("async").is_none());
+        }
         let windows = parsed(&install("codex", None, true));
         let hook = &windows["hooks"]["Stop"][0]["hooks"][0];
         assert_eq!(hook["commandWindows"], hook["command"]);
@@ -691,13 +784,193 @@ mod tests {
     }
 
     #[test]
+    fn background_events_are_marked_async_for_the_agents_that_support_it() {
+        let tool = background("PreToolUse");
+        assert_eq!(
+            hook_group(spec("claude"), &tool, false)["hooks"][0]["async"],
+            true
+        );
+        assert_eq!(
+            hook_group(spec("codex"), &tool, false)["hooks"][0]["async"],
+            true
+        );
+        assert!(hook_group(spec("gemini"), &tool, false)["hooks"][0]
+            .get("async")
+            .is_none());
+    }
+
+    #[test]
     fn gemini_uses_matchers_names_and_cmd_on_windows() {
+        assert_eq!(
+            wanted("gemini"),
+            [
+                "SessionStart",
+                "BeforeAgent",
+                "Notification",
+                "AfterAgent",
+                "SessionEnd"
+            ]
+        );
         let unix = parsed(&install("gemini", None, false));
+        assert_eq!(unix["hooks"].as_object().unwrap().len(), 5);
         assert_eq!(unix["hooks"]["BeforeAgent"][0]["matcher"], "*");
         assert_eq!(unix["hooks"]["AfterAgent"][0]["hooks"][0]["name"], "terax");
         assert!(commands(&unix, "AfterAgent")[0].contains("hook gemini AfterAgent"));
         let windows = parsed(&install("gemini", None, true));
         assert!(commands(&windows, "Notification")[0].starts_with("if defined TERAX_CLI"));
+    }
+
+    #[test]
+    fn no_per_tool_call_hook_is_installed_for_any_agent() {
+        const TOOL_LEVEL: [&str; 5] = [
+            "PreToolUse",
+            "PostToolUse",
+            "PostToolUseFailure",
+            "BeforeTool",
+            "AfterTool",
+        ];
+        for agent in AGENTS {
+            for event in agent.events {
+                if TOOL_LEVEL.contains(&event.event) {
+                    assert!(!event.wanted, "{} {}", agent.agent, event.event);
+                }
+            }
+            for windows in [false, true] {
+                let text = install(agent.agent, None, windows);
+                for event in TOOL_LEVEL {
+                    assert!(!text.contains(event), "{} {event}", agent.agent);
+                }
+            }
+        }
+        let extension = pi_extension();
+        assert!(!extension.contains("tool_execution"));
+        assert!(!extension.contains("PreToolUse"));
+        assert!(!extension.contains("PostToolUse"));
+    }
+
+    fn with_every_event_installed(agent: &str, windows: bool, base: &str) -> String {
+        let spec = spec(agent);
+        let mut text = base.to_string();
+        for event in spec.events {
+            let group = hook_group(spec, event, windows);
+            text =
+                agent_json::upsert(&text, &["hooks", event.event], &group, &group_is_ours).unwrap();
+        }
+        text
+    }
+
+    #[test]
+    fn install_reconciles_away_stale_groups_it_no_longer_wants() {
+        for agent in ["claude", "codex", "gemini"] {
+            for windows in [false, true] {
+                let user = "{\n  \"hooks\": {\n    \"PreToolUse\": [\n      { \"hooks\": [ { \"type\": \"command\", \"command\": \"audit\" } ] }\n    ],\n    \"BeforeTool\": [\n      { \"hooks\": [ { \"type\": \"command\", \"command\": \"audit\" } ] }\n    ]\n  }\n}\n";
+                let bloated = with_every_event_installed(agent, windows, user);
+                let reconciled = install(agent, Some(&bloated), windows);
+                let value = parsed(&reconciled);
+                let hooks = value["hooks"].as_object().unwrap();
+                for event in spec(agent).events {
+                    let ours = commands(&value, event.event)
+                        .iter()
+                        .filter(|command| {
+                            command.contains("TERAX_CLI") || command.contains("hook ")
+                        })
+                        .count();
+                    assert_eq!(ours, usize::from(event.wanted), "{agent} {}", event.event);
+                    if !event.wanted && !["PreToolUse", "BeforeTool"].contains(&event.event) {
+                        assert!(!hooks.contains_key(event.event), "{agent} {}", event.event);
+                    }
+                }
+                for key in ["PreToolUse", "BeforeTool"] {
+                    if spec(agent).events.iter().any(|event| event.event == key) {
+                        assert_eq!(commands(&value, key), ["audit"], "{agent} {key}");
+                    }
+                }
+                assert_eq!(install(agent, Some(&reconciled), windows), reconciled);
+                let fresh = install(agent, Some(user), windows);
+                assert_eq!(
+                    parsed(&reconciled),
+                    parsed(&fresh),
+                    "{agent} windows={windows}"
+                );
+                assert!(
+                    !plan_at(
+                        agent,
+                        Action::Install,
+                        &path(),
+                        Some(reconciled.clone()),
+                        windows
+                    )
+                    .unwrap()
+                    .changed
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn installed_hook_definitions_are_byte_stable_across_versions() {
+        let group = |agent: &str, event: &str, windows: bool| {
+            let spec = spec(agent);
+            let event = spec.events.iter().find(|e| e.event == event).unwrap();
+            hook_group(spec, event, windows)
+        };
+        let posix = |agent: &str, event: &str| {
+            format!(r#"[ -n "$TERAX_CLI" ] && "$TERAX_CLI" hook {agent} {event} || printf '{{}}'"#)
+        };
+        let cmd = |agent: &str, event: &str| {
+            format!(r#"if defined TERAX_CLI ("%TERAX_CLI%" hook {agent} {event}) else (echo {{}})"#)
+        };
+
+        assert_eq!(
+            group("codex", "Stop", false),
+            json!({ "hooks": [{ "type": "command", "command": posix("codex", "Stop") }] })
+        );
+        assert_eq!(
+            group("codex", "PermissionRequest", false),
+            json!({ "hooks": [{
+                "type": "command",
+                "command": posix("codex", "PermissionRequest"),
+                "timeout": 660
+            }] })
+        );
+        for event in ["SessionStart", "UserPromptSubmit"] {
+            assert_eq!(
+                group("codex", event, false),
+                json!({ "hooks": [{ "type": "command", "command": posix("codex", event) }] }),
+                "{event}"
+            );
+        }
+        assert_eq!(
+            group("codex", "Stop", true),
+            json!({ "hooks": [{
+                "type": "command",
+                "command": cmd("codex", "Stop"),
+                "commandWindows": cmd("codex", "Stop")
+            }] })
+        );
+        assert_eq!(
+            group("claude", "PermissionRequest", false),
+            json!({ "hooks": [{
+                "type": "command",
+                "command": posix("claude", "PermissionRequest"),
+                "timeout": 660
+            }] })
+        );
+        assert_eq!(
+            group("claude", "Stop", true),
+            json!({ "hooks": [{
+                "type": "command",
+                "command": r#"if ($env:TERAX_CLI) { & $env:TERAX_CLI hook claude Stop } else { '{}' }"#,
+                "shell": "powershell"
+            }] })
+        );
+        assert_eq!(
+            group("gemini", "AfterAgent", false),
+            json!({
+                "matcher": "*",
+                "hooks": [{ "type": "command", "name": "terax", "command": posix("gemini", "AfterAgent") }]
+            })
+        );
     }
 
     #[test]
@@ -923,22 +1196,20 @@ mod tests {
 
     #[test]
     fn the_pi_extension_calls_the_cli_and_stays_inert_elsewhere() {
-        assert!(PI_EXTENSION.contains("process.env.TERAX_CLI"));
-        assert!(PI_EXTENSION.contains("process.env.TERAX_PANE_ID"));
-        assert!(PI_EXTENSION.contains(r#"["hook", "pi", event]"#));
-        assert!(PI_EXTENSION.starts_with("// terax-pi-notifications-v2"));
-        assert!(PI_EXTENSION.contains("windowsHide: true"));
-        assert!(!PI_EXTENSION.contains("777"));
-        for event in [
-            "SessionStart",
-            "UserPromptSubmit",
-            "PreToolUse",
-            "PostToolUse",
-            "Stop",
-            "SessionEnd",
-        ] {
-            assert!(PI_EXTENSION.contains(&format!("\"{event}\"")), "{event}");
+        let extension = pi_extension();
+        assert!(extension.contains("process.env.TERAX_CLI"));
+        assert!(extension.contains("process.env.TERAX_PANE_ID"));
+        assert!(extension.contains(r#"["hook", "pi", event]"#));
+        assert!(extension.starts_with("// terax-pi-notifications-v2"));
+        assert!(extension.contains("windowsHide: true"));
+        assert!(!extension.contains("777"));
+        for event in ["SessionStart", "UserPromptSubmit", "Stop", "SessionEnd"] {
+            assert!(extension.contains(&format!("\"{event}\"")), "{event}");
         }
+        assert_eq!(
+            extension.matches("pi.on(\"").count(),
+            1 + PI_HOOKS.iter().filter(|hook| hook.wanted).count()
+        );
     }
 
     #[test]
@@ -946,23 +1217,23 @@ mod tests {
         let p = Path::new("/x/terax-notifications.ts");
         assert_eq!(
             pi_after(None, Action::Install, p).unwrap().as_deref(),
-            Some(PI_EXTENSION)
+            Some(pi_extension().as_str())
         );
         let v1 = "// terax-pi-notifications-v1\nexport default () => {}\n";
         assert_eq!(
             pi_after(Some(v1), Action::Install, p).unwrap().as_deref(),
-            Some(PI_EXTENSION)
+            Some(pi_extension().as_str())
         );
         assert!(pi_after(Some("export const mine = true;"), Action::Install, p).is_err());
         assert_eq!(
             pi_after(Some("  \n"), Action::Install, p)
                 .unwrap()
                 .as_deref(),
-            Some(PI_EXTENSION)
+            Some(pi_extension().as_str())
         );
 
         assert_eq!(
-            pi_after(Some(PI_EXTENSION), Action::Uninstall, p).unwrap(),
+            pi_after(Some(pi_extension().as_str()), Action::Uninstall, p).unwrap(),
             None
         );
         assert_eq!(pi_after(None, Action::Uninstall, p).unwrap(), None);
@@ -980,7 +1251,7 @@ mod tests {
         let path = dir.path().join("ext").join(PI_EXTENSION_FILE);
         let install = plan_at("pi", Action::Install, &path, None, false).unwrap();
         apply_plan(&install).unwrap();
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), PI_EXTENSION);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), pi_extension());
         let existing = read_existing(&path).unwrap();
         assert!(
             !plan_at("pi", Action::Install, &path, existing.clone(), false)
