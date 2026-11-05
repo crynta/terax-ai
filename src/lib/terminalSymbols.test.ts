@@ -38,6 +38,23 @@ it("ships the font licenses", async () => {
   expect(license).toContain("JetBrains Mono Project Authors");
 });
 
+it("carries the notices the bundled icon sets require", async () => {
+  const license = await readFile(
+    new URL("../../public/licenses/terminal-symbols.txt", import.meta.url),
+    "utf8",
+  );
+  // Apache-2.0 (Material Design Icons): the full text, not a link.
+  expect(license).toContain("Material Design Icons by Pictogrammers and Google");
+  expect(license).toContain("TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION");
+  expect(license).toContain("END OF TERMS AND CONDITIONS");
+  // CC BY 4.0 (Codicons, Font Awesome Free): attribution, licence link, changes.
+  for (const holder of ["Microsoft Corporation", "Fonticons, Inc."]) {
+    expect(license).toContain(holder);
+  }
+  expect(license.match(/creativecommons\.org\/licenses\/by\/4\.0/g)?.length).toBeGreaterThanOrEqual(2);
+  expect(license).toContain("were modified as described above");
+});
+
 it.each(FACES)(
   "limits $family to its private-use range and fetches it only on use",
   async (face) => {
