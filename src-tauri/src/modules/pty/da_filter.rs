@@ -22,6 +22,8 @@ const DA2_REPLY: &[u8] = b"\x1b[>1;10;0c";
 // renderer slot is bound to answer it; on a fresh console the cursor is at home.
 const DSR_CPR_REPLY: &[u8] = b"\x1b[1;1R";
 const COLOR_SCHEME_QUERY: &[u8] = b"\x1b[?996n";
+/// Soft terminal reset, which clears every private mode the program set.
+const DECSTR: &[u8] = b"\x1b[!p";
 const SCHEME_REPORTS_MODE: &[u8] = b"2031";
 
 const HOLD_MAX: usize = 256;
@@ -42,6 +44,8 @@ enum State {
     InsideCsi,
     /// `ESC ]` and the digits of the OSC number so far.
     OscHead,
+    /// After `ESC ] 133 ;`: the next byte names the semantic prompt mark.
+    Osc133Mark,
     /// A colour OSC held until its terminator.
     OscQuery,
     /// The held OSC ended at an ESC; `\` completes its terminator.
@@ -167,6 +171,7 @@ impl DaFilter {
                                 // RIS: the model's colours are no longer the theme's.
                                 self.colors.mark_diverged(diverged::THEME_PUSH_CLEARS);
                                 self.colors.clear_diverged(diverged::PALETTE_EXTENDED);
+                                self.colors.set_scheme_reports(false);
                             }
                             out.extend_from_slice(&self.hold);
                             out.push(b);
@@ -198,6 +203,13 @@ impl DaFilter {
                         i += 1;
                     } else if is_colour_osc(&self.hold[2..]) && matches!(b, b';' | BEL | ESC) {
                         self.state = State::OscQuery;
+                    } else if &self.hold[2..] == b"133" && b == b';' {
+                        out.extend_from_slice(&self.hold);
+                        out.push(b);
+                        self.hold.clear();
+                        self.sentinel = false;
+                        i += 1;
+                        self.state = State::Osc133Mark;
                     } else {
                         // Not a colour sequence: release it and skip the string.
                         out.extend_from_slice(&self.hold);
@@ -205,6 +217,15 @@ impl DaFilter {
                         self.sentinel = false;
                         self.state = State::InString(StringKind::Osc);
                     }
+                }
+                State::Osc133Mark => {
+                    // A new prompt: whatever asked for scheme reports is gone
+                    // or has stopped caring, and the shell must not be sent
+                    // reports it never asked for.
+                    if input[i] == b'A' {
+                        self.colors.set_scheme_reports(false);
+                    }
+                    self.state = State::InString(StringKind::Osc);
                 }
                 State::OscQuery => {
                     let b = input[i];
@@ -349,6 +370,12 @@ impl DaFilter {
                         .any(|mode| mode == SCHEME_REPORTS_MODE)
                 {
                     self.colors.set_scheme_reports(last == b'h');
+                }
+                out.extend_from_slice(&self.hold);
+            }
+            b'p' => {
+                if self.hold == DECSTR {
+                    self.colors.set_scheme_reports(false);
                 }
                 out.extend_from_slice(&self.hold);
             }
@@ -1082,6 +1109,42 @@ mod tests {
         assert_eq!(state.update(theme([255; 3])), Some(ColorScheme::Light));
         run(&mut f, b"\x1b[?2031l");
         assert_eq!(state.update(theme([0; 3])), None);
+    }
+
+    #[test]
+    fn scheme_reports_stop_when_the_program_that_asked_is_gone() {
+        // A reset, a soft reset or the next prompt means the asker has gone;
+        // a report sent to the shell afterwards would be typed at its prompt.
+        for (label, ends) in [
+            ("RIS", &b"\x1b\x63"[..]),
+            ("DECSTR", &b"\x1b[!p"[..]),
+            ("new prompt", &b"\x1b]133;A\x1b\\"[..]),
+            ("new prompt, BEL", &b"\x1b]133;A\x07"[..]),
+        ] {
+            let (mut f, state) = themed();
+            run(&mut f, b"\x1b[?2031h");
+            let (out, _) = run(&mut f, ends);
+            assert_eq!(out, ends, "{label} is forwarded");
+            assert_eq!(state.update(theme([255; 3])), None, "{label}");
+        }
+    }
+
+    #[test]
+    fn only_a_prompt_start_ends_scheme_reports_not_other_marks() {
+        let (mut f, state) = themed();
+        run(&mut f, b"\x1b[?2031h\x1b]133;B\x07\x1b]133;C;cmd\x07\x1b]133;D;0\x07\x1b]7;file:///a\x07");
+        assert_eq!(state.update(theme([255; 3])), Some(ColorScheme::Light));
+    }
+
+    #[test]
+    fn a_prompt_mark_split_across_chunks_still_ends_scheme_reports() {
+        let input = b"x\x1b[?2031hy\x1b]133;A\x1b\\z";
+        for size in 1..=input.len() {
+            let (mut f, state) = themed();
+            let (out, _) = run_chunked(&mut f, input, size);
+            assert_eq!(out, input, "chunk size {size}");
+            assert_eq!(state.update(theme([255; 3])), None, "chunk size {size}");
+        }
     }
 
     #[test]
