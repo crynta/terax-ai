@@ -1,6 +1,6 @@
 import { resolveFontFamily } from "@/lib/fonts";
 import { cn } from "@/lib/utils";
-import { shortcutHint } from "@/modules/shortcuts";
+import { useShortcutHint } from "@/modules/shortcuts";
 import { useTheme } from "@/modules/theme";
 import { useEffect, useRef } from "react";
 import { runScopeHandlers } from "@codemirror/view";
@@ -22,7 +22,11 @@ import {
   historySuggest,
 } from "./lib/history";
 import type { BlockMode } from "./lib/modeMachine";
-import { createShellEditor, type ShellEditorHandle } from "./lib/shellEditor";
+import {
+  createShellEditor,
+  type ShellEditorHandle,
+  shellPlaceholder,
+} from "./lib/shellEditor";
 
 type Props = {
   /** Active leaf the bar is driving; the editor retargets to it. */
@@ -72,6 +76,9 @@ export default function ShellInput({
   const fontFamily = resolveFontFamily(fontFamilyPref);
   const fontRef = useRef({ fontFamily, fontSize, fontWeight });
   fontRef.current = { fontFamily, fontSize, fontWeight };
+  const placeholder = shellPlaceholder(useShortcutHint("terminal.toggleInput"));
+  const placeholderRef = useRef(placeholder);
+  placeholderRef.current = placeholder;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -81,7 +88,7 @@ export default function ShellInput({
       fontFamily: fontRef.current.fontFamily,
       fontSize: fontRef.current.fontSize,
       fontWeight: fontRef.current.fontWeight,
-      placeholderText: `Run a command  -  ↑ history  ${shortcutHint("terminal.toggleInput")} switch to AI`,
+      placeholderText: placeholderRef.current,
       commandNames: () => commandsRef.current,
       getCwd: () => cbRef.current.getCwd(),
       onChange: (text) =>
@@ -112,6 +119,10 @@ export default function ShellInput({
       handleRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    handleRef.current?.setPlaceholder(placeholder);
+  }, [placeholder]);
 
   // Retarget the single editor to the active leaf: register its focus callback
   // and swap drafts so each leaf keeps its own unsent command. New or switched

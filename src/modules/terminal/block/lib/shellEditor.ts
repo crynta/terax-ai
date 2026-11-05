@@ -67,6 +67,10 @@ export type ShellEditorOptions = {
   onChange?: (text: string) => void;
 };
 
+/** The empty-input hint; `hint` is the shortcut that switches to the AI input. */
+export const shellPlaceholder = (hint: string) =>
+  `Run a command  -  ↑ history  ${hint} switch to AI`;
+
 export type ShellEditorHandle = {
   readonly view: EditorView;
   focus(): void;
@@ -74,6 +78,7 @@ export type ShellEditorHandle = {
   setValue(text: string): void;
   clear(): void;
   setEditable(editable: boolean): void;
+  setPlaceholder(text: string): void;
   retheme(fontFamily: string, fontSize: number, fontWeight: string): void;
   destroy(): void;
 };
@@ -362,6 +367,7 @@ export function createShellEditor(opts: ShellEditorOptions): ShellEditorHandle {
   const themeComp = new Compartment();
   const highlightComp = new Compartment();
   const editableComp = new Compartment();
+  const placeholderComp = new Compartment();
 
   const clear = (view: EditorView) =>
     view.dispatch({
@@ -428,7 +434,7 @@ export function createShellEditor(opts: ShellEditorOptions): ShellEditorHandle {
       completionNav,
       ...(opts.suggest ? inlineSuggestion(opts.suggest) : []),
       ...(opts.historyList ? historyPopover(opts.historyList) : []),
-      placeholder(opts.placeholderText ?? "Run a command"),
+      placeholderComp.of(placeholder(opts.placeholderText ?? "Run a command")),
       ...(opts.onChange
         ? [
             EditorView.updateListener.of((u) => {
@@ -473,6 +479,10 @@ export function createShellEditor(opts: ShellEditorOptions): ShellEditorHandle {
           EditorView.editable.of(editable),
           EditorState.readOnly.of(!editable),
         ]),
+      }),
+    setPlaceholder: (text) =>
+      view.dispatch({
+        effects: placeholderComp.reconfigure(placeholder(text)),
       }),
     retheme: (fontFamily, fontSize, fontWeight) =>
       view.dispatch({
