@@ -13,8 +13,8 @@ import {
 import { hasIntrinsicColor } from "../gpu/glyphColor";
 import {
   drawGlyph,
-  glyphBounds,
   isExtendedSymbol,
+  layoutGlyph,
   placeGlyph,
 } from "../gpu/GlyphPlacement";
 import { SkylineAtlasAllocator } from "../gpu/SkylineAtlasAllocator";
@@ -35,6 +35,8 @@ export type WebGlGlyphEntry = {
   readonly uvMaxX: number;
   readonly uvMaxY: number;
   readonly intrinsicColor: boolean;
+  /** Coverage is final (cell-exact shapes): no text contrast may reshape it. */
+  readonly exact: boolean;
 };
 
 type DirtyRectangle = {
@@ -54,6 +56,7 @@ const NULL_GLYPH: WebGlGlyphEntry = {
   uvMaxX: 0,
   uvMaxY: 0,
   intrinsicColor: false,
+  exact: false,
 };
 
 /**
@@ -337,29 +340,19 @@ export class WebGlGlyphAtlas {
       deviceCellWidth,
       deviceCellHeight,
     );
-    const bounds = glyphBounds(measure, placement, {
-      width: deviceCellWidth,
-      ascent: deviceBaseline,
-      descent: deviceCellHeight - deviceBaseline,
-    });
-    const left = bounds.leftExtent;
-    const ascent = bounds.ascent;
-    const width = Math.min(
-      RASTER_SIZE,
-      Math.max(1, left + bounds.rightExtent + GLYPH_PADDING * 2),
-    );
-    const height = Math.min(
-      RASTER_SIZE,
-      Math.max(1, ascent + bounds.descent + GLYPH_PADDING * 2),
-    );
-    drawGlyph(
-      context,
-      text,
+    const layout = layoutGlyph(
+      measure,
       placement,
-      GLYPH_PADDING + left,
-      GLYPH_PADDING + ascent,
+      {
+        width: deviceCellWidth,
+        height: deviceCellHeight,
+        baseline: deviceBaseline,
+      },
+      GLYPH_PADDING,
       RASTER_SIZE,
     );
+    const { width, height } = layout;
+    drawGlyph(context, text, layout);
 
     const rgba = context.getImageData(0, 0, width, height).data;
     const intrinsicColor = hasIntrinsicColor(rgba);
@@ -414,8 +407,8 @@ export class WebGlGlyphAtlas {
     const atlasSize = intrinsicColor ? COLOR_ATLAS_SIZE : ATLAS_SIZE;
 
     return {
-      originOffsetX: -left - GLYPH_PADDING,
-      originOffsetY: this.metrics.deviceBaseline - ascent - GLYPH_PADDING,
+      originOffsetX: layout.bearingX,
+      originOffsetY: layout.bearingY,
       width,
       height,
       uvMinX: region.x / atlasSize,
@@ -423,6 +416,7 @@ export class WebGlGlyphAtlas {
       uvMaxX: (region.x + width) / atlasSize,
       uvMaxY: (region.y + height) / atlasSize,
       intrinsicColor,
+      exact: layout.clip !== null,
     };
   }
 
@@ -468,6 +462,7 @@ export class WebGlGlyphAtlas {
       uvMaxX: (region.x + width) / ATLAS_SIZE,
       uvMaxY: (region.y + height) / ATLAS_SIZE,
       intrinsicColor: false,
+      exact: true,
     };
   }
 

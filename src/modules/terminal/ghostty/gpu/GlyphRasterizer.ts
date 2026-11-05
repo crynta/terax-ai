@@ -7,8 +7,8 @@ import {
 import { hasIntrinsicColor } from "./glyphColor";
 import {
   drawGlyph,
-  glyphBounds,
   isExtendedSymbol,
+  layoutGlyph,
   placeGlyph,
 } from "./GlyphPlacement";
 import { fontCss, type TerminalFontMetrics } from "./terminalVisuals";
@@ -123,29 +123,19 @@ export class GlyphRasterizer {
       deviceCellWidth,
       deviceCellHeight,
     );
-    const bounds = glyphBounds(measure, placement, {
-      width: deviceCellWidth,
-      ascent: deviceBaseline,
-      descent: deviceCellHeight - deviceBaseline,
-    });
-    const left = bounds.leftExtent;
-    const ascent = bounds.ascent;
-    const width = Math.min(
-      RASTER_SIZE,
-      Math.max(1, left + bounds.rightExtent + GLYPH_PADDING * 2),
-    );
-    const height = Math.min(
-      RASTER_SIZE,
-      Math.max(1, ascent + bounds.descent + GLYPH_PADDING * 2),
-    );
-    drawGlyph(
-      context,
-      text,
+    const layout = layoutGlyph(
+      measure,
       placement,
-      GLYPH_PADDING + left,
-      GLYPH_PADDING + ascent,
+      {
+        width: deviceCellWidth,
+        height: deviceCellHeight,
+        baseline: deviceBaseline,
+      },
+      GLYPH_PADDING,
       RASTER_SIZE,
     );
+    const { width, height } = layout;
+    drawGlyph(context, text, layout);
     this.dirtyWidth = Math.min(RASTER_SIZE, width + CLEAR_MARGIN);
     this.dirtyHeight = Math.min(RASTER_SIZE, height + CLEAR_MARGIN);
 
@@ -164,10 +154,10 @@ export class GlyphRasterizer {
     return {
       width,
       height,
-      bearingX: -left - GLYPH_PADDING,
-      bearingY: deviceBaseline - ascent - GLYPH_PADDING,
+      bearingX: layout.bearingX,
+      bearingY: layout.bearingY,
       intrinsicColor,
-      exact: false,
+      exact: layout.clip !== null,
       pixels,
     };
   }

@@ -18,10 +18,13 @@ export type IconCase = {
   readonly label: string;
   readonly row: number;
   readonly col: number;
-  /** Cells the glyph may use. */
+  /** Cells the glyph occupies. */
   readonly span: number;
-  /** A private-use icon: its ink must stay inside its own cell. */
-  readonly privateUse: boolean;
+  /**
+   * `icon`: may overflow into the blank cell after it, never left or beyond two cells.
+   * `stretch`: fills its cell box exactly. `wide`: CJK and emoji, within their cells.
+   */
+  readonly kind: "icon" | "stretch" | "wide";
 };
 
 const ESC = "\x1b[";
@@ -89,6 +92,17 @@ const PRIVATE_USE: ReadonlyArray<readonly [string, string]> = [
   ["font awesome folder U+F07B", "\uf07b"],
   ["material design folder U+F024B", "\u{f024b}"],
 ];
+// The bundled face has no U+E0C9 or U+E0CB.
+const POWERLINE_EXTRA: ReadonlyArray<readonly [string, string]> = [
+  0xe0c0, 0xe0c1, 0xe0c2, 0xe0c3, 0xe0c4, 0xe0c5, 0xe0c6, 0xe0c7, 0xe0c8, 0xe0ca, 0xe0cc, 0xe0cd,
+].map((codepoint) => [
+  `powerline extra U+${codepoint.toString(16).toUpperCase()}`,
+  String.fromCodePoint(codepoint),
+]);
+const POWERLINE_SEPARATORS: ReadonlyArray<readonly [string, string]> = [
+  ["trapezoid half U+E0D6", "\ue0d6"],
+  ["trapezoid half U+E0D7", "\ue0d7"],
+];
 const WIDE: ReadonlyArray<readonly [string, string]> = [
   ["cjk U+65E5", "日"],
   ["cjk U+672C", "本"],
@@ -110,20 +124,27 @@ export function iconsPattern(): { readonly ansi: string; readonly cases: IconCas
     items: ReadonlyArray<readonly [string, string]>,
     rowIndex: number,
     span: number,
-    privateUse: boolean,
+    kind: IconCase["kind"],
   ) => {
+    // The model gives a private-use character one cell whatever the glyph's width; a wide
+    // character takes two. Every item starts four cells after the previous one.
+    const cells = kind === "wide" ? 2 : 1;
     let line = "";
     items.forEach(([label, text], k) => {
-      line += text + " ".repeat(4 - span);
-      cases.push({ label, row: rowIndex, col: k * 4, span, privateUse });
+      line += text + " ".repeat(4 - cells);
+      cases.push({ label, row: rowIndex, col: k * 4, span, kind });
     });
     rows.push(line);
   };
-  row(PRIVATE_USE, 0, 1, true);
+  row(PRIVATE_USE, 0, 1, "icon");
   rows.push("");
-  row(WIDE, 2, 2, false);
+  row(WIDE, 2, 2, "wide");
   rows.push("");
-  row(EMOJI, 4, 2, false);
+  row(EMOJI, 4, 2, "wide");
+  rows.push("");
+  row(POWERLINE_EXTRA, 6, 2, "stretch");
+  rows.push("");
+  row(POWERLINE_SEPARATORS, 8, 1, "stretch");
   return { ansi: rows.join("\r\n"), cases };
 }
 

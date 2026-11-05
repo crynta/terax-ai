@@ -1,10 +1,16 @@
 /**
- * Where a glyph sits in its cell. Private-use symbols (Nerd Font icons, Powerline
- * extras) come from whichever font in the chain has them, and their outlines are
- * designed for a cell of their own font: wider than the terminal's cell they would
- * paint over the neighbour, narrower they would sit off centre. They are fitted to
- * the cell the terminal gives them (shrunk, never enlarged, and centred on their
- * advance), except in a double-width font, which keeps two cells.
+ * Where a glyph sits in its cell. Ordinary text stays exactly where the font put it.
+ * Private-use symbols (Nerd Font icons and Powerline) come from whichever font in the
+ * chain has them and are designed for a cell of their own, so each codepoint range has a
+ * constraint, after what Ghostty derives from the Nerd Fonts patcher:
+ *
+ * - `native`: drawn as designed (the version-control icons, which already fit a cell).
+ * - `icon`: drawn as designed, shrunk only when wider than two cells or taller than the
+ *   cell. Nerd Font icons are about a em wide, so the cell after one is meant to be
+ *   blank.
+ * - `stretch`: Powerline separators and extras fill their cell(s) exactly, whatever the
+ *   font's metrics: the ink box is mapped onto one or two cells by the cell height, so
+ *   neighbours join without a seam and nothing floats.
  */
 
 export type GlyphMeasure = {
@@ -17,20 +23,61 @@ export type GlyphMeasure = {
   readonly descent: number;
 };
 
+export type GlyphConstraint =
+  | { readonly mode: "native" }
+  | { readonly mode: "icon" }
+  | { readonly mode: "stretch"; readonly span: 1 | 2 };
+
+const NATIVE: GlyphConstraint = { mode: "native" };
+const ICON: GlyphConstraint = { mode: "icon" };
+const STRETCH_1: GlyphConstraint = { mode: "stretch", span: 1 };
+const STRETCH_2: GlyphConstraint = { mode: "stretch", span: 2 };
+
+/** Widest an icon may be, in cells. */
+const ICON_MAX_CELLS = 2;
+
+/** Constraints that differ from the `icon` default, by inclusive codepoint range. */
+export const GLYPH_CONSTRAINTS: ReadonlyArray<
+  readonly [from: number, to: number, constraint: GlyphConstraint]
+> = [
+  // Version control icons (branch, line number, lock, column).
+  [0xe0a0, 0xe0a3, NATIVE],
+  // Powerline separators and their thin and mirrored forms.
+  [0xe0b0, 0xe0bf, STRETCH_1],
+  // Powerline Extra: flames, pixel fades, ice, honeycombs are two cells wide.
+  [0xe0c0, 0xe0cd, STRETCH_2],
+  // Lego blocks are ordinary icons.
+  [0xe0ce, 0xe0d1, ICON],
+  // Trapezoids and half circles.
+  [0xe0d2, 0xe0d7, STRETCH_1],
+];
+
+export function constraintFor(codepoint: number): GlyphConstraint {
+  for (const [from, to, constraint] of GLYPH_CONSTRAINTS) {
+    if (codepoint >= from && codepoint <= to) return constraint;
+  }
+  return ICON;
+}
+
 export type GlyphPlacement = {
-  readonly scale: number;
+  readonly scaleX: number;
+  readonly scaleY: number;
   /** Device pixels the pen origin moves right of the cell's left edge. */
   readonly shiftX: number;
-  /**
-   * Device pixels from the cell's left edge that the glyph may cover. The ink is clipped to
-   * them, so an anti-aliased fringe cannot reach the neighbouring cell. Absent: unclipped.
-   */
-  readonly room?: number;
+  /** Baseline from the cell's top edge; absent: the cell's own baseline. */
+  readonly baselineY?: number;
+  /** Cell-relative box the ink is clipped to; absent: unclipped. */
+  readonly clip?: {
+    readonly width: number;
+    readonly height: number;
+  };
 };
 
-export const IDENTITY_PLACEMENT: GlyphPlacement = { scale: 1, shiftX: 0 };
-
-const DOUBLE_WIDTH_ADVANCE = 1.5;
+export const IDENTITY_PLACEMENT: GlyphPlacement = {
+  scaleX: 1,
+  scaleY: 1,
+  shiftX: 0,
+};
 
 /** The private-use areas: BMP, supplementary A and supplementary B. */
 export function isPrivateUse(codepoint: number): boolean {
@@ -59,52 +106,102 @@ export function placeGlyph(
   const inkHeight = measure.ascent + measure.descent;
   if (!(inkWidth > 0) || !(inkHeight > 0)) return IDENTITY_PLACEMENT;
 
-  const span = measure.advance >= cellWidth * DOUBLE_WIDTH_ADVANCE ? 2 : 1;
-  const room = cellWidth * span;
-  const scale = Math.min(1, room / inkWidth, cellHeight / inkHeight);
-  // Centre the advance box in the span, but never push the ink out of it. Whole pixels
-  // only: a fractional shift would blur an icon that is otherwise crisp.
-  const centred = (room - measure.advance * scale) / 2;
-  const lowest = measure.left * scale;
-  const highest = room - measure.right * scale;
-  const shift = Math.min(Math.max(centred, lowest), highest);
-  const shiftX = Math.abs(shift) < 0.5 ? 0 : Math.round(shift);
-  return { scale, shiftX, room };
+  const constraint = constraintFor(codepoint);
+  if (constraint.mode === "native") return IDENTITY_PLACEMENT;
+  if (constraint.mode === "stretch") {
+    const width = cellWidth * constraint.span;
+    const scaleX = width / inkWidth;
+    const scaleY = cellHeight / inkHeight;
+    return {
+      scaleX,
+      scaleY,
+      shiftX: measure.left * scaleX,
+      baselineY: measure.ascent * scaleY,
+      clip: { width, height: cellHeight },
+    };
+  }
+  const scale = Math.min(
+    1,
+    (cellWidth * ICON_MAX_CELLS) / inkWidth,
+    cellHeight / inkHeight,
+  );
+  return scale === 1 ? IDENTITY_PLACEMENT : { scaleX: scale, scaleY: scale, shiftX: 0 };
 }
 
-export type GlyphBounds = {
-  /** Ink left of the cell's left edge. */
-  readonly leftExtent: number;
-  /** Ink right of the cell's left edge. */
-  readonly rightExtent: number;
-  readonly ascent: number;
-  readonly descent: number;
+/** Everything a rasterizer needs to size, draw and position one glyph bitmap. */
+export type GlyphLayout = {
+  readonly width: number;
+  readonly height: number;
+  /** Offset of the bitmap's top-left from the cell's top-left. */
+  readonly bearingX: number;
+  readonly bearingY: number;
+  readonly penX: number;
+  readonly baselineY: number;
+  readonly scaleX: number;
+  readonly scaleY: number;
+  /** Bitmap-space clip box; null: unclipped. */
+  readonly clip: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  } | null;
 };
 
-/** Whole-pixel ink bounds relative to the cell origin and baseline. */
-export function glyphBounds(
-  measure: GlyphMeasure,
-  placement: GlyphPlacement,
-  fallback: {
-    readonly width: number;
-    readonly ascent: number;
-    readonly descent: number;
-  },
-): GlyphBounds {
-  const { scale, shiftX } = placement;
-  const left = Math.max(0, Math.ceil(measure.left * scale - shiftX || 0));
-  const right = Math.ceil(
-    (measure.right ? shiftX + measure.right * scale : 0) || fallback.width,
-  );
-  const ascent = Math.ceil(measure.ascent * scale || fallback.ascent);
-  const descent = Math.ceil(measure.descent * scale || fallback.descent);
-  return { leftExtent: left, rightExtent: right, ascent, descent };
-}
+export type CellMetrics = {
+  readonly width: number;
+  readonly height: number;
+  readonly baseline: number;
+};
 
 /**
- * Draws `text` with its pen origin at the cell's left edge (`penX`) and the baseline at
- * `baselineY`, applying the placement. `height` bounds the clip rectangle.
+ * Sizes the bitmap for a glyph and says where to draw it. Without a placement this is the
+ * measurement every renderer used before: whole-pixel ink bounds plus `padding`, falling back
+ * to the cell when the engine reports no extents.
  */
+export function layoutGlyph(
+  measure: GlyphMeasure,
+  placement: GlyphPlacement,
+  cell: CellMetrics,
+  padding: number,
+  limit: number,
+): GlyphLayout {
+  const { scaleX, scaleY, shiftX } = placement;
+  if (placement.baselineY !== undefined && placement.clip) {
+    const { width, height } = placement.clip;
+    return {
+      width: Math.min(limit, Math.ceil(width) + padding * 2),
+      height: Math.min(limit, Math.ceil(height) + padding * 2),
+      bearingX: -padding,
+      bearingY: -padding,
+      penX: padding + shiftX,
+      baselineY: padding + placement.baselineY,
+      scaleX,
+      scaleY,
+      clip: { x: padding, y: padding, width, height },
+    };
+  }
+  const left = Math.max(0, Math.ceil(measure.left * scaleX - shiftX || 0));
+  const right = Math.ceil(
+    (measure.right ? shiftX + measure.right * scaleX : 0) || cell.width,
+  );
+  const ascent = Math.ceil(measure.ascent * scaleY || cell.baseline);
+  const descent = Math.ceil(
+    measure.descent * scaleY || cell.height - cell.baseline,
+  );
+  return {
+    width: Math.min(limit, Math.max(1, left + right + padding * 2)),
+    height: Math.min(limit, Math.max(1, ascent + descent + padding * 2)),
+    bearingX: -left - padding,
+    bearingY: cell.baseline - ascent - padding,
+    penX: padding + left + shiftX,
+    baselineY: padding + ascent,
+    scaleX,
+    scaleY,
+    clip: null,
+  };
+}
+
 export function drawGlyph(
   context: Pick<
     CanvasRenderingContext2D,
@@ -118,23 +215,20 @@ export function drawGlyph(
     | "clip"
   >,
   text: string,
-  placement: GlyphPlacement,
-  penX: number,
-  baselineY: number,
-  height: number,
+  layout: GlyphLayout,
 ): void {
-  if (placement.scale === 1 && placement.room === undefined) {
-    context.fillText(text, penX + placement.shiftX, baselineY);
+  if (layout.scaleX === 1 && layout.scaleY === 1 && !layout.clip) {
+    context.fillText(text, layout.penX, layout.baselineY);
     return;
   }
   context.save();
-  if (placement.room !== undefined) {
+  if (layout.clip) {
     context.beginPath();
-    context.rect(penX, 0, placement.room, height);
+    context.rect(layout.clip.x, layout.clip.y, layout.clip.width, layout.clip.height);
     context.clip();
   }
-  context.translate(penX + placement.shiftX, baselineY);
-  context.scale(placement.scale, placement.scale);
+  context.translate(layout.penX, layout.baselineY);
+  context.scale(layout.scaleX, layout.scaleY);
   context.fillText(text, 0, 0);
   context.restore();
 }

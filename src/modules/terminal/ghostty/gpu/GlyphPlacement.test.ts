@@ -1,37 +1,34 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  constraintFor,
   drawGlyph,
   type GlyphMeasure,
-  glyphBounds,
+  GLYPH_CONSTRAINTS,
   IDENTITY_PLACEMENT,
   isExtendedSymbol,
   isPrivateUse,
+  layoutGlyph,
   placeGlyph,
 } from "./GlyphPlacement";
 
-const CELL = { width: 9, height: 18 };
+const CELL = { width: 9, height: 18, baseline: 14 };
+const PADDING = 2;
+const LIMIT = 256;
 
 function measure(overrides: Partial<GlyphMeasure> = {}): GlyphMeasure {
-  return {
-    advance: 9,
-    left: 0,
-    right: 9,
-    ascent: 14,
-    descent: 3,
-    ...overrides,
-  };
+  return { advance: 9, left: 0, right: 9, ascent: 14, descent: 3, ...overrides };
+}
+
+function place(text: string, ink: Partial<GlyphMeasure> = {}) {
+  return placeGlyph(text, measure(ink), CELL.width, CELL.height);
 }
 
 describe("private-use ranges", () => {
   it("covers the BMP area and both supplementary planes", () => {
-    for (const codepoint of [
-      0xe000, 0xeb99, 0xf8ff, 0xf0000, 0xf024b, 0xffffd, 0x100000, 0x10fffd,
-    ]) {
+    for (const codepoint of [0xe000, 0xeb99, 0xf8ff, 0xf0000, 0xf024b, 0xffffd, 0x100000, 0x10fffd]) {
       expect(isPrivateUse(codepoint), codepoint.toString(16)).toBe(true);
     }
-    for (const codepoint of [
-      0x41, 0xdfff, 0xf900, 0xeffff, 0xffffe, 0x1f600, 0x10fffe,
-    ]) {
+    for (const codepoint of [0x41, 0xdfff, 0xf900, 0xeffff, 0xffffe, 0x1f600, 0x10fffe]) {
       expect(isPrivateUse(codepoint), codepoint.toString(16)).toBe(false);
     }
   });
@@ -43,177 +40,212 @@ describe("private-use ranges", () => {
   });
 });
 
+describe("constraint table", () => {
+  it("is ordered, in range and free of overlaps", () => {
+    let previousEnd = -1;
+    for (const [from, to] of GLYPH_CONSTRAINTS) {
+      expect(from).toBeLessThanOrEqual(to);
+      expect(from).toBeGreaterThan(previousEnd);
+      expect(isPrivateUse(from) && isPrivateUse(to)).toBe(true);
+      previousEnd = to;
+    }
+  });
+
+  it("keeps the version control icons as designed", () => {
+    for (let codepoint = 0xe0a0; codepoint <= 0xe0a3; codepoint += 1) {
+      expect(constraintFor(codepoint)).toEqual({ mode: "native" });
+    }
+  });
+
+  it("stretches Powerline separators over one cell", () => {
+    for (const codepoint of [
+      ...Array.from({ length: 16 }, (_, index) => 0xe0b0 + index),
+      0xe0d2,
+      0xe0d4,
+      0xe0d6,
+      0xe0d7,
+    ]) {
+      expect(constraintFor(codepoint), codepoint.toString(16)).toEqual({
+        mode: "stretch",
+        span: 1,
+      });
+    }
+  });
+
+  it("stretches Powerline Extra flames, pixels, ice and honeycombs over two cells", () => {
+    for (let codepoint = 0xe0c0; codepoint <= 0xe0cd; codepoint += 1) {
+      expect(constraintFor(codepoint), codepoint.toString(16)).toEqual({
+        mode: "stretch",
+        span: 2,
+      });
+    }
+  });
+
+  it("treats the lego blocks and every other private-use glyph as icons", () => {
+    for (const codepoint of [0xe0ce, 0xe0d0, 0xe0d1, 0xe000, 0xe718, 0xeb99, 0xf07b, 0xf024b]) {
+      expect(constraintFor(codepoint), codepoint.toString(16)).toEqual({ mode: "icon" });
+    }
+  });
+});
+
 describe("placeGlyph", () => {
   it("leaves ordinary text exactly where the font put it", () => {
-    expect(
-      placeGlyph("A", measure({ right: 30 }), CELL.width, CELL.height),
-    ).toBe(IDENTITY_PLACEMENT);
-    expect(placeGlyph("中", measure({ advance: 18, right: 18 }), 9, 18)).toBe(
-      IDENTITY_PLACEMENT,
-    );
-    expect(
-      placeGlyph("\u{1f600}", measure({ advance: 18, right: 20 }), 9, 18),
-    ).toBe(IDENTITY_PLACEMENT);
+    expect(place("A", { right: 30 })).toBe(IDENTITY_PLACEMENT);
+    expect(place("中", { advance: 18, right: 18 })).toBe(IDENTITY_PLACEMENT);
+    expect(place("\u{1f600}", { advance: 18, right: 20 })).toBe(IDENTITY_PLACEMENT);
   });
 
-  it("keeps a cell-sized icon in place, clipped to its cell", () => {
-    expect(placeGlyph("\ue0a0", measure(), CELL.width, CELL.height)).toEqual({
-      scale: 1,
-      shiftX: 0,
-      room: CELL.width,
-    });
+  it("draws the version control icons as designed", () => {
+    expect(place("\ue0a0", { right: 30, ascent: 40 })).toBe(IDENTITY_PLACEMENT);
   });
 
-  it("shrinks an icon wider than its cell instead of overflowing into the neighbour", () => {
-    const placement = placeGlyph(
-      "\ueb99",
-      measure({ advance: 9, left: 0, right: 14 }),
-      CELL.width,
-      CELL.height,
-    );
-    expect(placement.scale).toBeCloseTo(9 / 14, 6);
-    const bounds = glyphBounds(measure({ advance: 9, right: 14 }), placement, {
-      width: 9,
-      ascent: 14,
-      descent: 4,
-    });
-    expect(bounds.leftExtent).toBe(0);
-    expect(bounds.rightExtent).toBeLessThanOrEqual(CELL.width);
+  it("lets an icon overflow into the blank cell after it, as Nerd Fonts design", () => {
+    // About an em wide in a cell of 0.6 em: kept at its size and position.
+    expect(place("\ue718", { right: 15 })).toBe(IDENTITY_PLACEMENT);
+    expect(place("\ueb99", { right: 18 })).toBe(IDENTITY_PLACEMENT);
   });
 
-  it("shrinks an icon taller than the cell", () => {
-    const placement = placeGlyph(
-      "\ue718",
-      measure({ ascent: 20, descent: 8 }),
-      CELL.width,
-      CELL.height,
-    );
-    expect(placement.scale).toBeCloseTo(18 / 28, 6);
+  it("shrinks an icon only when it is wider than two cells or taller than the cell", () => {
+    const wide = place("\uf07b", { right: 27 });
+    expect(wide.scaleX).toBeCloseTo(18 / 27, 9);
+    expect(wide.scaleY).toBe(wide.scaleX);
+    const tall = place("\uf07b", { ascent: 20, descent: 8 });
+    expect(tall.scaleX).toBeCloseTo(18 / 28, 9);
   });
 
   it("never enlarges a small icon", () => {
-    const placement = placeGlyph(
-      "\uf024b".length === 1 ? "\ue000" : "\ue000",
-      measure({ advance: 9, left: 0, right: 5, ascent: 5, descent: 0 }),
-      CELL.width,
-      CELL.height,
-    );
-    expect(placement.scale).toBe(1);
-  });
-
-  it("centres an icon whose font advance differs from the cell, on whole pixels", () => {
-    const placement = placeGlyph(
-      "\ue0a0",
-      measure({ advance: 5, right: 5 }),
-      CELL.width,
-      CELL.height,
-    );
-    expect(placement.scale).toBe(1);
-    expect(placement.shiftX).toBe(2);
-    expect(Number.isInteger(placement.shiftX)).toBe(true);
-    // Sub-pixel slack is ignored rather than blurring the icon.
-    expect(
-      placeGlyph("\ue0a0", measure({ advance: 8.4 }), CELL.width, CELL.height),
-    ).toMatchObject({ scale: 1, shiftX: 0 });
-  });
-
-  it("keeps two cells for a double-width font", () => {
-    const placement = placeGlyph(
-      "\ue0a0",
-      measure({ advance: 18, left: 0, right: 17 }),
-      CELL.width,
-      CELL.height,
-    );
-    expect(placement).toEqual({ scale: 1, shiftX: 0, room: 18 });
-    const wider = placeGlyph(
-      "\ue0a0",
-      measure({ advance: 18, left: 0, right: 27 }),
-      CELL.width,
-      CELL.height,
-    );
-    expect(wider.scale).toBeCloseTo(18 / 27, 6);
+    expect(place("\ue000", { right: 5, ascent: 5, descent: 0 })).toBe(IDENTITY_PLACEMENT);
   });
 
   it("leaves a private-use character with a variation selector to the font", () => {
-    expect(
-      placeGlyph("\ue0a0️", measure({ right: 30 }), CELL.width, CELL.height),
-    ).toBe(IDENTITY_PLACEMENT);
+    expect(place("\ue0a0️", { right: 30 })).toBe(IDENTITY_PLACEMENT);
+    expect(place("\ue718️", { right: 30 })).toBe(IDENTITY_PLACEMENT);
   });
 
   it("ignores a glyph with no ink", () => {
-    expect(
-      placeGlyph("\ue0a0", measure({ left: 0, right: 0 }), CELL.width, CELL.height),
-    ).toBe(IDENTITY_PLACEMENT);
+    expect(place("\ue718", { left: 0, right: 0 })).toBe(IDENTITY_PLACEMENT);
+    expect(place("\ue0c0", { ascent: 0, descent: 0 })).toBe(IDENTITY_PLACEMENT);
   });
 
-  it("always fits the ink inside the span for any icon and cell", () => {
-    for (let cellWidth = 6; cellWidth <= 24; cellWidth += 3) {
-      for (let right = 3; right <= 60; right += 7) {
-        for (const advance of [
-          cellWidth * 0.8,
-          cellWidth,
-          cellWidth * 1.2,
-          cellWidth * 2,
-        ]) {
-          const m = measure({
-            advance,
-            left: 1,
-            right,
-            ascent: 12,
-            descent: 5,
-          });
-          const placement = placeGlyph("\ue5fa", m, cellWidth, 20);
-          const span = advance >= cellWidth * 1.5 ? 2 : 1;
-          const inkLeft = placement.shiftX - m.left * placement.scale;
-          const inkRight = placement.shiftX + m.right * placement.scale;
-          expect(inkRight - inkLeft).toBeLessThanOrEqual(
-            cellWidth * span + 1e-9,
-          );
-          expect(placement.scale).toBeLessThanOrEqual(1);
+  it("stretches a separator over exactly one cell by the cell height", () => {
+    const ink = { left: 0.3, right: 9.4, ascent: 15.2, descent: 3.1 };
+    const placement = place("\ue0d6", ink);
+    expect(placement.scaleX).toBeCloseTo(9 / 9.7, 9);
+    expect(placement.scaleY).toBeCloseTo(18 / 18.3, 9);
+    expect(placement.clip).toEqual({ width: 9, height: 18 });
+  });
+
+  it("stretches a Powerline Extra over exactly two cells", () => {
+    const placement = place("\ue0c0", { left: 0.1, right: 21.7, ascent: 16, descent: 4 });
+    expect(placement.scaleX).toBeCloseTo(18 / 21.8, 9);
+    expect(placement.clip).toEqual({ width: 18, height: 18 });
+  });
+
+  it("maps the ink box of every stretched glyph onto its cell box, whatever the metrics", () => {
+    for (const codepoint of [0xe0c0, 0xe0c4, 0xe0cd, 0xe0d6, 0xe0d7]) {
+      for (let cellWidth = 6; cellWidth <= 24; cellWidth += 3) {
+        for (const cellHeight of [10, 17, 23, 31]) {
+          for (const left of [-2, 0, 0.7]) {
+            const ink = measure({ left, right: cellWidth * 1.9, ascent: cellHeight * 0.8, descent: cellHeight * 0.25 });
+            const text = String.fromCodePoint(codepoint);
+            const placement = placeGlyph(text, ink, cellWidth, cellHeight);
+            const layout = layoutGlyph(ink, placement, { width: cellWidth, height: cellHeight, baseline: cellHeight * 0.8 }, PADDING, LIMIT);
+            const span = constraintFor(codepoint);
+            const cells = span.mode === "stretch" ? span.span : 1;
+            const inkLeft = layout.penX - ink.left * layout.scaleX;
+            const inkRight = layout.penX + ink.right * layout.scaleX;
+            const inkTop = layout.baselineY - ink.ascent * layout.scaleY;
+            const inkBottom = layout.baselineY + ink.descent * layout.scaleY;
+            expect(inkLeft).toBeCloseTo(PADDING, 6);
+            expect(inkRight).toBeCloseTo(PADDING + cellWidth * cells, 6);
+            expect(inkTop).toBeCloseTo(PADDING, 6);
+            expect(inkBottom).toBeCloseTo(PADDING + cellHeight, 6);
+          }
         }
       }
     }
   });
 });
 
-describe("glyphBounds", () => {
-  const fallback = { width: 9, ascent: 14, descent: 4 };
-
-  it("matches the unplaced measurements of ordinary text", () => {
-    expect(
-      glyphBounds(
-        measure({ left: 1.2, right: 8.4, ascent: 11.1, descent: 3.2 }),
-        IDENTITY_PLACEMENT,
-        fallback,
-      ),
-    ).toEqual({ leftExtent: 2, rightExtent: 9, ascent: 12, descent: 4 });
+describe("layoutGlyph", () => {
+  it("measures ordinary text as every renderer did before: whole-pixel ink plus padding", () => {
+    const layout = layoutGlyph(
+      measure({ left: 1.2, right: 8.4, ascent: 11.1, descent: 3.2 }),
+      IDENTITY_PLACEMENT,
+      CELL,
+      PADDING,
+      LIMIT,
+    );
+    expect(layout).toMatchObject({
+      width: 2 + 9 + 2 * PADDING,
+      height: 12 + 4 + 2 * PADDING,
+      bearingX: -2 - PADDING,
+      bearingY: CELL.baseline - 12 - PADDING,
+      penX: PADDING + 2,
+      baselineY: PADDING + 12,
+      scaleX: 1,
+      scaleY: 1,
+      clip: null,
+    });
   });
 
   it("falls back to the cell when the engine reports no extents", () => {
-    expect(
-      glyphBounds(
-        { advance: 9, left: 0, right: 0, ascent: 0, descent: 0 },
-        IDENTITY_PLACEMENT,
-        fallback,
-      ),
-    ).toEqual({ leftExtent: 0, rightExtent: 9, ascent: 14, descent: 4 });
+    const layout = layoutGlyph(
+      { advance: 9, left: 0, right: 0, ascent: 0, descent: 0 },
+      IDENTITY_PLACEMENT,
+      CELL,
+      PADDING,
+      LIMIT,
+    );
+    expect(layout.width).toBe(9 + 2 * PADDING);
+    expect(layout.height).toBe(14 + 4 + 2 * PADDING);
   });
 
-  it("measures ink left of the cell origin after a shift", () => {
-    expect(
-      glyphBounds(
-        measure({ left: 3, right: 5 }),
-        { scale: 1, shiftX: 2 },
-        fallback,
-      ).leftExtent,
-    ).toBe(1);
-    expect(
-      glyphBounds(
-        measure({ left: 1, right: 5 }),
-        { scale: 1, shiftX: 2 },
-        fallback,
-      ).leftExtent,
-    ).toBe(0);
+  it("caps the bitmap at the raster limit", () => {
+    const layout = layoutGlyph(measure({ right: 400, ascent: 300 }), IDENTITY_PLACEMENT, CELL, PADDING, 64);
+    expect(layout.width).toBe(64);
+    expect(layout.height).toBe(64);
+  });
+
+  it("lays a stretched glyph out as its cell box plus padding, with a clip on that box", () => {
+    const ink = { left: 0.1, right: 21.7, ascent: 16, descent: 4 };
+    const placement = placeGlyph("\ue0c0", measure(ink), CELL.width, CELL.height);
+    const layout = layoutGlyph(measure(ink), placement, CELL, PADDING, LIMIT);
+    expect(layout).toMatchObject({
+      width: 18 + 2 * PADDING,
+      height: 18 + 2 * PADDING,
+      bearingX: -PADDING,
+      bearingY: -PADDING,
+      clip: { x: PADDING, y: PADDING, width: 18, height: 18 },
+    });
+  });
+});
+
+describe("drawGlyph", () => {
+  it("draws unscaled, unclipped text directly at the pen position", () => {
+    const context = fakeContext();
+    drawGlyph(context, "A", layoutGlyph(measure(), IDENTITY_PLACEMENT, CELL, PADDING, LIMIT));
+    expect(context.fillText).toHaveBeenCalledWith("A", PADDING, PADDING + 14);
+    expect(context.save).not.toHaveBeenCalled();
+  });
+
+  it("scales a shrunken icon about its pen origin and restores the context", () => {
+    const calls: string[] = [];
+    const context = fakeContext(calls);
+    const ink = measure({ right: 27 });
+    drawGlyph(context, "\uf07b", layoutGlyph(ink, place("\uf07b", ink), CELL, PADDING, LIMIT));
+    expect(context.scale).toHaveBeenCalledWith(expect.closeTo(18 / 27, 9), expect.closeTo(18 / 27, 9));
+    expect(context.fillText).toHaveBeenCalledWith("\uf07b", 0, 0);
+    expect(calls).toEqual(["save", "translate", "scale", "fill", "restore"]);
+  });
+
+  it("clips a stretched glyph to its cell box so its edges are flush", () => {
+    const calls: string[] = [];
+    const context = fakeContext(calls);
+    const ink = measure({ left: 0.1, right: 21.7, ascent: 16, descent: 4 });
+    drawGlyph(context, "\ue0c0", layoutGlyph(ink, place("\ue0c0", ink), CELL, PADDING, LIMIT));
+    expect(context.rect).toHaveBeenCalledWith(PADDING, PADDING, 18, 18);
+    expect(calls).toEqual(["save", "beginPath", "rect", "clip", "translate", "scale", "fill", "restore"]);
   });
 });
 
@@ -230,39 +262,3 @@ function fakeContext(calls: string[] = []) {
     clip: note("clip"),
   };
 }
-
-describe("drawGlyph", () => {
-  it("draws unscaled text directly at the pen position plus the shift", () => {
-    const context = fakeContext();
-    drawGlyph(context, "A", IDENTITY_PLACEMENT, 4, 20, 256);
-    expect(context.fillText).toHaveBeenCalledWith("A", 4, 20);
-    expect(context.save).not.toHaveBeenCalled();
-  });
-
-  it("clips an icon to the cells it may cover, so its fringe cannot reach a neighbour", () => {
-    const calls: string[] = [];
-    const context = fakeContext(calls);
-    drawGlyph(context, "\ue0a0", { scale: 1, shiftX: 0, room: 9 }, 4, 20, 256);
-    expect(context.rect).toHaveBeenCalledWith(4, 0, 9, 256);
-    expect(calls).toEqual([
-      "save",
-      "beginPath",
-      "rect",
-      "clip",
-      "translate",
-      "scale",
-      "fill",
-      "restore",
-    ]);
-  });
-
-  it("scales a shrunken icon about its pen origin and restores the context", () => {
-    const calls: string[] = [];
-    const context = fakeContext(calls);
-    drawGlyph(context, "\ue0a0", { scale: 0.5, shiftX: 2 }, 4, 20, 256);
-    expect(context.translate).toHaveBeenCalledWith(6, 20);
-    expect(context.scale).toHaveBeenCalledWith(0.5, 0.5);
-    expect(context.fillText).toHaveBeenCalledWith("\ue0a0", 0, 0);
-    expect(calls).toEqual(["save", "translate", "scale", "fill", "restore"]);
-  });
-});

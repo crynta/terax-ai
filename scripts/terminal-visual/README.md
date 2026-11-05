@@ -83,7 +83,9 @@ cursor on a letter (`cursorAt=letter`), a wide character (`wide`) or coloured te
 check reads pixels only, so it runs on both renderers:
 
 - colors: every sample leans toward its expected colour and none collapsed to the default foreground
-- icons: every glyph draws, private-use icons stay in their own cell, wide glyphs stay in two cells
+- icons: every glyph draws; an icon never reaches left of its cell or past two cells; a Powerline Extra
+  (U+E0C0..E0CD, two cells) or separator (U+E0D6, U+E0D7) fills its cell box exactly, ink touching all four
+  edges and nothing outside, so neighbours join without a seam; wide glyphs stay in two cells
 - cursor: a block recolours the character in the cursor text colour and covers both cells of a wide
   character; bar and underline leave it alone
 
@@ -96,7 +98,8 @@ node scripts/terminal-visual/compare.mjs parity /tmp/visual icons-gl-125 icons-g
 ```
 
 `parity` requires a `renderer=webgl` and a WebGPU capture of one pattern at one ratio to match pixel for
-pixel. Run both over `dpr=1`, `1.25`, `1.5` and `2`.
+pixel. Run both over `dpr=1`, `1.25`, `1.5` and `2`, and again with
+`localStorage["terax:terminal-text-contrast"] = "on"`: both renderers apply the same curve.
 
 ## Window canvas and split panes
 

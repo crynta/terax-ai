@@ -111,8 +111,11 @@ export function checkColors(
 }
 
 /**
- * Every icon draws something, a private-use icon stays inside its own cell (no ink in the
- * cells on either side), and a wide glyph stays within its two cells plus a half-cell margin.
+ * Every glyph draws. An icon never reaches into the cell on its left and stays within two
+ * cells (the blank one after it is its overflow). A stretched Powerline glyph fills its
+ * cell box exactly: its ink touches all four edges and nothing falls outside, so
+ * neighbouring cells join without a seam and no shape floats small. A wide glyph stays
+ * within its two cells plus a half-cell margin.
  */
 export function checkIcons(
   frame: Capture,
@@ -127,11 +130,43 @@ export function checkIcons(
       failures.push(`${item.label}: nothing drawn`);
       continue;
     }
-    if (item.privateUse) {
-      const left = cellBox(geometry, item.row, item.col - 1);
-      const right = cellBox(geometry, item.row, item.col + item.span);
-      const leaked = inkCount(frame, left, background) + inkCount(frame, right, background);
-      if (leaked > 0) failures.push(`${item.label}: ${leaked} px overflow into the neighbouring cells`);
+    if (item.kind === "stretch") {
+      const around = {
+        x0: own.x0 - geometry.cellWidth,
+        x1: own.x1 + geometry.cellWidth,
+        y0: own.y0,
+        y1: own.y1,
+      };
+      let minX = Number.POSITIVE_INFINITY;
+      let maxX = -1;
+      let minY = Number.POSITIVE_INFINITY;
+      let maxY = -1;
+      let outside = 0;
+      each(frame, around, (color, x, y) => {
+        if (distance(color, background) <= INK_THRESHOLD) return;
+        if (x < own.x0 || x >= own.x1) outside += 1;
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y);
+        maxY = Math.max(maxY, y);
+      });
+      if (outside > 0) failures.push(`${item.label}: ${outside} px outside its ${item.span} cells`);
+      if (minX > own.x0 + 1 || maxX < own.x1 - 2) {
+        failures.push(`${item.label}: ink spans x ${minX}..${maxX}, not the cell box ${own.x0}..${own.x1 - 1}`);
+      }
+      if (minY > own.y0 + 1 || maxY < own.y1 - 2) {
+        failures.push(`${item.label}: ink spans y ${minY}..${maxY}, not the cell box ${own.y0}..${own.y1 - 1}`);
+      }
+    } else if (item.kind === "icon") {
+      // A pixel or two of left bearing is the font's own.
+      const left = { ...cellBox(geometry, item.row, item.col - 1), x1: own.x0 - 2 };
+      const beyond = {
+        ...own,
+        x0: own.x0 + 2 * geometry.cellWidth,
+        x1: own.x0 + 4 * geometry.cellWidth - 2,
+      };
+      const leaked = inkCount(frame, left, background) + inkCount(frame, beyond, background);
+      if (leaked > 0) failures.push(`${item.label}: ${leaked} px left of its cell or beyond two cells`);
     } else {
       const margin = Math.round(geometry.cellWidth / 2);
       const beyond = { ...own, x0: own.x1 + margin, x1: own.x1 + 3 * margin };
