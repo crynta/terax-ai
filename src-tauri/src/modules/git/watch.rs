@@ -1462,7 +1462,7 @@ mod tests {
                 d.strip_prefix(&root)
                     .unwrap()
                     .to_string_lossy()
-                    .into_owned()
+                    .replace('\\', "/")
             })
             .collect();
         for expected in ["", "src", "src/deep", "src/deep/er", "nested"] {
@@ -1497,7 +1497,7 @@ mod tests {
                 d.strip_prefix(common)
                     .unwrap()
                     .to_string_lossy()
-                    .into_owned()
+                    .replace('\\', "/")
             })
             .collect();
         for expected in [
