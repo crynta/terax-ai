@@ -215,6 +215,10 @@ pub enum HookDecision {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct HookResult {
     pub accepted: bool,
+    /// An interim answer: the request waits for a UI decision and the final
+    /// response follows on the same connection.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub held: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub decision: Option<HookDecision>,
 }
@@ -317,6 +321,30 @@ mod tests {
         let ask: HookDecision = serde_json::from_value(json!({ "behavior": "ask" })).unwrap();
         assert_eq!(ask, HookDecision::Ask);
         assert!(serde_json::from_value::<HookDecision>(json!({ "behavior": "maybe" })).is_err());
+    }
+
+    #[test]
+    fn results_mark_an_interim_hold_only_when_held() {
+        let held = HookResult {
+            accepted: true,
+            held: true,
+            decision: None,
+        };
+        assert_eq!(
+            serde_json::to_value(&held).unwrap(),
+            json!({ "accepted": true, "held": true })
+        );
+        let final_result = HookResult {
+            accepted: true,
+            held: false,
+            decision: Some(HookDecision::Ask),
+        };
+        assert_eq!(
+            serde_json::to_value(&final_result).unwrap(),
+            json!({ "accepted": true, "decision": { "behavior": "ask" } })
+        );
+        let parsed: HookResult = serde_json::from_value(json!({ "accepted": true })).unwrap();
+        assert!(!parsed.held);
     }
 
     #[test]

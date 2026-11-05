@@ -3,6 +3,7 @@
 //! `terax:agent-signal` stream in step, and brokers permission decisions.
 
 use std::collections::HashMap;
+use std::io::Write;
 use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender};
@@ -311,6 +312,24 @@ fn peer_closed(stream: &TcpStream) -> bool {
     closed
 }
 
+/// Tells the CLI the request is waiting for the UI, so it can tell a slow
+/// decision from an endpoint that never answers.
+fn write_held(stream: &TcpStream, request: &ControlRequest) -> std::io::Result<()> {
+    let held = ControlResponse::success(
+        request.id.clone(),
+        json!(HookResult {
+            accepted: true,
+            held: true,
+            decision: None,
+        }),
+    );
+    let mut bytes = serde_json::to_vec(&held).map_err(std::io::Error::other)?;
+    bytes.push(b'\n');
+    let mut writer = stream;
+    writer.write_all(&bytes)?;
+    writer.flush()
+}
+
 fn reject(request: &ControlRequest, code: &str, message: &str) -> ControlResponse {
     ControlResponse::failure(request.id.clone(), code, message)
 }
@@ -319,6 +338,7 @@ fn accepted(request: &ControlRequest, decision: Option<HookDecision>) -> Control
     let result = HookResult {
         accepted: true,
         decision,
+        ..HookResult::default()
     };
     ControlResponse::success(request.id.clone(), json!(result))
 }
@@ -356,7 +376,7 @@ pub fn handle(
                 request.id.clone(),
                 json!(HookResult {
                     accepted: false,
-                    decision: None
+                    ..HookResult::default()
                 }),
             );
         }
@@ -372,7 +392,7 @@ pub fn handle(
                 request.id.clone(),
                 json!(HookResult {
                     accepted: false,
-                    decision: None
+                    ..HookResult::default()
                 }),
             );
         }
@@ -410,20 +430,24 @@ pub fn handle(
     let Some((wait, id, receiver)) = pending else {
         return accepted(request, None);
     };
-    let verdict = await_decision(&receiver, wait, DECISION_POLL, || {
-        if !state.broker.ui_ready() {
-            Some(Cancel::UiGone)
-        } else if host
-            .pane(pane_id)
-            .is_none_or(|live| live.pty_id != target.pty_id)
-        {
-            Some(Cancel::PaneClosed)
-        } else if peer_closed(stream) {
-            Some(Cancel::AgentGone)
-        } else {
-            None
-        }
-    });
+    let verdict = if write_held(stream, request).is_err() {
+        Verdict::Cancelled(Cancel::AgentGone)
+    } else {
+        await_decision(&receiver, wait, DECISION_POLL, || {
+            if !state.broker.ui_ready() {
+                Some(Cancel::UiGone)
+            } else if host
+                .pane(pane_id)
+                .is_none_or(|live| live.pty_id != target.pty_id)
+            {
+                Some(Cancel::PaneClosed)
+            } else if peer_closed(stream) {
+                Some(Cancel::AgentGone)
+            } else {
+                None
+            }
+        })
+    };
     state.broker.discard(&id);
 
     let (decision, outcome) = match verdict {
@@ -527,7 +551,7 @@ pub(crate) mod test_host {
 mod tests {
     use super::*;
     use serde_json::Value;
-    use std::io::{Read, Write};
+    use std::io::{BufRead, BufReader, Read, Write};
     use std::net::TcpListener;
     use std::sync::Arc;
     use std::thread;
@@ -585,7 +609,8 @@ mod tests {
             result(&handle(&server, &prompt, &state, host.as_ref())),
             HookResult {
                 accepted: true,
-                decision: None
+                decision: None,
+                held: false
             }
         );
         let stop = request(
@@ -1092,5 +1117,121 @@ mod tests {
         drop(client);
         thread::sleep(Duration::from_millis(50));
         assert!(peer_closed(&server));
+    }
+
+    #[test]
+    fn a_held_notice_precedes_the_final_decision() {
+        let host = FakeHost::new(true);
+        let state = Arc::new(HookState::default());
+        state.broker.set_ui_ready(true);
+        let (server, client) = socket_pair();
+        let serving = {
+            let (host, state) = (host.clone(), state.clone());
+            thread::spawn(move || {
+                handle(
+                    &server,
+                    &request(
+                        "claude",
+                        "PermissionRequest",
+                        json!({ "tool_name": "Bash" }),
+                        Some(30),
+                        Some(3),
+                    ),
+                    &state,
+                    host.as_ref(),
+                )
+            })
+        };
+
+        let mut line = String::new();
+        BufReader::new(client).read_line(&mut line).unwrap();
+        let interim: ControlResponse = serde_json::from_str(&line).unwrap();
+        assert_eq!(interim.id, "req-1");
+        assert_eq!(
+            result(&interim),
+            HookResult {
+                accepted: true,
+                held: true,
+                decision: None
+            }
+        );
+
+        let id = loop {
+            let id = host
+                .events
+                .lock()
+                .unwrap()
+                .iter()
+                .find_map(|e| e.facts.permission.as_ref()?.request_id.clone());
+            if let Some(id) = id {
+                break id;
+            }
+            thread::sleep(Duration::from_millis(5));
+        };
+        assert!(state
+            .broker
+            .resolve(&id, HookDecision::Allow { remember: None }));
+        let last = serving.join().unwrap();
+        assert_eq!(
+            result(&last),
+            HookResult {
+                accepted: true,
+                held: false,
+                decision: Some(HookDecision::Allow { remember: None })
+            }
+        );
+    }
+
+    #[test]
+    fn requests_that_do_not_wait_send_a_single_final_answer() {
+        let host = FakeHost::new(true);
+        let state = HookState::default();
+        let (server, mut client) = socket_pair();
+        let response = handle(
+            &server,
+            &request("claude", "Stop", json!({}), None, Some(3)),
+            &state,
+            host.as_ref(),
+        );
+        assert!(!result(&response).held);
+        drop(server);
+        let mut written = Vec::new();
+        client.read_to_end(&mut written).unwrap();
+        assert!(written.is_empty());
+    }
+
+    #[test]
+    fn a_late_tool_hook_never_hides_a_pending_permission() {
+        let host = FakeHost::new(true);
+        let state = HookState::default();
+        let (server, _client) = socket_pair();
+        for (event, payload) in [
+            ("UserPromptSubmit", json!({ "prompt": "go" })),
+            (
+                "PermissionRequest",
+                json!({ "tool_name": "Bash", "tool_input": { "command": "ls" } }),
+            ),
+            // Background hooks lose the race against the synchronous one.
+            (
+                "PreToolUse",
+                json!({ "tool_name": "Bash", "tool_input": { "command": "ls" } }),
+            ),
+            (
+                "PostToolUse",
+                json!({ "tool_name": "Read", "tool_input": { "file_path": "/a" } }),
+            ),
+        ] {
+            handle(
+                &server,
+                &request("claude", event, payload, None, Some(3)),
+                &state,
+                host.as_ref(),
+            );
+        }
+        assert_eq!(
+            *host.signals.lock().unwrap(),
+            vec!["started:claude", "attention:"]
+        );
+        assert_eq!(host.events.lock().unwrap().len(), 4);
     }
 }

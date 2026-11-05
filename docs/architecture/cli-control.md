@@ -44,7 +44,8 @@ Security properties:
 - Connections and pending UI requests are capped at 32, with bounded read, write, and UI response timeouts.
 - The CLI verifies that a cache descriptor still names a live Terax process before sending its token.
 - A hook names its pane in the caller context. The pane must belong to a live PTY, hook payloads are trimmed by the CLI (at most 40 KiB, 1 MiB read from stdin) and re-bounded by the adapters, and tool and subagent events are rate limited per pane.
-- A hook that waits for a permission decision holds its connection for at most 15 minutes, no more than four per pane and sixteen overall. It is released immediately when the UI has not announced decision support, and cancelled when the agent disconnects, the pane closes or the UI withdraws. Request ids are random and only the requesting connection learns them.
+- A hook that waits for a permission decision is answered twice: an interim result with `held: true` right away, then the decision. The CLI waits about two seconds for the first answer and extends the wait only after `held`, so a dead or foreign endpoint never costs the decision wait.
+- A held hook keeps its connection for at most 15 minutes, no more than four per pane and sixteen overall. It is released immediately when the UI has not announced decision support, and cancelled when the agent disconnects, the pane closes or the UI withdraws. Request ids are random and only the requesting connection learns them.
 - File paths are canonicalized and required to reference a regular file inside an authorized workspace before the editor is opened.
 - The descriptor is removed only when it still belongs to the exiting process, so an older instance cannot delete a newer instance's endpoint.
 

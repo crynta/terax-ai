@@ -1,5 +1,6 @@
 use std::ffi::OsString;
-use std::io::{IsTerminal, Read, Write};
+use std::io::{BufReader, IsTerminal, Read, Write};
+use std::net::TcpStream;
 use std::process::ExitCode;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -13,16 +14,24 @@ use terax_control_protocol::hook::{
     NO_DECISION_OUTPUT,
 };
 use terax_control_protocol::{
-    CallerContext, ControlDescriptor, ControlRequest, METHOD_HOOK, PROTOCOL_VERSION,
+    CallerContext, ControlDescriptor, ControlRequest, ControlResponse, METHOD_HOOK,
+    PROTOCOL_VERSION,
 };
 
-use crate::{request_id, send_request, validate_endpoint, Timeouts};
+use crate::{
+    io_error, parse_loopback_address, read_response, request_id, validate_endpoint, write_request,
+    CliError, Timeouts,
+};
 
 const STDIN_DEADLINE: Duration = Duration::from_secs(2);
 const OBSERVE_TIMEOUTS: Timeouts = Timeouts {
     connect: Duration::from_millis(1000),
     io: Duration::from_millis(2000),
 };
+/// How long the server may take to answer before the hook gives up. A request
+/// that waits for a decision answers this first, so a dead or foreign endpoint
+/// never costs more than this.
+const FIRST_RESPONSE: Duration = Duration::from_secs(2);
 /// Slack beyond the wait the server was told about, so the server's own
 /// timeout answer arrives before the socket read gives up.
 const DECISION_SLACK: Duration = Duration::from_secs(10);
@@ -132,15 +141,9 @@ fn deliver(
             pane_id: Some(environment.pane_id),
         },
     };
-    let timeouts = match wait_secs {
-        Some(secs) => Timeouts {
-            connect: OBSERVE_TIMEOUTS.connect,
-            io: Duration::from_secs(u64::from(secs)) + DECISION_SLACK,
-        },
-        None => OBSERVE_TIMEOUTS,
-    };
+    let decision_wait = wait_secs.map(|secs| Duration::from_secs(u64::from(secs)));
     let response =
-        send_request(&endpoint.address, &request, timeouts).map_err(|error| error.message)?;
+        exchange(&endpoint.address, &request, decision_wait).map_err(|error| error.message)?;
     if !response.ok {
         let reason = response
             .error
@@ -153,6 +156,39 @@ fn deliver(
         .decision
         .map(|decision| decision_output(agent, &event, &decision, &original).to_string())
         .unwrap_or_else(|| NO_DECISION_OUTPUT.to_string()))
+}
+
+/// One request in two phases: a short wait for the server's first answer, and
+/// the long decision wait only once the server says it is holding the request.
+fn exchange(
+    address: &str,
+    request: &ControlRequest,
+    decision_wait: Option<Duration>,
+) -> Result<ControlResponse, CliError> {
+    let address = parse_loopback_address(address)?;
+    let mut stream =
+        TcpStream::connect_timeout(&address, OBSERVE_TIMEOUTS.connect).map_err(io_error)?;
+    stream.set_read_timeout(Some(FIRST_RESPONSE)).ok();
+    stream.set_write_timeout(Some(OBSERVE_TIMEOUTS.io)).ok();
+    write_request(&mut stream, request)?;
+
+    let mut reader = BufReader::new(stream);
+    let first = read_response(&mut reader, request)?;
+    let held = first.ok
+        && first
+            .result
+            .as_ref()
+            .and_then(|result| result.get("held"))
+            .and_then(Value::as_bool)
+            == Some(true);
+    let Some(wait) = decision_wait.filter(|_| held) else {
+        return Ok(first);
+    };
+    reader
+        .get_ref()
+        .set_read_timeout(Some(wait + DECISION_SLACK))
+        .ok();
+    read_response(&mut reader, request)
 }
 
 fn parse_args(args: &[OsString]) -> Result<(AgentName, String), String> {
@@ -221,7 +257,8 @@ fn looks_complete(bytes: &[u8]) -> bool {
 mod tests {
     use super::*;
     use serde_json::json;
-    use std::io::Cursor;
+    use std::io::{BufRead, Cursor};
+    use std::net::TcpListener;
     use std::time::Instant;
 
     fn lookup(pairs: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Option<String> {
@@ -382,5 +419,123 @@ mod tests {
         let started = Instant::now();
         assert_eq!(read_payload(Box::new(Never)), Value::Null);
         assert!(started.elapsed() < STDIN_DEADLINE + Duration::from_secs(1));
+    }
+
+    fn environment_for(address: String) -> HookEnvironment {
+        HookEnvironment {
+            pane_id: 1,
+            address,
+            token: "a".repeat(64),
+            decision_secs: 600,
+            wait_enabled: true,
+            debug: false,
+        }
+    }
+
+    fn serve_once(script: impl FnOnce(TcpStream, ControlRequest) + Send + 'static) -> String {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut line = String::new();
+            BufReader::new(stream.try_clone().unwrap())
+                .read_line(&mut line)
+                .unwrap();
+            script(stream, serde_json::from_str(&line).unwrap());
+        });
+        address
+    }
+
+    fn reply(stream: &mut TcpStream, request: &ControlRequest, result: Value) {
+        let response = ControlResponse::success(request.id.clone(), result);
+        let mut bytes = serde_json::to_vec(&response).unwrap();
+        bytes.push(b'\n');
+        stream.write_all(&bytes).unwrap();
+    }
+
+    fn run_permission(address: String) -> String {
+        let mut out = Vec::new();
+        run(
+            &args(&["claude", "PermissionRequest"]),
+            Some(&environment_for(address)),
+            Box::new(Cursor::new(br#"{"tool_name":"Bash"}"#.to_vec())),
+            &mut out,
+        );
+        String::from_utf8(out).unwrap()
+    }
+
+    #[test]
+    fn an_endpoint_that_never_answers_costs_the_first_response_wait_not_the_decision_wait() {
+        let address = serve_once(|stream, _| {
+            thread::sleep(Duration::from_secs(30));
+            drop(stream);
+        });
+        let started = Instant::now();
+        assert_eq!(run_permission(address), "{}\n");
+        let elapsed = started.elapsed();
+        assert!(elapsed >= FIRST_RESPONSE, "{elapsed:?}");
+        assert!(
+            elapsed < FIRST_RESPONSE + Duration::from_secs(2),
+            "{elapsed:?}"
+        );
+    }
+
+    #[test]
+    fn a_held_request_extends_the_wait_until_the_decision_arrives() {
+        let address = serve_once(|mut stream, request| {
+            reply(
+                &mut stream,
+                &request,
+                json!({ "accepted": true, "held": true }),
+            );
+            thread::sleep(FIRST_RESPONSE + Duration::from_millis(500));
+            reply(
+                &mut stream,
+                &request,
+                json!({ "accepted": true, "decision": { "behavior": "allow" } }),
+            );
+        });
+        let started = Instant::now();
+        let output = run_permission(address);
+        assert!(started.elapsed() >= FIRST_RESPONSE);
+        let value: Value = serde_json::from_str(output.trim()).unwrap();
+        assert_eq!(value["hookSpecificOutput"]["decision"]["behavior"], "allow");
+    }
+
+    #[test]
+    fn a_held_notice_is_ignored_when_no_decision_was_requested() {
+        let address = serve_once(|mut stream, request| {
+            reply(
+                &mut stream,
+                &request,
+                json!({ "accepted": true, "held": true }),
+            );
+        });
+        let started = Instant::now();
+        let mut out = Vec::new();
+        run(
+            &args(&["claude", "Stop"]),
+            Some(&environment_for(address)),
+            Box::new(Cursor::new(b"{}".to_vec())),
+            &mut out,
+        );
+        assert_eq!(String::from_utf8(out).unwrap(), "{}\n");
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn a_final_answer_without_a_hold_returns_at_once() {
+        let address = serve_once(|mut stream, request| {
+            reply(
+                &mut stream,
+                &request,
+                json!({ "accepted": true, "decision": { "behavior": "deny", "message": "no" } }),
+            );
+        });
+        let started = Instant::now();
+        let output = run_permission(address);
+        assert!(started.elapsed() < Duration::from_secs(2));
+        let value: Value = serde_json::from_str(output.trim()).unwrap();
+        assert_eq!(value["hookSpecificOutput"]["decision"]["message"], "no");
     }
 }
