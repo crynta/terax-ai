@@ -21,6 +21,7 @@ pub enum GitError {
     AuthRequired(String),
     HostKeyUnverified,
     TimedOut(&'static str),
+    CommitTimedOut,
     EmptyCommitMessage,
     CommandFailed {
         context: &'static str,
@@ -78,6 +79,11 @@ impl Display for GitError {
                 "host key verification failed. Run the command once in the terminal to trust the host."
             ),
             GitError::TimedOut(op) => write!(f, "{op} timed out"),
+            GitError::CommitTimedOut => write!(
+                f,
+                "git commit timed out: the commit hooks did not finish in time. \
+                 If git reports the repository's index.lock exists, make sure no git process is running and remove that file."
+            ),
             GitError::EmptyCommitMessage => write!(f, "commit message cannot be empty"),
             GitError::CommandFailed { context, detail } => {
                 if detail.is_empty() {
@@ -161,6 +167,13 @@ mod tests {
             GitError::TimedOut("git fetch").to_string(),
             "git fetch timed out"
         );
+    }
+
+    #[test]
+    fn commit_timed_out_mentions_hooks_and_index_lock() {
+        let msg = GitError::CommitTimedOut.to_string();
+        assert!(msg.contains("commit hooks did not finish in time"));
+        assert!(msg.contains("index.lock"));
     }
 
     #[test]

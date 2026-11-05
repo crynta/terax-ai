@@ -10,7 +10,8 @@ use crate::modules::git::process::{
 use crate::modules::git::types::{
     DiscardEntry, GitBranchEntry, GitBranchListResult, GitCommitFileChange, GitCommitResult,
     GitDiffContentResult, GitDiffResult, GitLogEntry, GitOutput, GitPanelSnapshot, GitPushResult,
-    GitRepoInfo, GitStatusSnapshot, TextSource, DEFAULT_TIMEOUT_SECS, NETWORK_TIMEOUT_SECS,
+    GitRepoInfo, GitStatusSnapshot, TextSource, COMMIT_TIMEOUT_SECS, DEFAULT_TIMEOUT_SECS,
+    NETWORK_TIMEOUT_SECS,
 };
 use crate::modules::git::untracked;
 use crate::modules::git::utils::{
@@ -443,12 +444,9 @@ pub fn commit(
         &repo_root.workspace,
         Some(&repo_root.git_path),
         [OsStr::new("commit"), OsStr::new("-m"), OsStr::new(trimmed)],
-        DEFAULT_TIMEOUT_SECS,
+        COMMIT_TIMEOUT_SECS,
     )?;
-    if output.exit_code != Some(0) && nothing_to_commit(&output) {
-        return Err(GitError::command("git commit", "nothing staged"));
-    }
-    ensure_success(&output, "git commit failed")?;
+    ensure_commit_success(&output)?;
 
     let combined = git_stdout_lines(
         &repo_root.workspace,
@@ -983,6 +981,16 @@ pub fn pull_ff_only(
     ensure_success(&output, "git pull --ff-only failed")
 }
 
+fn ensure_commit_success(output: &GitOutput) -> Result<()> {
+    if output.timed_out {
+        return Err(GitError::CommitTimedOut);
+    }
+    if output.exit_code != Some(0) && nothing_to_commit(output) {
+        return Err(GitError::command("git commit", "nothing staged"));
+    }
+    ensure_success(output, "git commit failed")
+}
+
 fn nothing_to_commit(output: &GitOutput) -> bool {
     let stderr = String::from_utf8_lossy(&output.stderr).to_ascii_lowercase();
     let stdout = String::from_utf8_lossy(&output.stdout).to_ascii_lowercase();
@@ -1182,6 +1190,43 @@ pub fn checkout_branch(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn commit_timeout_covers_slow_hooks() {
+        const { assert!(COMMIT_TIMEOUT_SECS > DEFAULT_TIMEOUT_SECS) };
+        assert_eq!(
+            COMMIT_TIMEOUT_SECS,
+            crate::modules::git::types::MAX_TIMEOUT_SECS
+        );
+    }
+
+    #[test]
+    fn ensure_commit_success_maps_timeout_to_hooks_error() {
+        let out = GitOutput {
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+            exit_code: None,
+            timed_out: true,
+            truncated: false,
+        };
+        assert!(matches!(
+            ensure_commit_success(&out),
+            Err(GitError::CommitTimedOut)
+        ));
+    }
+
+    #[test]
+    fn ensure_commit_success_keeps_nothing_staged_mapping() {
+        let out = GitOutput {
+            stdout: b"nothing to commit, working tree clean".to_vec(),
+            stderr: Vec::new(),
+            exit_code: Some(1),
+            timed_out: false,
+            truncated: false,
+        };
+        let err = ensure_commit_success(&out).unwrap_err();
+        assert_eq!(err.to_string(), "git commit: nothing staged");
+    }
 
     #[test]
     fn sha_is_safe_accepts_hex() {
