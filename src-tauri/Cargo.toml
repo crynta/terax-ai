@@ -94,7 +94,7 @@ keyring = { version = "3.6", default-features = false, features = [
 ] }
 objc2 = { version = "0.6", features = ["exception"] }
 block2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSColor", "NSPasteboard", "NSPasteboardItem", "NSWindow", "NSWorkspace"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSColor", "NSPasteboard", "NSPasteboardItem", "NSWindow", "NSWorkspace", "NSEvent", "NSResponder"] }
 objc2-foundation = { version = "0.3", features = ["NSArray", "NSURL", "NSString", "NSUserDefaults", "NSValue"] }
 fsevent-sys = "4.1"
 window-vibrancy = "0.6"

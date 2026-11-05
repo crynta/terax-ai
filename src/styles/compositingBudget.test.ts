@@ -47,6 +47,10 @@ const ALLOWED: Record<string, { allows: string[]; why: string }> = {
     allows: ["backdrop filter"],
     why: "plan review overlay, mounted only during a review",
   },
+  "modules/voice/VoiceHud.tsx": {
+    allows: ["backdrop filter"],
+    why: "dictation pill, renders nothing while idle",
+  },
   "modules/editor/lib/chromeTheme.ts": {
     allows: ["backdrop filter"],
     why: "CodeMirror tooltip, exists only while shown",
