@@ -41,7 +41,7 @@ export type FileHit = {
 };
 
 /** A recent file at the front of the list can outbid this share of the top score. */
-export const RECENT_BOOST = 0.3;
+const RECENT_BOOST = 0.3;
 
 /**
  * Re-ranks search hits so recently opened files float up. The boost is a share
