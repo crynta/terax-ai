@@ -115,6 +115,29 @@ describe("planLinkActivation", () => {
     });
   });
 
+  it("never turns an escaped slash into a network or device path", () => {
+    for (const uri of [
+      "file:///%2Fattacker/share/a.txt",
+      "file:///%5C%5Cattacker%5Cshare%5Ca.txt",
+      "file:///%2F%5Cattacker/share",
+      "file:///%5C%2Fattacker/share",
+      "file://localhost//attacker/share/a.txt",
+      "file:///%5C%5C%3F%5CUNC%5Cattacker%5Cshare",
+      "file:///%5C%5C.%5Cpipe%5Cx",
+      "file:///tmp/%0Ax",
+    ]) {
+      expect(planLinkActivation(hit(uri)), uri).toMatchObject({
+        type: "block",
+        reason: "invalid",
+      });
+    }
+    // Escaped slashes inside a name stay local.
+    expect(planLinkActivation(hit("file:///tmp/a%2Fb"))).toMatchObject({
+      type: "file-uri",
+      path: "/tmp/a/b",
+    });
+  });
+
   it("hands paths to the file system resolver", () => {
     expect(
       planLinkActivation({

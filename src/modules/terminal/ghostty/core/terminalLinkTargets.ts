@@ -92,7 +92,12 @@ function fileUrlToLocal(
   } catch {
     return null;
   }
-  if (path.includes("\0") || path.length <= 1) return null;
+  if (path.length <= 1 || CONTROL_CHARACTERS.test(path)) return null;
+  // An escaped slash can turn an empty-host URL into a network path
+  // (file:///%2Fserver/share is //server/share), and on Windows opening it
+  // would reach out to that server. UNC and device prefixes, in any mix of
+  // slashes and backslashes, are never local.
+  if (/^[\\/]{2}/.test(path)) return null;
   if (/^\/[A-Za-z]:(?:\/|$)/.test(path)) path = path.slice(1);
   return { host: parsed.hostname, path };
 }
