@@ -10,7 +10,7 @@ export {
   type ShortcutHandlers,
 } from "./lib/useGlobalShortcuts";
 export { useShortcutHint, useShortcutLabel } from "./lib/useShortcutLabel";
-export { shortcutHint, shortcutLabel } from "./lib/shortcutLabel";
+export { shortcutLabel } from "./lib/shortcutLabel";
 export {
   shouldDisableAskSelection,
   shouldDisablePaneSwapShortcut,

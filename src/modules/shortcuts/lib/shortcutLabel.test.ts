@@ -11,7 +11,7 @@ vi.mock("@/modules/settings/preferences", () => ({
   },
 }));
 
-import { shortcutHint, shortcutLabel } from "./shortcutLabel";
+import { labelToHint, shortcutLabel } from "./shortcutLabel";
 
 beforeEach(() => {
   prefsMock.shortcuts = {};
@@ -32,18 +32,20 @@ describe("shortcutLabel", () => {
   });
 });
 
-describe("shortcutHint", () => {
+describe("labelToHint", () => {
   it("spells the binding that fires, inline", () => {
-    expect(shortcutHint("tab.new")).toBe("Ctrl+Shift+T");
-    expect(shortcutHint("tab.newPreview")).toBe("Ctrl+Shift+`");
-    expect(shortcutHint("terminal.toggleInput")).toBe("Ctrl+Shift+Y");
-    expect(shortcutHint("tab.selectByIndex")).toBe("Ctrl+Shift+1");
+    const hint = (id: Parameters<typeof shortcutLabel>[0]) =>
+      labelToHint(shortcutLabel(id));
+    expect(hint("tab.new")).toBe("Ctrl+Shift+T");
+    expect(hint("tab.newPreview")).toBe("Ctrl+Shift+`");
+    expect(hint("terminal.toggleInput")).toBe("Ctrl+Shift+Y");
+    expect(hint("tab.selectByIndex")).toBe("Ctrl+Shift+1");
   });
 
   it("follows a user override", () => {
     prefsMock.shortcuts = {
       "tab.new": [{ ctrl: true, alt: true, key: "PageDown" }],
     };
-    expect(shortcutHint("tab.new")).toBe("Ctrl+Alt+PageDown");
+    expect(labelToHint(shortcutLabel("tab.new"))).toBe("Ctrl+Alt+PageDown");
   });
 });

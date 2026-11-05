@@ -12,7 +12,7 @@ export function shortcutLabel(id: ShortcutId): string {
   return getBindingTokens(bindings?.[0]).join(" ");
 }
 
-/** A shortcut as it reads inline (`Ctrl+Shift+T`, `⇧⌘T`): the binding that fires. */
-export function shortcutHint(id: ShortcutId): string {
-  return fmtShortcut(...shortcutLabel(id).split(" ").filter(Boolean));
+/** A label as it reads inline: `Ctrl+Shift+T`, `⇧⌘T`. */
+export function labelToHint(label: string): string {
+  return fmtShortcut(...label.split(" ").filter(Boolean));
 }
