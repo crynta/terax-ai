@@ -321,18 +321,40 @@ mod unix {
         Ok(cmd)
     }
 
+    /// What the child zsh gets as `TERAX_USER_ZDOTDIR`.
+    #[derive(Debug, PartialEq, Eq)]
+    enum UserZdotdir {
+        /// The inherited `ZDOTDIR` is the user's own.
+        Set(String),
+        /// This app was started from a zsh that Terax integrated: `ZDOTDIR` is
+        /// the integration directory and the inherited variable still names
+        /// the user's.
+        Keep,
+        /// No `ZDOTDIR`: a left-over value must not outlive what it described.
+        Clear,
+    }
+
+    fn user_zdotdir_for(inherited_zdotdir: Option<&str>, integration: &Path) -> UserZdotdir {
+        match inherited_zdotdir.filter(|value| !value.is_empty()) {
+            Some(user) if Path::new(user) != integration => UserZdotdir::Set(user.to_string()),
+            Some(_) => UserZdotdir::Keep,
+            None => UserZdotdir::Clear,
+        }
+    }
+
     fn apply_shell_init(cmd: &mut CommandBuilder, shell: &Shell, shell_path: &str) {
         match shell {
             Shell::Zsh => {
                 match prepare_zdotdir() {
                     Ok(zdotdir) => {
-                        // Guard against Terax-in-Terax :) A value left over
-                        // from the terminal this app was started in must not
-                        // outlive the ZDOTDIR it described.
-                        cmd.env_remove("TERAX_USER_ZDOTDIR");
-                        if let Ok(user_zd) = std::env::var("ZDOTDIR") {
-                            if !user_zd.is_empty() && Path::new(&user_zd) != zdotdir.as_path() {
-                                cmd.env("TERAX_USER_ZDOTDIR", user_zd);
+                        // Guard against Terax-in-Terax :)
+                        match user_zdotdir_for(std::env::var("ZDOTDIR").ok().as_deref(), &zdotdir) {
+                            UserZdotdir::Set(user) => {
+                                cmd.env("TERAX_USER_ZDOTDIR", user);
+                            }
+                            UserZdotdir::Keep => {}
+                            UserZdotdir::Clear => {
+                                cmd.env_remove("TERAX_USER_ZDOTDIR");
                             }
                         }
                         cmd.env("ZDOTDIR", &zdotdir);
@@ -467,6 +489,23 @@ mod unix {
             let (_, fallback) = Shell::resolve(Some("   ".into()));
             let (_, detected) = Shell::detect();
             assert_eq!(fallback, detected);
+        }
+
+        #[test]
+        fn the_users_zdotdir_survives_a_terax_started_from_an_integrated_zsh() {
+            let integration = Path::new("/cache/terax/shell-integration/zsh");
+            assert_eq!(
+                user_zdotdir_for(Some("/home/me/.config/zsh"), integration),
+                UserZdotdir::Set("/home/me/.config/zsh".into())
+            );
+            // Launched by a command in another Terax terminal: keep the
+            // TERAX_USER_ZDOTDIR it inherited.
+            assert_eq!(
+                user_zdotdir_for(Some("/cache/terax/shell-integration/zsh"), integration),
+                UserZdotdir::Keep
+            );
+            assert_eq!(user_zdotdir_for(None, integration), UserZdotdir::Clear);
+            assert_eq!(user_zdotdir_for(Some(""), integration), UserZdotdir::Clear);
         }
 
         #[test]
