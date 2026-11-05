@@ -224,8 +224,9 @@ describe("text input traces", () => {
   });
 
   describe("composition anchor", () => {
-    it("moves the input onto the cursor cell for the composition and back", () => {
+    it("moves the input onto the cursor cell for the composition and back", async () => {
       h = harness();
+      await vi.dynamicImportSettled();
       h.input.style.left = "0px";
       h.input.style.top = "0px";
       h.input.style.width = "1px";
@@ -242,8 +243,9 @@ describe("text input traces", () => {
       expect(h.input.style.height).toBe("1px");
     });
 
-    it("stays put while the program keeps moving the cursor", () => {
+    it("stays put while the program keeps moving the cursor", async () => {
       h = harness();
+      await vi.dynamicImportSettled();
       h.play([["compositionstart"]]);
       for (let i = 0; i < 20; i++) {
         h.cursor.x = 10 + i;
@@ -254,8 +256,9 @@ describe("text input traces", () => {
       expect(h.input.style.top).toBe("40px");
     });
 
-    it("never rewrites the field while composing", () => {
+    it("never rewrites the field while composing", async () => {
       h = harness({ isMac: true });
+      await vi.dynamicImportSettled();
       h.input.value = "preedit";
       h.input.setSelectionRange(2, 4);
       h.play([["compositionstart"]]);
@@ -270,8 +273,9 @@ describe("text input traces", () => {
       expect(h.input.selectionEnd).toBe(4);
     });
 
-    it("restores the field when focus leaves mid-composition", () => {
+    it("restores the field when focus leaves mid-composition", async () => {
       h = harness();
+      await vi.dynamicImportSettled();
       h.input.style.left = "0px";
       h.play([["compositionstart"]]);
       h.input.dispatchEvent(new Event("blur"));

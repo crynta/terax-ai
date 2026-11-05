@@ -166,7 +166,7 @@ describe("terminalReadlineSequence", () => {
       expect(
         terminalReadlineSequence(event, {
           isMac: true,
-          isAlternateScreen: false,
+          alternateScreen: () => false,
         }),
       ).toBe(sequence);
     },
@@ -178,7 +178,7 @@ describe("terminalReadlineSequence", () => {
       expect(
         terminalReadlineSequence(event, {
           isMac: true,
-          isAlternateScreen: true,
+          alternateScreen: () => true,
         }),
       ).toBe(event.metaKey ? sequence : null);
     },
@@ -188,7 +188,7 @@ describe("terminalReadlineSequence", () => {
     expect(
       terminalReadlineSequence(
         evt({ ctrlKey: true, key: "Backspace", code: "Backspace" }),
-        { isMac: false, isAlternateScreen: true },
+        { isMac: false, alternateScreen: () => true },
       ),
     ).toBeNull();
   });
@@ -196,27 +196,27 @@ describe("terminalReadlineSequence", () => {
 
 describe("Ctrl+Backspace under the Kitty protocol", () => {
   const event = evt({ ctrlKey: true, key: "Backspace", code: "Backspace" });
-  const opts = { isMac: false, isAlternateScreen: false };
+  const opts = { isMac: false, alternateScreen: () => false };
 
   it("kills a word outside the protocol and leaves the key to the encoder inside it", () => {
     expect(terminalReadlineSequence(event, opts)).toBe("\x17");
     expect(
-      terminalReadlineSequence(event, { ...opts, kittyKeys: () => false }),
+      terminalReadlineSequence(event, { ...opts, kittyFlags: () => 0 }),
     ).toBe("\x17");
     expect(
-      terminalReadlineSequence(event, { ...opts, kittyKeys: () => true }),
+      terminalReadlineSequence(event, { ...opts, kittyFlags: () => 1 }),
     ).toBeNull();
   });
 
   it("does not ask the application's mode for keys it never remaps", () => {
     let asked = 0;
-    const kittyKeys = () => {
+    const kittyFlags = () => {
       asked += 1;
-      return true;
+      return 1;
     };
     terminalReadlineSequence(evt({ key: "a", code: "KeyA" }), {
       ...opts,
-      kittyKeys,
+      kittyFlags,
     });
     expect(asked).toBe(0);
   });

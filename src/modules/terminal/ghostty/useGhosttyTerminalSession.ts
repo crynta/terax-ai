@@ -31,7 +31,6 @@ import {
 import { getWebGpuTerminalRuntime } from "./gpu/WebGpuTerminalRuntime";
 import { webGpuTerminalRuntimeDiagnostics } from "./gpu/WebGpuTerminalRuntime";
 import { WebGpuTerminalSurface } from "./gpu/WebGpuTerminalSurface";
-import { documentFocusEnv, focusUntilActive } from "./input/focusRetry";
 import { GhosttyInputController } from "./input/GhosttyInputController";
 import { encodeTerminalSubmission } from "./input/terminalInputEncoding";
 import type {
@@ -900,12 +899,25 @@ function focusSessionSurface(
   const blocks = ghosttyBlocks(session.leafId);
   session.cancelFocusRetry?.();
   session.cancelFocusRetry = null;
-  if (blocks?.getMode() === "prompt" && blocks.focus) blocks.focus();
-  else if (surface)
-    session.cancelFocusRetry = focusUntilActive(
-      () => surface.focus(),
-      documentFocusEnv(surface.inputElement()),
-    );
+  if (blocks?.getMode() === "prompt" && blocks.focus) {
+    blocks.focus();
+    return;
+  }
+  if (!surface) return;
+  surface.focus();
+  const input = surface.inputElement();
+  if (document.activeElement === input) return;
+  // A refused focus (a hidden layer, an activating window) is retried, from a
+  // chunk that only loads when it happens.
+  let cancel: (() => void) | undefined;
+  let cancelled = false;
+  session.cancelFocusRetry = () => {
+    cancelled = true;
+    cancel?.();
+  };
+  void import("./input/focusRetry").then(({ focusUntilActive }) => {
+    if (!cancelled) cancel = focusUntilActive(input, () => surface.focus());
+  });
 }
 
 function applyBlockInputMode(

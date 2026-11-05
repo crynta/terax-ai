@@ -19,7 +19,8 @@ describe("coerceMacOptionAsAlt", () => {
 });
 
 describe("optionActsAsMeta", () => {
-  const held = (left: boolean, right: boolean) => ({ left, right });
+  const held = (left: boolean, right: boolean) =>
+    (left ? 1 : 0) | (right ? 2 : 0);
 
   it.each([
     ["off", held(true, true), false],

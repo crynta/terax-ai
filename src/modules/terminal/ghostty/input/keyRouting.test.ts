@@ -4,8 +4,7 @@ import {
   buildKeyEvent,
   canonicalKittyPress,
   ignoredForIme,
-  isCopyShortcut,
-  isPasteShortcut,
+  clipboardShortcut,
   type KeyboardLike,
   type KeyContext,
   keyModifiers,
@@ -194,7 +193,9 @@ describe("clipboard shortcuts", () => {
     ["Ctrl+Alt+V (AltGr) is not a paste", windows, "KeyV", "CA", false],
     ["Insert alone", windows, "Insert", "", false],
   ] as const)("paste: %s", (_name, platform, code, mods, expected) => {
-    expect(isPasteShortcut(event(code, mods), platform)).toBe(expected);
+    expect(clipboardShortcut(event(code, mods), platform)).toBe(
+      expected ? "paste" : null,
+    );
   });
 
   it.each([
@@ -207,7 +208,9 @@ describe("clipboard shortcuts", () => {
     ["Ctrl+Insert on Linux", linux, "Insert", "C", true],
     ["Ctrl+Shift+Insert", linux, "Insert", "CS", false],
   ] as const)("copy: %s", (_name, platform, code, mods, expected) => {
-    expect(isCopyShortcut(event(code, mods), platform)).toBe(expected);
+    expect(clipboardShortcut(event(code, mods), platform)).toBe(
+      expected ? "copy" : null,
+    );
   });
 });
 
@@ -226,21 +229,25 @@ describe("clipboard shortcuts on other layouts", () => {
 
   it("follows the letter the layout types, not the physical key (Dvorak, Workman)", () => {
     // Dvorak types V where QWERTY has Period, and "." where QWERTY has V.
-    expect(isPasteShortcut(press("v", "Period", "C"), windows)).toBe(true);
-    expect(isPasteShortcut(press("V", "Period", "CS"), linux)).toBe(true);
-    expect(isPasteShortcut(press("v", "Period", "M"), mac)).toBe(true);
-    expect(isCopyShortcut(press("C", "KeyJ", "CS"), linux)).toBe(true);
-    expect(isCopyShortcut(press("c", "KeyJ", "M"), mac)).toBe(true);
-    expect(isPasteShortcut(press(".", "KeyV", "C"), windows)).toBe(false);
-    expect(isPasteShortcut(press(".", "KeyV", "CS"), linux)).toBe(false);
-    expect(isCopyShortcut(press("j", "KeyC", "CS"), linux)).toBe(false);
+    expect(clipboardShortcut(press("v", "Period", "C"), windows)).toBe("paste");
+    expect(clipboardShortcut(press("V", "Period", "CS"), linux)).toBe("paste");
+    expect(clipboardShortcut(press("v", "Period", "M"), mac)).toBe("paste");
+    expect(clipboardShortcut(press("C", "KeyJ", "CS"), linux)).toBe("copy");
+    expect(clipboardShortcut(press("c", "KeyJ", "M"), mac)).toBe("copy");
+    expect(clipboardShortcut(press(".", "KeyV", "C"), windows)).toBeNull();
+    expect(clipboardShortcut(press(".", "KeyV", "CS"), linux)).toBeNull();
+    expect(clipboardShortcut(press("j", "KeyC", "CS"), linux)).toBeNull();
   });
 
   it("falls back to the physical key on layouts without Latin letters", () => {
-    expect(isPasteShortcut(press("\u043c", "KeyV", "C"), windows)).toBe(true);
-    expect(isCopyShortcut(press("\u0441", "KeyC", "CS"), linux)).toBe(true);
-    expect(isPasteShortcut(press("\u043c", "KeyV", "M"), mac)).toBe(true);
-    expect(isPasteShortcut(press("\u043c", "KeyB", "C"), windows)).toBe(false);
+    expect(clipboardShortcut(press("\u043c", "KeyV", "C"), windows)).toBe(
+      "paste",
+    );
+    expect(clipboardShortcut(press("\u0441", "KeyC", "CS"), linux)).toBe(
+      "copy",
+    );
+    expect(clipboardShortcut(press("\u043c", "KeyV", "M"), mac)).toBe("paste");
+    expect(clipboardShortcut(press("\u043c", "KeyB", "C"), windows)).toBeNull();
   });
 });
 

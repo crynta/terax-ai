@@ -1,84 +1,69 @@
-import { describe, expect, it, vi } from "vitest";
-import { type FocusEnv, focusUntilActive } from "./focusRetry";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { focusUntilActive } from "./focusRetry";
 
-function env(over: Partial<FocusEnv> = {}) {
-  const timers: { callback: () => void; ms: number; live: boolean }[] = [];
-  const state = { focused: false, unclaimed: true };
-  const environment: FocusEnv = {
-    isFocused: () => state.focused,
-    isUnclaimed: () => state.unclaimed,
-    setTimeout: (callback, ms) => {
-      const timer = { callback, ms, live: true };
-      timers.push(timer);
-      return timer;
-    },
-    clearTimeout: (handle) => {
-      if (handle) (handle as { live: boolean }).live = false;
-    },
-    ...over,
-  };
-  const fire = () => {
-    const timer = timers.find((candidate) => candidate.live);
-    if (!timer) return false;
-    timer.live = false;
-    timer.callback();
-    return true;
-  };
-  return { environment, state, timers, fire };
+const body = {};
+const target = {} as Element;
+
+function setActive(element: unknown) {
+  (document as { activeElement: unknown }).activeElement = element;
 }
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.stubGlobal("document", { activeElement: body, body });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 describe("focusUntilActive", () => {
   it("focuses once when the first attempt sticks", () => {
-    const { environment, state, timers } = env();
-    const focus = vi.fn(() => {
-      state.focused = true;
-    });
-    focusUntilActive(focus, environment);
+    const focus = vi.fn(() => setActive(target));
+    focusUntilActive(target, focus);
+    vi.runAllTimers();
     expect(focus).toHaveBeenCalledTimes(1);
-    expect(timers).toHaveLength(0);
   });
 
   it("retries on the schedule until the focus lands", () => {
-    const { environment, state, timers, fire } = env();
     let attempts = 0;
     const focus = vi.fn(() => {
       attempts += 1;
-      state.focused = attempts === 3;
+      if (attempts === 3) setActive(target);
     });
-    focusUntilActive(focus, environment);
+    focusUntilActive(target, focus);
     expect(focus).toHaveBeenCalledTimes(1);
-    expect(timers.map((timer) => timer.ms)).toEqual([16]);
-    fire();
+    vi.advanceTimersByTime(15);
+    expect(focus).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
     expect(focus).toHaveBeenCalledTimes(2);
-    fire();
+    vi.advanceTimersByTime(48);
     expect(focus).toHaveBeenCalledTimes(3);
-    expect(fire()).toBe(false);
-    expect(timers.map((timer) => timer.ms)).toEqual([16, 48]);
+    vi.runAllTimers();
+    expect(focus).toHaveBeenCalledTimes(3);
   });
 
   it("gives up after the last delay", () => {
-    const { environment, fire } = env();
     const focus = vi.fn();
-    focusUntilActive(focus, environment, [1, 2]);
-    while (fire());
+    focusUntilActive(target, focus, [1, 2]);
+    vi.runAllTimers();
     expect(focus).toHaveBeenCalledTimes(3);
   });
 
   it("does not take focus from an element the user moved to", () => {
-    const { environment, state, fire } = env();
     const focus = vi.fn();
-    focusUntilActive(focus, environment);
-    state.unclaimed = false;
-    fire();
+    focusUntilActive(target, focus);
+    setActive({});
+    vi.runAllTimers();
     expect(focus).toHaveBeenCalledTimes(1);
   });
 
   it("stops when cancelled", () => {
-    const { environment, fire } = env();
     const focus = vi.fn();
-    const cancel = focusUntilActive(focus, environment);
+    const cancel = focusUntilActive(target, focus);
     cancel();
-    expect(fire()).toBe(false);
+    vi.runAllTimers();
     expect(focus).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,10 +1,5 @@
 /** Which Option key acts as Alt (Meta) on macOS; Ghostty's `macos-option-as-alt`. */
-const MAC_OPTION_AS_ALT_VALUES = [
-  "off",
-  "left",
-  "right",
-  "both",
-] as const;
+const MAC_OPTION_AS_ALT_VALUES = ["off", "left", "right", "both"] as const;
 
 export type MacOptionAsAlt = (typeof MAC_OPTION_AS_ALT_VALUES)[number];
 
@@ -19,19 +14,19 @@ export function coerceMacOptionAsAlt(value: unknown): MacOptionAsAlt {
 
 /**
  * A key event does not say which Option is held, so the controller tracks the
- * two Option keys itself and asks with what it saw.
+ * two Option keys itself (bit 1 left, bit 2 right) and asks with what it saw.
  */
 export function optionActsAsMeta(
   setting: MacOptionAsAlt,
-  held: { readonly left: boolean; readonly right: boolean },
+  held: number,
 ): boolean {
   switch (setting) {
     case "both":
       return true;
     case "left":
-      return held.left;
+      return (held & 1) !== 0;
     case "right":
-      return held.right;
+      return (held & 2) !== 0;
     default:
       return false;
   }

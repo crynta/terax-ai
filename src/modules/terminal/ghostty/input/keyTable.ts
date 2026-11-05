@@ -1,120 +1,42 @@
 import { Key } from "@terax/ghostty-core/protocol";
 
-/** Physical key (`KeyboardEvent.code`) to the Ghostty key it encodes as. */
-export const KEY_MAP: Readonly<Record<string, Key>> = {
-  KeyA: Key.A,
-  KeyB: Key.B,
-  KeyC: Key.C,
-  KeyD: Key.D,
-  KeyE: Key.E,
-  KeyF: Key.F,
-  KeyG: Key.G,
-  KeyH: Key.H,
-  KeyI: Key.I,
-  KeyJ: Key.J,
-  KeyK: Key.K,
-  KeyL: Key.L,
-  KeyM: Key.M,
-  KeyN: Key.N,
-  KeyO: Key.O,
-  KeyP: Key.P,
-  KeyQ: Key.Q,
-  KeyR: Key.R,
-  KeyS: Key.S,
-  KeyT: Key.T,
-  KeyU: Key.U,
-  KeyV: Key.V,
-  KeyW: Key.W,
-  KeyX: Key.X,
-  KeyY: Key.Y,
-  KeyZ: Key.Z,
-  Digit0: Key.ZERO,
-  Digit1: Key.ONE,
-  Digit2: Key.TWO,
-  Digit3: Key.THREE,
-  Digit4: Key.FOUR,
-  Digit5: Key.FIVE,
-  Digit6: Key.SIX,
-  Digit7: Key.SEVEN,
-  Digit8: Key.EIGHT,
-  Digit9: Key.NINE,
-  Backquote: Key.GRAVE,
-  Backslash: Key.BACKSLASH,
-  BracketLeft: Key.BRACKET_LEFT,
-  BracketRight: Key.BRACKET_RIGHT,
-  Comma: Key.COMMA,
-  Equal: Key.EQUAL,
-  IntlBackslash: Key.INTL_BACKSLASH,
-  Minus: Key.MINUS,
-  Period: Key.PERIOD,
-  Quote: Key.QUOTE,
-  Semicolon: Key.SEMICOLON,
-  Slash: Key.SLASH,
-  Backspace: Key.BACKSPACE,
-  Enter: Key.ENTER,
-  Space: Key.SPACE,
-  Tab: Key.TAB,
-  Delete: Key.DELETE,
-  End: Key.END,
-  Home: Key.HOME,
-  Insert: Key.INSERT,
-  PageDown: Key.PAGE_DOWN,
-  PageUp: Key.PAGE_UP,
-  ArrowDown: Key.DOWN,
-  ArrowLeft: Key.LEFT,
-  ArrowRight: Key.RIGHT,
-  ArrowUp: Key.UP,
-  Escape: Key.ESCAPE,
-  F1: Key.F1,
-  F2: Key.F2,
-  F3: Key.F3,
-  F4: Key.F4,
-  F5: Key.F5,
-  F6: Key.F6,
-  F7: Key.F7,
-  F8: Key.F8,
-  F9: Key.F9,
-  F10: Key.F10,
-  F11: Key.F11,
-  F12: Key.F12,
-  F13: Key.F13,
-  F14: Key.F14,
-  F15: Key.F15,
-  F16: Key.F16,
-  F17: Key.F17,
-  F18: Key.F18,
-  F19: Key.F19,
-  F20: Key.F20,
-  F21: Key.F21,
-  F22: Key.F22,
-  F23: Key.F23,
-  F24: Key.F24,
-  Numpad0: Key.KP_0,
-  Numpad1: Key.KP_1,
-  Numpad2: Key.KP_2,
-  Numpad3: Key.KP_3,
-  Numpad4: Key.KP_4,
-  Numpad5: Key.KP_5,
-  Numpad6: Key.KP_6,
-  Numpad7: Key.KP_7,
-  Numpad8: Key.KP_8,
-  Numpad9: Key.KP_9,
-  NumpadAdd: Key.KP_PLUS,
-  NumpadDecimal: Key.KP_PERIOD,
-  NumpadDivide: Key.KP_DIVIDE,
-  NumpadEnter: Key.KP_ENTER,
-  NumpadEqual: Key.KP_EQUAL,
-  NumpadMultiply: Key.KP_MULTIPLY,
-  NumpadSubtract: Key.KP_MINUS,
-  AltLeft: Key.ALT_LEFT,
-  AltRight: Key.ALT_RIGHT,
-  ControlLeft: Key.CONTROL_LEFT,
-  ControlRight: Key.CONTROL_RIGHT,
-  MetaLeft: Key.META_LEFT,
-  MetaRight: Key.META_RIGHT,
-  ShiftLeft: Key.SHIFT_LEFT,
-  ShiftRight: Key.SHIFT_RIGHT,
-};
+/**
+ * Physical key (`KeyboardEvent.code`) to the Ghostty key it encodes as. Most
+ * codes are the enum name in camel case (`PageDown` is `PAGE_DOWN`); the few
+ * that are not are spelled out, and the runs follow the enum's order (A to Z,
+ * ZERO to NINE, KP_0 to KP_9, F1 to F24). keyTable.test.ts pins every entry.
+ */
+export const KEY_MAP: Readonly<Record<string, Key>> = (() => {
+  const named = Key as unknown as Record<string, Key>;
+  const keys: Record<string, Key> = {
+    Backquote: Key.GRAVE,
+    ArrowDown: Key.DOWN,
+    ArrowLeft: Key.LEFT,
+    ArrowRight: Key.RIGHT,
+    ArrowUp: Key.UP,
+    NumpadAdd: Key.KP_PLUS,
+    NumpadDecimal: Key.KP_PERIOD,
+    NumpadSubtract: Key.KP_MINUS,
+  };
+  for (const code of `Backslash BracketLeft BracketRight Comma Equal IntlBackslash Minus Period Quote Semicolon Slash Backspace Enter Space Tab Delete End Home Insert PageDown PageUp Escape AltLeft AltRight ControlLeft ControlRight MetaLeft MetaRight ShiftLeft ShiftRight NumpadDivide NumpadEnter NumpadEqual NumpadMultiply`.split(
+    " ",
+  ))
+    keys[code] =
+      named[
+        code
+          .replace("Numpad", "KP_")
+          .replace(/([a-z])([A-Z])/g, "$1_$2")
+          .toUpperCase()
+      ];
+  for (let i = 0; i < 26; i++)
+    keys[`Key${String.fromCharCode(65 + i)}`] = Key.A + i;
+  for (let i = 0; i < 10; i++) {
+    keys[`Digit${i}`] = Key.ZERO + i;
+    keys[`Numpad${i}`] = Key.KP_0 + i;
+  }
+  for (let i = 0; i < 24; i++) keys[`F${i + 1}`] = Key.F1 + i;
+  return keys;
+})();
 
 /** US-layout `[unshifted, shifted]` characters of the punctuation keys. */
 const SYMBOL_PAIRS: Readonly<Record<string, string>> = {

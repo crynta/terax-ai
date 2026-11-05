@@ -4,10 +4,8 @@ import { Key, Mods } from "@terax/ghostty-core";
 import { TeraxGhostty } from "@terax/ghostty-core/adapted";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeElement, FakeTextArea } from "./fakeTextArea";
-import {
-  GhosttyInputController,
-  terminalMouseModifiers,
-} from "./GhosttyInputController";
+import { GhosttyInputController } from "./GhosttyInputController";
+import { terminalMouseModifiers } from "./TerminalMouse";
 import { MAX_WHEEL_REPORTS_PER_EVENT } from "./terminalWheel";
 
 describe("terminalMouseModifiers", () => {
@@ -34,8 +32,9 @@ describe("GhosttyInputController", () => {
     const UP = "\x1b[<64;1;1M";
     const DOWN = "\x1b[<65;1;1M";
 
-    beforeEach(() => {
+    beforeEach(async () => {
       h = wheelHarness();
+      await vi.dynamicImportSettled();
     });
 
     afterEach(() => {
@@ -908,7 +907,7 @@ describe("GhosttyInputController", () => {
     controller.dispose();
   });
 
-  it("reports the cell that is drawn under the pointer while the grid is shifted up", () => {
+  it("reports the cell that is drawn under the pointer while the grid is shifted up", async () => {
     const input = new FakeTextArea();
     const pointerTarget = new FakeElement();
     const onData = vi.fn();
@@ -923,6 +922,7 @@ describe("GhosttyInputController", () => {
       onCopy: () => false,
       isMac: false,
     });
+    await vi.dynamicImportSettled();
     const report = (clientY: number) => {
       onData.mockClear();
       pointerTarget.dispatchEvent(
@@ -937,7 +937,7 @@ describe("GhosttyInputController", () => {
     controller.dispose();
   });
 
-  it("deduplicates identical mouse-motion reports within a cell", () => {
+  it("deduplicates identical mouse-motion reports within a cell", async () => {
     const input = new FakeTextArea();
     const pointerTarget = new FakeElement();
     const onData = vi.fn();
@@ -950,6 +950,7 @@ describe("GhosttyInputController", () => {
       onCopy: () => false,
       isMac: false,
     });
+    await vi.dynamicImportSettled();
 
     for (let index = 0; index < 2; index += 1) {
       pointerTarget.dispatchEvent(

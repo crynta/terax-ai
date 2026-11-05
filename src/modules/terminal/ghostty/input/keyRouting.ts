@@ -78,19 +78,8 @@ const LEGACY_CONTROL: Readonly<Record<string, string>> = {
  * when nothing is being composed, so a 229 only means "IME" for the keys that
  * commit or edit text: Enter, Space, Tab, plain Backspace, Escape and characters.
  */
-const IME_SAFE_KEYS: ReadonlySet<string> = new Set([
-  "ArrowUp",
-  "ArrowDown",
-  "ArrowLeft",
-  "ArrowRight",
-  "Home",
-  "End",
-  "PageUp",
-  "PageDown",
-  "Insert",
-  "Delete",
-  ...Array.from({ length: 24 }, (_, index) => `F${index + 1}`),
-]);
+const IME_SAFE_KEY =
+  /^(Arrow(Up|Down|Left|Right)|Home|End|Page(Up|Down)|Insert|Delete|F([1-9]|1\d|2[0-4]))$/;
 
 /**
  * AltGr types a character through Ctrl+Alt on Windows. Chromium reports it as
@@ -120,7 +109,7 @@ function isOptionMeta(event: KeyboardLike, ctx: KeyContext): boolean {
 /**
  * The event belongs to the IME, the webview or an earlier handler. Dead keys
  * and `Process` are the IME's; keyCode 229 is the IME's only for the keys that
- * can commit or edit text (see {@link IME_SAFE_KEYS}).
+ * can commit or edit text (see {@link IME_SAFE_KEY}).
  */
 export function ignoredForIme(event: KeyboardLike, ctx: KeyContext): boolean {
   if (event.defaultPrevented || ctx.composing() || event.isComposing)
@@ -133,7 +122,7 @@ export function ignoredForIme(event: KeyboardLike, ctx: KeyContext): boolean {
   // Backspace edits a preedit, but Option/Ctrl/Command+Backspace never does.
   const wordDelete =
     key === "Backspace" && (event.altKey || event.ctrlKey || event.metaKey);
-  return !IME_SAFE_KEYS.has(key) && !wordDelete;
+  return !IME_SAFE_KEY.test(key) && !wordDelete;
 }
 
 /** Classifies a key press the IME guard let through. */
@@ -145,20 +134,17 @@ export function routeKeyDown(
   const { key } = event;
   const optionMeta = isOptionMeta(event, ctx);
 
-  if (isPasteShortcut(event, ctx))
+  const clipboard = clipboardShortcut(event, ctx);
+  if (clipboard === "paste")
     return ctx.isWindows &&
       event.ctrlKey &&
       !event.shiftKey &&
       isLayoutKey(event, "v")
       ? PASTE_OR_KEY
       : PASTE;
-  if (!skipCopy && isCopyShortcut(event, ctx)) return COPY;
+  if (!skipCopy && clipboard === "copy") return COPY;
 
-  const readline = terminalReadlineSequence(event, {
-    isMac: ctx.isMac,
-    isAlternateScreen: ctx.alternateScreen(),
-    kittyKeys: () => ctx.kittyFlags() !== 0,
-  });
+  const readline = terminalReadlineSequence(event, ctx);
   if (readline) return { kind: "bytes", text: readline };
 
   // Unclaimed Command shortcuts belong to the native menu, even in Kitty mode.
@@ -197,7 +183,7 @@ export function routeKeyDown(
   ) {
     const letter = layoutLetter(event);
     if (letter !== null)
-      return isCopyShortcut(event, ctx)
+      return clipboard === "copy"
         ? IGNORE
         : {
             kind: "bytes",
@@ -294,35 +280,18 @@ export function keyModifiers(event: KeyboardLike, kittyFlags: number): Mods {
  */
 export function canonicalKittyPress(bytes: Uint8Array): Uint8Array {
   const length = bytes.byteLength;
-  if (length < 7 || length > 16 || bytes[0] !== 0x1b || bytes[1] !== 0x5b)
-    return bytes;
-  if (bytes[length - 2] !== 0x31 || bytes[length - 3] !== 0x3a) return bytes;
-  const final = bytes[length - 1];
-  const isLetter = (final >= 0x41 && final <= 0x5a) || final === 0x7e;
-  if (!isLetter) return bytes;
-  let separator = -1;
-  for (let index = 2; index < length - 3; index++) {
-    const byte = bytes[index];
-    if (byte === 0x3b) {
-      if (separator !== -1) return bytes;
-      separator = index;
-    } else if (byte < 0x30 || byte > 0x39) return bytes;
-  }
-  if (separator === -1 || separator === length - 4) return bytes;
-  const modifiersAreDefault =
-    separator === length - 5 && bytes[separator + 1] === 0x31;
-  const keyIsDefault = separator === 3 && bytes[2] === 0x31;
-  const out: number[] = [0x1b, 0x5b];
-  if (!(modifiersAreDefault && keyIsDefault && final !== 0x7e)) {
-    for (let index = 2; index < separator; index++) out.push(bytes[index]);
-    if (!modifiersAreDefault) {
-      out.push(0x3b);
-      for (let index = separator + 1; index < length - 3; index++)
-        out.push(bytes[index]);
-    }
-  }
-  out.push(final);
-  return Uint8Array.from(out);
+  if (length < 7 || length > 16 || bytes[length - 2] !== 0x31) return bytes;
+  const match = /^\x1b\[(\d+);(\d+):1([A-Z~])$/.exec(
+    String.fromCharCode(...bytes),
+  );
+  if (!match) return bytes;
+  const [, key, modifiers, final] = match;
+  const tail = modifiers === "1" ? "" : `;${modifiers}`;
+  const text =
+    key === "1" && !tail && final !== "~"
+      ? `\x1b[${final}`
+      : `\x1b[${key}${tail}${final}`;
+  return Uint8Array.from(text, (character) => character.charCodeAt(0));
 }
 
 /**
@@ -352,43 +321,34 @@ function layoutLetter(
 const isInsert = (event: Pick<KeyboardEvent, "key" | "code">): boolean =>
   event.key === "Insert" || event.code === "Insert";
 
-export function isPasteShortcut(
-  event: Pick<
-    KeyboardEvent,
-    "ctrlKey" | "shiftKey" | "altKey" | "metaKey" | "key" | "code"
-  >,
-  platform: Pick<KeyContext, "isMac" | "isWindows">,
-): boolean {
-  if (platform.isMac) {
-    return (
-      event.metaKey &&
-      !event.ctrlKey &&
-      !event.altKey &&
-      isLayoutKey(event, "v")
-    );
-  }
-  if (event.altKey || event.metaKey) return false;
-  if (isInsert(event)) return event.shiftKey && !event.ctrlKey;
-  if (!event.ctrlKey || !isLayoutKey(event, "v")) return false;
-  return platform.isWindows || event.shiftKey;
-}
+type ClipboardKey = Pick<
+  KeyboardEvent,
+  "ctrlKey" | "shiftKey" | "altKey" | "metaKey" | "key" | "code"
+>;
 
-export function isCopyShortcut(
-  event: Pick<
-    KeyboardEvent,
-    "ctrlKey" | "shiftKey" | "altKey" | "metaKey" | "key" | "code"
-  >,
-  platform: Pick<KeyContext, "isMac">,
-): boolean {
+/**
+ * The clipboard chord of the platform: Command+C/V on macOS; Ctrl+Shift+C/V,
+ * Ctrl+Insert (copy) and Shift+Insert (paste) elsewhere, and plain Ctrl+V on
+ * Windows. Ctrl+C stays an interrupt everywhere.
+ */
+export function clipboardShortcut(
+  event: ClipboardKey,
+  platform: Pick<KeyContext, "isMac" | "isWindows">,
+): "copy" | "paste" | null {
+  const { ctrlKey, shiftKey, altKey, metaKey } = event;
   if (platform.isMac) {
-    return (
-      event.metaKey &&
-      !event.ctrlKey &&
-      !event.altKey &&
-      isLayoutKey(event, "c")
-    );
+    if (!metaKey || ctrlKey || altKey) return null;
+    return isLayoutKey(event, "v")
+      ? "paste"
+      : isLayoutKey(event, "c")
+        ? "copy"
+        : null;
   }
-  if (event.altKey || event.metaKey || !event.ctrlKey) return false;
-  if (isInsert(event)) return !event.shiftKey;
-  return event.shiftKey && isLayoutKey(event, "c");
+  if (altKey || metaKey) return null;
+  if (isInsert(event))
+    return ctrlKey ? (shiftKey ? null : "copy") : shiftKey ? "paste" : null;
+  if (!ctrlKey) return null;
+  if (isLayoutKey(event, "v"))
+    return platform.isWindows || shiftKey ? "paste" : null;
+  return shiftKey && isLayoutKey(event, "c") ? "copy" : null;
 }

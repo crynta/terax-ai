@@ -35,7 +35,7 @@ export function terminalLineNavigationSequence(
  */
 export function terminalDeleteSequence(
   event: TerminalKeyEvent,
-  opts: PlatformOpts & { kittyKeys?: () => boolean },
+  opts: PlatformOpts & { kittyFlags?: () => number },
 ): string | null {
   if (event.key !== "Backspace" && event.code !== "Backspace") return null;
   if (opts.isMac) {
@@ -44,7 +44,7 @@ export function terminalDeleteSequence(
     return null;
   }
   if (event.ctrlKey && !event.altKey && !event.metaKey)
-    return opts.kittyKeys?.() ? null : "\x17";
+    return opts.kittyFlags?.() ? null : "\x17";
   return null;
 }
 
@@ -57,14 +57,14 @@ export function terminalDeleteSequence(
 export function terminalReadlineSequence(
   event: TerminalKeyEvent,
   opts: PlatformOpts & {
-    isAlternateScreen: boolean;
-    kittyKeys?: () => boolean;
+    alternateScreen: () => boolean;
+    kittyFlags?: () => number;
   },
 ): string | null {
   const command =
     terminalLineNavigationSequence(event, opts) ??
     (event.metaKey ? terminalDeleteSequence(event, opts) : null);
-  if (command || opts.isAlternateScreen) return command;
+  if (command || opts.alternateScreen()) return command;
   return (
     terminalWordNavigationSequence(event) ?? terminalDeleteSequence(event, opts)
   );

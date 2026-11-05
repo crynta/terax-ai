@@ -1,4 +1,5 @@
-import { ImeAnchor } from "@/modules/terminal/ghostty/input/ImeAnchor";
+import type { ImeAnchor } from "@/modules/terminal/ghostty/input/ImeAnchor";
+import type { TerminalMouse } from "@/modules/terminal/ghostty/input/TerminalMouse";
 import { TerminalInputProxy } from "@/modules/terminal/ghostty/input/TerminalInputProxy";
 import { TerminalNativeSelection } from "@/modules/terminal/ghostty/input/TerminalNativeSelection";
 import { readTerminalClipboard } from "@/modules/terminal/lib/terminalClipboard";
@@ -59,19 +60,17 @@ export class GhosttyInputController {
   private readonly encoder = new TextEncoder();
   private readonly isMac: boolean;
   private readonly proxy: TerminalInputProxy;
-  private readonly imeAnchor: ImeAnchor;
+  private imeAnchor: ImeAnchor | null = null;
+  private mouse: TerminalMouse | null = null;
   private readonly nativeSelection: TerminalNativeSelection | null;
   private readonly keyContext: KeyContext;
   private readonly pressedKeys = new Map<string, KeyEvent>();
   private readonly wheel = new WheelAccumulator();
   private composing = false;
-  private optionLeft = false;
-  private optionRight = false;
-  private mouseButtons = 0;
+  private optionKeys = 0;
   private lastData = "";
   private lastSource: InputSource | null = null;
   private lastDataAt = 0;
-  private lastMouseMotion: string | null = null;
   private disposed = false;
 
   constructor(private readonly options: GhosttyInputControllerOptions) {
@@ -84,10 +83,7 @@ export class GhosttyInputController {
       isMac: this.isMac,
       isWindows,
       optionIsMeta: () =>
-        optionActsAsMeta(options.macOptionAsAlt?.() ?? "off", {
-          left: this.optionLeft,
-          right: this.optionRight,
-        }),
+        optionActsAsMeta(options.macOptionAsAlt?.() ?? "off", this.optionKeys),
       composing: () => this.composing,
       alternateScreen: () => options.model.modes().alternateScreen,
       kittyFlags: () => this.kittyFlags(),
@@ -95,9 +91,6 @@ export class GhosttyInputController {
     this.proxy = new TerminalInputProxy(options.input, {
       placeholder: options.inputPlaceholder ?? this.isMac,
     });
-    this.imeAnchor = new ImeAnchor(options.input.style, () =>
-      this.cursorCell(),
-    );
     this.nativeSelection = options.getSelection
       ? new TerminalNativeSelection({
           proxy: this.proxy,
@@ -108,23 +101,25 @@ export class GhosttyInputController {
           isMac: this.isMac,
         })
       : null;
-    options.input.addEventListener("keydown", this.handleKeyDown);
-    options.input.addEventListener("keyup", this.handleKeyUp);
-    options.input.addEventListener("beforeinput", this.handleBeforeInput);
-    options.input.addEventListener(
-      "compositionstart",
-      this.handleCompositionStart,
+    for (const [target, type, listener, listenerOptions] of this.listeners())
+      target.addEventListener(type, listener, listenerOptions);
+    // Cold paths load apart from the keyboard: only composing users need the
+    // anchor and only programs that track the mouse need the reports.
+    void Promise.all([import("./ImeAnchor"), import("./TerminalMouse")]).then(
+      ([{ ImeAnchor }, { TerminalMouse }]) => {
+        if (this.disposed) return;
+        this.imeAnchor = new ImeAnchor(options.input.style, () =>
+          this.cursorCell(),
+        );
+        this.mouse = new TerminalMouse({
+          model: options.model,
+          pointerTarget: options.pointerTarget,
+          cellSize: options.cellSize,
+          gridShiftY: options.gridShiftY,
+          send: (report) => this.emitText(report, "keydown", false, false),
+        });
+      },
     );
-    options.input.addEventListener("compositionend", this.handleCompositionEnd);
-    options.input.addEventListener("paste", this.handlePaste);
-    options.input.addEventListener("focus", this.handleFocus);
-    options.input.addEventListener("blur", this.handleBlur);
-    options.pointerTarget.addEventListener("mousedown", this.handleMouseDown);
-    options.pointerTarget.addEventListener("mouseup", this.handleMouseUp);
-    options.pointerTarget.addEventListener("mousemove", this.handleMouseMove);
-    options.pointerTarget.addEventListener("wheel", this.handleWheel, {
-      passive: false,
-    });
   }
 
   paste(text: string): void {
@@ -141,36 +136,53 @@ export class GhosttyInputController {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    this.imeAnchor.end();
+    this.imeAnchor?.end();
     this.nativeSelection?.dispose();
     this.proxy.dispose();
     this.pressedKeys.clear();
+    for (const [target, type, listener] of this.listeners())
+      target.removeEventListener(type, listener);
+  }
+
+  private listeners(): [
+    EventTarget,
+    string,
+    EventListener,
+    AddEventListenerOptions?,
+  ][] {
     const { input, pointerTarget } = this.options;
-    input.removeEventListener("keydown", this.handleKeyDown);
-    input.removeEventListener("keyup", this.handleKeyUp);
-    input.removeEventListener("beforeinput", this.handleBeforeInput);
-    input.removeEventListener("compositionstart", this.handleCompositionStart);
-    input.removeEventListener("compositionend", this.handleCompositionEnd);
-    input.removeEventListener("paste", this.handlePaste);
-    input.removeEventListener("focus", this.handleFocus);
-    input.removeEventListener("blur", this.handleBlur);
-    pointerTarget.removeEventListener("mousedown", this.handleMouseDown);
-    pointerTarget.removeEventListener("mouseup", this.handleMouseUp);
-    pointerTarget.removeEventListener("mousemove", this.handleMouseMove);
-    pointerTarget.removeEventListener("wheel", this.handleWheel);
+    return [
+      [input, "keydown", this.handleKeyDown as EventListener],
+      [input, "keyup", this.handleKeyUp as EventListener],
+      [input, "beforeinput", this.handleBeforeInput as EventListener],
+      [input, "compositionstart", this.handleCompositionStart],
+      [input, "compositionend", this.handleCompositionEnd as EventListener],
+      [input, "paste", this.handlePaste as EventListener],
+      [input, "focus", this.handleFocus],
+      [input, "blur", this.handleBlur],
+      [pointerTarget, "mousedown", this.handleMouseDown as EventListener],
+      [pointerTarget, "mouseup", this.handleMouseUp as EventListener],
+      [pointerTarget, "mousemove", this.handleMouseMove as EventListener],
+      [
+        pointerTarget,
+        "wheel",
+        this.handleWheel as EventListener,
+        { passive: false },
+      ],
+    ];
   }
 
   private kittyFlags(): number {
     return this.options.model.kittyKeyboardFlags?.() ?? 0;
   }
 
+  /** Which Option keys are held (1 left, 2 right): a key event does not say. */
   private trackOptionKeys(event: KeyboardEvent, down: boolean): void {
-    if (event.code === "AltLeft") this.optionLeft = down;
-    else if (event.code === "AltRight") this.optionRight = down;
-    if (!event.altKey) {
-      this.optionLeft = false;
-      this.optionRight = false;
-    }
+    const bit =
+      event.code === "AltLeft" ? 1 : event.code === "AltRight" ? 2 : 0;
+    if (bit)
+      this.optionKeys = down ? this.optionKeys | bit : this.optionKeys & ~bit;
+    if (!event.altKey) this.optionKeys = 0;
   }
 
   private readonly handleKeyDown = (event: KeyboardEvent): void => {
@@ -298,50 +310,31 @@ export class GhosttyInputController {
 
   private readonly handleBeforeInput = (event: InputEvent): void => {
     if (this.composing || event.isComposing) return;
-    let data: string | null = null;
-    switch (event.inputType) {
-      case "insertText":
-      case "insertReplacementText":
-        data = event.data;
-        break;
-      case "insertLineBreak":
-      case "insertParagraph":
-        data = "\r";
-        break;
-      case "deleteContentBackward":
-        data = "\x7f";
-        break;
-      case "deleteContentForward":
-        data = "\x1b[3~";
-        break;
-      case "insertFromPaste":
-        if (event.data) this.paste(event.data);
-        consume(event);
-        return;
-      default:
-        return;
+    const { inputType } = event;
+    if (inputType === "insertFromPaste") {
+      if (event.data) this.paste(event.data);
+      consume(event);
+      return;
     }
+    const text =
+      inputType === "insertText" || inputType === "insertReplacementText";
+    const data = text
+      ? event.data
+      : (BEFORE_INPUT_BYTES.get(inputType) ?? null);
     if (!data) return;
     consume(event);
-    this.emitText(
-      data,
-      "beforeinput",
-      true,
-      true,
-      event.inputType === "insertText" ||
-        event.inputType === "insertReplacementText",
-    );
+    this.emitText(data, "beforeinput", true, true, text);
     this.proxy.arm();
   };
 
   private readonly handleCompositionStart = (): void => {
     this.composing = true;
-    this.imeAnchor.begin();
+    this.imeAnchor?.begin();
   };
 
   private readonly handleCompositionEnd = (event: CompositionEvent): void => {
     this.composing = false;
-    this.imeAnchor.end();
+    this.imeAnchor?.end();
     if (event.data) this.emitText(event.data, "composition", true, true, true);
     this.proxy.arm();
   };
@@ -361,10 +354,9 @@ export class GhosttyInputController {
 
   private readonly handleBlur = (): void => {
     this.releasePressedKeys();
-    this.optionLeft = false;
-    this.optionRight = false;
+    this.optionKeys = 0;
     this.composing = false;
-    this.imeAnchor.end();
+    this.imeAnchor?.end();
     this.wheel.reset();
     if (this.options.model.modes().focusReporting) {
       this.emitText("\x1b[O", "keydown", false, false);
@@ -388,57 +380,14 @@ export class GhosttyInputController {
     };
   }
 
-  private readonly handleMouseDown = (event: MouseEvent): void => {
-    if (!this.options.model.modes().mouseTracking || event.shiftKey) return;
-    const position = this.mousePosition(event);
-    if (!position) return;
-    this.mouseButtons |= 1 << event.button;
-    this.lastMouseMotion = null;
-    consume(event);
-    this.sendMouse(event.button, position.col, position.row, false, event);
-  };
+  private readonly handleMouseDown = (event: MouseEvent): void =>
+    this.mouse?.button(event, false);
 
-  private readonly handleMouseUp = (event: MouseEvent): void => {
-    if (!this.options.model.modes().mouseTracking || event.shiftKey) return;
-    const position = this.mousePosition(event);
-    if (!position) return;
-    this.mouseButtons &= ~(1 << event.button);
-    this.lastMouseMotion = null;
-    consume(event);
-    this.sendMouse(event.button, position.col, position.row, true, event);
-  };
+  private readonly handleMouseUp = (event: MouseEvent): void =>
+    this.mouse?.button(event, true);
 
-  private readonly handleMouseMove = (event: MouseEvent): void => {
-    if (event.shiftKey) {
-      this.lastMouseMotion = null;
-      return;
-    }
-    const buttonMotion = this.options.model.mode(1002);
-    const anyMotion = this.options.model.mode(1003);
-    if (!anyMotion && (!buttonMotion || this.mouseButtons === 0)) {
-      this.lastMouseMotion = null;
-      return;
-    }
-    const position = this.mousePosition(event);
-    if (!position) return;
-    let button = 32;
-    if ((this.mouseButtons & 1) !== 0) button += 0;
-    else if ((this.mouseButtons & 2) !== 0) button += 1;
-    else if ((this.mouseButtons & 4) !== 0) button += 2;
-    const signature = [
-      button,
-      position.col,
-      position.row,
-      terminalMouseModifiers(event),
-      buttonMotion ? 1 : 0,
-      anyMotion ? 1 : 0,
-      this.options.model.mode(1006) ? 1 : 0,
-    ].join(":");
-    consume(event);
-    if (signature === this.lastMouseMotion) return;
-    this.lastMouseMotion = signature;
-    this.sendMouse(button, position.col, position.row, false, event);
-  };
+  private readonly handleMouseMove = (event: MouseEvent): void =>
+    this.mouse?.move(event);
 
   private readonly handleWheel = (event: WheelEvent): void => {
     if (!Number.isFinite(event.deltaY) || event.deltaY === 0) return;
@@ -486,79 +435,8 @@ export class GhosttyInputController {
       this.emitText(sequence.repeat(times), "keydown", false);
       return;
     }
-    const position = this.mousePosition(event);
-    if (!position) return;
-    this.emitText(
-      this.mouseReport(
-        count < 0 ? 64 : 65,
-        position.col,
-        position.row,
-        false,
-        event,
-      ).repeat(times),
-      "keydown",
-      false,
-      false,
-    );
+    this.mouse?.wheel(event, count < 0, times);
   };
-
-  private mousePosition(
-    event: MouseEvent,
-  ): { col: number; row: number } | null {
-    const rect = this.options.pointerTarget.getBoundingClientRect();
-    const cell = this.options.cellSize();
-    if (cell.width <= 0 || cell.height <= 0) return null;
-    return {
-      col: Math.max(
-        1,
-        Math.min(
-          this.options.model.cols,
-          Math.floor((event.clientX - rect.left) / cell.width) + 1,
-        ),
-      ),
-      row: Math.max(
-        1,
-        Math.min(
-          this.options.model.rows,
-          Math.floor(
-            (event.clientY - rect.top + (this.options.gridShiftY?.() ?? 0)) /
-              cell.height,
-          ) + 1,
-        ),
-      ),
-    };
-  }
-
-  private mouseReport(
-    button: number,
-    col: number,
-    row: number,
-    release: boolean,
-    event: MouseEvent,
-  ): string {
-    const encodedButton = button + terminalMouseModifiers(event);
-    if (this.options.model.mode(1006))
-      return `\x1b[<${encodedButton};${col};${row}${release ? "m" : "M"}`;
-    const legacyButton = release ? 3 : encodedButton;
-    return `\x1b[M${String.fromCharCode(legacyButton + 32)}${String.fromCharCode(
-      Math.min(255, col + 32),
-    )}${String.fromCharCode(Math.min(255, row + 32))}`;
-  }
-
-  private sendMouse(
-    button: number,
-    col: number,
-    row: number,
-    release: boolean,
-    event: MouseEvent,
-  ): void {
-    this.emitText(
-      this.mouseReport(button, col, row, release, event),
-      "keydown",
-      false,
-      false,
-    );
-  }
 
   private emitText(
     data: string,
@@ -594,15 +472,13 @@ export class GhosttyInputController {
   }
 }
 
-export function terminalMouseModifiers(
-  event: Pick<MouseEvent, "altKey" | "ctrlKey" | "shiftKey">,
-): number {
-  let modifiers = 0;
-  if (event.shiftKey) modifiers |= 4;
-  if (event.altKey) modifiers |= 8;
-  if (event.ctrlKey) modifiers |= 16;
-  return modifiers;
-}
+/** What an editing command that reaches the input element means to the PTY. */
+const BEFORE_INPUT_BYTES: ReadonlyMap<string, string> = new Map([
+  ["insertLineBreak", "\r"],
+  ["insertParagraph", "\r"],
+  ["deleteContentBackward", "\x7f"],
+  ["deleteContentForward", "\x1b[3~"],
+]);
 
 function consume(event: Event): void {
   event.preventDefault();
