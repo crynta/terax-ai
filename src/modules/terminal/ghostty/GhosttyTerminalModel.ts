@@ -178,6 +178,13 @@ export interface GhosttyTerminalModelApi extends TerminalModel {
   mode(mode: number, isAnsi?: boolean): boolean;
   setReplySink(sink: ((bytes: Uint8Array) => void) | null): void;
   enableSemanticMarkers?(enabled: boolean): void;
+  /**
+   * Offsets inside each write at which the events parsed so far are delivered,
+   * so a consumer reads the terminal as it was at that point of the stream.
+   */
+  setWriteSplitter?(
+    splitter: ((bytes: Uint8Array) => readonly number[]) | null,
+  ): void;
   semanticMarkerColumn?(id: number): number | null;
   semanticMarkerLine?(id: number): number | null;
   readTextRange?(
@@ -187,6 +194,7 @@ export interface GhosttyTerminalModelApi extends TerminalModel {
     endCol?: number,
   ): string;
   bufferCursorLine?(): number;
+  bufferCursorColumn?(): number;
   readCellLine?(line: number): readonly string[];
   blockSearchActive?(): boolean;
   setBlockSearchMatch?(

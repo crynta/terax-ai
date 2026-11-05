@@ -133,6 +133,71 @@ describe.each(["ghostty-vt", "ghostty-vt-scalar"])(
       }
     });
 
+    it("ends an implicitly closed command where its prompt started, not where the chunk ended", () => {
+      const { blocks, write, dispose } = create();
+      try {
+        write("$ \x1b]133;B\x07\x1b]133;C;long\x07one\r\ntwo\r\n");
+        // One read holds the new prompt and a lot more after it.
+        write(
+          "\x1b]133;A\x07new> \x1b]133;B\x07\r\nlater\r\nlines\r\nof\r\ntext\r\n",
+        );
+        expect(blocks.readById("1")).toMatchObject({
+          exitCode: null,
+          output: "one\ntwo",
+        });
+        const [block] = blocks.visibleBlocks(20).blocks;
+        expect(block.running).toBe(false);
+      } finally {
+        dispose();
+      }
+    });
+
+    it("keeps a last output line that has no newline when its prompt ends the command", () => {
+      const { blocks, write, dispose } = create();
+      try {
+        write("$ \x1b]133;B\x07\r\n\x1b]133;C;printf\x07one\r\nabc");
+        write("\x1b]133;A\x07new> \x1b]133;B\x07\r\nlater\r\n");
+        expect(blocks.readById("1")?.output).toBe("one\nabc");
+        write("\x1b]133;C;bare\x07x");
+        write("\x1b]133;A\x07new> ");
+        expect(blocks.readById("2")?.output).toBe("x");
+      } finally {
+        dispose();
+      }
+    });
+
+    it("resolves each event of a chunk at the point where it was parsed", () => {
+      const { blocks, write, dispose } = create();
+      try {
+        write("$ \x1b]133;B\x07\x1b]133;C;first\x07one\r\ntwo\r\n");
+        // The replacement shell's prompt, a command and its end, in one read.
+        write(
+          "\x1b]133;A\x07new> \x1b]133;B\x07\x1b]133;C;second\x07alpha\r\nbeta\r\n\x1b]133;D;0\x07\x1b]133;A\x07",
+        );
+        expect(blocks.readById("1")?.output).toBe("one\ntwo");
+        expect(blocks.readById("2")).toMatchObject({
+          command: "second",
+          exitCode: 0,
+          output: "alpha\nbeta",
+        });
+      } finally {
+        dispose();
+      }
+    });
+
+    it("finds the prompt start even when the sequence arrives in pieces", () => {
+      const { blocks, write, dispose } = create();
+      try {
+        write("$ \x1b]133;B\x07\x1b]133;C;long\x07one\r\ntwo\r\n");
+        write("\x1b]13");
+        write("3;A");
+        write("\x1b\\new> \x1b]133;B\x07\r\nmore\r\nmore\r\n");
+        expect(blocks.readById("1")?.output).toBe("one\ntwo");
+      } finally {
+        dispose();
+      }
+    });
+
     it("leaves a blank row before the divider without including padding in copied output", () => {
       const { model, blocks, write, dispose } = create();
       try {

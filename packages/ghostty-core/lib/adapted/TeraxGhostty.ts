@@ -94,6 +94,7 @@ const requiredExports = [
   "restty_scrollbar_total",
   "restty_scrollbar_offset",
   "restty_scrollbar_len",
+  "restty_active_cursor_x",
   "restty_active_cursor_y",
   "restty_selection_set",
   "restty_semantic_markers_enable",
@@ -826,6 +827,11 @@ export class TeraxGhosttyTerminal {
     this.assertLive();
     const bar = this.scrollbar();
     return bar.total - bar.length + this.exports.restty_active_cursor_y(this.handle);
+  }
+
+  bufferCursorColumn(): number {
+    this.assertLive();
+    return this.exports.restty_active_cursor_x(this.handle);
   }
 
   semanticMarkerColumn(id: number): number | null {

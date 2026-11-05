@@ -93,6 +93,8 @@ export class AdaptedGhosttyTerminalModel implements GhosttyTerminalModelApi {
 
   private readonly terminal: TeraxGhosttyTerminal;
   private blockMatch: { line: number; col: number; len: number } | null = null;
+  private writeSplitter: ((bytes: Uint8Array) => readonly number[]) | null =
+    null;
   private readonly directCellReader = new GhosttyRenderCellView();
   private readonly damageListeners = new Set<() => void>();
   private replySink: ((bytes: Uint8Array) => void) | null;
@@ -292,6 +294,26 @@ export class AdaptedGhosttyTerminalModel implements GhosttyTerminalModelApi {
     if (bytes.byteLength === 0) return;
 
     this.blockMatch = null;
+    let from = 0;
+    for (const cut of this.writeSplitter?.(bytes) ?? []) {
+      this.feed(bytes.subarray(from, cut));
+      from = cut;
+    }
+    this.feed(bytes.subarray(from));
+    this.synchronizedOutputPresentation.observe(
+      this.modesValue.synchronizedOutput,
+    );
+    this.requestPresentation();
+  }
+
+  setWriteSplitter(
+    splitter: ((bytes: Uint8Array) => readonly number[]) | null,
+  ): void {
+    this.writeSplitter = splitter;
+  }
+
+  private feed(bytes: Uint8Array): void {
+    if (bytes.byteLength === 0) return;
     this.terminal.write(bytes);
     this.writeCount += 1;
     this.contentRevision += 1;
@@ -301,10 +323,6 @@ export class AdaptedGhosttyTerminalModel implements GhosttyTerminalModelApi {
     this.refreshModes();
     this.drainReplies();
     this.drainEvents();
-    this.synchronizedOutputPresentation.observe(
-      this.modesValue.synchronizedOutput,
-    );
-    this.requestPresentation();
   }
 
   resize(cols: number, rows: number): void {
@@ -626,6 +644,11 @@ export class AdaptedGhosttyTerminalModel implements GhosttyTerminalModelApi {
   bufferCursorLine(): number {
     this.assertLive();
     return this.terminal.bufferCursorLine();
+  }
+
+  bufferCursorColumn(): number {
+    this.assertLive();
+    return this.terminal.bufferCursorColumn();
   }
 
   wordRangeAt(point: TerminalBufferPoint): {

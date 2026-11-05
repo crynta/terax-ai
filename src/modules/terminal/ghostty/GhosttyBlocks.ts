@@ -7,6 +7,7 @@ import type {
 } from "@/modules/terminal/block/lib/blockTypes";
 import type { BlockMode } from "@/modules/terminal/block/lib/modeMachine";
 import type { GhosttyTerminalModelApi } from "@/modules/terminal/ghostty/GhosttyTerminalModel";
+import { PromptStartScanner } from "./promptStartScanner";
 
 const MAX_BLOCKS = 1000;
 const MAX_METADATA_UNITS = 256 * 1024;
@@ -31,11 +32,11 @@ type Entry = {
   start: number;
   end: number | null;
   /**
-   * Set when the next prompt ended the command without a D: lines from the
-   * start marker to the cursor when that prompt began, since only D and C
-   * carry markers of their own.
+   * Set when the next prompt ended the command without a D: where the cursor
+   * was when that prompt began, as lines below the start marker, since only D
+   * and C carry markers of their own.
    */
-  implicitEndLines?: number;
+  implicitEnd?: { lines: number; column: number };
   exitCode: number | null;
   startedAt: number;
   finishedAt: number;
@@ -60,6 +61,10 @@ export class GhosttyBlocks {
     requireBlockModel(model);
     this.model = model;
     model.enableSemanticMarkers(true);
+    // Events arrive after a whole chunk is parsed; a prompt that ends a command
+    // must read the cursor where its OSC 133;A was, not where the chunk ended.
+    const scanner = new PromptStartScanner();
+    model.setWriteSplitter?.((bytes) => scanner.cuts(bytes));
   }
 
   get mode(): BlockMode {
@@ -112,9 +117,10 @@ export class GhosttyBlocks {
       const live = this.live;
       const startLine = this.model.semanticMarkerLine(live.start);
       const cursorLine = this.model.bufferCursorLine();
+      const column = this.model.bufferCursorColumn?.() ?? 0;
       this.finish(live.start, null);
-      if (startLine != null && cursorLine > startLine) {
-        live.implicitEndLines = cursorLine - startLine;
+      if (startLine != null && cursorLine >= startLine) {
+        live.implicitEnd = { lines: cursorLine - startLine, column };
       }
       this.entryRevision++;
     }
@@ -195,20 +201,20 @@ export class GhosttyBlocks {
     empty: boolean;
   } | null {
     const start = this.model.semanticMarkerLine?.(entry.start);
-    const implicit = entry.implicitEndLines;
+    const implicit = entry.implicitEnd;
     const end =
       entry.end === null
         ? this.model.bufferCursorLine?.()
-        : implicit !== undefined && start != null
-          ? start + implicit
+        : implicit && start != null
+          ? start + implicit.lines
           : this.model.semanticMarkerLine?.(entry.end);
     if (start == null || end == null) return null;
     const startCol = this.model.semanticMarkerColumn?.(entry.start) ?? 0;
     const endCol =
       entry.end === null
         ? this.model.cols
-        : implicit !== undefined
-          ? 0
+        : implicit
+          ? implicit.column
           : (this.model.semanticMarkerColumn?.(entry.end) ?? 0);
     const empty = end === start && endCol <= startCol;
     return {
@@ -412,7 +418,9 @@ export class GhosttyBlocks {
   }
 
   dispose(): void {
-    if (!this.model.isDisposed?.()) this.model.enableSemanticMarkers(false);
+    if (this.model.isDisposed?.()) return;
+    this.model.enableSemanticMarkers(false);
+    this.model.setWriteSplitter?.(null);
   }
 }
 
