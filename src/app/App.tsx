@@ -54,7 +54,7 @@ import { setLspNavigator } from "@/modules/lsp";
 import type { PreviewPaneHandle } from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
-import { setShowHidden } from "@/modules/settings/store";
+import { setShowHidden, setTerminalTuiFocus } from "@/modules/settings/store";
 import {
   type ShortcutHandlers,
   type ShortcutId,
@@ -930,6 +930,12 @@ export default function App() {
       },
       "terminal.toggleInput": () =>
         window.dispatchEvent(new CustomEvent(TOGGLE_BLOCK_INPUT_EVENT)),
+      "terminal.toggleTuiFocus": () => {
+        // Read at keypress time so two quick F6 presses can't drop a toggle.
+        void setTerminalTuiFocus(
+          !usePreferencesStore.getState().terminalTuiFocus,
+        );
+      },
       "blocks.prev": () => navigateFocusedBlocks(-1),
       "blocks.next": () => navigateFocusedBlocks(1),
       "search.focus": () => {

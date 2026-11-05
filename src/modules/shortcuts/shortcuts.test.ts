@@ -5,6 +5,8 @@ import {
   type KeyBinding,
   matchBinding,
   SHORTCUTS,
+  type Shortcut,
+  shouldDeferForTerminalFocus,
 } from "./shortcuts";
 
 // These tests run in the vitest node environment, where the Tauri OS plugin is
@@ -187,5 +189,122 @@ describe("palette shortcuts", () => {
         seen.set(sig, s.id);
       }
     }
+  });
+});
+
+function findShortcut(id: Shortcut["id"]): Shortcut {
+  const s = SHORTCUTS.find((x) => x.id === id);
+  if (!s) throw new Error(`test setup: missing shortcut ${id}`);
+  return s;
+}
+
+describe("shouldDeferForTerminalFocus", () => {
+  it("never defers when TUI passthrough is disabled (even inside a terminal)", () => {
+    const s = findShortcut("commandPalette.open");
+    expect(
+      shouldDeferForTerminalFocus(s, event({}), {
+        enabled: false,
+        inTerminal: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("never defers a terminalAlwaysOn shortcut (Find in files)", () => {
+    const s = findShortcut("commandPalette.content");
+    expect(
+      shouldDeferForTerminalFocus(s, event({ shiftKey: true }), {
+        enabled: true,
+        inTerminal: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("never defers the toggleTuiFocus shortcut itself", () => {
+    const s = findShortcut("terminal.toggleTuiFocus");
+    expect(
+      shouldDeferForTerminalFocus(s, event({}), {
+        enabled: true,
+        inTerminal: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("defers the plain sidebar.toggle binding when a terminal is focused", () => {
+    const s = findShortcut("sidebar.toggle");
+    expect(
+      shouldDeferForTerminalFocus(s, event({}), {
+        enabled: true,
+        inTerminal: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("does NOT defer the Shift sidebar.toggle binding when a terminal is focused", () => {
+    const s = findShortcut("sidebar.toggle");
+    expect(
+      shouldDeferForTerminalFocus(s, event({ shiftKey: true }), {
+        enabled: true,
+        inTerminal: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("does NOT defer the plain sidebar.toggle binding outside a terminal", () => {
+    const s = findShortcut("sidebar.toggle");
+    expect(
+      shouldDeferForTerminalFocus(s, event({}), {
+        enabled: true,
+        inTerminal: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("defers Mod+Shift+P (commandPalette.open) when a terminal is focused", () => {
+    const s = findShortcut("commandPalette.open");
+    expect(
+      shouldDeferForTerminalFocus(s, event({}), {
+        enabled: true,
+        inTerminal: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("does NOT defer a generic shortcut outside a terminal", () => {
+    const s = findShortcut("commandPalette.open");
+    expect(
+      shouldDeferForTerminalFocus(s, event({}), {
+        enabled: true,
+        inTerminal: false,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("TUI focus passthrough registry", () => {
+  it.each([
+    "commandPalette.content",
+    "terminal.clear",
+    "terminal.toggleInput",
+    "terminal.toggleTuiFocus",
+    "blocks.prev",
+    "blocks.next",
+    "tab.next",
+    "tab.prev",
+    "tab.selectByIndex",
+  ] as const)("marks %s as terminalAlwaysOn", (id) => {
+    expect(findShortcut(id).terminalAlwaysOn).toBe(true);
+  });
+
+  it("leaves Mod+Shift+P (commandPalette.open) deferred in a terminal", () => {
+    expect(findShortcut("commandPalette.open").terminalAlwaysOn).toBeFalsy();
+  });
+
+  it("binds F6 to terminal.toggleTuiFocus", () => {
+    const s = findShortcut("terminal.toggleTuiFocus");
+    expect(
+      s.defaultBindings.some((b) =>
+        matchBinding(event({ key: "F6" }), b, s.id),
+      ),
+    ).toBe(true);
   });
 });
