@@ -11,7 +11,7 @@
 //
 // CLI:  node scripts/dist-graph.mjs [distDir]   (exits 1 on a violation)
 // Library: used by src/app/dist-budget.test.ts.
-import { readFileSync, existsSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -139,6 +139,57 @@ export function packagesFromMap(mapText) {
   return out;
 }
 
+// pnpm installs `name@version[_peers]` under `.pnpm/` (`/` of a scope becomes `+`).
+const PNPM_PACKAGE =
+  /node_modules\/\.pnpm\/((?:@[^/@]+\+)?[^/@]+)@([^/_]+)[^/]*\/node_modules\//;
+
+/**
+ * Bundled `name@version` copies of pnpm-installed packages that a chunk's
+ * sourcemap names (null when no map was emitted).
+ */
+export function packageVersionsFromMap(mapText) {
+  if (mapText == null) return null;
+  const out = new Set();
+  for (const source of JSON.parse(mapText).sources ?? []) {
+    const m = String(source).match(PNPM_PACKAGE);
+    if (m) out.add(`${m[1].replace("+", "/")}@${m[2]}`);
+  }
+  return out;
+}
+
+/**
+ * Packages the build ships in more than one version: every copy is dead weight
+ * the user downloads and parses (the same library twice, once per pin).
+ * @param {Iterable<string | null>} mapTexts sourcemap contents, one per chunk
+ * @returns {{ name: string, versions: string[] }[]}
+ */
+export function findDuplicatePackages(mapTexts) {
+  const versions = new Map();
+  for (const mapText of mapTexts) {
+    for (const id of packageVersionsFromMap(mapText) ?? []) {
+      const at = id.lastIndexOf("@");
+      const name = id.slice(0, at);
+      if (!versions.has(name)) versions.set(name, new Set());
+      versions.get(name).add(id.slice(at + 1));
+    }
+  }
+  return [...versions]
+    .filter(([, set]) => set.size > 1)
+    .map(([name, set]) => ({ name, versions: [...set].sort() }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Duplicate packages in a built dist directory (empty without sourcemaps). */
+export function findDuplicatePackagesInDist(distDir) {
+  const assets = join(distDir, "assets");
+  if (!existsSync(assets)) return [];
+  return findDuplicatePackages(
+    readdirSync(assets)
+      .filter((f) => f.endsWith(".js.map"))
+      .map((f) => readFileSync(join(assets, f), "utf8")),
+  );
+}
+
 /**
  * Walk the startup graph of one HTML document.
  * `readChunk(distRelativePath)` returns source text (or null if missing), which
@@ -263,6 +314,16 @@ if (isCli) {
   if (failed) {
     console.error(
       "\nStartup graph pulls forbidden chunks; check manualChunks in vite.config.ts.",
+    );
+    process.exit(1);
+  }
+  const duplicates = findDuplicatePackagesInDist(distDir);
+  if (duplicates.length) {
+    for (const { name, versions } of duplicates) {
+      console.log(`  x ${name} bundled in ${versions.join(", ")}`);
+    }
+    console.error(
+      "\nPackages bundled in several versions; dedupe them (pnpm overrides, `pnpm why <name>`).",
     );
     process.exit(1);
   }
