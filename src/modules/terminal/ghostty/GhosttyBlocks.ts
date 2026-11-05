@@ -100,6 +100,12 @@ export class GhosttyBlocks {
     }
     if (event.type === "prompt-start" || event.type === "prompt-end")
       this.phase = "prompt";
+    // A shell that replaced itself (exec zsh) or died inside a command never
+    // reports its end; the next prompt does, or the block would run forever.
+    if (event.type === "prompt-start" && this.live) {
+      this.finish(this.live.start, null);
+      this.entryRevision++;
+    }
     if (event.type === "end-of-input") {
       this.integrated = true;
       this.phase = "running";

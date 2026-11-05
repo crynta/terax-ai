@@ -88,6 +88,27 @@ describe.each(["ghostty-vt", "ghostty-vt-scalar"])(
       }
     });
 
+    it("ends a command whose shell replaced itself when the next prompt starts", () => {
+      const { blocks, write, dispose } = create();
+      try {
+        // `exec zsh`: C, then the new shell's prompt with no D in between.
+        write("\x1b]133;B\x07\x1b]133;C;exec zsh\x07");
+        expect(blocks.mode).toBe("running");
+        expect(blocks.visibleBlocks(20).blocks[0].running).toBe(true);
+        write("\x1b]133;A\x07new> \x1b]133;B\x07");
+        expect(blocks.mode).toBe("prompt");
+        expect(blocks.visibleBlocks(20).blocks[0].running).toBe(false);
+        write("\x1b]133;C;next\x07out\r\n");
+        write("\x1b]133;D;0\x07\x1b]133;A\x07");
+        const shown = blocks.visibleBlocks(20).blocks;
+        expect(shown.map((block) => block.running)).toEqual([false, false]);
+        expect(shown[0].exitCode).toBeNull();
+        expect(shown[1].exitCode).toBe(0);
+      } finally {
+        dispose();
+      }
+    });
+
     it("leaves a blank row before the divider without including padding in copied output", () => {
       const { model, blocks, write, dispose } = create();
       try {

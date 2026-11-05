@@ -48,6 +48,22 @@ describe("GhosttySemanticEventRouter", () => {
     expect(onClipboard).toHaveBeenCalledWith("hello");
   });
 
+  it("treats a new prompt as the end of a command that never reported one", () => {
+    const states: boolean[] = [];
+    const onCwd = vi.fn();
+    const router = new GhosttySemanticEventRouter({
+      onCommandState: (running) => states.push(running),
+      onCwd,
+    });
+    // exec zsh: C, then the replacement shell's first prompt, no D.
+    router.handle({ type: "end-of-input" });
+    router.handle({ type: "pwd", uri: "file:///ignored" });
+    router.handle({ type: "prompt-start" });
+    router.handle({ type: "pwd", uri: "file:///home/me" });
+    expect(states).toEqual([true, false]);
+    expect(onCwd.mock.calls).toEqual([["/home/me"]]);
+  });
+
   it("reports bounded-queue overflow", () => {
     const onOverflow = vi.fn();
     const router = new GhosttySemanticEventRouter({ onOverflow });
