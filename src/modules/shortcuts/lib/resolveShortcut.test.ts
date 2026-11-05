@@ -1,0 +1,104 @@
+import { describe, expect, it } from "vitest";
+import { buildShortcuts, type KeyBinding, type ShortcutId } from "../shortcuts";
+import { resolveShortcut } from "./resolveShortcut";
+
+const mac = buildShortcuts(true);
+const other = buildShortcuts(false);
+
+function press(
+  key: string,
+  mods: string,
+  over: Partial<KeyboardEvent> = {},
+): KeyboardEvent {
+  return {
+    key,
+    code: /^[a-z]$/i.test(key) ? `Key${key.toUpperCase()}` : key,
+    ctrlKey: mods.includes("C"),
+    shiftKey: mods.includes("S"),
+    altKey: mods.includes("A"),
+    metaKey: mods.includes("M"),
+    repeat: false,
+    ...over,
+  } as KeyboardEvent;
+}
+
+const run = (
+  shortcuts: typeof mac,
+  event: KeyboardEvent,
+  opts: {
+    disabled?: ShortcutId[];
+    handlers?: ShortcutId[] | "all";
+    user?: Partial<Record<ShortcutId, KeyBinding[]>>;
+  } = {},
+) =>
+  resolveShortcut(event, {
+    shortcuts,
+    user: opts.user ?? {},
+    isDisabled: (id) => opts.disabled?.includes(id) ?? false,
+    hasHandler: (id) =>
+      opts.handlers === undefined ||
+      opts.handlers === "all" ||
+      opts.handlers.includes(id),
+  });
+
+describe("resolveShortcut on macOS", () => {
+  it("clears a focused terminal with Command+K and opens the palette elsewhere", () => {
+    const event = press("k", "M");
+    // In a terminal terminal.clear is enabled.
+    expect(run(mac, event)).toBe("terminal.clear");
+    // Elsewhere the host disables it and the match continues to the palette.
+    expect(run(mac, event, { disabled: ["terminal.clear"] })).toBe(
+      "commandPalette.open",
+    );
+  });
+
+  it("keeps Command+P for files and Command+Shift+P for the palette", () => {
+    expect(run(mac, press("p", "M"))).toBe("commandPalette.files");
+    expect(run(mac, press("P", "MS"))).toBe("commandPalette.open");
+    expect(run(mac, press("H", "MS"))).toBe("commandPalette.content");
+  });
+
+  it("never lets a disabled match stop a later one", () => {
+    expect(
+      run(mac, press("k", "M"), {
+        disabled: ["terminal.clear", "commandPalette.open"],
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("resolveShortcut on Windows and Linux", () => {
+  it("gives Go to file and the palette chords no terminal program reads", () => {
+    expect(run(other, press("O", "CS"))).toBe("commandPalette.files");
+    expect(run(other, press("P", "CS"))).toBe("commandPalette.open");
+    expect(run(other, press("H", "CS"))).toBe("commandPalette.content");
+  });
+
+  it("leaves Ctrl+P, Ctrl+K and Ctrl+O to the shell", () => {
+    for (const key of ["p", "k", "o"])
+      expect(run(other, press(key, "C"))).toBeNull();
+  });
+
+  it("moves the web preview to Ctrl+Shift+L, away from Go to file", () => {
+    expect(run(other, press("L", "CS"))).toBe("tab.newPreview");
+  });
+});
+
+describe("resolveShortcut", () => {
+  it("honours a user binding over the default", () => {
+    const user = { "commandPalette.open": [{ ctrl: true, key: "k" }] };
+    expect(run(other, press("k", "C"), { user })).toBe("commandPalette.open");
+    expect(run(other, press("P", "CS"), { user })).toBeNull();
+  });
+
+  it("ends the search at an enabled shortcut without a handler", () => {
+    expect(run(other, press("O", "CS"), { handlers: [] })).toBeNull();
+  });
+
+  it("skips repeats of shortcuts that do not allow them", () => {
+    expect(run(other, press("T", "CS", { repeat: true }))).toBeNull();
+    expect(run(other, press("ArrowDown", "CS", { repeat: true }))).toBe(
+      "blocks.next",
+    );
+  });
+});

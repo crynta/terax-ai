@@ -22,8 +22,13 @@ import type { KeyBinding, ShortcutId } from "./shortcuts";
 
 export const MAC_DEFAULTS: Readonly<Record<ShortcutId, readonly KeyBinding[]>> =
   {
-    "commandPalette.open": [{ meta: true, key: "p" }],
-    "commandPalette.content": [{ shift: true, meta: true, key: "p" }],
+    "terminal.clear": [{ meta: true, key: "k" }],
+    "commandPalette.open": [
+      { shift: true, meta: true, key: "p" },
+      { meta: true, key: "k" },
+    ],
+    "commandPalette.files": [{ meta: true, key: "p" }],
+    "commandPalette.content": [{ shift: true, meta: true, key: "h" }],
     "settings.open": [{ meta: true, key: "," }],
     "tab.new": [{ meta: true, key: "t" }],
     "tab.newBlock": [{ shift: true, meta: true, key: "t" }],
@@ -40,7 +45,6 @@ export const MAC_DEFAULTS: Readonly<Record<ShortcutId, readonly KeyBinding[]>> =
     "pane.swapUp": [{ alt: true, meta: true, key: "ArrowUp" }],
     "pane.swapDown": [{ alt: true, meta: true, key: "ArrowDown" }],
     "pane.source": [{ meta: true, key: "g" }],
-    "terminal.clear": [{ meta: true, key: "k" }],
     "terminal.toggleInput": [{ meta: true, key: "u" }],
     "blocks.prev": [{ meta: true, key: "ArrowUp" }],
     "blocks.next": [{ meta: true, key: "ArrowDown" }],
@@ -88,12 +92,13 @@ export const WIN_LINUX_DEFAULTS: Readonly<
   Record<ShortcutId, readonly KeyBinding[]>
 > = {
   "commandPalette.open": [{ ...CS, key: "p" }],
+  "commandPalette.files": [{ ...CS, key: "o" }],
   "commandPalette.content": [{ ...CS, key: "h" }],
   "settings.open": [{ ctrl: true, key: "," }],
   "tab.new": [{ ...CS, key: "t" }],
   "tab.newBlock": [{ ...CS, key: "q" }],
   "tab.newPrivate": [{ ...CS, key: "r" }],
-  "tab.newPreview": [{ ...CS, key: "o" }],
+  "tab.newPreview": [{ ...CS, key: "l" }],
   "tab.newEditor": [{ ...CS, key: "n" }],
   "tab.close": [{ ...CS, key: "w" }],
   "pane.splitRight": [{ ...CS, key: "d" }],

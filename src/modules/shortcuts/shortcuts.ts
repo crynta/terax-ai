@@ -7,6 +7,7 @@ import { MAC_DEFAULTS, WIN_LINUX_DEFAULTS } from "./shortcutDefaults";
 
 export type ShortcutId =
   | "commandPalette.open"
+  | "commandPalette.files"
   | "commandPalette.content"
   | "tab.new"
   | "tab.newBlock"
@@ -80,10 +81,23 @@ export type Shortcut = {
   allowRepeat?: boolean;
 };
 
+// Matching walks this list in order and skips a shortcut its host disables, so
+// terminal.clear stays ahead of commandPalette.open: on macOS ⌘K clears a
+// focused terminal and opens the palette everywhere else.
 const SHORTCUT_META: Omit<Shortcut, "defaultBindings">[] = [
+  {
+    id: "terminal.clear",
+    label: "Clear terminal",
+    group: "Terminal",
+  },
   {
     id: "commandPalette.open",
     label: "Open command palette",
+    group: "General",
+  },
+  {
+    id: "commandPalette.files",
+    label: "Go to file",
     group: "General",
   },
   {
@@ -170,11 +184,6 @@ const SHORTCUT_META: Omit<Shortcut, "defaultBindings">[] = [
     id: "pane.source",
     label: "Toggle source panel",
     group: "Panes",
-  },
-  {
-    id: "terminal.clear",
-    label: "Clear terminal",
-    group: "Terminal",
   },
   {
     id: "terminal.toggleInput",
@@ -319,10 +328,15 @@ const SHORTCUT_META: Omit<Shortcut, "defaultBindings">[] = [
   },
 ];
 
-export const SHORTCUTS: Shortcut[] = SHORTCUT_META.map((meta) => ({
-  ...meta,
-  defaultBindings: [...(IS_MAC ? MAC_DEFAULTS : WIN_LINUX_DEFAULTS)[meta.id]],
-}));
+export function buildShortcuts(isMac: boolean): Shortcut[] {
+  const defaults = isMac ? MAC_DEFAULTS : WIN_LINUX_DEFAULTS;
+  return SHORTCUT_META.map((meta) => ({
+    ...meta,
+    defaultBindings: [...defaults[meta.id]],
+  }));
+}
+
+export const SHORTCUTS: Shortcut[] = buildShortcuts(IS_MAC);
 
 export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   "General",

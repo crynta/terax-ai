@@ -9,8 +9,10 @@ import {
 
 // Both tables are tested regardless of the platform the tests run on.
 
-const MAC_EXPECTED = `commandPalette.open: Cmd+p
-commandPalette.content: Shift+Cmd+p
+const MAC_EXPECTED = `terminal.clear: Cmd+k
+commandPalette.open: Shift+Cmd+p, Cmd+k
+commandPalette.files: Cmd+p
+commandPalette.content: Shift+Cmd+h
 settings.open: Cmd+,
 tab.new: Cmd+t
 tab.newBlock: Shift+Cmd+t
@@ -27,7 +29,6 @@ pane.swapRight: Alt+Cmd+ArrowRight
 pane.swapUp: Alt+Cmd+ArrowUp
 pane.swapDown: Alt+Cmd+ArrowDown
 pane.source: Cmd+g
-terminal.clear: Cmd+k
 terminal.toggleInput: Cmd+u
 blocks.prev: Cmd+ArrowUp
 blocks.next: Cmd+ArrowDown
@@ -323,9 +324,13 @@ describe("macOS: nothing is unreachable or repeated", () => {
       for (const binding of MAC_DEFAULTS[id]) {
         const key = chord(binding);
         const other = owners.get(key);
-        // Command+K is the terminal clear and, pending the palette change, shared by design.
+        // Command+K clears a focused terminal and opens the palette elsewhere: the
+        // host disables terminal.clear outside a terminal and matching continues.
+        const sharedCommandK =
+          key === "false|false|false|true|k" &&
+          [other, id].sort().join() === "commandPalette.open,terminal.clear";
         expect(
-          other === undefined || other === id,
+          other === undefined || other === id || sharedCommandK,
           `${describeBinding(binding)}: ${other} and ${id}`,
         ).toBe(true);
         owners.set(key, id);

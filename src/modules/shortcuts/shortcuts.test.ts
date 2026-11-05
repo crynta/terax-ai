@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { MOD_PROP } from "@/lib/platform";
 import {
+  buildShortcuts,
   getBindingTokens,
   type KeyBinding,
   matchBinding,
   SHORTCUTS,
+  type Shortcut,
 } from "./shortcuts";
 
 // These tests run in the vitest node environment, where the Tauri OS plugin is
@@ -144,4 +146,77 @@ describe("SHORTCUTS registry", () => {
       ]),
     );
   });
+});
+
+describe("palette shortcuts", () => {
+  const defaults = (list: Shortcut[], id: string) =>
+    list.find((s) => s.id === id)?.defaultBindings ?? [];
+  const press = (key: string, over: Partial<KeyboardEvent>) =>
+    event({ key, ...over });
+
+  it("opens files on Command+P and commands with Shift on macOS", () => {
+    const mac = buildShortcuts(true);
+    const [files] = defaults(mac, "commandPalette.files");
+    const [commands] = defaults(mac, "commandPalette.open");
+    expect(matchBinding(press("p", { metaKey: true }), files)).toBe(true);
+    expect(
+      matchBinding(press("P", { metaKey: true, shiftKey: true }), commands),
+    ).toBe(true);
+    expect(
+      matchBinding(press("p", { metaKey: true, shiftKey: true }), files),
+    ).toBe(false);
+  });
+
+  it("opens commands on Ctrl+Shift+P and files on Ctrl+Shift+O on Windows and Linux", () => {
+    const other = buildShortcuts(false);
+    const [files] = defaults(other, "commandPalette.files");
+    const [commands] = defaults(other, "commandPalette.open");
+    expect(
+      matchBinding(press("O", { ctrlKey: true, shiftKey: true }), files),
+    ).toBe(true);
+    expect(
+      matchBinding(press("P", { ctrlKey: true, shiftKey: true }), commands),
+    ).toBe(true);
+    // Ctrl+P is readline's previous-history: the palette never takes it.
+    expect(matchBinding(press("p", { ctrlKey: true }), files)).toBe(false);
+    expect(matchBinding(press("p", { ctrlKey: true }), commands)).toBe(false);
+  });
+
+  it("keeps the macOS terminal clear ahead of the palette on the shared key", () => {
+    const ids = buildShortcuts(true).map((s) => s.id);
+    expect(ids.indexOf("terminal.clear")).toBeLessThan(
+      ids.indexOf("commandPalette.open"),
+    );
+  });
+
+  it.each([
+    ["macOS", true],
+    ["Windows and Linux", false],
+  ])(
+    "gives no default binding to two shortcuts in the same context (%s)",
+    (_name, isMac) => {
+      const seen = new Map<string, string>();
+      for (const s of buildShortcuts(isMac)) {
+        if (s.id === "tab.selectByIndex") continue;
+        for (const b of s.defaultBindings) {
+          const sig = [
+            b.ctrl,
+            b.shift,
+            b.alt,
+            b.meta,
+            b.key.toLowerCase(),
+          ].join("|");
+          const other = seen.get(sig);
+          // Documented overlaps: ⌘K (clear vs palette) is resolved by scope.
+          if (
+            other &&
+            !(sig.endsWith("|k") && s.id === "commandPalette.open")
+          ) {
+            throw new Error(`${s.id} and ${other} share ${sig}`);
+          }
+          seen.set(sig, s.id);
+        }
+      }
+    },
+  );
 });

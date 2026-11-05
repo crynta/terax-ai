@@ -30,7 +30,12 @@ import {
 } from "@/modules/ai";
 import { AiComposerProvider } from "@/modules/ai/lib/composer";
 import { native } from "@/modules/ai/lib/native";
-import { CommandPalette, createCommandItems } from "@/modules/command-palette";
+import {
+  CommandPalette,
+  createCommandItems,
+  type OpenFileTarget,
+  type PaletteInitialMode,
+} from "@/modules/command-palette";
 import { useControlBridge } from "@/modules/control";
 import {
   type EditorPaneHandle,
@@ -339,11 +344,10 @@ export default function App() {
 
   const [newEditorOpen, setNewEditorOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
-  const [paletteInitialMode, setPaletteInitialMode] = useState<
-    "commands" | "content"
-  >("commands");
+  const [paletteInitialMode, setPaletteInitialMode] =
+    useState<PaletteInitialMode>("commands");
   const openCommandPalette = useCallback(
-    (mode: "commands" | "content" = "commands") => {
+    (mode: PaletteInitialMode = "commands") => {
       setPaletteInitialMode(mode);
       setCommandPaletteOpen(true);
     },
@@ -894,6 +898,7 @@ export default function App() {
   const shortcutHandlers = useMemo<ShortcutHandlers>(
     () => ({
       "commandPalette.open": () => openCommandPalette("commands"),
+      "commandPalette.files": () => openCommandPalette("files"),
       "commandPalette.content": () => openCommandPalette("content"),
       "tab.new": openNewTab,
       "tab.newBlock": openNewBlockTab,
@@ -1329,6 +1334,15 @@ export default function App() {
     [openFileTab],
   );
 
+  // `target.side` (open to the side) has no host support yet: plain open.
+  const openPaletteFile = useCallback(
+    (path: string, target: OpenFileTarget) => {
+      if (target.line !== undefined) openContentHit(path, target.line);
+      else handleOpenFile(path, true);
+    },
+    [openContentHit, handleOpenFile],
+  );
+
   const openControlFile = useCallback(
     ({
       path,
@@ -1632,6 +1646,7 @@ export default function App() {
             commandItems={commandPaletteItems}
             workspaceRoot={explorerRoot}
             onOpenContentHit={openContentHit}
+            onOpenFile={openPaletteFile}
             insertCommand={insertHistoryCommand}
           />
 
