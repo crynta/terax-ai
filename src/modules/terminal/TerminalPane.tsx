@@ -12,7 +12,7 @@ import {
   useState,
 } from "react";
 import type { TerminalBackendKind } from "./backend/contracts";
-import { resolvedTerminalBackend } from "./backend/selection";
+import { terminalBackendFor } from "./backend/selection";
 import {
   useGhosttyTerminalSession,
   ghosttyBlockGeometry,
@@ -210,9 +210,7 @@ export const TerminalPane = memo(
   forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     function TerminalPane(props, ref) {
       const [backend] = useState(() =>
-        usePreferencesStore.getState().terminalRenderer === "webgl"
-          ? ("ghostty-webgl" as const)
-          : resolvedTerminalBackend(),
+        terminalBackendFor(usePreferencesStore.getState().terminalRenderer),
       );
       return <GhosttyTerminalPane ref={ref} {...props} backend={backend} />;
     },

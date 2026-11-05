@@ -3,6 +3,8 @@ import {
   ATLAS_FULL,
   GLYPH_ENTRY_FLAG_COLOR,
   GLYPH_ENTRY_FLAG_EXACT,
+  GLYPH_ENTRY_FLAG_NEIGHBOUR,
+  GLYPH_ENTRY_FLAG_SYMBOL,
   GLYPH_ENTRY_WORDS,
   GlyphAtlas,
 } from "./GlyphAtlas";
@@ -90,6 +92,13 @@ function createHarness(maxTextureDimension2D = 8_192) {
     textBaseline: "",
     fillStyle: "",
     clearRect: vi.fn(),
+    save: vi.fn(),
+    restore: vi.fn(),
+    translate: vi.fn(),
+    scale: vi.fn(),
+    beginPath: vi.fn(),
+    rect: vi.fn(),
+    clip: vi.fn(),
     fillText: vi.fn((text: string) => {
       current = text;
     }),
@@ -156,6 +165,51 @@ describe("GlyphAtlas", () => {
     expect(atlas.resolve("é", 0)).toBe(accented);
     expect(atlas.glyphCount).toBe(3);
     expect(h.context.fillText).toHaveBeenCalledTimes(3);
+    atlas.dispose();
+  });
+
+  it("gives a glyph that may take two cells a constrained and a roomy entry, one after the other", () => {
+    const h = createHarness();
+    const atlas = new GlyphAtlas(h.device, METRICS);
+    const icon = atlas.resolve("\ue718", 0);
+    const next = atlas.resolve("A", 0);
+    // Two entries for the icon, one for the letter after them.
+    expect(next).toBe(icon + 2);
+    expect(atlas.glyphCount).toBe(3);
+    expect(atlas.resolve("\ue718", 0)).toBe(icon);
+    atlas.commit();
+    const words = h.writeBuffer.mock.calls[0][2] as Uint32Array;
+    const flags = (index: number) => words[index * GLYPH_ENTRY_WORDS + 3];
+    for (const index of [icon, icon + 1]) {
+      expect(flags(index) & GLYPH_ENTRY_FLAG_NEIGHBOUR).not.toBe(0);
+      expect(flags(index) & GLYPH_ENTRY_FLAG_SYMBOL).not.toBe(0);
+    }
+    expect(flags(next)).toBe(0);
+    atlas.dispose();
+  });
+
+  it("rasterizes the constrained form first and the roomy form second", () => {
+    const h = createHarness();
+    const atlas = new GlyphAtlas(h.device, METRICS);
+    h.context.fillText.mockClear();
+    atlas.resolve("\ue0c0", 0);
+    expect(h.context.fillText).toHaveBeenCalledTimes(2);
+    atlas.dispose();
+  });
+
+  it("marks a Powerline separator as graphics (not a symbol) and a version-control icon as a symbol that needs no second form", () => {
+    const h = createHarness();
+    const atlas = new GlyphAtlas(h.device, METRICS);
+    const separator = atlas.resolve("\ue0d6", 0);
+    const branch = atlas.resolve("\ue0a0", 0);
+    expect(branch).toBe(separator + 1);
+    atlas.commit();
+    const words = h.writeBuffer.mock.calls[0][2] as Uint32Array;
+    const flags = (index: number) => words[index * GLYPH_ENTRY_WORDS + 3];
+    expect(flags(separator) & GLYPH_ENTRY_FLAG_SYMBOL).toBe(0);
+    expect(flags(separator) & GLYPH_ENTRY_FLAG_NEIGHBOUR).toBe(0);
+    expect(flags(branch) & GLYPH_ENTRY_FLAG_SYMBOL).not.toBe(0);
+    expect(flags(branch) & GLYPH_ENTRY_FLAG_NEIGHBOUR).toBe(0);
     atlas.dispose();
   });
 

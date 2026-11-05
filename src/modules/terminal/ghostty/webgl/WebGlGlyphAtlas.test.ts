@@ -108,6 +108,42 @@ describe("WebGlGlyphAtlas procedural glyphs", () => {
   });
 });
 
+describe("WebGlGlyphAtlas neighbour-aware glyphs", () => {
+  it("keeps a constrained and a roomy form of a glyph that may take two cells", () => {
+    const fillText = vi.fn();
+    const gl = createWebGlHarness(vi.fn(), vi.fn(), fillText);
+    const atlas = new WebGlGlyphAtlas(gl, METRICS, 1);
+    const roomy = atlas.glyph(0xe718, null, 0, true);
+    const constrained = atlas.glyph(0xe718, null, 0, false);
+    expect(constrained).not.toBe(roomy);
+    expect(atlas.glyph(0xe718, null, 0, true)).toBe(roomy);
+    expect(atlas.glyph(0xe718, null, 0, false)).toBe(constrained);
+    expect(fillText).toHaveBeenCalledTimes(2);
+    atlas.dispose();
+  });
+
+  it("shares one entry for glyphs with a single form, whatever the room", () => {
+    const gl = createWebGlHarness(vi.fn(), vi.fn());
+    const atlas = new WebGlGlyphAtlas(gl, METRICS, 1);
+    for (const codepoint of [65, 0xe0a0, 0xe0d6, 0x4e2d]) {
+      expect(atlas.glyph(codepoint, null, 0, false), codepoint.toString(16)).toBe(
+        atlas.glyph(codepoint, null, 0, true),
+      );
+    }
+    atlas.dispose();
+  });
+
+  it("does not mix a constrained glyph with a different style", () => {
+    const gl = createWebGlHarness(vi.fn(), vi.fn());
+    const atlas = new WebGlGlyphAtlas(gl, METRICS, 1);
+    const regular = atlas.glyph(0xe718, null, 0, false);
+    const bold = atlas.glyph(0xe718, null, CellFlags.BOLD, false);
+    expect(bold).not.toBe(regular);
+    expect(atlas.glyph(0xe718, null, 0, true)).not.toBe(regular);
+    atlas.dispose();
+  });
+});
+
 function createWebGlHarness(
   texSubImage2D: ReturnType<typeof vi.fn>,
   pixelStorei: ReturnType<typeof vi.fn>,
@@ -126,6 +162,13 @@ function createWebGlHarness(
       height: 0,
       getContext: vi.fn(() => ({
         clearRect: vi.fn(),
+        save: vi.fn(),
+        restore: vi.fn(),
+        translate: vi.fn(),
+        scale: vi.fn(),
+        beginPath: vi.fn(),
+        rect: vi.fn(),
+        clip: vi.fn(),
         fillText,
         getImageData: vi.fn(() => ({ data: pixels })),
         measureText: vi.fn(() => ({

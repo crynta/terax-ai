@@ -32,6 +32,7 @@ import {
   setTerminalLetterSpacing,
   setTerminalScrollback,
   setTerminalShell,
+  coerceTerminalRenderer,
   setTerminalRenderer,
   setTerminalScreenReader,
   setZoomLevel,
@@ -249,12 +250,12 @@ export function GeneralSection() {
         <Label>Terminal</Label>
         <SettingRow
           title="Terminal renderer"
-          description="Automatic uses WebGPU with WebGL fallback. Choose WebGL for graphics compatibility. Applies to new terminals."
+          description="Automatic and WebGPU draw with WebGPU and fall back to WebGL where the webview has none. WebGL is a compatibility mode: it uses more CPU and holds at most 12 visible panes per window. Applies to new terminals."
         >
           <Select
             value={terminalRenderer}
             onValueChange={(value) =>
-              void setTerminalRenderer(value === "webgl" ? "webgl" : "auto")
+              void setTerminalRenderer(coerceTerminalRenderer(value))
             }
           >
             <SelectTrigger className="h-8 w-36 text-[12px]">
@@ -262,6 +263,7 @@ export function GeneralSection() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="auto">Automatic</SelectItem>
+              <SelectItem value="webgpu">WebGPU</SelectItem>
               <SelectItem value="webgl">WebGL</SelectItem>
             </SelectContent>
           </Select>
@@ -625,7 +627,7 @@ function FontFamilyInput({
   return (
     <SettingRow
       title="Font family"
-      description='Nerd Font name for icons (e.g. "CaskaydiaCove Nerd Font Mono"). Leave blank to auto-detect.'
+      description='Terminal font (e.g. "CaskaydiaCove Nerd Font Mono"). Icons render without a Nerd Font; leave blank to use an installed one when found.'
     >
       <input
         type="text"
