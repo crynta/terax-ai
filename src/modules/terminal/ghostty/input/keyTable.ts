@@ -29,12 +29,12 @@ export const KEY_MAP: Readonly<Record<string, Key>> = (() => {
           .toUpperCase()
       ];
   for (let i = 0; i < 26; i++)
-    keys[`Key${String.fromCharCode(65 + i)}`] = Key.A + i;
+    keys[`Key${String.fromCharCode(65 + i)}`] = (Key.A + i) as Key;
   for (let i = 0; i < 10; i++) {
-    keys[`Digit${i}`] = Key.ZERO + i;
-    keys[`Numpad${i}`] = Key.KP_0 + i;
+    keys[`Digit${i}`] = (Key.ZERO + i) as Key;
+    keys[`Numpad${i}`] = (Key.KP_0 + i) as Key;
   }
-  for (let i = 0; i < 24; i++) keys[`F${i + 1}`] = Key.F1 + i;
+  for (let i = 0; i < 24; i++) keys[`F${i + 1}`] = (Key.F1 + i) as Key;
   return keys;
 })();
 
