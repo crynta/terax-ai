@@ -79,6 +79,7 @@ it("keeps unchanged WebGL frames idle, retains cursor buffers, and presents cach
           palette: [],
         },
         scale: 1,
+        contrast: { enhancedContrast: 0, alphaCorrection: 0 },
       },
       () => {},
       () => {},

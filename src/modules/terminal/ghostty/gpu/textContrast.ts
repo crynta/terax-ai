@@ -1,5 +1,5 @@
 /**
- * Optional DirectWrite-style contrast for grayscale antialiasing. The fragment shader
+ * Optional DirectWrite-style contrast for grayscale antialiasing, in both renderers. The fragment shader
  * runs `DWrite_EnhanceContrast` (scaled by foreground lightness, as in Windows
  * Terminal's `DWrite_ApplyLightOnDarkContrastAdjustment`) and then blends
  * toward `DWrite_ApplyAlphaCorrection` with the 1.8 gamma ratios. Both stages
@@ -39,6 +39,19 @@ export function textContrastFor(
   override: string | null | undefined,
 ): TextContrast {
   return parseOverride(override) ?? NO_TEXT_CONTRAST;
+}
+
+const TEXT_CONTRAST_STORAGE_KEY = "terax:terminal-text-contrast";
+
+/** The contrast the user asked for through `localStorage`; both renderers apply it alike. */
+export function currentTextContrast(): TextContrast {
+  let override: string | null = null;
+  try {
+    override = window.localStorage?.getItem(TEXT_CONTRAST_STORAGE_KEY) ?? null;
+  } catch {
+    override = null;
+  }
+  return textContrastFor(override);
 }
 
 /** CPU mirror of the shader curve, used by tests and the lab. */

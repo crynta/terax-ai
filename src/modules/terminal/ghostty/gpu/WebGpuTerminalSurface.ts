@@ -46,7 +46,7 @@ import {
   type TerminalFontMetrics,
   type TerminalGpuTheme,
 } from "./terminalVisuals";
-import { textContrastFor, type TextContrast } from "./textContrast";
+import { currentTextContrast, type TextContrast } from "./textContrast";
 import {
   CELL_RECORD_BYTES,
   compactWebGpuCellCapacity,
@@ -68,7 +68,6 @@ import type { PaneBinding } from "./WebGpuWindowCanvas";
 
 const CURSOR_BLINK_MS = 600;
 const TEXT_BLINK_MS = 600;
-const TEXT_CONTRAST_STORAGE_KEY = "terax:terminal-text-contrast";
 
 export type WebGpuTerminalSurfaceOptions = {
   readonly model: GhosttyTerminalModelApi;
@@ -1542,16 +1541,6 @@ export class WebGpuTerminalSurface
   private assertLive(): void {
     if (this.disposed) throw new Error("WebGPU terminal surface is disposed");
   }
-}
-
-function currentTextContrast(): TextContrast {
-  let override: string | null = null;
-  try {
-    override = window.localStorage?.getItem(TEXT_CONTRAST_STORAGE_KEY) ?? null;
-  } catch {
-    override = null;
-  }
-  return textContrastFor(override);
 }
 
 /** Asks for the exact device-pixel box where the engine supports it. */

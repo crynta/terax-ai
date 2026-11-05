@@ -3,6 +3,7 @@ import type {
   TerminalFontMetrics,
   TerminalGpuTheme,
 } from "../gpu/terminalVisuals";
+import { WebGlPoolExhaustedError } from "./WebGlPoolExhaustedError";
 import {
   MAX_WEBGL_RENDERER_SLOTS,
   WEBGL_RENDERER_IDLE_TTL_MS,
@@ -99,6 +100,11 @@ describe("WebGlTerminalRuntime", () => {
     runtime.dispose();
   });
 
+  it("holds more visible panes than the card layout opens, and stays well under the browser's context limit", () => {
+    expect(MAX_WEBGL_RENDERER_SLOTS).toBeGreaterThanOrEqual(8);
+    expect(MAX_WEBGL_RENDERER_SLOTS).toBeLessThan(16);
+  });
+
   it("bounds active contexts and retains only one warm idle renderer", () => {
     const harness = createHarness();
     const runtime = new WebGlTerminalRuntime(harness.dependencies);
@@ -115,7 +121,7 @@ describe("WebGlTerminalRuntime", () => {
     });
     expect(() =>
       runtime.acquire(createSurface(), {} as HTMLElement, PROFILE),
-    ).toThrow(/pool exhausted/);
+    ).toThrow(WebGlPoolExhaustedError);
 
     for (const surface of surfaces) runtime.release(surface);
     harness.advanceTime(WEBGL_RENDERER_IDLE_TTL_MS + 1);
@@ -403,4 +409,5 @@ const PROFILE: WebGlRendererProfile = {
   metrics: METRICS,
   theme: THEME,
   scale: 1,
+  contrast: { enhancedContrast: 0, alphaCorrection: 0 },
 };

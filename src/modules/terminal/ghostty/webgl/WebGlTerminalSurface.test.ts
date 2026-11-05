@@ -7,6 +7,7 @@ import type { GhosttyTerminalModelApi } from "@/modules/terminal/ghostty/Ghostty
 import type { WindowPresentation } from "@/modules/terminal/ghostty/WindowPresentationPolicy";
 import type { WebGlCellRenderer } from "@/modules/terminal/ghostty/webgl/WebGlCellRenderer";
 import { TERMINAL_RIGHT_GUTTER_CSS_PX } from "@/modules/terminal/ghostty/gpu/TerminalFit";
+import { WebGlPoolExhaustedError } from "@/modules/terminal/ghostty/webgl/WebGlPoolExhaustedError";
 import { WebGlTerminalSurface } from "@/modules/terminal/ghostty/webgl/WebGlTerminalSurface";
 
 const bridge = vi.hoisted(() => ({
@@ -76,6 +77,35 @@ describe("WebGL surface renderer ownership", () => {
       h.surface.renderFrame(replacement as unknown as WebGlCellRenderer),
     ).toBe(true);
     expect(h.onError).not.toHaveBeenCalled();
+  });
+});
+
+describe("WebGL surface pool exhaustion", () => {
+  it("shows the error and retry state instead of throwing when no context is free", () => {
+    const h = harness();
+    h.acquire.mockImplementation(() => {
+      throw new WebGlPoolExhaustedError(12);
+    });
+    h.surface.detach();
+    h.acquire.mockClear();
+    h.onError.mockClear();
+    expect(() => h.surface.attach(h.host)).not.toThrow();
+    expect(h.onError).toHaveBeenCalledOnce();
+    expect(h.onError.mock.calls[0][0]).toBeInstanceOf(WebGlPoolExhaustedError);
+    // A retry could not succeed either, so none is attempted.
+    expect(h.acquire).toHaveBeenCalledOnce();
+    expect(h.surface.diagnostics().renderer).toBeNull();
+  });
+
+  it("does not throw when a pane that became visible finds the pool full", () => {
+    const h = harness();
+    h.surface.setVisible(false);
+    h.acquire.mockImplementation(() => {
+      throw new WebGlPoolExhaustedError(12);
+    });
+    h.onError.mockClear();
+    expect(() => h.surface.setVisible(true)).not.toThrow();
+    expect(h.onError).toHaveBeenCalledOnce();
   });
 });
 
@@ -238,6 +268,7 @@ function harness() {
     modes: () => ({ alternateScreen: false }),
     setPixelSize: vi.fn(),
     compactPresentationResources: vi.fn(),
+    releasePresentationResources: vi.fn(),
     resize: (cols: number, rows: number) => {
       model.cols = cols;
       model.rows = rows;
@@ -264,6 +295,7 @@ function harness() {
   surface.attach(hostElement as unknown as HTMLElement);
   return {
     surface,
+    host: hostElement as unknown as HTMLElement,
     onResize,
     setHost(width: number, height = 640) {
       hostSize.width = width + TERMINAL_RIGHT_GUTTER_CSS_PX;
