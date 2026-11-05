@@ -4,31 +4,70 @@
 # command-done-with-exit-code) so the host can detect command boundaries and
 # track cwd without re-parsing the prompt. `status` is a read-only special in
 # zsh, so we shadow $? into `_terax_ret`.
+#
+# Our own code runs under `emulate -L zsh` so user options (KSH_ARRAYS, NO_UNSET,
+# ...) cannot break it; the user's files are sourced outside of it.
 
 {
   # Terax's directory is still ZDOTDIR here (see zshenv.zsh). /etc/zshrc on
   # macOS derives HISTFILE from it, so move that to the user's directory.
-  _terax_zdotdir="$ZDOTDIR"
-  _terax_user_zdotdir="${TERAX_USER_ZDOTDIR:-$HOME}"
-  if [[ -n "${HISTFILE-}" && "$HISTFILE" == "$_terax_zdotdir"/* ]]; then
+  _terax_zdotdir="${ZDOTDIR-}"
+  _terax_user_zdotdir="${TERAX_USER_ZDOTDIR:-${HOME-}}"
+  if [[ -n "${HISTFILE-}" && "${HISTFILE-}" == "$_terax_zdotdir"/* ]]; then
     HISTFILE="$_terax_user_zdotdir/${HISTFILE:t}"
   fi
   ZDOTDIR="$_terax_user_zdotdir"
   [ -f "$_terax_user_zdotdir/.zshrc" ] && source "$_terax_user_zdotdir/.zshrc"
 }
 
-if [[ -n "$TERAX_CLI" && -x "$TERAX_CLI" ]]; then
-  terax() {
-    command "$TERAX_CLI" "$@"
-  }
-fi
+_terax_zshrc_setup() {
+  emulate -L zsh
 
-# Re-source guard within a single shell (e.g. user runs `source ~/.zshrc`).
-# This is NOT exported, so each nested zsh installs its own hooks — desired,
-# since every interactive shell needs its own prompt integration.
-if [[ -z "$__TERAX_HOOKS_LOADED" ]]; then
+  if [[ -n "${TERAX_CLI-}" && -x "${TERAX_CLI-}" ]]; then
+    terax() {
+      command "$TERAX_CLI" "$@"
+    }
+  fi
+
+  # Re-source guard within a single shell (e.g. user runs `source $ZDOTDIR/.zshrc`).
+  # This is NOT exported, so each nested zsh installs its own hooks — desired,
+  # since every interactive shell needs its own prompt integration.
+  if [[ -n "${__TERAX_HOOKS_LOADED-}" ]]; then
+    # Sourced again while a command runs: leave ZDOTDIR as it was found.
+    if [[ -n "$_terax_zdotdir" ]]; then export ZDOTDIR="$_terax_zdotdir"; else unset ZDOTDIR; fi
+    return 0
+  fi
   __TERAX_HOOKS_LOADED=1
   autoload -Uz add-zsh-hook 2>/dev/null
+
+  # ZDOTDIR has two faces. While a command runs it is exported as Terax's
+  # directory, so a shell that command starts (exec zsh, a nested zsh, zsh -l)
+  # reads the integration scripts again; at the prompt, in hooks and in widgets
+  # it is the user's own value (or unset), so code that reads $ZDOTDIR lazily
+  # finds their files. TERAX_USER_ZDOTDIR carries the user's value to children.
+  _terax_zd_integration="$_terax_zdotdir"
+  if [[ -n "${TERAX_USER_ZDOTDIR-}" || "${ZDOTDIR-}" != "$_terax_user_zdotdir" ]]; then
+    _terax_zd_has_user=1
+    _terax_zd_user="${ZDOTDIR:-$_terax_user_zdotdir}"
+    export TERAX_USER_ZDOTDIR="$_terax_zd_user"
+  else
+    _terax_zd_has_user=
+    unset TERAX_USER_ZDOTDIR
+  fi
+
+  _terax_zdotdir_prompt() {
+    emulate -L zsh
+    if [[ -n "$_terax_zd_has_user" ]]; then
+      ZDOTDIR="$_terax_zd_user"
+    else
+      unset ZDOTDIR
+    fi
+  }
+
+  _terax_zdotdir_command() {
+    emulate -L zsh
+    export ZDOTDIR="$_terax_zd_integration"
+  }
 
   # URL-encode $1 byte-wise into REPLY so multi-byte paths stay valid in the
   # `file://` URI emitted via OSC 7. `no_multibyte` forces ${s[i]} to index
@@ -49,35 +88,38 @@ if [[ -z "$__TERAX_HOOKS_LOADED" ]]; then
   }
 
   _terax_report_cwd() {
+    emulate -L zsh
     if [[ "$PWD" == *[^a-zA-Z0-9/._~-]* ]]; then
       _terax_urlencode "$PWD"
     else
       REPLY="$PWD"
     fi
-    printf '\e]7;file://%s%s\e\\' "${HOST}" "$REPLY"
+    printf '\e]7;file://%s%s\e\\' "${HOST-}" "$REPLY"
   }
 
   # Prompt-end marker. Embedded in PS1 when nothing in the prompt carries one
   # already, so redraws (resize, reset-prompt) repeat it; the line-init hook
   # below covers prompts a framework builds itself.
   _terax_prompt_has_end() {
-    [[ "$PS1" == *$'\e]133;B'* ]]
+    emulate -L zsh
+    [[ "${PS1-}" == *$'\e]133;B'* ]]
   }
 
   _terax_precmd() {
     local _terax_ret=$?
+    emulate -L zsh
     printf '\e]133;D;%s\e\\' "$_terax_ret"
     _terax_report_cwd
     # In block mode the host renders its own input bar, so suppress the shell
     # prompt entirely (keep only the OSC 133 B marker) and add a leading blank
     # line so frozen command blocks get vertical breathing room.
-    if [[ -n "$TERAX_BLOCKS" ]]; then
+    if [[ -n "${TERAX_BLOCKS-}" ]]; then
       # Spacing reserved for the host-drawn block header lives in the prompt
       # (the grid is WebGL, not CSS). Later prompts get two blank rows: the
       # upper one is the previous block's end gap (above its divider), the lower
       # one is this command's header row. The very first prompt has no block
       # above it, so it gets a single row (header only) to avoid a tall top gap.
-      if [[ -n "$_terax_block_seen" ]]; then
+      if [[ -n "${_terax_block_seen-}" ]]; then
         _terax_block_ps1=$'\n\n%{\e]133;B\e\\%}'
       else
         _terax_block_ps1=$'\n%{\e]133;B\e\\%}'
@@ -85,7 +127,7 @@ if [[ -z "$__TERAX_HOOKS_LOADED" ]]; then
       PS1="$_terax_block_ps1"
       RPROMPT=''
     elif ! _terax_prompt_has_end; then
-      PS1+=$'%{\e]133;B\e\\%}'
+      PS1="${PS1-}"$'%{\e]133;B\e\\%}'
     fi
     _terax_end_pending=1
     _terax_ensure_line_init
@@ -97,9 +139,10 @@ if [[ -z "$__TERAX_HOOKS_LOADED" ]]; then
   # precmd or redrew asynchronously. A second marker at the same spot is
   # harmless, a missing one holds the prompt back until the host's fallback.
   _terax_line_init() {
-    [[ -n "$_terax_end_pending" ]] || return 0
+    emulate -L zsh
+    [[ -n "${_terax_end_pending-}" ]] || return 0
     _terax_end_pending=
-    if [[ -n "$TERAX_BLOCKS" && -n "$_terax_block_ps1" && "$PS1" != "$_terax_block_ps1" ]]; then
+    if [[ -n "${TERAX_BLOCKS-}" && -n "${_terax_block_ps1-}" && "${PS1-}" != "$_terax_block_ps1" ]]; then
       # A framework rebuilt the prompt after our precmd (powerlevel10k runs
       # last): the host draws the input bar, so take the shell prompt back.
       PS1="$_terax_block_ps1"
@@ -111,6 +154,7 @@ if [[ -z "$__TERAX_HOOKS_LOADED" ]]; then
   }
 
   _terax_ensure_line_init() {
+    emulate -L zsh
     [[ "${widgets[zle-line-init]-}" == user:azhw:zle-line-init ]] && return 0
     if [[ "$ZSH_VERSION" == (5.<3->*|<6->.*) ]]; then
       autoload -Uz add-zle-hook-widget
@@ -128,9 +172,10 @@ if [[ -z "$__TERAX_HOOKS_LOADED" ]]; then
   }
 
   _terax_preexec() {
+    emulate -L zsh
     # Mark that a real command ran, so the next prompt switches from one blank
     # row (first prompt, no block above) to two (end gap + header row).
-    [[ -n "$TERAX_BLOCKS" ]] && _terax_block_seen=1
+    [[ -n "${TERAX_BLOCKS-}" ]] && _terax_block_seen=1
     local cmd="${1//[[:cntrl:]]/ }"
     printf '\e]133;C;%s\e\\' "${cmd[1,256]}"
   }
@@ -138,6 +183,9 @@ if [[ -z "$__TERAX_HOOKS_LOADED" ]]; then
   if (( $+functions[add-zsh-hook] )); then
     add-zsh-hook precmd _terax_precmd
     add-zsh-hook preexec _terax_preexec
+    add-zsh-hook precmd _terax_zdotdir_prompt
+    precmd_functions=(_terax_zdotdir_prompt ${precmd_functions:#_terax_zdotdir_prompt})
+    add-zsh-hook preexec _terax_zdotdir_command
   fi
 
   # With POWERLEVEL9K_TERM_SHELL_INTEGRATION powerlevel10k emits its own C and
@@ -159,16 +207,13 @@ if [[ -z "$__TERAX_HOOKS_LOADED" ]]; then
   fi
 
   # Report the starting directory before the first prompt; the first precmd
-  # emits the prompt markers.
+  # emits the prompt markers. Then show the user their own ZDOTDIR, which is
+  # also what zsh reads their .zlogin from.
   _terax_report_cwd
-fi
+  _terax_zdotdir_prompt
+}
 
-# Hand ZDOTDIR back: the interactive shell, its children and anything the user
-# loads lazily must see their own value, and zsh then reads their .zlogin.
-if [[ -z "${TERAX_USER_ZDOTDIR-}" && "${ZDOTDIR-}" == "$_terax_user_zdotdir" ]]; then
-  unset ZDOTDIR
-elif [[ "${ZDOTDIR-}" == "$_terax_zdotdir" ]]; then
-  ZDOTDIR="$_terax_user_zdotdir"
-fi
-unset _terax_zdotdir _terax_user_zdotdir TERAX_USER_ZDOTDIR
+_terax_zshrc_setup
+unset -f _terax_zshrc_setup
+unset _terax_zdotdir _terax_user_zdotdir
 :

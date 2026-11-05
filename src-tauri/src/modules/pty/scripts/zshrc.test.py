@@ -197,10 +197,26 @@ check("block mode draws no shell prompt", "PROMPT> " not in s.out.decode("utf-8"
 check("block mode still ends the prompt", s.marks().count("133:B") >= 2)
 s.close()
 
+# User options that change how zsh reads arrays and unset variables must not
+# break the integration.
+s = Session({".zshrc": "PS1='PROMPT> '\nsetopt ksharrays nounset\n"})
+s.run("true")
+s.run("false")
+text = s.out.decode("utf-8", "replace")
+check("KSH_ARRAYS and NO_UNSET do not break the markers", s.marks().count("133:B") >= 3 and "133:D;1" in s.marks(), s.marks())
+check("no parameter errors under those options", "parameter not set" not in text and "bad math" not in text, text[-200:])
+s.close()
+
 # --- ZDOTDIR ----------------------------------------------------------------
+# ZDOTDIR has two faces: at the prompt and in hooks it is the user's own (the
+# user's rc registers a precmd hook that records it), while a running command
+# sees Terax's directory exported so a shell it starts is integrated again.
+hook = "_probe() { PROBE_ZD=${ZDOTDIR-unset} }\nprecmd_functions+=(_probe)\n"
 probe = (
-    'print -r -- "RESULT:ZD=${ZDOTDIR-unset}:"; print -r -- "RESULT:LOADED=${A_LOADED-no}:"; '
-    'print -r -- "RESULT:HIST=${HISTFILE-none}:"; print -r -- "RESULT:USERVAR=${TERAX_USER_ZDOTDIR-unset}:"'
+    'print -r -- "RESULT:ZD=${PROBE_ZD-none}:"; print -r -- "RESULT:LOADED=${A_LOADED-no}:"; '
+    'print -r -- "RESULT:HIST=${HISTFILE-none}:"; print -r -- "RESULT:USERVAR=${TERAX_USER_ZDOTDIR-unset}:"; '
+    'print -r -- "RESULT:CMDZD=${ZDOTDIR-unset}:"; '
+    "print -r -- \"RESULT:ENVZD=$(command env | sed -n 's/^ZDOTDIR=//p'):\""
 )
 loader = (
     'for file in "${ZDOTDIR:-$HOME/.config/zsh}/conf.d/"*.zsh; do\n'
@@ -213,18 +229,20 @@ s = Session(
     {
         ".config/zsh/.zshenv": loader,
         ".config/zsh/conf.d/a.zsh": "A_LOADED=yes\n",
-        ".config/zsh/.zshrc": "PS1='PROMPT> '\n",
+        ".config/zsh/.zshrc": "PS1='PROMPT> '\n" + hook,
     },
     env={"TERAX_USER_ZDOTDIR": "@HOME@/.config/zsh"},
 )
 s.run(probe)
 text = s.out.decode("utf-8", "replace")
+user_dir = os.path.join(s.home, ".config/zsh")
 check("a $ZDOTDIR/conf.d loader in .zshenv finds the user's files", s.result("LOADED") == "yes", s.result("LOADED"))
 check("no glob error from a $ZDOTDIR loader", "no matches found" not in text)
-check("ZDOTDIR is the user's once startup is done", s.result("ZD") == os.path.join(s.home, ".config/zsh"), s.result("ZD"))
+check("hooks and the prompt see the user's ZDOTDIR", s.result("ZD") == user_dir, s.result("ZD"))
+check("a running command has the integration directory exported", s.result("ENVZD") == s.zdotdir and s.result("CMDZD") == s.zdotdir, (s.result("ENVZD"), s.result("CMDZD")))
 check("history is not kept in the integration directory", (s.result("HIST") or "").startswith(s.home) or s.result("HIST") in (None, "none"), s.result("HIST"))
 check("the integration still reports prompts", s.marks().count("133:B") >= 2)
-check("no integration variable leaks into the session", s.result("USERVAR") == "unset", s.result("USERVAR"))
+check("the user's ZDOTDIR travels to child shells", s.result("USERVAR") == user_dir, s.result("USERVAR"))
 s.close()
 
 # The user sets ZDOTDIR from ~/.zshenv. zsh would continue with their files and
@@ -232,19 +250,57 @@ s.close()
 s = Session(
     {
         ".zshenv": 'export ZDOTDIR="@HOME@/.config/zsh"\n',
-        ".config/zsh/.zshrc": "PS1='PROMPT> '\nA_LOADED=from-user-rc\n",
+        ".config/zsh/.zshrc": "PS1='PROMPT> '\nA_LOADED=from-user-rc\n" + hook,
     }
 )
 s.run(probe)
 check("a ZDOTDIR set by .zshenv still loads the user's .zshrc", s.result("LOADED") == "from-user-rc", s.result("LOADED"))
 check("a ZDOTDIR set by .zshenv does not skip the integration", s.marks().count("133:B") >= 2, s.marks())
-check("that ZDOTDIR is left in place", s.result("ZD") == os.path.join(s.home, ".config/zsh"), s.result("ZD"))
+check("that ZDOTDIR is what the prompt sees", s.result("ZD") == os.path.join(s.home, ".config/zsh"), s.result("ZD"))
 s.close()
 
-# No ZDOTDIR at all: the session must not end up with one.
-s = Session({".zshrc": "PS1='PROMPT> '\n"})
+# No ZDOTDIR at all: the prompt must not see one, a running command does.
+s = Session({".zshrc": "PS1='PROMPT> '\n" + hook})
 s.run(probe)
-check("without a user ZDOTDIR none is left behind", s.result("ZD") == "unset", s.result("ZD"))
+check("without a user ZDOTDIR the prompt sees none", s.result("ZD") == "unset", s.result("ZD"))
+check("without a user ZDOTDIR a running command still hands children the integration", s.result("ENVZD") == s.zdotdir, s.result("ENVZD"))
+check("without a user ZDOTDIR no user variable is exported", s.result("USERVAR") == "unset", s.result("USERVAR"))
+s.close()
+
+# exec zsh, a nested zsh and zsh -l regain the integration, and read the user's
+# files exactly once per shell.
+for label, user_zdotdir in (("with a user ZDOTDIR", True), ("without a user ZDOTDIR", False)):
+    rc = "PS1='PROMPT> '\nprint start >> \"$HOME/rc.log\"\n" + hook
+    files = {".zshenv": "print env >> \"$HOME/env.log\"\n"}
+    env = None
+    if user_zdotdir:
+        files = {".config/zsh/.zshrc": rc, ".config/zsh/.zshenv": files[".zshenv"]}
+        env = {"TERAX_USER_ZDOTDIR": "@HOME@/.config/zsh"}
+    else:
+        files[".zshrc"] = rc
+    s = Session(files, env=env)
+    wanted = os.path.join(s.home, ".config/zsh") if user_zdotdir else "unset"
+    for command in ("exec zsh -l", "zsh", "zsh -l", "exec zsh"):
+        before = s.prompts()
+        ok = s.run(command)
+        s.run(probe)
+        check(f"{label}: `{command}` gets a prompt", ok and s.prompts() > before)
+        check(f"{label}: `{command}` is integrated again", s.marks()[-12:].count("133:B") >= 1 and "133:A" in s.marks()[-12:], s.marks()[-12:])
+        check(f"{label}: `{command}` sees the user's ZDOTDIR at its prompt", s.result("ZD") == wanted, s.result("ZD"))
+        if command.startswith("zsh"):
+            s.run("exit")
+    shells = open(os.path.join(s.home, "rc.log")).read().count("start") if os.path.exists(os.path.join(s.home, "rc.log")) else 0
+    envs = open(os.path.join(s.home, "env.log")).read().count("env") if os.path.exists(os.path.join(s.home, "env.log")) else 0
+    check(f"{label}: the user's .zshrc ran once per shell (first, exec, 2 nested, exec)", shells == 5, shells)
+    check(f"{label}: the user's .zshenv ran once per shell", envs == 5, envs)
+    s.close()
+
+# The implicit end of a command: exec zsh sends C and then the new shell's first
+# precmd, which reports D for the command that no longer exists.
+s = Session({".zshrc": "PS1='PROMPT> '\n"})
+s.run("exec zsh -l")
+marks = s.marks()
+check("exec zsh reports C then a fresh D, A, B", "133:C;exec zsh -l" in marks and marks[marks.index("133:C;exec zsh -l") :].count("133:A") >= 1, marks)
 s.close()
 
 # The user's .zlogin is read from their own directory.
