@@ -415,6 +415,50 @@ describe("routeKeyDown on a layout with AltGr", () => {
     });
   });
 
+  it.each([
+    ["@", "KeyQ"],
+    ["\u20ac", "KeyE"],
+    ["\u0105", "KeyA"],
+    ["{", "Digit7"],
+    ["[", "Digit8"],
+    ["~", "Digit2"],
+  ])(
+    "types %s when AltGr is not reported but the character is not the US key",
+    (key, code) => {
+      const event = { ...press(false), key, code };
+      expect(routeKeyDown(event, ctx)).toEqual({
+        kind: "text",
+        text: key,
+        key: null,
+      });
+    },
+  );
+
+  it.each([
+    ["a", "KeyA", false],
+    ["A", "KeyA", true],
+    ["Q", "KeyQ", false],
+    ["@", "Digit2", true],
+  ])(
+    "keeps real Ctrl+Alt+%s on a US layout a chord (shift %s)",
+    (key, code, shiftKey) => {
+      const event = { ...press(false), key, code, shiftKey };
+      expect(routeKeyDown(event, ctx).kind).toBe("key");
+    },
+  );
+
+  it("does not guess AltGr away from Windows", () => {
+    expect(
+      routeKeyDown(
+        { ...press(false), key: "@", code: "KeyQ" },
+        {
+          ...ctx,
+          isWindows: false,
+        },
+      ).kind,
+    ).toBe("key");
+  });
+
   it("types the character AltGr produces", () => {
     expect(routeKeyDown({ ...press(true), key: "\u00e6" }, ctx)).toEqual({
       kind: "text",

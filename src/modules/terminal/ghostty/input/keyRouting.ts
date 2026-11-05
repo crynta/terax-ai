@@ -92,6 +92,21 @@ const IME_SAFE_KEYS: ReadonlySet<string> = new Set([
   ...Array.from({ length: 24 }, (_, index) => `F${index + 1}`),
 ]);
 
+/**
+ * AltGr types a character through Ctrl+Alt on Windows. Chromium reports it as
+ * `AltGraph`; if a WebView2 build does not, a Ctrl+Alt press whose character
+ * differs from the key's US character (`@`, `{`, `[`, a euro sign, accented
+ * letters on German, French and Polish layouts) is AltGr, while Ctrl+Alt+letter
+ * on a US layout types the letter itself and stays a chord.
+ */
+function isAltGraph(event: KeyboardLike, ctx: KeyContext): boolean {
+  if (event.getModifierState("AltGraph")) return true;
+  if (!ctx.isWindows || !event.ctrlKey || !event.altKey) return false;
+  if (event.key.length !== 1) return false;
+  const base = baseTextForCode(event.code, event.shiftKey);
+  return base === null || base.toLowerCase() !== event.key.toLowerCase();
+}
+
 function isOptionMeta(event: KeyboardLike, ctx: KeyContext): boolean {
   return (
     ctx.isMac &&
@@ -201,7 +216,7 @@ export function routeKeyDown(
     key.length === 1 &&
     !event.metaKey &&
     ((!event.ctrlKey && !event.altKey) ||
-      event.getModifierState("AltGraph") ||
+      isAltGraph(event, ctx) ||
       (ctx.isMac && event.altKey && !event.ctrlKey && !optionMeta));
   if (printable) {
     const mapped = KEY_MAP[event.code];
