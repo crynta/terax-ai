@@ -21,7 +21,24 @@ export class TerminalMouse {
   private buttons = 0;
   private lastMotion: string | null = null;
 
-  constructor(private readonly host: MouseHost) {}
+  private readonly listeners: [string, (event: MouseEvent) => void][] = [
+    ["mousedown", (event) => this.button(event, false)],
+    ["mouseup", (event) => this.button(event, true)],
+    ["mousemove", (event) => this.move(event)],
+  ];
+
+  constructor(private readonly host: MouseHost) {
+    for (const [type, listener] of this.listeners)
+      host.pointerTarget.addEventListener(type, listener as EventListener);
+  }
+
+  dispose(): void {
+    for (const [type, listener] of this.listeners)
+      this.host.pointerTarget.removeEventListener(
+        type,
+        listener as EventListener,
+      );
+  }
 
   button(event: MouseEvent, release: boolean): void {
     if (!this.host.model.modes().mouseTracking || event.shiftKey) return;

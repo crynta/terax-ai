@@ -103,8 +103,16 @@ export class GhosttyInputController {
       : null;
     for (const [target, type, listener, listenerOptions] of this.listeners())
       target.addEventListener(type, listener, listenerOptions);
-    // Cold paths load apart from the keyboard: only composing users need the
-    // anchor and only programs that track the mouse need the reports.
+    this.loadColdModules(true);
+  }
+
+  /**
+   * Cold paths load apart from the keyboard: only composing users need the
+   * anchor and only programs that track the mouse need the reports. A failed
+   * load is retried once, then reported once; the keyboard works without them.
+   */
+  private loadColdModules(retry: boolean): void {
+    const { options } = this;
     void Promise.all([import("./ImeAnchor"), import("./TerminalMouse")]).then(
       ([{ ImeAnchor }, { TerminalMouse }]) => {
         if (this.disposed) return;
@@ -118,6 +126,11 @@ export class GhosttyInputController {
           gridShiftY: options.gridShiftY,
           send: (report) => this.emitText(report, "keydown", false, false),
         });
+      },
+      (error: unknown) => {
+        if (this.disposed) return;
+        if (retry) this.loadColdModules(false);
+        else console.warn("Terax: mouse and IME input failed to load", error);
       },
     );
   }
@@ -137,6 +150,7 @@ export class GhosttyInputController {
     if (this.disposed) return;
     this.disposed = true;
     this.imeAnchor?.end();
+    this.mouse?.dispose();
     this.nativeSelection?.dispose();
     this.proxy.dispose();
     this.pressedKeys.clear();
@@ -160,9 +174,6 @@ export class GhosttyInputController {
       [input, "paste", this.handlePaste as EventListener],
       [input, "focus", this.handleFocus],
       [input, "blur", this.handleBlur],
-      [pointerTarget, "mousedown", this.handleMouseDown as EventListener],
-      [pointerTarget, "mouseup", this.handleMouseUp as EventListener],
-      [pointerTarget, "mousemove", this.handleMouseMove as EventListener],
       [
         pointerTarget,
         "wheel",
@@ -379,15 +390,6 @@ export class GhosttyInputController {
       height: cell.height,
     };
   }
-
-  private readonly handleMouseDown = (event: MouseEvent): void =>
-    this.mouse?.button(event, false);
-
-  private readonly handleMouseUp = (event: MouseEvent): void =>
-    this.mouse?.button(event, true);
-
-  private readonly handleMouseMove = (event: MouseEvent): void =>
-    this.mouse?.move(event);
 
   private readonly handleWheel = (event: WheelEvent): void => {
     if (!Number.isFinite(event.deltaY) || event.deltaY === 0) return;
