@@ -1,4 +1,6 @@
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -73,8 +75,9 @@ struct AgentSpec {
     events: &'static [EventSpec],
 }
 
-/// Longer than the CLI's default decision wait, so Terax answers first.
-const DECISION_HOOK_TIMEOUT: u32 = 660;
+/// Longer than the longest decision wait the CLI accepts plus its socket
+/// slack, so Terax always answers before the agent gives up on the hook.
+const DECISION_HOOK_TIMEOUT: u32 = terax_control_protocol::hook::MAX_DECISION_SECS + 60;
 
 const AGENTS: &[AgentSpec] = &[
     AgentSpec {
@@ -522,8 +525,16 @@ fn write_atomic(path: &Path, contents: &str) -> Result<(), String> {
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let tmp = dir.join(format!(".{name}.terax-tmp"));
-    std::fs::write(&tmp, contents).map_err(|e| format!("write {}: {e}", tmp.display()))?;
+    let (mut file, tmp) = create_temp(dir, &name)?;
+    let written = file
+        .write_all(contents.as_bytes())
+        .and_then(|()| file.sync_all());
+    drop(file);
+    if let Err(e) = written {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(format!("write {}: {e}", tmp.display()));
+    }
+    // Widening to the target's mode is safe: the contents were private until now.
     if let Ok(metadata) = std::fs::metadata(&target) {
         let _ = std::fs::set_permissions(&tmp, metadata.permissions());
     }
@@ -531,6 +542,25 @@ fn write_atomic(path: &Path, contents: &str) -> Result<(), String> {
         let _ = std::fs::remove_file(&tmp);
         format!("rename into {}: {e}", target.display())
     })
+}
+
+/// A fresh, private (0600 on Unix) sibling of the target, never shared with a
+/// concurrent write.
+fn create_temp(dir: &Path, name: &str) -> Result<(std::fs::File, PathBuf), String> {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let tmp = dir.join(format!(
+        ".{name}.terax-tmp-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    let file = options
+        .open(&tmp)
+        .map_err(|e| format!("create {}: {e}", tmp.display()))?;
+    Ok((file, tmp))
 }
 
 fn apply_plan(plan: &HooksPlan) -> Result<(), String> {
@@ -930,7 +960,7 @@ mod tests {
             json!({ "hooks": [{
                 "type": "command",
                 "command": posix("codex", "PermissionRequest"),
-                "timeout": 660
+                "timeout": 960
             }] })
         );
         for event in ["SessionStart", "UserPromptSubmit"] {
@@ -953,7 +983,7 @@ mod tests {
             json!({ "hooks": [{
                 "type": "command",
                 "command": posix("claude", "PermissionRequest"),
-                "timeout": 660
+                "timeout": 960
             }] })
         );
         assert_eq!(
@@ -1160,6 +1190,55 @@ mod tests {
         let stale = plan_at("claude", Action::Install, &path, Some("{ }".into()), false).unwrap();
         assert!(apply_plan(&stale).is_err());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "{}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn temp_files_are_private_unique_and_never_leak_a_wider_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let (first, first_path) = create_temp(dir.path(), "settings.json").unwrap();
+        let (_second, second_path) = create_temp(dir.path(), "settings.json").unwrap();
+        assert_ne!(first_path, second_path);
+        let mode = first.metadata().unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+
+        let target = dir.path().join("config.json");
+        std::fs::write(&target, "{}\n").unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644)).unwrap();
+        write_atomic(&target, "{\"a\":1}\n").unwrap();
+        let mode = std::fs::metadata(&target).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o644);
+        let fresh = dir.path().join("fresh.json");
+        write_atomic(&fresh, "{}\n").unwrap();
+        assert_eq!(
+            std::fs::metadata(&fresh).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        let leftovers = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().contains("terax-tmp"))
+            .count();
+        assert_eq!(leftovers, 2, "only the two files created directly above");
+    }
+
+    #[test]
+    fn reconcile_leaves_empty_arrays_the_user_wrote_alone() {
+        let user = "{\n  \"hooks\": {\n    \"PreToolUse\": [],\n    \"BeforeTool\": []\n  }\n}\n";
+        for agent in ["claude", "codex", "gemini"] {
+            let out = install(agent, Some(user), false);
+            let value = parsed(&out);
+            for event in ["PreToolUse", "BeforeTool"] {
+                if spec(agent).events.iter().any(|e| e.event == event) {
+                    assert_eq!(value["hooks"][event], json!([]), "{agent} {event}");
+                }
+            }
+            let removed = json_after(spec(agent), Some(&out), Action::Uninstall, false, &path())
+                .unwrap()
+                .unwrap();
+            assert_eq!(removed, user, "{agent}");
+        }
     }
 
     #[cfg(unix)]
