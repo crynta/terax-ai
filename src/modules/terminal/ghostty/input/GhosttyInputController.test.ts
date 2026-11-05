@@ -967,6 +967,33 @@ describe("GhosttyInputController", () => {
     );
     controller.dispose();
   });
+
+  it("ends the press when the button is released with Shift held, so later motion is not a drag", async () => {
+    const input = new FakeTextArea();
+    const pointerTarget = new FakeElement();
+    const onData = vi.fn();
+    const controller = new GhosttyInputController({
+      model: inputModel((mode) => mode === 1002 || mode === 1006),
+      input: input as unknown as HTMLTextAreaElement,
+      pointerTarget: pointerTarget as unknown as HTMLElement,
+      cellSize: () => ({ width: 10, height: 20 }),
+      onData,
+      onCopy: () => false,
+      isMac: false,
+    });
+    await vi.dynamicImportSettled();
+    const at = { clientX: 15, clientY: 25 };
+    pointerTarget.dispatchEvent(mouseEvent("mousedown", at));
+    pointerTarget.dispatchEvent(
+      mouseEvent("mouseup", { ...at, shiftKey: true }),
+    );
+    onData.mockClear();
+    pointerTarget.dispatchEvent(
+      mouseEvent("mousemove", { clientX: 35, clientY: 45 }),
+    );
+    expect(onData).not.toHaveBeenCalled();
+    controller.dispose();
+  });
 });
 
 function wheelHarness() {

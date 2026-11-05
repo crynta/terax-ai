@@ -41,6 +41,8 @@ export class TerminalMouse {
   }
 
   button(event: MouseEvent, release: boolean): void {
+    // A release always ends the press, even when Shift hands the click back.
+    if (release) this.buttons &= ~(1 << event.button);
     if (!this.host.model.modes().mouseTracking || event.shiftKey) return;
     const position = this.position(event);
     if (!position) return;
