@@ -65,19 +65,37 @@ describe("fitTerminalViewport right gutter", () => {
     );
   });
 
-  it("gives the gutter up in a pane too narrow for two columns beside it", () => {
+  it("keeps two columns in a pane too narrow for two beside the gutter", () => {
     const metrics = metricsAt(1);
-    const narrow = 2 * metrics.deviceCellWidth + GUTTER - 1;
-    const fit = fitTerminalViewport(narrow, 100, metrics, null, GUTTER);
-    expect(fit?.cols).toBe(
-      2 + Math.floor((GUTTER - 1) / metrics.deviceCellWidth),
-    );
-    expect(
-      fitTerminalViewport(narrow - 6, 100, metrics, null, GUTTER),
-    ).not.toBeNull();
-    expect(
-      fitTerminalViewport(metrics.deviceCellWidth, 100, metrics, null, GUTTER),
-    ).toBeNull();
+    const cell = metrics.deviceCellWidth;
+    for (const width of [2 * cell, 2 * cell + 5, 2 * cell + GUTTER - 1]) {
+      expect(fitTerminalViewport(width, 100, metrics, null, GUTTER)?.cols, `${width}px`).toBe(2);
+    }
+    expect(fitTerminalViewport(cell, 100, metrics, null, GUTTER)).toBeNull();
+  });
+
+  it.each(RATIOS)(
+    "never fits fewer columns in a wider pane, at the gutter threshold or anywhere else, at %s",
+    (scale) => {
+      const metrics = metricsAt(scale);
+      let previous = 0;
+      for (let width = 1; width <= 1600; width += 0.25) {
+        const fit = fitTerminalViewport(width, 400, metrics, null, GUTTER);
+        const cols = fit?.cols ?? 0;
+        expect(cols, `${width}px`).toBeGreaterThanOrEqual(previous);
+        previous = cols;
+      }
+      expect(previous).toBeGreaterThan(2);
+    },
+  );
+
+  it("steps from three columns to the next exactly where the gutter allows it", () => {
+    // Cells of 9 px at scale 1: 3 columns need 27 + 14 = 41 px.
+    const metrics = metricsAt(1);
+    expect(metrics.deviceCellWidth).toBe(9);
+    const cols = (width: number) => fitTerminalViewport(width, 100, metrics, null, GUTTER)?.cols;
+    expect([31, 32, 40].map(cols)).toEqual([2, 2, 2]);
+    expect([41, 49].map(cols)).toEqual([3, 3]);
   });
 
   it("keeps a half-width split pane clear of its edge by more than a column", () => {
