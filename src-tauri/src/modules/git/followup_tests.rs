@@ -105,6 +105,10 @@ fn diff_prefix_settings_of_the_user_never_change_what_the_header_parser_sees() {
 
 // ------------------------------------------- 2: a user's discovery ceiling stays
 
+// The ceiling list is colon-separated on Unix and drive paths contain colons, so
+// the Windows spelling is a different feature; the environment handling it
+// guards is the same code on both.
+#[cfg(unix)]
 #[test]
 fn a_users_ceiling_directory_still_bounds_repository_discovery() {
     let (_keep, base) = scratch();
@@ -136,6 +140,72 @@ fn a_users_ceiling_directory_still_bounds_repository_discovery() {
         Some(0),
         "the ceiling must reach git: {}",
         String::from_utf8_lossy(&bounded.stdout)
+    );
+}
+
+// ------------------------- racy git: the private index keeps the real one's age
+
+fn set_mtime(path: &Path, when: std::time::SystemTime) {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(when)
+        .unwrap();
+}
+
+/// The private index must carry the real index's mtime, whatever the platform's
+/// file copy does with timestamps: macOS clones files (keeping them), Linux and
+/// Windows write a new file stamped "now", which is the case that loses edits.
+#[test]
+fn the_private_index_keeps_the_real_indexs_modification_time() {
+    let repo = TestRepo::new();
+    let long_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(7200);
+    let real = repo.root.join(".git/index");
+    set_mtime(&real, long_ago);
+
+    let resolved =
+        crate::modules::git::plumbing::open_worktree(&repo.registry, &repo.path(), &repo.ws)
+            .unwrap();
+    let temp = checkpoint::seeded_index_mtime_for_tests(&resolved).unwrap();
+    let apart = temp
+        .duration_since(long_ago)
+        .unwrap_or_else(|e| e.duration());
+    assert!(
+        apart < std::time::Duration::from_secs(2),
+        "the copy was stamped {apart:?} away from the original's mtime"
+    );
+}
+
+/// Git skips re-reading a file whose cached stat data (mtime seconds and size,
+/// under `core.checkStat=minimal`, which is also all that many git builds ever
+/// compare) still matches, unless the entry is as new as the index file it sits
+/// in. A copy of the index with a fresh mtime hides a same-size edit made right
+/// after the file was indexed; the snapshot must see it.
+#[test]
+fn a_same_size_edit_made_right_after_indexing_is_still_snapshotted() {
+    let repo = TestRepo::new();
+    repo.git(&["config", "core.checkStat", "minimal"]);
+    repo.git(&["config", "core.trustctime", "false"]);
+    let long_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+
+    let a = repo.root.join("a.txt");
+    repo.write("a.txt", "one\n");
+    set_mtime(&a, long_ago);
+    repo.commit_all("base");
+    // The index was written in the same instant the file was last modified.
+    set_mtime(&repo.root.join(".git/index"), long_ago);
+
+    // Rewritten in place, same size, and given back the same mtime: the stat
+    // data cannot tell. Only the racy-entry rule can.
+    repo.write("a.txt", "two\n");
+    set_mtime(&a, long_ago);
+
+    let created = checkpoint::create(&repo.registry, &repo.path(), "t", 1, &repo.ws).unwrap();
+    assert_eq!(
+        repo.git(&["show", &format!("{}:a.txt", created.info.commit)]),
+        "two\n",
+        "the checkpoint recorded the old content"
     );
 }
 

@@ -451,27 +451,41 @@ fn file_diff_rejects_paths_outside_the_repository() {
 
 #[test]
 fn glob_characters_in_file_names_are_literal() {
+    // (a literal file name, a sibling the same text would match as a glob).
+    // `*` and `?` are not legal in Windows file names; `[...]` is legal there
+    // and is a glob character to git too.
+    let mut pairs = vec![("a[1].txt", "a1.txt")];
+    if !cfg!(windows) {
+        pairs.push(("b*.txt", "bb.txt"));
+        pairs.push(("c?.txt", "cx.txt"));
+    }
     let repo = TestRepo::new();
-    repo.write("a*.txt", "star\n");
-    repo.write("ab.txt", "plain\n");
+    for (literal, sibling) in &pairs {
+        repo.write(literal, "literal\n");
+        repo.write(sibling, "sibling\n");
+    }
     repo.commit_all("globs");
-    repo.write("a*.txt", "STAR\n");
-    repo.write("ab.txt", "PLAIN\n");
+    for (literal, sibling) in &pairs {
+        repo.write(literal, "LITERAL\n");
+        repo.write(sibling, "SIBLING\n");
+    }
 
-    let outcome = apply(
-        &repo,
-        GitDiffScope::Unstaged,
-        "a*.txt",
-        ApplyMode::Stage,
-        ApplySelection::File,
-    );
-    assert!(outcome.applied);
-    assert_eq!(repo.staged("a*.txt"), "STAR\n");
-    assert_eq!(
-        repo.staged("ab.txt"),
-        "plain\n",
-        "the wildcard must not match ab.txt"
-    );
+    for (literal, sibling) in &pairs {
+        let outcome = apply(
+            &repo,
+            GitDiffScope::Unstaged,
+            literal,
+            ApplyMode::Stage,
+            ApplySelection::File,
+        );
+        assert!(outcome.applied, "{literal}: {:?}", outcome.refusal);
+        assert_eq!(repo.staged(literal), "LITERAL\n");
+        assert_eq!(
+            repo.staged(sibling),
+            "sibling\n",
+            "{literal} must not match {sibling} as a wildcard"
+        );
+    }
 }
 
 #[test]

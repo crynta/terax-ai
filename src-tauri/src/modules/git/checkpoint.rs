@@ -134,6 +134,17 @@ impl TempIndex {
         let real = dir.join("index");
         if real.is_file() {
             std::fs::copy(&real, &path)?;
+            // Git trusts an entry's cached stat data only if the entry is older
+            // than the index file itself ("racy git"): a file rewritten within
+            // the timestamp granularity of the moment it was indexed, with the
+            // same size, looks unchanged otherwise. The copy would carry a fresh
+            // mtime and hide exactly those edits, so it keeps the original's.
+            if let Ok(modified) = std::fs::metadata(&real).and_then(|m| m.modified()) {
+                let _ = std::fs::OpenOptions::new()
+                    .write(true)
+                    .open(&path)
+                    .and_then(|file| file.set_modified(modified));
+            }
         }
         Ok(Self {
             path,
@@ -186,6 +197,15 @@ fn with_plumbing_config(hooks: &Path, args: Vec<OsString>) -> Vec<OsString> {
     let mut full = plumbing_config(hooks);
     full.extend(args);
     full
+}
+
+/// The modification time of a freshly seeded private index (test hook).
+#[cfg(test)]
+pub(crate) fn seeded_index_mtime_for_tests(
+    repo: &ResolvedGitDirectory,
+) -> Result<std::time::SystemTime> {
+    let temp = TempIndex::seeded(repo)?;
+    Ok(std::fs::metadata(&temp.path)?.modified()?)
 }
 
 fn run_indexed(
