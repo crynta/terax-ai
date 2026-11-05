@@ -10,6 +10,7 @@ import os
 import pty
 import re
 import select
+import shlex
 import shutil
 import struct
 import sys
@@ -224,6 +225,23 @@ check("a framework that rebuilds PS1 last still gets a prompt end", len(texts) >
 check("exactly one prompt end per prompt", s.marks().count("133:A") == s.marks().count("133:B"), s.marks())
 s.close()
 
+# Another plugin that hooks line-init through add-zle-hook-widget installs the
+# shared dispatcher before Terax does. That dispatcher being there says nothing
+# about Terax's own hook, so the prompt end of a late-rebuilt prompt must still
+# come, and the plugin's hook must keep running.
+shared_dispatcher = late + """
+autoload -Uz add-zle-hook-widget
+plugin_line_init() { print -n -- PLUGIN_LINE_INIT_RAN }
+add-zle-hook-widget line-init plugin_line_init
+"""
+s = Session({".zshrc": shared_dispatcher})
+s.run("true")
+s.run("true")
+texts = prompt_text_between_a_and_b(s)
+check("a shared line-init dispatcher does not keep Terax's hook out", len(texts) >= 3 and all("late> " in text for text in texts), texts)
+check("the plugin's own line-init hook still runs", s.out.count(b"PLUGIN_LINE_INIT_RAN") >= 3, s.out.count(b"PLUGIN_LINE_INIT_RAN"))
+s.close()
+
 # A prompt that already carries its own end marker is not marked twice.
 own = "PS1=$'PROMPT> %{\\e]133;B\\a%}'\n"
 s = Session({".zshrc": own})
@@ -367,7 +385,7 @@ for label, user_zdotdir in (("with a user ZDOTDIR", True), ("without a user ZDOT
         "list `echo hi; zsh`": f"echo hi; zsh {child(5)}",
         "list `zsh; ls`": f"zsh {child(6)}; ls >/dev/null",
         "pipeline `true | zsh`": f"true | zsh {child(7)}",
-        "absolute path": f"/bin/zsh {child(8)}",
+        "absolute path": f"{shlex.quote(ZSH)} {child(8)}",
         "$SHELL": f"$SHELL {child(9)}",
         "an alias for zsh": f"zz {child(10)}",
         "exec -l zsh": f"(exec -l zsh {child(11)})",
@@ -426,13 +444,15 @@ for label, user_zdotdir in (("with a user ZDOTDIR", True), ("without a user ZDOT
 
     # The check runs before every command; a pasted 200 KB script must cost
     # nothing noticeable.
-    s.run('zmodload zsh/datetime; for shape in a b c; do case $shape in a) big=${(pl:200000::echo zsh; :)};; b) big=${(pl:200000::lorem ipsum :)};; c) big=${(pl:200000::ls\n zsh:)};; esac; t0=$EPOCHREALTIME; _terax_starts_zsh "$big"; t1=$EPOCHREALTIME; print -r -- "RESULT:PERF$shape=$(( (t1 - t0) * 1000 )):"; done')
+    # The best of several samples: one scheduler stall on a shared runner must
+    # not fail a check that guards a 263 ms regression.
+    s.run('zmodload zsh/datetime; for shape in a b c; do case $shape in a) big=${(pl:200000::echo zsh; :)};; b) big=${(pl:200000::lorem ipsum :)};; c) big=${(pl:200000::ls\n zsh:)};; esac; best=1e9; for try in 1 2 3 4 5 6 7 8; do t0=$EPOCHREALTIME; _terax_starts_zsh "$big"; t1=$EPOCHREALTIME; took=$(( (t1 - t0) * 1000 )); (( took < best )) && best=$took; done; print -r -- "RESULT:PERF$shape=$best:"; done')
     for shape in "a", "b", "c":
         value = s.result(f"PERF{shape}")
         took = f"{float(value):.3f} ms" if value is not None else "?"
-        # About 0.5 ms here, almost all of it copying the argument; the bound is
-        # loose enough for a busy CI runner and far below the 263 ms an
-        # unbounded parse of 60 KB cost.
+        # About 0.5 ms here, almost all of it copying the argument; the best of
+        # eight samples under 2 ms is far from the 263 ms an unbounded parse of
+        # 60 KB cost, and no longer depends on a single scheduler hiccup.
         check(f"{label}: a 200 KB command line ({shape}) costs next to nothing ({took})", value is not None and float(value) < 2.0, value)
     s.close()
 

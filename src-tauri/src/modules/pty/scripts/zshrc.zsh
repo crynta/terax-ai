@@ -227,8 +227,15 @@ _terax_zshrc_setup() {
 
   _terax_ensure_line_init() {
     emulate -L zsh
-    [[ "${widgets[zle-line-init]-}" == user:azhw:zle-line-init ]] && return 0
     if [[ "$ZSH_VERSION" == (5.<3->*|<6->.*) ]]; then
+      # The dispatcher widget is shared with every plugin that hooks line-init,
+      # so only our own entry in its list means there is nothing to do.
+      local -a hooks
+      if [[ "${widgets[zle-line-init]-}" == user:azhw:zle-line-init ]] \
+         && zstyle -g hooks zle-line-init widgets \
+         && [[ -n "${(M)hooks[@]:#(<->:|)_terax_line_init}" ]]; then
+        return 0
+      fi
       autoload -Uz add-zle-hook-widget
       add-zle-hook-widget line-init _terax_line_init
     else
