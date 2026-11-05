@@ -179,14 +179,14 @@ export function findDuplicatePackages(mapTexts) {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** Duplicate packages in a built dist directory (empty without sourcemaps). */
+/** Duplicate packages in a built dist directory, or null when it has no sourcemaps. */
 export function findDuplicatePackagesInDist(distDir) {
   const assets = join(distDir, "assets");
-  if (!existsSync(assets)) return [];
+  if (!existsSync(assets)) return null;
+  const maps = readdirSync(assets).filter((f) => f.endsWith(".js.map"));
+  if (maps.length === 0) return null;
   return findDuplicatePackages(
-    readdirSync(assets)
-      .filter((f) => f.endsWith(".js.map"))
-      .map((f) => readFileSync(join(assets, f), "utf8")),
+    maps.map((f) => readFileSync(join(assets, f), "utf8")),
   );
 }
 
@@ -318,7 +318,11 @@ if (isCli) {
     process.exit(1);
   }
   const duplicates = findDuplicatePackagesInDist(distDir);
-  if (duplicates.length) {
+  if (duplicates === null) {
+    console.log(
+      "\n  - duplicate-package check skipped: no sourcemaps (build with `vite build --sourcemap`; dist-budget.test.ts always runs it)",
+    );
+  } else if (duplicates.length) {
     for (const { name, versions } of duplicates) {
       console.log(`  x ${name} bundled in ${versions.join(", ")}`);
     }

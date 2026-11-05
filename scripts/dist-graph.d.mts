@@ -19,7 +19,7 @@ export function findDuplicatePackages(
 ): { name: string; versions: string[] }[];
 export function findDuplicatePackagesInDist(
   distDir: string,
-): { name: string; versions: string[] }[];
+): { name: string; versions: string[] }[] | null;
 
 export type StartupFile = {
   bytes: number;
