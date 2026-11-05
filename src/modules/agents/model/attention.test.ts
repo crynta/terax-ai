@@ -25,6 +25,7 @@ function agent(
     lastMessage: null,
     lastPrompt: null,
     currentTool: null,
+    runningTools: {},
     subagents: {},
     pendingPermission: null,
     turn: 0,

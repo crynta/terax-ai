@@ -109,6 +109,7 @@ export type SubagentSummary = {
 };
 
 export type CurrentTool = {
+  id: string | null;
   name: string;
   inputPreview: string;
   startedAt: number;
@@ -134,7 +135,10 @@ export type Agent = {
   cwd: string | null;
   lastMessage: string | null;
   lastPrompt: string | null;
+  /** The most recently started tool that has not ended. */
   currentTool: CurrentTool | null;
+  /** Tools that started and have not ended, by tool id (name and input without one). */
+  runningTools: Readonly<Record<string, CurrentTool>>;
   subagents: Readonly<Record<string, SubagentSummary>>;
   pendingPermission: PendingPermission | null;
   /** Prompts submitted in this run of the agent. */

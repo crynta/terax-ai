@@ -99,7 +99,10 @@ describe("turn lifecycle from hooks", () => {
       inputPreview: "ls",
     });
 
-    registry = reduceAgents(registry, hook("tool-end"));
+    registry = reduceAgents(
+      registry,
+      hook("tool-end", { tool: { name: "Bash", inputPreview: "ls" } }),
+    );
     expect(agentOf(registry).currentTool).toBeNull();
     expect(agentOf(registry).state).toBe("working");
 
@@ -241,7 +244,7 @@ describe("permission requests", () => {
       ["deny", "working", false],
       ["ask", "needs-approval", false],
       ["timeout", "needs-approval", false],
-      ["agent-gone", "needs-approval", false],
+      ["agent-gone", "working", false],
       ["pane-closed", "needs-approval", false],
       ["ui-gone", "needs-approval", false],
     ];
@@ -283,16 +286,115 @@ describe("permission requests", () => {
     expect(agentOf(registry).pendingPermission?.requestId).toBeNull();
   });
 
-  it("goes back to work when the user answers in the agent itself", () => {
+  it("goes back to work when the approved tool finishes", () => {
     const registry = run(
       hook("prompt"),
       hook("permission-request", { permission: permission("d-1") }),
-      hook("tool-start", { tool: { name: "Bash", inputPreview: "npm test" } }),
+      hook("tool-end", { tool: { name: "Bash", inputPreview: "npm test" } }),
     );
     expect(agentOf(registry)).toMatchObject({
       state: "working",
       pendingPermission: null,
     });
+  });
+});
+
+describe("background tool hooks racing a pending approval", () => {
+  const bash = { name: "Bash", inputPreview: "npm test", id: "t-1" };
+  const other = { name: "Read", inputPreview: "/a.ts", id: "t-2" };
+
+  function pending(): AgentRegistry {
+    return run(
+      hook("prompt"),
+      hook("permission-request", { permission: permission("d-1") }),
+    );
+  }
+
+  it("keeps the approval when the tool start trails the request", () => {
+    const registry = reduceAgents(
+      pending(),
+      hook("tool-start", { tool: bash }),
+    );
+    expect(agentOf(registry)).toMatchObject({
+      state: "needs-approval",
+      waitingReason: "permission",
+    });
+    expect(agentOf(registry).pendingPermission?.requestId).toBe("d-1");
+    expect(agentOf(registry).attentionSince).not.toBeNull();
+  });
+
+  it("keeps the approval through traffic from unrelated tools", () => {
+    let registry = pending();
+    registry = reduceAgents(registry, hook("tool-start", { tool: other }));
+    registry = reduceAgents(registry, hook("tool-end", { tool: other }));
+    registry = reduceAgents(
+      registry,
+      hook("tool-end", { tool: { name: "Bash", inputPreview: "ls" } }),
+    );
+    expect(agentOf(registry).state).toBe("needs-approval");
+    expect(agentOf(registry).pendingPermission?.tool).toBe("Bash");
+  });
+
+  it("is resolved only by the end of the tool that was waiting", () => {
+    let registry = reduceAgents(pending(), hook("tool-start", { tool: bash }));
+    registry = reduceAgents(registry, hook("tool-end", { tool: other }));
+    expect(agentOf(registry).state).toBe("needs-approval");
+    registry = reduceAgents(registry, hook("tool-end", { tool: bash }));
+    expect(agentOf(registry)).toMatchObject({
+      state: "working",
+      pendingPermission: null,
+      attentionSince: null,
+    });
+    expect(agentOf(registry).runningTools).toEqual({});
+  });
+
+  it("still lets tool traffic mean work when nothing is pending", () => {
+    expect(
+      stateAfter(
+        hook("prompt"),
+        hook("notification", { notificationType: "idle_prompt" }),
+        hook("tool-start", { tool: other }),
+      ),
+    ).toBe("working");
+  });
+
+  it("tracks parallel tools by id and ends the right one", () => {
+    let registry = run(
+      hook("prompt"),
+      hook("tool-start", { tool: bash }),
+      hook("tool-start", { tool: other }),
+    );
+    expect(Object.keys(agentOf(registry).runningTools).sort()).toEqual([
+      "t-1",
+      "t-2",
+    ]);
+    expect(agentOf(registry).currentTool?.id).toBe("t-2");
+    registry = reduceAgents(registry, hook("tool-end", { tool: other }));
+    expect(agentOf(registry).currentTool?.id).toBe("t-1");
+    registry = reduceAgents(registry, hook("tool-end", { tool: bash }));
+    expect(agentOf(registry).currentTool).toBeNull();
+    expect(agentOf(registry).runningTools).toEqual({});
+  });
+
+  it("matches a tool end to its start by call when ids are missing", () => {
+    const bare = { name: "Bash", inputPreview: "make" };
+    let registry = run(hook("prompt"), hook("tool-start", { tool: bare }));
+    expect(Object.keys(agentOf(registry).runningTools)).toHaveLength(1);
+    registry = reduceAgents(
+      registry,
+      hook("tool-end", { tool: { ...bare, id: "t-9" } }),
+    );
+    expect(agentOf(registry).runningTools).toEqual({});
+  });
+
+  it("drops running tools when the turn ends", () => {
+    const registry = run(
+      hook("prompt"),
+      hook("tool-start", { tool: bash }),
+      hook("stop"),
+    );
+    expect(agentOf(registry).runningTools).toEqual({});
+    expect(agentOf(registry).currentTool).toBeNull();
   });
 });
 

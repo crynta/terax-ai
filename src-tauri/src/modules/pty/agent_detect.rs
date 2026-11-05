@@ -129,6 +129,8 @@ pub enum Signal {
 pub enum HookIntent {
     Start,
     Working,
+    /// Tool and subagent traffic. Background hooks race the synchronous ones, so
+    /// it can trail the request it belongs to and never changes the status.
     Activity,
     Attention,
     Finished,
@@ -195,8 +197,8 @@ impl AgentLink {
         }
         self.hooked.store(true, Ordering::Release);
         match intent {
-            HookIntent::Quiet | HookIntent::Start => {}
-            HookIntent::Working | HookIntent::Activity => {
+            HookIntent::Quiet | HookIntent::Start | HookIntent::Activity => {}
+            HookIntent::Working => {
                 if self.waiting.swap(false, Ordering::AcqRel) {
                     out.push(Transition::Working);
                 }
@@ -1183,10 +1185,24 @@ mod tests {
         assert!(hooked(&link, HookIntent::Activity).is_empty());
         assert_eq!(hooked(&link, HookIntent::Attention), vec![Transition::Attention]);
         assert!(hooked(&link, HookIntent::Attention).is_empty());
-        assert_eq!(hooked(&link, HookIntent::Activity), vec![Transition::Working]);
         assert_eq!(hooked(&link, HookIntent::Finished), vec![Transition::Finished]);
         assert_eq!(hooked(&link, HookIntent::Working), vec![Transition::Working]);
         assert!(hooked(&link, HookIntent::Quiet).is_empty());
+    }
+
+    #[test]
+    fn tool_activity_never_hides_a_pending_attention() {
+        let link = AgentLink::new();
+        hooked(&link, HookIntent::Working);
+        assert_eq!(hooked(&link, HookIntent::Attention), vec![Transition::Attention]);
+        // A background tool hook that lost the race against the permission
+        // request arrives afterwards, and so does tool traffic for another tool.
+        for _ in 0..3 {
+            assert!(hooked(&link, HookIntent::Activity).is_empty());
+        }
+        // Still waiting: another attention is the same moment, not a new one.
+        assert!(hooked(&link, HookIntent::Attention).is_empty());
+        assert_eq!(hooked(&link, HookIntent::Working), vec![Transition::Working]);
     }
 
     #[test]

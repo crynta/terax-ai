@@ -5,8 +5,10 @@ import type {
   AgentRegistry,
   AgentSignalEvent,
   AgentState,
+  CurrentTool,
   HookEventKind,
   Provenance,
+  ToolInfo,
   WaitingReason,
 } from "./types";
 
@@ -114,6 +116,7 @@ function create(
     lastMessage: null,
     lastPrompt: null,
     currentTool: null,
+    runningTools: {},
     subagents: {},
     pendingPermission: null,
     turn: 0,
@@ -145,9 +148,38 @@ function quiet(agent: Agent): Agent {
   return {
     ...agent,
     currentTool: null,
+    runningTools: {},
     pendingPermission: null,
     subagents: {},
   };
+}
+
+function toolKey(tool: ToolInfo): string {
+  return tool.id ?? `${tool.name}\u0000${tool.inputPreview}`;
+}
+
+/** The running entry a tool end belongs to, matching by id and then by call. */
+function runningKey(
+  running: Readonly<Record<string, CurrentTool>>,
+  tool: ToolInfo,
+): string | null {
+  const direct = toolKey(tool);
+  if (direct in running) return direct;
+  const match = Object.entries(running).find(
+    ([, entry]) =>
+      entry.name === tool.name && entry.inputPreview === tool.inputPreview,
+  );
+  return match ? match[0] : null;
+}
+
+function latest(
+  running: Readonly<Record<string, CurrentTool>>,
+): CurrentTool | null {
+  let best: CurrentTool | null = null;
+  for (const entry of Object.values(running)) {
+    if (!best || entry.startedAt >= best.startedAt) best = entry;
+  }
+  return best;
 }
 
 function put(registry: AgentRegistry, agent: Agent): AgentRegistry {
@@ -291,43 +323,54 @@ function applyHook(agent: Agent, event: AgentHookEvent): Agent {
         at,
       );
     case "tool-start": {
-      if (!ACTIVE.has(agent.state)) return agent;
       const tool = event.tool;
-      const next = tool
-        ? {
-            ...agent,
-            currentTool: {
-              name: tool.name,
-              inputPreview: tool.inputPreview,
-              startedAt: at,
-            },
-          }
-        : agent;
-      return setState(
-        { ...next, pendingPermission: null },
-        "working",
-        null,
-        at,
-      );
+      if (!tool || !ACTIVE.has(agent.state)) return agent;
+      const entry: CurrentTool = {
+        id: tool.id ?? null,
+        name: tool.name,
+        inputPreview: tool.inputPreview,
+        startedAt: at,
+      };
+      const next: Agent = {
+        ...agent,
+        runningTools: { ...agent.runningTools, [toolKey(tool)]: entry },
+        currentTool: entry,
+      };
+      // Background hooks race the synchronous permission hook and parallel
+      // tools run while another waits, so a start never means an approval was
+      // answered.
+      return agent.state === "needs-approval"
+        ? next
+        : setState(next, "working", null, at);
     }
     case "tool-end": {
-      const cleared = { ...agent, currentTool: null };
-      if (agent.state === "needs-approval" || agent.state === "needs-input") {
-        return setState(
-          { ...cleared, pendingPermission: null },
-          "working",
-          null,
-          at,
-        );
+      const tool = event.tool;
+      const key = tool ? runningKey(agent.runningTools, tool) : null;
+      let runningTools = agent.runningTools;
+      if (key !== null) {
+        const { [key]: _ended, ...rest } = runningTools;
+        runningTools = rest;
       }
-      return cleared;
+      const next: Agent = {
+        ...agent,
+        runningTools,
+        currentTool: latest(runningTools),
+      };
+      const pending = agent.pendingPermission;
+      const answered =
+        pending !== null &&
+        tool !== undefined &&
+        pending.tool === tool.name &&
+        pending.inputPreview === tool.inputPreview;
+      return answered
+        ? setState({ ...next, pendingPermission: null }, "working", null, at)
+        : next;
     }
     case "permission-request": {
       const permission = event.permission;
       const next: Agent = {
         ...agent,
         lastMessage: event.message ?? agent.lastMessage,
-        currentTool: null,
         pendingPermission: permission
           ? {
               requestId: permission.requestId ?? null,
@@ -347,8 +390,11 @@ function applyHook(agent: Agent, event: AgentHookEvent): Agent {
         return agent;
       }
       const cleared = { ...agent, pendingPermission: null };
+      // The agent dropping the hook means the user answered at its own prompt.
       const outcome = event.permission?.outcome;
-      return outcome === "allow" || outcome === "deny"
+      return outcome === "allow" ||
+        outcome === "deny" ||
+        outcome === "agent-gone"
         ? setState(cleared, "working", null, at)
         : cleared;
     }
