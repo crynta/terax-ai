@@ -25,8 +25,8 @@ const realTimers: Timers = {
   clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
 };
 
-export const RELOAD_DELAY_MS = 150;
-export const RELOAD_MAX_WAIT_MS = 1000;
+const RELOAD_DELAY_MS = 150;
+const RELOAD_MAX_WAIT_MS = 1000;
 
 /**
  * Trailing debounce with a ceiling: an agent that keeps writing still sees the

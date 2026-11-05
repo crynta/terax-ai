@@ -4938,6 +4938,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tauri-plugin-window-state",
  "tempfile",
+ "terax-cli",
  "terax-control-protocol",
  "tokio",
  "wasmparser",

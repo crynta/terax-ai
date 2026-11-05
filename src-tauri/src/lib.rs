@@ -224,6 +224,13 @@ pub fn run() {
                 if let Some(state) = webview.try_state::<pty::PtyState>() {
                     state.reset_webview(webview.label());
                 }
+                // The reloaded page has no decision UI until it announces one.
+                if let Some(state) = webview.try_state::<control::ControlState>() {
+                    state
+                        .hooks()
+                        .broker
+                        .set_window_ready(webview.label(), false);
+                }
             }
         })
         .setup(move |_app| {
@@ -345,10 +352,15 @@ pub fn run() {
             workspace::workspace_current_dir,
             control::control_frontend_ready,
             control::control_respond,
+            modules::agent_events::agent_decisions_ready,
+            modules::agent_events::agent_decision_respond,
             get_launch_dir,
             get_launch_files,
             open_settings_window,
             agent::agent_enable_hooks,
+            agent::agent_disable_hooks,
+            agent::agent_hooks_plan,
+            agent::agent_hooks_apply,
             agent::agent_hooks_status,
             secrets::secrets_get,
             secrets::secrets_set,
