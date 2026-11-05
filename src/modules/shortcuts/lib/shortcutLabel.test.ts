@@ -19,8 +19,8 @@ beforeEach(() => {
 
 describe("shortcutLabel", () => {
   it("formats the default binding when there is no user override", () => {
-    // commandPalette.open defaults to Ctrl+P.
-    expect(shortcutLabel("commandPalette.open")).toBe("Ctrl P");
+    // commandPalette.open defaults to Ctrl+Shift+P on Windows and Linux.
+    expect(shortcutLabel("commandPalette.open")).toBe("Ctrl Shift P");
   });
 
   it("prefers a user override over the default binding", () => {

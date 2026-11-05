@@ -11,12 +11,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { FileIcon } from "@/modules/explorer/FileIcon";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
-  effectiveBindings,
   getBindingTokens,
   SHORTCUTS,
   type KeyBinding,
   type ShortcutId,
-  useInTerminalFocus,
 } from "@/modules/shortcuts";
 import { listBuiltinThemes, useTheme } from "@/modules/theme";
 import {
@@ -65,7 +63,6 @@ export function CommandPalette({
   const [value, setValue] = useState("");
   const [page, setPage] = useState<"root" | "themes">("root");
   const userShortcuts = usePreferencesStore((s) => s.shortcuts);
-  const inTerminal = useInTerminalFocus();
   const { themeId, customThemes, setThemeId, previewThemeId } = useTheme();
 
   const parsed = parseQuery(query);
@@ -287,7 +284,6 @@ export function CommandPalette({
                           shortcutLabel={formatShortcut(
                             item.shortcutId,
                             userShortcuts,
-                            inTerminal,
                           )}
                           onRun={() => runCommand(item)}
                         />
@@ -522,16 +518,10 @@ function basename(rel: string): string {
 function formatShortcut(
   shortcutId: ShortcutId | undefined,
   userShortcuts: Record<ShortcutId, KeyBinding[]>,
-  inTerminal: boolean,
 ): string | null {
   if (!shortcutId) return null;
   const shortcut = SHORTCUTS_BY_ID.get(shortcutId);
-  const bindings = effectiveBindings(
-    shortcutId,
-    shortcut?.defaultBindings ?? [],
-    userShortcuts[shortcutId],
-    inTerminal,
-  );
-  const tokens = getBindingTokens(bindings[0]);
+  const bindings = userShortcuts[shortcutId] ?? shortcut?.defaultBindings;
+  const tokens = getBindingTokens(bindings?.[0]);
   return tokens.length ? tokens.join(" ") : null;
 }

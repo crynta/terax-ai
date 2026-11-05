@@ -11,5 +11,3 @@ export {
 export { useShortcutLabel } from "./lib/useShortcutLabel";
 export { shortcutLabel } from "./lib/shortcutLabel";
 export { shouldDisablePaneSwapShortcut } from "./lib/shortcutScope";
-export { useInTerminalFocus } from "./lib/focusContext";
-export { effectiveBindings } from "./lib/terminalFocusPolicy";

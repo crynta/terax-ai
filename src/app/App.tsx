@@ -1010,6 +1010,9 @@ export default function App() {
         return activeTab?.kind !== "editor";
       }
       if (id === "ai.askSelection") {
+        // Ctrl+Shift+J is the app's alone on Windows/Linux: with nothing selected it
+        // focuses the AI input instead of reaching the shell as Ctrl+J (a newline).
+        if (!IS_MAC) return false;
         const target =
           (e.target as HTMLElement | null) ?? document.activeElement;
         const inTerminal = isTerminalSurfaceTarget(target);
@@ -1047,13 +1050,7 @@ export default function App() {
     [activeTab, captureActiveSelection],
   );
 
-  useGlobalShortcuts(shortcutHandlers, {
-    isDisabled: shortcutsDisabled,
-    inTerminal: (e) =>
-      isTerminalSurfaceTarget(
-        (e.target as HTMLElement | null) ?? document.activeElement,
-      ),
-  });
+  useGlobalShortcuts(shortcutHandlers, { isDisabled: shortcutsDisabled });
 
   const registerTerminalHandle = useCallback(
     (leafId: number, h: TerminalPaneHandle | null) => {
