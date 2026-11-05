@@ -96,7 +96,7 @@ impl ControlState {
     pub fn shutdown(&self) {
         self.0.shutting_down.store(true, Ordering::Release);
         self.0.frontend_ready.store(false, Ordering::Release);
-        self.0.hooks.broker.set_ui_ready(false);
+        self.0.hooks.broker.reset_all();
         if let Some(runtime) = self.0.runtime.get() {
             remove_own_descriptor(&runtime.descriptor_path, &runtime.token);
             if let Some(dir) = &runtime.launcher_dir {
@@ -1129,7 +1129,7 @@ mod tests {
         #[test]
         fn a_permission_round_trip_returns_the_agent_decision_json() {
             let server = serve();
-            server.state.hooks().broker.set_ui_ready(true);
+            server.state.hooks().broker.set_window_ready("main", true);
             let (state, host) = (server.state.clone(), server.host.clone());
             let ui = thread::spawn(move || {
                 let id = loop {

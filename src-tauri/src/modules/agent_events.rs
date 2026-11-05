@@ -2,10 +2,9 @@
 //! socket, turns it into a `terax:agent-event`, keeps the legacy
 //! `terax:agent-signal` stream in step, and brokers permission decisions.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::net::TcpStream;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender};
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -89,34 +88,61 @@ pub enum Busy {
 
 struct Pending {
     pane_id: u32,
+    window: String,
     sender: SyncSender<HookDecision>,
 }
 
 /// Pending permission requests awaiting an answer from the Terax UI.
 #[derive(Default)]
 pub struct DecisionBroker {
-    ui_ready: AtomicBool,
+    ready_windows: Mutex<HashSet<String>>,
     pending: Mutex<HashMap<String, Pending>>,
 }
 
 impl DecisionBroker {
-    pub fn ui_ready(&self) -> bool {
-        self.ui_ready.load(Ordering::Acquire)
+    /// Whether `window` shows decisions; only that window receives the events.
+    pub fn ui_ready(&self, window: &str) -> bool {
+        self.ready_windows
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .contains(window)
     }
 
-    /// The UI announces (or withdraws) that it shows decisions. Withdrawing
-    /// releases every waiting agent to its own prompt.
-    pub fn set_ui_ready(&self, ready: bool) {
-        self.ui_ready.store(ready, Ordering::Release);
-        if !ready {
-            self.pending
-                .lock()
-                .unwrap_or_else(|poison| poison.into_inner())
-                .clear();
+    /// A window announces (or withdraws) that it shows decisions. Withdrawing,
+    /// or the window's page reloading, releases the agents waiting on it to
+    /// their own prompt.
+    pub fn set_window_ready(&self, window: &str, ready: bool) {
+        let mut windows = self
+            .ready_windows
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        if ready {
+            windows.insert(window.to_string());
+            return;
         }
+        windows.remove(window);
+        self.pending
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .retain(|_, entry| entry.window != window);
     }
 
-    pub fn register(&self, pane_id: u32) -> Result<(String, Receiver<HookDecision>), Busy> {
+    pub fn reset_all(&self) {
+        self.ready_windows
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .clear();
+        self.pending
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .clear();
+    }
+
+    pub fn register(
+        &self,
+        pane_id: u32,
+        window: &str,
+    ) -> Result<(String, Receiver<HookDecision>), Busy> {
         let mut pending = self
             .pending
             .lock()
@@ -134,7 +160,14 @@ impl DecisionBroker {
         }
         let id = random_id();
         let (sender, receiver) = mpsc::sync_channel(1);
-        pending.insert(id.clone(), Pending { pane_id, sender });
+        pending.insert(
+            id.clone(),
+            Pending {
+                pane_id,
+                window: window.to_string(),
+                sender,
+            },
+        );
         Ok((id, receiver))
     }
 
@@ -403,9 +436,9 @@ pub fn handle(
 
     let wait = params
         .wait_secs
-        .filter(|_| facts.decision_capable && state.broker.ui_ready())
+        .filter(|_| facts.decision_capable && state.broker.ui_ready(&target.owner))
         .map(|secs| Duration::from_secs(u64::from(secs.min(MAX_DECISION_SECS))));
-    let pending = wait.and_then(|wait| match state.broker.register(pane_id) {
+    let pending = wait.and_then(|wait| match state.broker.register(pane_id, &target.owner) {
         Ok((id, receiver)) => Some((wait, id, receiver)),
         Err(_) => None,
     });
@@ -434,7 +467,7 @@ pub fn handle(
         Verdict::Cancelled(Cancel::AgentGone)
     } else {
         await_decision(&receiver, wait, DECISION_POLL, || {
-            if !state.broker.ui_ready() {
+            if !state.broker.ui_ready(&target.owner) {
                 Some(Cancel::UiGone)
             } else if host
                 .pane(pane_id)
@@ -475,10 +508,14 @@ pub fn handle(
 
 #[tauri::command]
 pub fn agent_decisions_ready(
+    webview: tauri::Webview,
     state: tauri::State<'_, crate::modules::control::ControlState>,
     ready: bool,
 ) {
-    state.hooks().broker.set_ui_ready(ready);
+    state
+        .hooks()
+        .broker
+        .set_window_ready(webview.label(), ready);
 }
 
 /// Answers a pending permission request. False when it already ended.
@@ -743,7 +780,7 @@ mod tests {
     fn the_ui_can_answer_a_pending_permission() {
         let host = FakeHost::new(true);
         let state = Arc::new(HookState::default());
-        state.broker.set_ui_ready(true);
+        state.broker.set_window_ready("main", true);
         let (server, _client) = socket_pair();
 
         let answering = {
@@ -807,7 +844,7 @@ mod tests {
     fn an_agent_that_goes_away_cancels_its_pending_permission() {
         let host = FakeHost::new(true);
         let state = HookState::default();
-        state.broker.set_ui_ready(true);
+        state.broker.set_window_ready("main", true);
         let (server, client) = socket_pair();
         let closer = thread::spawn(move || {
             thread::sleep(Duration::from_millis(300));
@@ -845,7 +882,7 @@ mod tests {
     fn a_closed_pane_cancels_its_pending_permission() {
         let host = FakeHost::new(true);
         let state = HookState::default();
-        state.broker.set_ui_ready(true);
+        state.broker.set_window_ready("main", true);
         let (server, _client) = socket_pair();
         let closer = {
             let host = host.clone();
@@ -885,13 +922,13 @@ mod tests {
     fn the_ui_going_away_releases_waiting_agents() {
         let host = FakeHost::new(true);
         let state = Arc::new(HookState::default());
-        state.broker.set_ui_ready(true);
+        state.broker.set_window_ready("main", true);
         let (server, _client) = socket_pair();
         let withdrawn = {
             let state = state.clone();
             thread::spawn(move || {
                 thread::sleep(Duration::from_millis(300));
-                state.broker.set_ui_ready(false);
+                state.broker.set_window_ready("main", false);
             })
         };
         let response = handle(
@@ -914,7 +951,7 @@ mod tests {
     fn only_decision_capable_events_wait() {
         let host = FakeHost::new(true);
         let state = HookState::default();
-        state.broker.set_ui_ready(true);
+        state.broker.set_window_ready("main", true);
         let (server, _client) = socket_pair();
         let started = Instant::now();
         for (agent, event) in [
@@ -939,23 +976,23 @@ mod tests {
         let broker = DecisionBroker::default();
         let mut held = Vec::new();
         for _ in 0..MAX_PENDING_PER_PANE {
-            held.push(broker.register(1).unwrap());
+            held.push(broker.register(1, "main").unwrap());
         }
-        assert_eq!(broker.register(1).unwrap_err(), Busy::Pane);
+        assert_eq!(broker.register(1, "main").unwrap_err(), Busy::Pane);
         for pane in 2..2 + (MAX_PENDING_DECISIONS - MAX_PENDING_PER_PANE) as u32 {
-            held.push(broker.register(pane).unwrap());
+            held.push(broker.register(pane, "main").unwrap());
         }
-        assert_eq!(broker.register(99).unwrap_err(), Busy::Global);
+        assert_eq!(broker.register(99, "main").unwrap_err(), Busy::Global);
         let (id, _) = held.pop().unwrap();
         broker.discard(&id);
-        assert!(broker.register(99).is_ok());
+        assert!(broker.register(99, "main").is_ok());
     }
 
     #[test]
     fn request_ids_are_unguessable_and_unique() {
         let broker = DecisionBroker::default();
-        let (first, _a) = broker.register(1).unwrap();
-        let (second, _b) = broker.register(1).unwrap();
+        let (first, _a) = broker.register(1, "main").unwrap();
+        let (second, _b) = broker.register(1, "main").unwrap();
         assert_ne!(first, second);
         assert_eq!(first.len(), 34);
         assert!(first.starts_with("d-"));
@@ -1123,7 +1160,7 @@ mod tests {
     fn a_held_notice_precedes_the_final_decision() {
         let host = FakeHost::new(true);
         let state = Arc::new(HookState::default());
-        state.broker.set_ui_ready(true);
+        state.broker.set_window_ready("main", true);
         let (server, client) = socket_pair();
         let serving = {
             let (host, state) = (host.clone(), state.clone());
@@ -1233,5 +1270,86 @@ mod tests {
             vec!["started:claude", "attention:"]
         );
         assert_eq!(host.events.lock().unwrap().len(), 4);
+    }
+
+    #[test]
+    fn readiness_is_tracked_per_window() {
+        let broker = DecisionBroker::default();
+        assert!(!broker.ui_ready("main"));
+        broker.set_window_ready("main", true);
+        assert!(broker.ui_ready("main"));
+        assert!(!broker.ui_ready("settings"));
+
+        let (_main_id, main_receiver) = broker.register(1, "main").unwrap();
+        let (_other_id, other_receiver) = broker.register(2, "settings").unwrap();
+        // A reload of one window releases only the agents waiting on it.
+        broker.set_window_ready("settings", false);
+        assert!(matches!(
+            other_receiver.try_recv(),
+            Err(mpsc::TryRecvError::Disconnected)
+        ));
+        assert!(matches!(
+            main_receiver.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+        assert!(broker.ui_ready("main"));
+        assert_eq!(broker.len(), 1);
+
+        broker.reset_all();
+        assert!(!broker.ui_ready("main"));
+        assert_eq!(broker.len(), 0);
+    }
+
+    #[test]
+    fn a_window_that_is_not_ready_does_not_hold_agents_of_other_windows() {
+        let host = FakeHost::new(true);
+        let state = HookState::default();
+        // Another window announced decisions; the pane's own window did not.
+        state.broker.set_window_ready("settings", true);
+        let (server, _client) = socket_pair();
+        let started = Instant::now();
+        let response = handle(
+            &server,
+            &request(
+                "claude",
+                "PermissionRequest",
+                json!({ "tool_name": "Bash" }),
+                Some(30),
+                Some(3),
+            ),
+            &state,
+            host.as_ref(),
+        );
+        assert_eq!(result(&response).decision, None);
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn a_page_reload_releases_a_waiting_agent() {
+        let host = FakeHost::new(true);
+        let state = Arc::new(HookState::default());
+        state.broker.set_window_ready("main", true);
+        let (server, _client) = socket_pair();
+        let reload = {
+            let state = state.clone();
+            thread::spawn(move || {
+                thread::sleep(Duration::from_millis(300));
+                state.broker.set_window_ready("main", false);
+            })
+        };
+        let response = handle(
+            &server,
+            &request(
+                "claude",
+                "PermissionRequest",
+                json!({ "tool_name": "Bash" }),
+                Some(30),
+                Some(3),
+            ),
+            &state,
+            host.as_ref(),
+        );
+        reload.join().unwrap();
+        assert_eq!(result(&response).decision, Some(HookDecision::Ask));
     }
 }

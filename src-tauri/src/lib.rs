@@ -224,6 +224,13 @@ pub fn run() {
                 if let Some(state) = webview.try_state::<pty::PtyState>() {
                     state.reset_webview(webview.label());
                 }
+                // The reloaded page has no decision UI until it announces one.
+                if let Some(state) = webview.try_state::<control::ControlState>() {
+                    state
+                        .hooks()
+                        .broker
+                        .set_window_ready(webview.label(), false);
+                }
             }
         })
         .setup(move |_app| {
