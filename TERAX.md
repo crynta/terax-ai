@@ -131,8 +131,14 @@ at 1, 1.25, 1.5 and 2), so grayscale text gets no contrast curve unless
 `localStorage["terax:terminal-text-contrast"]` is `on` or a strength; when set, both
 renderers apply the same curve. Private-use glyphs follow a constraint per range
 (`gpu/GlyphPlacement.ts`): version-control icons as designed, other icons as designed
-but shrunk past two cells or the cell height, Powerline separators and extras
-stretched to fill one or two cells exactly. A solid block cursor
+but shrunk past their room or the cell height, Powerline separators and extras
+stretched to fill their cells exactly. An icon or extra that may take two cells has two
+forms and takes two only when the next cell is blank, it is not the last column and
+the cell before is not a symbol (Ghostty's `constraintWidth`); otherwise it is held and
+clipped to its own cell. WebGPU stores the forms as two consecutive atlas entries and
+the glyph vertex shader picks one from the neighbouring cell records (glyph id 0 after
+it, the symbol flag of the glyph before it), so no per-cell JavaScript runs; WebGL
+decides per cell in the row rebuild. A solid block cursor
 draws the glyph it covers in the theme's cursor accent (both cells of a wide
 character), and the fit keeps a 14 px gutter free at the right of the grid.
 Box drawing, block elements, braille, powerline separators and common legacy

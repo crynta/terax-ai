@@ -2,7 +2,7 @@
  * Pixel checks for the `colors`, `icons` and `cursor` patterns (`glyphPattern.ts`). They read
  * the captured frame only, so they run unchanged on either renderer and any revision.
  */
-import type { ColorCase, CursorTarget, IconCase, Rgb } from "./glyphPattern";
+import type { ColorCase, CursorTarget, EqualCase, IconCase, Rgb } from "./glyphPattern";
 
 export type Capture = {
   readonly width: number;
@@ -176,6 +176,32 @@ export function checkIcons(
     }
   }
   return { ok: failures.length === 0, checked: cases.length, failures };
+}
+
+/** Each pair of cells must hold identical pixels (a glyph form, or a letter nothing painted over). */
+export function checkEqualCells(
+  frame: Capture,
+  pairs: readonly EqualCase[],
+  geometry: Geometry,
+): Report {
+  const failures: string[] = [];
+  for (const pair of pairs) {
+    const a = cellBox(geometry, pair.a.row, pair.a.col);
+    const b = cellBox(geometry, pair.b.row, pair.b.col);
+    let differing = 0;
+    let ink = 0;
+    for (let y = 0; y < geometry.cellHeight; y += 1) {
+      for (let x = 0; x < geometry.cellWidth; x += 1) {
+        const left = pixel(frame, a.x0 + x, a.y0 + y);
+        const right = pixel(frame, b.x0 + x, b.y0 + y);
+        if (distance(left, right) > 1) differing += 1;
+        if (distance(right, [0x16, 0x18, 0x1b]) > INK_THRESHOLD) ink += 1;
+      }
+    }
+    if (ink < 4) failures.push(`${pair.label}: the reference cell is blank`);
+    else if (differing > 0) failures.push(`${pair.label}: ${differing} px differ from the reference`);
+  }
+  return { ok: failures.length === 0, checked: pairs.length, failures };
 }
 
 /**

@@ -6,9 +6,12 @@ import {
   GLYPH_CONSTRAINTS,
   IDENTITY_PLACEMENT,
   isExtendedSymbol,
+  isNeighbourAware,
+  isNonGraphicsSymbol,
   isPrivateUse,
   layoutGlyph,
   placeGlyph,
+  roomyAt,
 } from "./GlyphPlacement";
 
 const CELL = { width: 9, height: 18, baseline: 14 };
@@ -167,6 +170,85 @@ describe("placeGlyph", () => {
   });
 });
 
+describe("neighbour-aware width", () => {
+  it("applies to icons and Powerline Extra, not to separators, version-control icons or text", () => {
+    for (const codepoint of [0xe718, 0xeb99, 0xf07b, 0xf024b, 0xe0c0, 0xe0cd, 0xe0ce, 0xe0d1]) {
+      expect(isNeighbourAware(codepoint), codepoint.toString(16)).toBe(true);
+    }
+    for (const codepoint of [0xe0a0, 0xe0a3, 0xe0b0, 0xe0bf, 0xe0d2, 0xe0d6, 0xe0d7, 0x41, 0x4e2d, 0x1f600]) {
+      expect(isNeighbourAware(codepoint), codepoint.toString(16)).toBe(false);
+    }
+  });
+
+  it("calls every private-use glyph but the Powerline separators a symbol", () => {
+    for (const codepoint of [0xe0a0, 0xe000, 0xe718, 0xeb99, 0xf07b, 0xf024b, 0x100000]) {
+      expect(isNonGraphicsSymbol(codepoint), codepoint.toString(16)).toBe(true);
+    }
+    for (const codepoint of [0xe0b0, 0xe0c0, 0xe0d7, 0x41, 0x2588]) {
+      expect(isNonGraphicsSymbol(codepoint), codepoint.toString(16)).toBe(false);
+    }
+  });
+
+  it("is roomy only with a blank cell after it, away from the last column, after no symbol", () => {
+    expect(roomyAt(3, 80, true, false)).toBe(true);
+    expect(roomyAt(3, 80, false, false)).toBe(false);
+    expect(roomyAt(79, 80, true, false)).toBe(false);
+    expect(roomyAt(3, 80, true, true)).toBe(false);
+    expect(roomyAt(0, 1, true, false)).toBe(false);
+  });
+
+  it("constrains an icon to its own cell when it has no room", () => {
+    const roomy = place("\ue718", { right: 15 });
+    expect(roomy).toBe(IDENTITY_PLACEMENT);
+    const tight = placeGlyph("\ue718", measure({ right: 15 }), CELL.width, CELL.height, false);
+    expect(tight.scaleX).toBeCloseTo(9 / 15, 9);
+    expect(tight.scaleY).toBe(tight.scaleX);
+    expect(tight.clip).toEqual({ width: 9, height: 18 });
+    // An icon that fits one cell anyway keeps its size and place, clipped to the cell.
+    expect(placeGlyph("\ue718", measure({ right: 8 }), CELL.width, CELL.height, false)).toEqual({
+      scaleX: 1,
+      scaleY: 1,
+      shiftX: 0,
+      clip: { width: 9, height: 18 },
+    });
+  });
+
+  it("keeps a shrunken icon's ink inside its room even when it starts right of the pen", () => {
+    // Ink from 1 to 16: 15 wide, starting 1 right of the origin.
+    const ink = measure({ left: -1, right: 16 });
+    for (const roomy of [false, true]) {
+      const placement = placeGlyph("\ue718", ink, CELL.width, CELL.height, roomy);
+      const room = roomy ? 18 : 9;
+      const start = placement.shiftX - ink.left * placement.scaleX;
+      const end = placement.shiftX + ink.right * placement.scaleX;
+      expect(start).toBeGreaterThanOrEqual(-1e-9);
+      expect(end).toBeLessThanOrEqual(room + 1e-9);
+    }
+  });
+
+  it("never clips an icon that has room, so its designed overflow stays", () => {
+    expect(place("\ue718", { right: 15 }).clip).toBeUndefined();
+  });
+
+  it("stretches a Powerline Extra over one cell, not two, when it has no room", () => {
+    const ink = measure({ left: 0.1, right: 21.7, ascent: 16, descent: 4 });
+    const tight = placeGlyph("\ue0c0", ink, CELL.width, CELL.height, false);
+    expect(tight.scaleX).toBeCloseTo(9 / 21.8, 9);
+    expect(tight.clip).toEqual({ width: 9, height: 18 });
+    const roomy = placeGlyph("\ue0c0", ink, CELL.width, CELL.height, true);
+    expect(roomy.clip).toEqual({ width: 18, height: 18 });
+  });
+
+  it("never changes a glyph that has only one form", () => {
+    for (const text of ["\ue0a0", "\ue0d6", "A"]) {
+      const ink = measure({ right: 15, left: 0.2 });
+      expect(placeGlyph(text, ink, CELL.width, CELL.height, false)).toEqual(
+        placeGlyph(text, ink, CELL.width, CELL.height, true),
+      );
+    }
+  });
+});
+
 describe("layoutGlyph", () => {
   it("measures ordinary text as every renderer did before: whole-pixel ink plus padding", () => {
     const layout = layoutGlyph(
@@ -205,6 +287,19 @@ describe("layoutGlyph", () => {
     const layout = layoutGlyph(measure({ right: 400, ascent: 300 }), IDENTITY_PLACEMENT, CELL, PADDING, 64);
     expect(layout.width).toBe(64);
     expect(layout.height).toBe(64);
+  });
+
+  it("clips a glyph held to its cell at the cell's edges, in bitmap space, without stretching it", () => {
+    const ink = measure({ left: 0.4, right: 14.6 });
+    const placement = placeGlyph("\ue718", ink, CELL.width, CELL.height, false);
+    const layout = layoutGlyph(ink, placement, CELL, PADDING, LIMIT);
+    expect(layout.exact).toBe(false);
+    expect(layout.clip).toEqual({
+      x: layout.penX - placement.shiftX,
+      y: 0,
+      width: 9,
+      height: LIMIT,
+    });
   });
 
   it("lays a stretched glyph out as its cell box plus padding, with a clip on that box", () => {

@@ -280,6 +280,20 @@ fn high_signed(word: u32) -> i32 {
   return bitcast<i32>(word) >> 16u;
 }
 
+fn symbol_before(instance: u32, col: u32) -> bool {
+  if (col == 0u) { return false; }
+  let previous_id = cells[instance - 1u].x & 0xffffffu;
+  if (previous_id == 0u || previous_id >= arrayLength(&glyph_map)) { return false; }
+  let previous_index = glyph_map[previous_id];
+  if (previous_index >= GLYPH_UNMAPPED || previous_index >= arrayLength(&glyph_table)) { return false; }
+  return (glyph_table[previous_index].w & 8u) != 0u;
+}
+
+fn room_after(instance: u32, col: u32) -> bool {
+  if (col + 1u >= screen.dims.x) { return false; }
+  return (cells[instance + 1u].x & 0xffffffu) == 0u && !symbol_before(instance, col);
+}
+
 @vertex
 fn vertex_main(
   @builtin(vertex_index) vertex_index: u32,
@@ -294,13 +308,16 @@ fn vertex_main(
   if (table_index >= GLYPH_UNMAPPED || table_index >= arrayLength(&glyph_table)) {
     return degenerate();
   }
-  let entry = glyph_table[table_index];
-  let size = vec2i(i32(entry.y & 0xffffu), i32(entry.y >> 16u));
-  if (size.x == 0 || size.y == 0) { return degenerate(); }
-
   let cols = screen.dims.x;
   let row = instance / cols;
   let col = instance - row * cols;
+  var entry = glyph_table[table_index];
+  if ((entry.w & 4u) != 0u && room_after(instance, col) && table_index + 1u < arrayLength(&glyph_table)) {
+    entry = glyph_table[table_index + 1u];
+  }
+  let size = vec2i(i32(entry.y & 0xffffu), i32(entry.y >> 16u));
+  if (size.x == 0 || size.y == 0) { return degenerate(); }
+
   let cell_origin = vec2i(i32(col * screen.cell_size.x), i32(row * screen.cell_size.y));
   var origin = cell_origin + vec2i(low_signed(entry.z), high_signed(entry.z));
   var drawn = size;

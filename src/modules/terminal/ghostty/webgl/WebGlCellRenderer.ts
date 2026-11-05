@@ -12,6 +12,11 @@ import {
   type GestureGrowth,
 } from "../gpu/CanvasBackingStore";
 import { blockCursorSpan } from "../gpu/cursorText";
+import {
+  isNeighbourAware,
+  isNonGraphicsSymbol,
+  roomyAt,
+} from "../gpu/GlyphPlacement";
 import type {
   TerminalFontMetrics,
   TerminalGpuTheme,
@@ -559,7 +564,19 @@ export class WebGlCellRenderer {
             cells.graphemeLength(cellIndex) > 0
               ? frame.model.grapheme(row, column)
               : null;
-          const glyph = this.atlas.glyph(codepoint, grapheme, flags);
+          const glyph = this.atlas.glyph(
+            codepoint,
+            grapheme,
+            flags,
+            grapheme !== null ||
+              !isNeighbourAware(codepoint) ||
+              roomyAt(
+                column,
+                this.cols,
+                column + 1 < this.cols && cellIsBlank(cells, cellIndex + 1),
+                column > 0 && cellIsSymbol(cells, cellIndex - 1),
+              ),
+          );
           this.writeGlyph(
             glyphIndex,
             glyph,
@@ -1228,6 +1245,24 @@ export class WebGlCellRenderer {
   private assertLive(): void {
     if (this.disposed) throw new Error("WebGL renderer is disposed");
   }
+}
+
+/** No glyph is drawn in the cell: empty, a space or invisible text (the WebGPU glyph id 0). */
+function cellIsBlank(cells: TerminalCellReader, index: number): boolean {
+  const codepoint = cells.codepoint(index);
+  return (
+    codepoint === 0 ||
+    codepoint === 32 ||
+    (cells.flags(index) & CellFlags.INVISIBLE) !== 0
+  );
+}
+
+function cellIsSymbol(cells: TerminalCellReader, index: number): boolean {
+  return (
+    cells.graphemeLength(index) === 0 &&
+    (cells.flags(index) & CellFlags.INVISIBLE) === 0 &&
+    isNonGraphicsSymbol(cells.codepoint(index))
+  );
 }
 
 export function rendererProfileKey(profile: WebGlRendererProfile): string {

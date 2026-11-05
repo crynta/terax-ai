@@ -30,10 +30,10 @@ const FRACTIONAL_DISPLAY_CONTRAST: TextContrast = {
 
 /**
  * The contrast for the current display: none unless `localStorage["terax:terminal-text-contrast"]`
- * (`override`: "off", "on" or a strength) asks for it. The WebGL renderer applies no curve, and
- * with it both renderers draw identical glyph pixels at every ratio (verified at 1, 1.25, 1.5 and
- * 2). The curve made WebGPU text heavier and softer than WebGL on Windows and on 1x displays, so
- * it is a tuning aid, not a default.
+ * (`override`: "off", "on" or a strength) asks for it, and then both renderers apply the same
+ * curve. Without it they draw identical glyph pixels at every ratio (verified at 1, 1.25, 1.5 and
+ * 2). Enabled by default the curve made WebGPU text heavier and softer than WebGL on Windows and on
+ * 1x displays, so it is a tuning aid, not a default.
  */
 export function textContrastFor(
   override: string | null | undefined,

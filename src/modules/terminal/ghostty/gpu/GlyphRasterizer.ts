@@ -91,7 +91,8 @@ export class GlyphRasterizer {
     );
   }
 
-  rasterize(text: string, style: number): RasterizedGlyph {
+  /** `roomy`: a glyph that may take two cells has its second cell free (see `GlyphPlacement`). */
+  rasterize(text: string, style: number, roomy = true): RasterizedGlyph {
     const builtin = this.rasterizeBuiltin(text);
     if (builtin) return builtin;
     // Until the icon face has loaded the glyph would be a missing-glyph box; the atlas
@@ -122,6 +123,7 @@ export class GlyphRasterizer {
       measure,
       deviceCellWidth,
       deviceCellHeight,
+      roomy,
     );
     const layout = layoutGlyph(
       measure,
@@ -157,7 +159,7 @@ export class GlyphRasterizer {
       bearingX: layout.bearingX,
       bearingY: layout.bearingY,
       intrinsicColor,
-      exact: layout.clip !== null,
+      exact: layout.exact,
       pixels,
     };
   }

@@ -328,8 +328,10 @@ if (patternName === "sprites") {
     glyphCases = built.cases;
     write(`\x1b[?25l${built.ansi}`);
   } else if (patternName === "icons") {
-    const built = glyphPattern.iconsPattern();
-    glyphCases = built.cases;
+    // The last-column rows need the grid the fit settles on, not the model's initial one.
+    await frames(6);
+    const built = glyphPattern.iconsPattern((surface.diagnostics() as unknown as { cols: number }).cols);
+    glyphCases = built;
     // Mode 2027 clusters ZWJ sequences, flags and skin tones into one two-cell grapheme.
     write(`\x1b[?25l\x1b[?2027h${built.ansi}`);
   } else {
@@ -499,7 +501,14 @@ const api = {
     if (patternName === "colors") {
       report = check.checkColors(frame, glyphCases as never, geometry, theme.background, theme.foreground);
     } else if (patternName === "icons") {
-      report = check.checkIcons(frame, glyphCases as never, geometry, theme.background);
+      const icons = glyphCases as { cases: never; equal: never };
+      const first = check.checkIcons(frame, icons.cases, geometry, theme.background);
+      const second = check.checkEqualCells(frame, icons.equal, geometry);
+      report = {
+        ok: first.ok && second.ok,
+        checked: first.checked + second.checked,
+        failures: [...first.failures, ...second.failures],
+      };
     } else {
       const style = (params.get("cursor") as "block" | "bar" | "underline") ?? "block";
       const wide = (params.get("cursorAt") ?? "letter") === "wide";

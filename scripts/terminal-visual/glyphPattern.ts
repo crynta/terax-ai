@@ -116,8 +116,24 @@ const EMOJI: ReadonlyArray<readonly [string, string]> = [
   ["skin tone", "👍🏽"],
 ];
 
-/** Icons, CJK and emoji, each followed by blank cells so overflow shows. */
-export function iconsPattern(): { readonly ansi: string; readonly cases: IconCase[] } {
+/** A cell that must hold exactly the pixels of another: same glyph form, nothing painted over. */
+export type EqualCase = {
+  readonly label: string;
+  readonly a: { readonly row: number; readonly col: number };
+  readonly b: { readonly row: number; readonly col: number };
+};
+
+/**
+ * Icons, CJK and emoji, each followed by blank cells so overflow shows, then the neighbour
+ * rules of Ghostty's `constraintWidth`: a glyph that may take two cells takes one when a letter
+ * follows, when it is in the last column, or when a symbol precedes it, and two otherwise.
+ * `columns` is the grid width, for the last-column rows.
+ */
+export function iconsPattern(columns: number): {
+  readonly ansi: string;
+  readonly cases: IconCase[];
+  readonly equal: EqualCase[];
+} {
   const cases: IconCase[] = [];
   const rows: string[] = [];
   const row = (
@@ -145,7 +161,38 @@ export function iconsPattern(): { readonly ansi: string; readonly cases: IconCas
   row(POWERLINE_EXTRA, 6, 2, "stretch");
   rows.push("");
   row(POWERLINE_SEPARATORS, 8, 1, "stretch");
-  return { ansi: rows.join("\r\n"), cases };
+  rows.push("");
+
+  // Row 10: constrained forms followed by a letter, and the letters on their own as references.
+  rows.push("\ue0c0a   \ue718a   \uf07bb   a b  \ue0c1a   \ue0c2a");
+  // Row 11 blank, row 12: three icons in a row (each constrained to its cell).
+  rows.push("");
+  rows.push("\ue718\ue718\ue718");
+  // Row 13: three Powerline Extras in a row: the first two have a glyph after them, the third room.
+  rows.push("\ue0c0\ue0c1\ue0c2");
+  // Row 14 and 16 hold the last-column glyphs (positioned below). Row 15: roomy references.
+  rows.push("");
+  rows.push("\ue0c2   x\ue0c0   \ue0c0");
+  rows.push("");
+  // Row 17: a Powerline Extra right after an icon is constrained by the symbol before it.
+  rows.push("\ue718\ue0c0");
+  const equal: EqualCase[] = [
+    { label: "letter after a flame is not painted over", a: { row: 10, col: 1 }, b: { row: 10, col: 15 } },
+    { label: "letter after an icon is not painted over", a: { row: 10, col: 6 }, b: { row: 10, col: 15 } },
+    { label: "letter after a folder is not painted over", a: { row: 10, col: 11 }, b: { row: 10, col: 17 } },
+    { label: "flame in a row of three stays in its cell (first)", a: { row: 13, col: 0 }, b: { row: 10, col: 0 } },
+    { label: "flame in a row of three stays in its cell (second)", a: { row: 13, col: 1 }, b: { row: 10, col: 20 } },
+    { label: "last flame of a row has room: first cell", a: { row: 13, col: 2 }, b: { row: 15, col: 0 } },
+    { label: "last flame of a row has room: second cell", a: { row: 13, col: 3 }, b: { row: 15, col: 1 } },
+    { label: "a letter before a flame leaves it room: first cell", a: { row: 15, col: 5 }, b: { row: 15, col: 9 } },
+    { label: "a letter before a flame leaves it room: second cell", a: { row: 15, col: 6 }, b: { row: 15, col: 10 } },
+    { label: "a flame after an icon is constrained", a: { row: 17, col: 1 }, b: { row: 10, col: 0 } },
+    { label: "a flame in the last column is constrained", a: { row: 14, col: columns - 1 }, b: { row: 10, col: 0 } },
+    { label: "an icon in the last column is constrained", a: { row: 16, col: columns - 1 }, b: { row: 10, col: 5 } },
+  ];
+  // The last-column glyphs, placed by cursor addressing after the text.
+  const lastColumn = `\x1b[15;${columns}H\ue0c0\x1b[17;${columns}H\ue718`;
+  return { ansi: rows.join("\r\n") + lastColumn, cases, equal };
 }
 
 export const CURSOR_TEXT_LINES = [

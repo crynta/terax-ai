@@ -14,6 +14,7 @@ import { hasIntrinsicColor } from "../gpu/glyphColor";
 import {
   drawGlyph,
   isExtendedSymbol,
+  isNeighbourAware,
   layoutGlyph,
   placeGlyph,
 } from "../gpu/GlyphPlacement";
@@ -190,10 +191,15 @@ export class WebGlGlyphAtlas {
     return this.uploadedBytesValue;
   }
 
+  /**
+   * `roomy`: a glyph that may take two cells has its second cell free, so it is drawn in its
+   * roomy form (see `GlyphPlacement`); it only matters for such glyphs.
+   */
   glyph(
     codepoint: number,
     grapheme: string | null,
     flags: number,
+    roomy = true,
   ): WebGlGlyphEntry {
     this.assertLive();
     if (codepoint === 0 || codepoint === 32) return NULL_GLYPH;
@@ -209,10 +215,16 @@ export class WebGlGlyphAtlas {
     }
     const style = flags & (CellFlags.BOLD | CellFlags.ITALIC);
     if (grapheme === null) {
-      const key = codepoint * 4 + style;
+      const constrained = !roomy && isNeighbourAware(codepoint);
+      // Constrained forms live under negative keys beside the roomy ones.
+      const key = constrained ? -(codepoint * 4 + style) - 1 : codepoint * 4 + style;
       const cached = this.simpleGlyphs.get(key);
       if (cached) return cached;
-      const entry = this.rasterize(String.fromCodePoint(codepoint), flags);
+      const entry = this.rasterize(
+        String.fromCodePoint(codepoint),
+        flags,
+        !constrained,
+      );
       this.simpleGlyphs.set(key, entry);
       return entry;
     }
@@ -305,7 +317,11 @@ export class WebGlGlyphAtlas {
     this.colorDirty = null;
   }
 
-  private rasterize(text: string, flags: number): WebGlGlyphEntry {
+  private rasterize(
+    text: string,
+    flags: number,
+    roomy = true,
+  ): WebGlGlyphEntry {
     if (isExtendedSymbol(text.codePointAt(0) ?? 0) && extendedSymbolsPending()) {
       return NULL_GLYPH;
     }
@@ -339,6 +355,7 @@ export class WebGlGlyphAtlas {
       measure,
       deviceCellWidth,
       deviceCellHeight,
+      roomy,
     );
     const layout = layoutGlyph(
       measure,
@@ -416,7 +433,7 @@ export class WebGlGlyphAtlas {
       uvMaxX: (region.x + width) / atlasSize,
       uvMaxY: (region.y + height) / atlasSize,
       intrinsicColor,
-      exact: layout.clip !== null,
+      exact: layout.exact,
     };
   }
 

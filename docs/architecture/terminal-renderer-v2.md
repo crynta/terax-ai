@@ -109,7 +109,11 @@ Private-use glyphs are placed by a constraint per codepoint range
 (`gpu/GlyphPlacement.ts`, after Ghostty's Nerd Font attributes): the version-control
 icons are drawn as designed, other icons as designed but shrunk past two cells or the
 cell height, and Powerline separators and extras are stretched so their ink box fills
-exactly one or two cells (flush edges, no seam).
+exactly one or two cells (flush edges, no seam). An icon or extra that may take two cells
+follows Ghostty's `constraintWidth`: two only when the next cell is blank, it is not the
+last column and the cell before is not a symbol, else one (clipped to the cell). The atlas
+keeps two consecutive table entries for such a glyph (flags `NEIGHBOUR` and `SYMBOL`) and
+the glyph vertex shader selects the entry from the cell records around the instance.
 
 ## Window canvas
 
