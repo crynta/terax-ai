@@ -1,3 +1,12 @@
+import {
+  closeBracketsKeymap,
+  completionKeymap,
+} from "@codemirror/autocomplete";
+import { defaultKeymap, historyKeymap } from "@codemirror/commands";
+import { foldKeymap } from "@codemirror/language";
+import { lintKeymap } from "@codemirror/lint";
+import { searchKeymap } from "@codemirror/search";
+import type { KeyBinding as CodeMirrorBinding } from "@codemirror/view";
 import { describe, expect, it } from "vitest";
 import { MAC_DEFAULTS, WIN_LINUX_DEFAULTS } from "./shortcutDefaults";
 import {
@@ -5,6 +14,7 @@ import {
   matchBinding,
   SHORTCUTS,
   type ShortcutId,
+  tabDigit,
 } from "./shortcuts";
 
 // Both tables are tested regardless of the platform the tests run on.
@@ -86,6 +96,12 @@ const chord = (b: KeyBinding): string =>
     SHIFTED[b.key] ?? b.key.toLowerCase(),
   ].join("|");
 
+/** Every chord a binding accepts: Jump to tab takes any digit from 1 to 9. */
+const accepted = (id: ShortcutId, binding: KeyBinding): KeyBinding[] =>
+  id === "tab.selectByIndex"
+    ? "123456789".split("").map((key) => ({ ...binding, key }))
+    : [binding];
+
 const group = (id: string) => SHORTCUTS.find((s) => s.id === id)?.group;
 const isEditor = (id: string) => group(id) === "Editor";
 
@@ -103,6 +119,11 @@ const TUI_EVENTS: { name: string; event: Partial<KeyboardEvent> }[] = [
   ..."abcdefghijklmnopqrstuvwxyz".split("").map((key) => ({
     name: `Ctrl+${key}`,
     event: { key, code: `Key${key.toUpperCase()}`, ctrlKey: true },
+  })),
+  // Ctrl+2 is NUL, Ctrl+3 to Ctrl+7 are ESC, FS, GS, RS and US, Ctrl+8 is DEL.
+  ..."2345678".split("").map((key) => ({
+    name: `Ctrl+${key}`,
+    event: { key, code: `Digit${key}`, ctrlKey: true },
   })),
   ...[
     ["[", "BracketLeft"],
@@ -201,7 +222,7 @@ describe("Windows and Linux defaults", () => {
   it("never repeats a chord anywhere in the app", () => {
     const owners = new Map<string, string>();
     for (const id of ids)
-      for (const binding of table[id]) {
+      for (const binding of table[id].flatMap((b) => accepted(id, b))) {
         const key = chord(binding);
         const other = owners.get(key);
         expect(
@@ -228,12 +249,12 @@ describe("Windows and Linux defaults", () => {
   it("never uses a plain Ctrl control byte, an Alt chord or Ctrl+Alt+character outside the editor", () => {
     for (const id of ids) {
       if (isEditor(id)) continue;
-      for (const binding of table[id]) {
+      for (const binding of table[id].flatMap((b) => accepted(id, b))) {
         const text = `${id}: ${describeBinding(binding)}`;
         const plainCtrl =
           !!binding.ctrl && !binding.shift && !binding.alt && !binding.meta;
         expect(
-          plainCtrl && /^[a-z@[\\\]^_/\- ]$/i.test(binding.key),
+          plainCtrl && /^[a-z@[\\\]^_/\- 2-8]$/i.test(binding.key),
           text,
         ).toBe(false);
         expect(!!binding.alt && !binding.ctrl, `${text} is a Meta chord`).toBe(
@@ -262,7 +283,7 @@ describe("Windows and Linux defaults", () => {
 
   it("fires each default for its own shortcut only", () => {
     for (const id of ids)
-      for (const binding of table[id]) {
+      for (const binding of table[id].flatMap((b) => accepted(id, b))) {
         const matches = SHORTCUTS.filter((shortcut) =>
           table[shortcut.id].some((b) =>
             matchBinding(
@@ -296,7 +317,19 @@ describe("Windows and Linux defaults", () => {
       );
     const ctrl = { ctrlKey: true };
     expect(
-      hit({ ...ctrl, key: "|", code: "Backslash" }, "pane.splitDown"),
+      hit({ ...ctrl, key: "Enter", code: "Enter" }, "pane.splitDown"),
+    ).toBe(true);
+    expect(
+      hit({ ...ctrl, key: "~", code: "Backquote" }, "tab.newPreview"),
+    ).toBe(true);
+    expect(hit({ ...ctrl, key: ":", code: "Semicolon" }, "pane.source")).toBe(
+      true,
+    );
+    expect(
+      hit(
+        { ctrlKey: true, altKey: true, shiftKey: false, key: "PageDown" },
+        "space.next",
+      ),
     ).toBe(true);
     expect(hit({ ...ctrl, key: "?", code: "Slash" }, "explorer.search")).toBe(
       true,
@@ -314,6 +347,111 @@ describe("Windows and Linux defaults", () => {
       hit({ ...ctrl, key: "PageUp", code: "PageUp" }, "pane.focusPrev"),
     ).toBe(true);
     expect(hit({ ...ctrl, key: "Q", code: "KeyQ" }, "tab.newBlock")).toBe(true);
+  });
+});
+
+describe("Windows and Linux: Jump to tab", () => {
+  const binding = WIN_LINUX_DEFAULTS["tab.selectByIndex"][0];
+  const press = (key: string, code: string, extra: Partial<KeyboardEvent>) =>
+    ({
+      ctrlKey: true,
+      shiftKey: true,
+      altKey: false,
+      metaKey: false,
+      key,
+      code,
+      ...extra,
+    }) as KeyboardEvent;
+
+  it.each([
+    ["!", "Digit1", 1],
+    ["@", "Digit2", 2],
+    ["#", "Digit3", 3],
+    ["(", "Digit9", 9],
+    ["1", "Digit1", 1],
+  ])("takes Ctrl+Shift+%s (%s) as tab %s on any layout", (key, code, digit) => {
+    const event = press(key, code, {});
+    expect(matchBinding(event, binding, "tab.selectByIndex")).toBe(true);
+    expect(tabDigit(event, true)).toBe(digit);
+  });
+
+  it.each(["1", "2", "5", "8", "9"])(
+    "leaves plain Ctrl+%s to the terminal",
+    (digit) => {
+      const event = press(digit, `Digit${digit}`, { shiftKey: false });
+      expect(matchBinding(event, binding, "tab.selectByIndex")).toBe(false);
+    },
+  );
+
+  it("ignores Ctrl+Shift+0 and keys that are not digits", () => {
+    expect(
+      matchBinding(press(")", "Digit0", {}), binding, "tab.selectByIndex"),
+    ).toBe(false);
+    expect(
+      matchBinding(press("A", "KeyA", {}), binding, "tab.selectByIndex"),
+    ).toBe(false);
+  });
+});
+
+/** A CodeMirror key name as the chord it is on Windows and Linux (Mod is Ctrl). */
+function codeMirrorChord(name: string, forceShift = false): KeyBinding {
+  const parts = name.split(/-(?!$)/);
+  const key = parts.pop() ?? "";
+  const has = (pattern: RegExp) => parts.some((part) => pattern.test(part));
+  return {
+    ctrl: has(/^(c|ctrl|control|mod)$/i),
+    shift: forceShift || has(/^(s|shift)$/i),
+    alt: has(/^(a|alt|option)$/i),
+    meta: has(/^(m|meta|cmd|command|super)$/i),
+    key: key === "Space" ? " " : key,
+  };
+}
+
+/** What basicSetup, the shell input and the editor pane install, read from the packages. */
+const CODEMIRROR_BINDINGS: readonly CodeMirrorBinding[] = [
+  closeBracketsKeymap,
+  defaultKeymap,
+  searchKeymap,
+  historyKeymap,
+  foldKeymap,
+  completionKeymap,
+  lintKeymap,
+].flat();
+
+const codeMirrorChords = new Map<string, string>();
+for (const binding of CODEMIRROR_BINDINGS)
+  for (const platform of ["win", "linux"] as const) {
+    const name = binding[platform] ?? binding.key;
+    if (!name) continue;
+    for (const forceShift of binding.shift ? [false, true] : [false]) {
+      const chordOf = codeMirrorChord(name, forceShift);
+      codeMirrorChords.set(chord(chordOf), name);
+    }
+  }
+
+describe("Windows and Linux defaults against the editor's CodeMirror keymaps", () => {
+  it("reads the keymaps", () => {
+    expect(codeMirrorChords.size).toBeGreaterThan(60);
+    expect(codeMirrorChords.get(chord({ ctrl: true, key: "z" }))).toBe("Mod-z");
+    expect(
+      codeMirrorChords.get(chord({ ctrl: true, shift: true, key: "[" })),
+    ).toBe("Ctrl-Shift-[");
+  });
+
+  it("never shares a chord with an application shortcut outside the editor", () => {
+    const shared: string[] = [];
+    for (const id of ids) {
+      // The editor keeps the editor group; pane swaps only run in a terminal tab
+      // with two panes (shouldDisablePaneSwapShortcut), which holds no editor.
+      if (isEditor(id) || id.startsWith("pane.swap")) continue;
+      for (const binding of WIN_LINUX_DEFAULTS[id].flatMap((b) =>
+        accepted(id, b),
+      )) {
+        const name = codeMirrorChords.get(chord(binding));
+        if (name) shared.push(`${id} ${describeBinding(binding)} = ${name}`);
+      }
+    }
+    expect(shared).toEqual([]);
   });
 });
 

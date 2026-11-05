@@ -1,6 +1,6 @@
 import { resolveFontFamily } from "@/lib/fonts";
-import { fmtShortcut, MOD_KEY } from "@/lib/platform";
 import { cn } from "@/lib/utils";
+import { shortcutHint } from "@/modules/shortcuts";
 import { useTheme } from "@/modules/theme";
 import { useEffect, useRef } from "react";
 import { runScopeHandlers } from "@codemirror/view";
@@ -81,7 +81,7 @@ export default function ShellInput({
       fontFamily: fontRef.current.fontFamily,
       fontSize: fontRef.current.fontSize,
       fontWeight: fontRef.current.fontWeight,
-      placeholderText: `Run a command  -  ↑ history  ${fmtShortcut(MOD_KEY, "U")} switch to AI`,
+      placeholderText: `Run a command  -  ↑ history  ${shortcutHint("terminal.toggleInput")} switch to AI`,
       commandNames: () => commandsRef.current,
       getCwd: () => cbRef.current.getCwd(),
       onChange: (text) =>

@@ -79,8 +79,37 @@ describe("resolveShortcut on Windows and Linux", () => {
       expect(run(other, press(key, "C"))).toBeNull();
   });
 
-  it("moves the web preview to Ctrl+Shift+L, away from Go to file", () => {
-    expect(run(other, press("L", "CS"))).toBe("tab.newPreview");
+  it("keeps the chords the editor binds (Ctrl+Shift+L, G, \\, [ and ]) off the app", () => {
+    for (const key of ["L", "G"])
+      expect(run(other, press(key, "CS"))).toBeNull();
+    expect(run(other, press("|", "CS", { code: "Backslash" }))).toBeNull();
+    expect(run(other, press("{", "CS", { code: "BracketLeft" }))).toBeNull();
+    expect(run(other, press("}", "CS", { code: "BracketRight" }))).toBeNull();
+  });
+
+  it("opens a preview, splits down and shows source on chords nothing else reads", () => {
+    expect(run(other, press("~", "CS", { code: "Backquote" }))).toBe(
+      "tab.newPreview",
+    );
+    expect(run(other, press("Enter", "CS"))).toBe("pane.splitDown");
+    expect(run(other, press(":", "CS", { code: "Semicolon" }))).toBe(
+      "pane.source",
+    );
+  });
+
+  it("switches space on Ctrl+Alt+PageDown and PageUp", () => {
+    expect(run(other, press("PageDown", "CA"))).toBe("space.next");
+    expect(run(other, press("PageUp", "CA"))).toBe("space.prev");
+  });
+
+  it("jumps to a tab on Ctrl+Shift+digit and leaves Ctrl+digit to the terminal", () => {
+    expect(run(other, press("#", "CS", { code: "Digit3" }))).toBe(
+      "tab.selectByIndex",
+    );
+    for (const digit of ["1", "2", "3", "8"])
+      expect(
+        run(other, press(digit, "C", { code: `Digit${digit}` })),
+      ).toBeNull();
   });
 });
 

@@ -11,7 +11,7 @@ vi.mock("@/modules/settings/preferences", () => ({
   },
 }));
 
-import { shortcutLabel } from "./shortcutLabel";
+import { shortcutHint, shortcutLabel } from "./shortcutLabel";
 
 beforeEach(() => {
   prefsMock.shortcuts = {};
@@ -29,5 +29,21 @@ describe("shortcutLabel", () => {
       "commandPalette.open": [{ ctrl: true, shift: true, key: "k" }],
     };
     expect(shortcutLabel("commandPalette.open")).toBe("Ctrl Shift K");
+  });
+});
+
+describe("shortcutHint", () => {
+  it("spells the binding that fires, inline", () => {
+    expect(shortcutHint("tab.new")).toBe("Ctrl+Shift+T");
+    expect(shortcutHint("tab.newPreview")).toBe("Ctrl+Shift+`");
+    expect(shortcutHint("terminal.toggleInput")).toBe("Ctrl+Shift+Y");
+    expect(shortcutHint("tab.selectByIndex")).toBe("Ctrl+Shift+1");
+  });
+
+  it("follows a user override", () => {
+    prefsMock.shortcuts = {
+      "tab.new": [{ ctrl: true, alt: true, key: "PageDown" }],
+    };
+    expect(shortcutHint("tab.new")).toBe("Ctrl+Alt+PageDown");
   });
 });

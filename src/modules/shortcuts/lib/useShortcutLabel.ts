@@ -1,3 +1,4 @@
+import { fmtShortcut } from "@/lib/platform";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { getBindingTokens, SHORTCUTS, type ShortcutId } from "../shortcuts";
 
@@ -8,4 +9,9 @@ export function useShortcutLabel(id: ShortcutId): string {
   const user = usePreferencesStore((s) => s.shortcuts);
   const bindings = user[id] ?? BY_ID.get(id)?.defaultBindings;
   return getBindingTokens(bindings?.[0]).join(" ");
+}
+
+/** The inline form of useShortcutLabel: `Ctrl+Shift+T` or `⇧⌘T`. */
+export function useShortcutHint(id: ShortcutId): string {
+  return fmtShortcut(...useShortcutLabel(id).split(" ").filter(Boolean));
 }

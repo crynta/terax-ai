@@ -375,6 +375,20 @@ function keyFromCode(code: string): string | null {
   return CODE_TO_KEY[code] ?? null;
 }
 
+/**
+ * The digit 1 to 9 a Jump to tab press names. Under Shift the key is a symbol
+ * (`!`, `@`), so the physical digit key is read instead.
+ */
+export function tabDigit(
+  e: Pick<KeyboardEvent, "key" | "code">,
+  byCode: boolean,
+): number | null {
+  const digit = byCode
+    ? /^Digit([1-9])$/.exec(e.code)?.[1]
+    : /^[1-9]$/.exec(e.key)?.[0];
+  return digit === undefined ? null : Number(digit);
+}
+
 export function matchBinding(
   e: KeyboardEvent,
   binding: KeyBinding,
@@ -385,7 +399,7 @@ export function matchBinding(
 
   // Special case for Jump to Tab 1-9
   if (id === "tab.selectByIndex") {
-    if (!/^[1-9]$/.test(e.key)) return false;
+    if (tabDigit(e, !!binding.shift) === null) return false;
   } else if (eventKey !== bindingKey) {
     if (!binding.alt && !binding.shift) return false;
     if (keyFromCode(e.code) !== bindingKey) return false;

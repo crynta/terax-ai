@@ -14,7 +14,10 @@ import type { KeyBinding, ShortcutId } from "./shortcuts";
  * nano and tmux), never an unmodified or Shift function key (mc, htop, vim),
  * and never Ctrl+Alt+<character> (AltGr on many layouts). Commands take
  * Ctrl+Shift+<key> as Windows Terminal and VS Code's terminal do, plus Ctrl
- * with a digit, a comma or an equals sign. Ctrl+Shift+C/V are the clipboard,
+ * with a comma or an equals sign. Chords also avoid what the editor's
+ * CodeMirror keymaps bind (shortcutDefaults.test.ts reads them from the
+ * packages), and Jump to tab takes Ctrl+Shift+1 to 9 (Ctrl+2 to 8 are control
+ * bytes). Ctrl+Shift+C/V are the clipboard,
  * and Ctrl+Shift+U/E belong to the GTK and IBus input methods. Editor
  * shortcuts keep their plain Ctrl chords: the host only runs them in editor
  * tabs, which never hold a terminal.
@@ -98,27 +101,27 @@ export const WIN_LINUX_DEFAULTS: Readonly<
   "tab.new": [{ ...CS, key: "t" }],
   "tab.newBlock": [{ ...CS, key: "q" }],
   "tab.newPrivate": [{ ...CS, key: "r" }],
-  "tab.newPreview": [{ ...CS, key: "l" }],
+  "tab.newPreview": [{ ...CS, key: "`" }],
   "tab.newEditor": [{ ...CS, key: "n" }],
   "tab.close": [{ ...CS, key: "w" }],
   "pane.splitRight": [{ ...CS, key: "d" }],
-  "pane.splitDown": [{ ...CS, key: "\\" }],
+  "pane.splitDown": [{ ...CS, key: "Enter" }],
   "pane.focusNext": [{ ...CS, key: "PageDown" }],
   "pane.focusPrev": [{ ...CS, key: "PageUp" }],
   "pane.swapLeft": [{ ctrl: true, alt: true, key: "ArrowLeft" }],
   "pane.swapRight": [{ ctrl: true, alt: true, key: "ArrowRight" }],
   "pane.swapUp": [{ ctrl: true, alt: true, key: "ArrowUp" }],
   "pane.swapDown": [{ ctrl: true, alt: true, key: "ArrowDown" }],
-  "pane.source": [{ ...CS, key: "g" }],
+  "pane.source": [{ ...CS, key: ";" }],
   "terminal.clear": [],
   "terminal.toggleInput": [{ ...CS, key: "y" }],
   "blocks.prev": [{ ...CS, key: "ArrowUp" }],
   "blocks.next": [{ ...CS, key: "ArrowDown" }],
   "tab.next": [{ ctrl: true, key: "Tab" }],
   "tab.prev": [{ ...CS, key: "Tab" }],
-  "tab.selectByIndex": [{ ctrl: true, key: "1" }],
-  "space.next": [{ ...CS, key: "]" }],
-  "space.prev": [{ ...CS, key: "[" }],
+  "tab.selectByIndex": [{ ...CS, key: "1" }],
+  "space.next": [{ ctrl: true, alt: true, key: "PageDown" }],
+  "space.prev": [{ ctrl: true, alt: true, key: "PageUp" }],
   "space.overview": [{ ...CS, key: "s" }],
   "explorer.search": [{ ...CS, key: "/" }],
   "search.focus": [{ ...CS, key: "f" }],
