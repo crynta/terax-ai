@@ -314,23 +314,31 @@ for label, user_zdotdir in (("with a user ZDOTDIR", True), ("without a user ZDOT
     else:
         s = Session({".zshrc": rc})
         ordinary = ""
-    child = f"zsh -c 'print -r -- \"RESULT:%s={READ}:\"'"
+    # An interactive child that is given Terax's directory loads the integration,
+    # which defines _terax_precmd; one that is not reads the user's files.
+    def child(n):
+        return "-ic 'print -r -- \"RESULT:S%d=${+functions[_terax_precmd]}:\"'" % n
+
     starts = {
-        "zsh": child % "S1",
-        "env FOO=1 zsh": f"env FOO=1 zsh -c 'print -r -- \"RESULT:S2={READ}:\"'",
-        "FOO=1 zsh": f"FOO=1 zsh -c 'print -r -- \"RESULT:S3={READ}:\"'",
-        "command zsh": f"command zsh -c 'print -r -- \"RESULT:S4={READ}:\"'",
-        "list `echo hi; zsh`": f"echo hi; zsh -c 'print -r -- \"RESULT:S5={READ}:\"'",
-        "list `zsh; ls`": f"zsh -c 'print -r -- \"RESULT:S6={READ}:\"'; ls >/dev/null",
-        "pipeline `true | zsh`": f"true | zsh -c 'print -r -- \"RESULT:S7={READ}:\"'",
-        "absolute path": f"/bin/zsh -c 'print -r -- \"RESULT:S8={READ}:\"'",
-        "$SHELL": f"$SHELL -c 'print -r -- \"RESULT:S9={READ}:\"'",
-        "an alias for zsh": f"zz -c 'print -r -- \"RESULT:S10={READ}:\"'",
+        "zsh": f"zsh {child(1)}",
+        "env FOO=1 zsh": f"env FOO=1 zsh {child(2)}",
+        "FOO=1 zsh": f"FOO=1 zsh {child(3)}",
+        "command zsh": f"command zsh {child(4)}",
+        "list `echo hi; zsh`": f"echo hi; zsh {child(5)}",
+        "list `zsh; ls`": f"zsh {child(6)}; ls >/dev/null",
+        "pipeline `true | zsh`": f"true | zsh {child(7)}",
+        "absolute path": f"/bin/zsh {child(8)}",
+        "$SHELL": f"$SHELL {child(9)}",
+        "an alias for zsh": f"zz {child(10)}",
+        "exec -l zsh": f"(exec -l zsh {child(11)})",
+        "exec -a NAME zsh": f"(exec -a myzsh zsh {child(12)})",
+        "/usr/bin/env zsh": f"/usr/bin/env zsh {child(13)}",
+        "time zsh": f"time zsh {child(14)}",
     }
     for index, (name, line) in enumerate(starts.items(), start=1):
         s.run(line)
         got = s.result(f"S{index}")
-        check(f"{label}: `{name}` is given the integration directory", got == s.zdotdir, got)
+        check(f"{label}: `{name}` is given the integration directory", got == "1", got)
     plain = {
         "echo zsh": f'echo zsh; print -r -- "RESULT:N1={READ}:"',
         "print zsh": f'print zsh | cat; print -r -- "RESULT:N2={READ}:"',
@@ -342,6 +350,50 @@ for label, user_zdotdir in (("with a user ZDOTDIR", True), ("without a user ZDOT
         s.run(line)
         got = s.result(f"N{index}")
         check(f"{label}: `{name}` leaves the user's ZDOTDIR alone", got == ordinary, got)
+
+    # A script or `zsh -c` reads nothing but .zshenv, so it must not keep
+    # Terax's directory for its whole run.
+    with open(os.path.join(s.home, "probe.zsh"), "w") as handle:
+        handle.write('print -r -- "RESULT:SCRIPT=${ZDOTDIR-unset}:"\n')
+    s.run("zsh $HOME/probe.zsh")
+    check(f"{label}: a script run by zsh sees the user's ZDOTDIR", s.result("SCRIPT") == (ordinary or "unset"), s.result("SCRIPT"))
+    s.run("zsh -c 'print -r -- \"RESULT:DASHC=${ZDOTDIR-unset}:\"'")
+    check(f"{label}: `zsh -c` sees the user's ZDOTDIR", s.result("DASHC") == (ordinary or "unset"), s.result("DASHC"))
+
+    # The matcher on its own, including the forms that replace the shell, which a
+    # pty test cannot observe without losing the session.
+    yes = [
+        "zsh", "exec zsh", "exec -l zsh", "exec -a NAME zsh", "exec -c zsh", "/usr/bin/env zsh",
+        "env zsh", "env -i FOO=1 zsh", "time zsh", "time -p zsh", "coproc zsh", "command -p zsh",
+        "sudo -u me zsh", "FOO=1 zsh -l", "echo hi && zsh", "ls | zsh", "(exec zsh)", "{ zsh; }",
+        "if true; then zsh; fi", "nohup zsh", "$SHELL -l", "/opt/homebrew/bin/zsh", "sudo -s", "su",
+    ]
+    no = [
+        "echo zsh", "vim $ZDOTDIR/.zshrc", "cat zsh.log", "grep zsh x", 'echo "zsh"', "ls /bin/zsh",
+        "exec bash", "env FOO=zsh bash", "time ls", "printf %s zsh", "zshrc", "bash -c zsh", "",
+    ]
+    table = "typeset -a Y N; Y=(" + " ".join("'" + item + "'" for item in yes) + "); "
+    table += "N=(" + " ".join("'" + item + "'" for item in no) + "); "
+    table += 'n=0; for l in "${Y[@]}"; do (( n++ )); _terax_starts_zsh "$l"; print -r -- "YES$n=$?"; done; '
+    table += 'n=0; for l in "${N[@]}"; do (( n++ )); _terax_starts_zsh "$l"; print -r -- "NO$n=$?"; done'
+    s.run(table)
+    text = s.out.decode("utf-8", "replace")
+    said_yes = {int(n): code for n, code in re.findall(r"\bYES(\d+)=(\d)", text)}
+    said_no = {int(n): code for n, code in re.findall(r"\bNO(\d+)=(\d)", text)}
+    wrong = [yes[n - 1] for n in range(1, len(yes) + 1) if said_yes.get(n) != "0"]
+    wrong += [no[n - 1] for n in range(1, len(no) + 1) if said_no.get(n) != "1"]
+    check(f"{label}: the matcher agrees on all {len(yes) + len(no)} lines", not wrong, wrong)
+
+    # The check runs before every command; a pasted 200 KB script must cost
+    # nothing noticeable.
+    s.run('zmodload zsh/datetime; for shape in a b c; do case $shape in a) big=${(pl:200000::echo zsh; :)};; b) big=${(pl:200000::lorem ipsum :)};; c) big=${(pl:200000::ls\n zsh:)};; esac; t0=$EPOCHREALTIME; _terax_starts_zsh "$big"; t1=$EPOCHREALTIME; print -r -- "RESULT:PERF$shape=$(( (t1 - t0) * 1000 )):"; done')
+    for shape in "a", "b", "c":
+        value = s.result(f"PERF{shape}")
+        took = f"{float(value):.3f} ms" if value is not None else "?"
+        # About 0.5 ms here, almost all of it copying the argument; the bound is
+        # loose enough for a busy CI runner and far below the 263 ms an
+        # unbounded parse of 60 KB cost.
+        check(f"{label}: a 200 KB command line ({shape}) costs next to nothing ({took})", value is not None and float(value) < 2.0, value)
     s.close()
 
 # The implicit end of a command: exec zsh sends C and then the new shell's first

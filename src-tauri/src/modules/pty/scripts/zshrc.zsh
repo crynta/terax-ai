@@ -70,19 +70,34 @@ _terax_zshrc_setup() {
   # script, tmux) are not seen and start without the integration.
   _terax_starts_zsh() {
     emulate -L zsh
+    # Runs before every command, so a pasted script must not cost anything: only
+    # a bounded prefix is looked at, and only when a word that could start a zsh
+    # is in it at all.
+    local line="${1[1,512]}"
+    [[ "$line" == *(zsh|SHELL)* || "$line" =~ '(^|[[:space:];&|({])(su|sudo|doas)([[:space:]]|$)' ]] || return 1
     local -a words
-    local word prefix= command_position=1 skip=
+    local word prefix= command_position=1 skip= segments=0
     local login_shell="${SHELL:t}"
-    words=( ${(z)1} )
+    words=( ${(z)line} )
     for word in "${words[@]}"; do
       if [[ -n "$skip" ]]; then skip=; continue; fi
       case "$word" in
         ';'|'&'|'&&'|'|'|'||'|'|&'|'('|')'|'{'|'}'|'!'|then|do|else|elif|if|while|until)
-          command_position=1; prefix=; continue ;;
+          command_position=1; prefix=
+          (( ++segments > 8 )) && return 1
+          continue ;;
       esac
       [[ -n "$command_position" ]] || continue
       word="${(Q)word}"
       case "$prefix" in
+        wrap)
+          case "$word" in
+            -zsh) return 0 ;;
+            -a) skip=1; continue ;;
+            -*) continue ;;
+          esac
+          prefix=
+          ;;
         env)
           case "$word" in
             -u|-C|-S) skip=1; continue ;;
@@ -102,9 +117,10 @@ _terax_zshrc_setup() {
           ;;
       esac
       case "$word" in
-        exec|command|builtin|nocorrect|noglob|nohup|time|-|--) continue ;;
-        env) prefix=env; continue ;;
-        sudo|doas) prefix=sudo; continue ;;
+        exec|command|builtin|nocorrect|noglob|nohup|time|coproc) prefix=wrap; continue ;;
+        -|--) continue ;;
+        env|*/env) prefix=env; continue ;;
+        sudo|doas|*/sudo|*/doas) prefix=sudo; continue ;;
         *=*) continue ;;
         su) [[ "$login_shell" == zsh ]] && return 0 ;;
         zsh|-zsh|*/zsh|*/-zsh) return 0 ;;

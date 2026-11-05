@@ -17,7 +17,15 @@
   if [[ "${ZDOTDIR-}" != "$_terax_assigned" || -n "${TERAX_USER_ZDOTDIR-}" ]]; then
     export TERAX_USER_ZDOTDIR="${ZDOTDIR:-$HOME}"
   fi
-  ZDOTDIR="$_terax_zdotdir"
+  # An interactive shell goes on to our .zprofile and .zshrc; a script or
+  # `zsh -c` reads nothing else, so it keeps the user's own ZDOTDIR.
+  if [[ -o interactive ]]; then
+    ZDOTDIR="$_terax_zdotdir"
+  elif [[ -n "${TERAX_USER_ZDOTDIR-}" ]]; then
+    ZDOTDIR="$TERAX_USER_ZDOTDIR"
+  else
+    unset ZDOTDIR
+  fi
   unset _terax_zdotdir _terax_assigned
 }
 :
