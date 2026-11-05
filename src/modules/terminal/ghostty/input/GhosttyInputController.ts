@@ -65,6 +65,8 @@ export class GhosttyInputController {
   private readonly nativeSelection: TerminalNativeSelection | null;
   private readonly keyContext: KeyContext;
   private readonly pressedKeys = new Map<string, KeyEvent>();
+  /** Ctrl+V presses waiting on the clipboard: the key may be released before the read ends. */
+  private readonly pasteKeys = new Map<string, { released: boolean }>();
   private readonly wheel = new WheelAccumulator();
   private composing = false;
   private optionKeys = 0;
@@ -103,22 +105,19 @@ export class GhosttyInputController {
       : null;
     for (const [target, type, listener, listenerOptions] of this.listeners())
       target.addEventListener(type, listener, listenerOptions);
-    this.loadColdModules(true);
-  }
-
-  /**
-   * Cold paths load apart from the keyboard: only composing users need the
-   * anchor and only programs that track the mouse need the reports. A failed
-   * load is retried once, then reported once; the keyboard works without them.
-   */
-  private loadColdModules(retry: boolean): void {
-    const { options } = this;
-    void Promise.all([import("./ImeAnchor"), import("./TerminalMouse")]).then(
-      ([{ ImeAnchor }, { TerminalMouse }]) => {
-        if (this.disposed) return;
+    this.loadCold(
+      "IME anchor",
+      () => import("./ImeAnchor"),
+      ({ ImeAnchor }) => {
         this.imeAnchor = new ImeAnchor(options.input.style, () =>
           this.cursorCell(),
         );
+      },
+    );
+    this.loadCold(
+      "mouse reporting",
+      () => import("./TerminalMouse"),
+      ({ TerminalMouse }) => {
         this.mouse = new TerminalMouse({
           model: options.model,
           pointerTarget: options.pointerTarget,
@@ -127,10 +126,29 @@ export class GhosttyInputController {
           send: (report) => this.emitText(report, "keydown", false, false),
         });
       },
+    );
+  }
+
+  /**
+   * Cold paths load apart from the keyboard: only composing users need the
+   * anchor and only programs that track the mouse need the reports. Each loads
+   * on its own, is retried once and reported once if it still fails; the
+   * keyboard works without them.
+   */
+  private loadCold<T>(
+    name: string,
+    load: () => Promise<T>,
+    use: (module: T) => void,
+    retry = true,
+  ): void {
+    void load().then(
+      (module) => {
+        if (!this.disposed) use(module);
+      },
       (error: unknown) => {
         if (this.disposed) return;
-        if (retry) this.loadColdModules(false);
-        else console.warn("Terax: mouse and IME input failed to load", error);
+        if (retry) this.loadCold(name, load, use, false);
+        else console.warn(`Terax: ${name} failed to load`, error);
       },
     );
   }
@@ -256,16 +274,38 @@ export class GhosttyInputController {
   ): void {
     // Ctrl+V is also a key: an application that reads the clipboard itself (an
     // image paste) gets it when there is no text to paste.
-    const fallback = route.forwardKeyWhenEmpty
-      ? this.options.model.encodeKey(
-          buildKeyEvent(event, Key.V, KeyAction.PRESS, this.kittyFlags()),
-        )
+    const { code } = event;
+    const flags = this.kittyFlags();
+    const data = route.forwardKeyWhenEmpty
+      ? buildKeyEvent(event, Key.V, KeyAction.PRESS, flags)
       : null;
+    const encoded = data ? this.options.model.encodeKey(data) : null;
+    const waiting = { released: false };
+    if (data) this.pasteKeys.set(code, waiting);
     void readTerminalClipboard().then((text) => {
+      if (this.pasteKeys.get(code) === waiting) this.pasteKeys.delete(code);
       if (this.disposed) return;
-      if (text) this.paste(text);
-      else if (fallback && fallback.byteLength > 0)
-        this.options.onData(fallback);
+      if (text) {
+        this.paste(text);
+        return;
+      }
+      if (!data || !encoded || encoded.byteLength === 0) return;
+      this.options.onData(
+        (flags & KITTY_REPORT_EVENT_TYPES) !== 0
+          ? canonicalKittyPress(encoded)
+          : encoded,
+      );
+      // A press that went out as plain text has no release to report.
+      if (encoded[0] !== 0x1b) return;
+      if (!waiting.released) {
+        this.pressedKeys.set(code, data);
+        return;
+      }
+      const release = this.options.model.encodeKey({
+        ...data,
+        action: KeyAction.RELEASE,
+      });
+      if (release.byteLength > 0) this.options.onData(release);
     });
   }
 
@@ -288,6 +328,8 @@ export class GhosttyInputController {
 
   private readonly handleKeyUp = (event: KeyboardEvent): void => {
     this.trackOptionKeys(event, false);
+    const waiting = this.pasteKeys.get(event.code);
+    if (waiting) waiting.released = true;
     const pressed = this.pressedKeys.get(event.code);
     if (!pressed) return;
     this.pressedKeys.delete(event.code);
@@ -305,6 +347,7 @@ export class GhosttyInputController {
 
   /** Applications that track key events must not see a key stay down. */
   private releasePressedKeys(): void {
+    for (const waiting of this.pasteKeys.values()) waiting.released = true;
     if (this.pressedKeys.size === 0) return;
     const reports = (this.kittyFlags() & KITTY_REPORT_EVENT_TYPES) !== 0;
     const pressed = [...this.pressedKeys.values()];
