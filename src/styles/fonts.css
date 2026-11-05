@@ -48,3 +48,12 @@
   font-weight: 700;
   src: url('@fontsource/jetbrains-mono/files/jetbrains-mono-cyrillic-700-normal.woff2') format('woff2');
 }
+
+@font-face {
+  font-family: 'Terax Terminal Symbols';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('../assets/fonts/terax-terminal-symbols.woff2') format('woff2');
+  unicode-range: U+E000-F8FF, U+F0000-FFFFD;
+}
