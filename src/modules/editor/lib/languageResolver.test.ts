@@ -6,6 +6,31 @@ import { resolveDisplayName, resolveLanguage } from "./languageResolver";
 import { EDITOR_THEME_EXT } from "./themes";
 
 describe("resolveDisplayName", () => {
+  it.each(["/project/script.luau", "C:\\project\\SCRIPT.LUAU"])(
+    "loads Luau highlighting without changing its LSP identity: %s",
+    async (path) => {
+      expect(resolveDisplayName(path)).toBe("Luau");
+      const result = await resolveLanguage(path);
+      if (!result) throw new Error("Luau language failed to load");
+      expect(result.id).toBe("luau");
+      const code = 'local message = "hello" -- comment';
+      const state = EditorState.create({
+        doc: code,
+        extensions: [result.ext, EDITOR_THEME_EXT.atomone],
+      });
+      const highlighted: string[] = [];
+      highlightTree(
+        syntaxTree(state),
+        { style: (tags) => highlightingFor(state, tags) },
+        (from, to) => highlighted.push(code.slice(from, to)),
+      );
+      expect(highlighted).toContain("local");
+      expect(highlighted).toContain('"hello"');
+      expect(highlighted).toContain("-- comment");
+      expect((await resolveLanguage("script.lua"))?.id).toBe("lua");
+    },
+  );
+
   it("resolves real extensions", () => {
     expect(resolveDisplayName("App.tsx")).toBe("TypeScript React");
     expect(resolveDisplayName("main.go")).toBe("Go");
