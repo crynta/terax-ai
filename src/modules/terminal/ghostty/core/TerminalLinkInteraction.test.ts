@@ -164,6 +164,62 @@ describe("TerminalLinkInteraction", () => {
     expect(t.overlay.hide).toHaveBeenCalled();
   });
 
+  it("keeps a pressed link armed through the damage the press itself caused", () => {
+    const t = setup();
+    t.fire("pointerdown", 50, 15, { metaKey: true });
+    // Selecting on press damages the surface, which asks for a fresh look
+    // before the button comes up.
+    t.interaction.invalidate();
+    t.flush();
+    t.fire("pointerup", 50, 15, { metaKey: true });
+    expect(t.onActivate).toHaveBeenCalledWith(LINK);
+  });
+
+  it("disarms a press when the text under it changed to something else", () => {
+    const t = setup();
+    t.fire("pointerdown", 50, 15, { metaKey: true });
+    t.hitAt.mockReturnValue({
+      ...LINK,
+      uri: "https://other.example",
+      text: "https://other.example",
+    });
+    t.interaction.invalidate();
+    t.flush();
+    t.fire("pointerup", 50, 15, { metaKey: true });
+    expect(t.onActivate).not.toHaveBeenCalled();
+
+    const gone = setup();
+    gone.fire("pointerdown", 50, 15, { metaKey: true });
+    gone.hitAt.mockReturnValue(null);
+    gone.interaction.invalidate();
+    gone.flush();
+    gone.fire("pointerup", 50, 15, { metaKey: true });
+    expect(gone.onActivate).not.toHaveBeenCalled();
+  });
+
+  it("takes over a press, release and key change that happened while it loaded", () => {
+    const key = (type: string, metaKey: boolean) =>
+      Object.assign(new Event(type), { metaKey, ctrlKey: false, shiftKey: false });
+    const t = setup();
+    t.interaction.ingest(pointerEvent("pointerdown", 50, 15, { metaKey: true }));
+    t.interaction.ingest(pointerEvent("pointerup", 50, 15, { metaKey: true }));
+    expect(t.onActivate).toHaveBeenCalledWith(LINK);
+
+    const late = setup();
+    late.interaction.ingest(pointerEvent("pointermove", 50, 15));
+    late.interaction.ingest(key("keydown", true));
+    expect(late.overlay.show).toHaveBeenCalledWith(LINK);
+    late.interaction.ingest(key("keyup", false));
+    expect(late.overlay.hide).toHaveBeenCalled();
+  });
+
+  it("follows the modifier after a press that came with no earlier movement", () => {
+    const t = setup();
+    t.fire("pointerdown", 50, 15, { metaKey: true });
+    t.keys.dispatchEvent(Object.assign(new Event("keyup"), { metaKey: false }));
+    expect(t.overlay.hide).toHaveBeenCalled();
+  });
+
   it("drops the highlight on leave, blur and dispose, and unbinds key listeners", () => {
     const t = setup();
     t.fire("pointermove", 50, 15, { metaKey: true });

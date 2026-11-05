@@ -66,9 +66,23 @@ export class TerminalLinkInteraction {
     return this.hit !== null || this.pointer?.modifier === true;
   }
 
-  /** Takes over a pointer movement that happened while this was still loading. */
-  ingest(event: PointerEvent): void {
-    this.handleMove(event);
+  /** Takes over an event that happened while this was still loading. */
+  ingest(event: Event): void {
+    switch (event.type) {
+      case "pointermove":
+        this.handleMove(event as PointerEvent);
+        break;
+      case "pointerdown":
+        this.handleDown(event as PointerEvent);
+        break;
+      case "pointerup":
+        this.handleUp(event as PointerEvent);
+        break;
+      case "keydown":
+      case "keyup":
+        this.handleKey(event as KeyboardEvent);
+        break;
+    }
   }
 
   /** The cells under the pointer changed meaning (output, scroll): look again. */
@@ -78,9 +92,14 @@ export class TerminalLinkInteraction {
     (this.options.schedule ?? defaultSchedule)(() => {
       this.refreshScheduled = false;
       if (this.disposed) return;
-      this.down = null;
+      const pressed = this.down;
       this.cellKey = -1;
       this.evaluate(true);
+      // Pressing selects, and the selection's damage lands here before the
+      // button is released: the press stays armed while it is the same link.
+      if (pressed && !(this.hit && sameLink(this.hit, pressed))) {
+        this.down = null;
+      }
     });
   }
 
@@ -109,6 +128,7 @@ export class TerminalLinkInteraction {
   private readonly handleDown = (event: PointerEvent): void => {
     if (event.button !== 0 || event.pointerType === "touch") return;
     this.observe(event);
+    this.bindKeys();
     this.down = null;
     if (!this.pointer?.modifier) return;
     this.evaluate();
