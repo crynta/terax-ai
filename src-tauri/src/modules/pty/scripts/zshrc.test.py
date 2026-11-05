@@ -24,20 +24,43 @@ if ZSH is None:
     sys.exit(0)
 
 OSC = re.compile(rb"\x1b\](\d+)(?:;([^\x07\x1b]*))?(?:\x07|\x1b\\)")
+TIMEOUT = float(os.environ.get("TERAX_ZSH_TEST_TIMEOUT", "8"))
 failures = 0
+current = None
 
 
 def check(label, ok, detail=""):
     global failures
     if ok:
         print(f"ok   {label}")
-    else:
-        failures += 1
-        print(f"FAIL {label} {detail}")
+        return
+    failures += 1
+    print(f"FAIL {label} {detail}")
+    # The first failure in a session shows what the shell actually sent, so a
+    # CI log is enough to see why.
+    if current is not None and not current.dumped:
+        current.dumped = True
+        print(f"---- raw output of the session (last 3000 bytes) ----\n{current.out[-3000:]!r}\n----")
+
+
+def describe_environment():
+    import subprocess
+
+    version = subprocess.run([ZSH, "--version"], capture_output=True, text=True).stdout.strip()
+    print(f"# {version} at {ZSH}")
+    for path in ("/etc/zsh/zshenv", "/etc/zsh/zprofile", "/etc/zsh/zshrc", "/etc/zsh/zlogin", "/etc/zshenv", "/etc/zshrc"):
+        if os.path.exists(path):
+            print(f"# global {path} ({os.path.getsize(path)} bytes)")
+            if os.environ.get("TERAX_ZSH_TEST_DEBUG"):
+                with open(path, errors="replace") as handle:
+                    print(handle.read())
 
 
 class Session:
     def __init__(self, files, blocks=False, env=None):
+        global current
+        current = self
+        self.dumped = False
         self.tmp = tempfile.mkdtemp(prefix="terax-zsh-test-")
         self.home = os.path.join(self.tmp, "home")
         self.zdotdir = os.path.join(self.tmp, "integration")
@@ -92,8 +115,8 @@ class Session:
                     return
                 self.out += data
 
-    def wait_for_prompts(self, count, timeout=8.0):
-        end = time.time() + timeout
+    def wait_for_prompts(self, count, timeout=None):
+        end = time.time() + (TIMEOUT if timeout is None else timeout)
         while time.time() < end and self.prompts() < count:
             self.pump(0.05)
         self.pump(0.15)
@@ -153,6 +176,8 @@ def prompt_text_between_a_and_b(session):
             current += rest[0]
     return texts
 
+
+describe_environment()
 
 # --- the marker stream ------------------------------------------------------
 s = Session({".zshrc": "PS1='PROMPT> '\n"})
