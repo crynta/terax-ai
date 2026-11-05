@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { fitTerminalViewport, snapOffsetCss } from "./TerminalFit";
+import {
+  fitTerminalViewport,
+  snapOffsetCss,
+  TERMINAL_RIGHT_GUTTER_CSS_PX,
+} from "./TerminalFit";
 import { deriveFontMetrics, type TerminalFontMetrics } from "./terminalVisuals";
 
 const FONT = {
@@ -18,6 +22,73 @@ function metricsAt(scale: number): TerminalFontMetrics {
     descent: 3 * scale,
   });
 }
+
+describe("fitTerminalViewport right gutter", () => {
+  const GUTTER = TERMINAL_RIGHT_GUTTER_CSS_PX;
+
+  it.each(RATIOS)(
+    "always leaves at least the gutter free to the right of the grid at %s",
+    (scale) => {
+      const metrics = metricsAt(scale);
+      for (let width = 120; width <= 1400; width += 7.3) {
+        const fit = fitTerminalViewport(width, 400, metrics, null, GUTTER);
+        if (!fit) continue;
+        const free = width * scale - fit.pixelWidth;
+        expect(free, `${width}px`).toBeGreaterThanOrEqual(
+          Math.round(GUTTER * scale) - 0.02,
+        );
+      }
+    },
+  );
+
+  it("takes the gutter from the device box where the engine reports one", () => {
+    const metrics = metricsAt(2);
+    const plain = fitTerminalViewport(700, 400, metrics, {
+      width: 1400,
+      height: 800,
+    });
+    const gutter = fitTerminalViewport(
+      700,
+      400,
+      metrics,
+      { width: 1400, height: 800 },
+      GUTTER,
+    );
+    expect(gutter?.cols).toBeLessThan(plain?.cols ?? 0);
+    expect(1400 - (gutter?.pixelWidth ?? 0)).toBeGreaterThanOrEqual(GUTTER * 2);
+  });
+
+  it("changes nothing without a gutter", () => {
+    const metrics = metricsAt(1.25);
+    expect(fitTerminalViewport(500, 300, metrics, null, 0)).toEqual(
+      fitTerminalViewport(500, 300, metrics),
+    );
+  });
+
+  it("gives the gutter up in a pane too narrow for two columns beside it", () => {
+    const metrics = metricsAt(1);
+    const narrow = 2 * metrics.deviceCellWidth + GUTTER - 1;
+    const fit = fitTerminalViewport(narrow, 100, metrics, null, GUTTER);
+    expect(fit?.cols).toBe(
+      2 + Math.floor((GUTTER - 1) / metrics.deviceCellWidth),
+    );
+    expect(
+      fitTerminalViewport(narrow - 6, 100, metrics, null, GUTTER),
+    ).not.toBeNull();
+    expect(
+      fitTerminalViewport(metrics.deviceCellWidth, 100, metrics, null, GUTTER),
+    ).toBeNull();
+  });
+
+  it("keeps a half-width split pane clear of its edge by more than a column", () => {
+    // A 1440 px window split in two: each pane is about 718 px wide.
+    const metrics = metricsAt(2);
+    const fit = fitTerminalViewport(718.5, 800, metrics, null, GUTTER);
+    expect(718.5 * 2 - (fit?.pixelWidth ?? 0)).toBeGreaterThanOrEqual(
+      GUTTER * 2,
+    );
+  });
+});
 
 describe("fitTerminalViewport", () => {
   it.each(RATIOS)(

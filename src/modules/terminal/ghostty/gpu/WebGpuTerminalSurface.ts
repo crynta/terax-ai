@@ -22,7 +22,10 @@ import { TerminalGlyphMap, type RasterBudget } from "./GlyphMap";
 import { type DeviceRect, deviceRectsEqual } from "./PaneRects";
 import { ScreenUniform, type ScreenUniformState } from "./ScreenUniform";
 import { SCREEN_UNIFORM_BYTES } from "./shaders";
-import { fitTerminalViewport } from "./TerminalFit";
+import {
+  fitTerminalViewport,
+  TERMINAL_RIGHT_GUTTER_CSS_PX,
+} from "./TerminalFit";
 import {
   TerminalFitQueue,
   type TerminalFitBounds,
@@ -1023,6 +1026,7 @@ export class WebGpuTerminalSurface
       bounds.height,
       this.metrics,
       bounds.device,
+      TERMINAL_RIGHT_GUTTER_CSS_PX,
     );
     if (fit)
       smoothHooks()?.want(this.benchId, performance.now(), fit.cols, fit.rows);
@@ -1115,6 +1119,7 @@ export class WebGpuTerminalSurface
       bounds.height,
       this.metrics,
       bounds.device,
+      TERMINAL_RIGHT_GUTTER_CSS_PX,
     );
     if (!fit || !this.binding) return;
     const { cols, rows, pixelWidth, pixelHeight } = fit;

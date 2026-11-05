@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GhosttyTerminalModelApi } from "@/modules/terminal/ghostty/GhosttyTerminalModel";
 import type { WindowPresentation } from "@/modules/terminal/ghostty/WindowPresentationPolicy";
 import type { WebGlCellRenderer } from "@/modules/terminal/ghostty/webgl/WebGlCellRenderer";
+import { TERMINAL_RIGHT_GUTTER_CSS_PX } from "@/modules/terminal/ghostty/gpu/TerminalFit";
 import { WebGlTerminalSurface } from "@/modules/terminal/ghostty/webgl/WebGlTerminalSurface";
 
 const bridge = vi.hoisted(() => ({
@@ -258,14 +259,14 @@ function harness() {
   });
   surfaces.push(surface);
   const hostElement = element();
-  const hostSize = { width: 960, height: 640 };
+  const hostSize = { width: 960 + TERMINAL_RIGHT_GUTTER_CSS_PX, height: 640 };
   hostElement.getBoundingClientRect = () => ({ ...hostSize });
   surface.attach(hostElement as unknown as HTMLElement);
   return {
     surface,
     onResize,
     setHost(width: number, height = 640) {
-      hostSize.width = width;
+      hostSize.width = width + TERMINAL_RIGHT_GUTTER_CSS_PX;
       hostSize.height = height;
     },
     renderer: current,

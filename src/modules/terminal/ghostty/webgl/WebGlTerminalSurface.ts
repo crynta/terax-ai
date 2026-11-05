@@ -22,7 +22,10 @@ import {
   measureGestureBackingEnvironment,
   windowInnerSize,
 } from "../gpu/GestureBacking";
-import { fitTerminalViewport } from "../gpu/TerminalFit";
+import {
+  fitTerminalViewport,
+  TERMINAL_RIGHT_GUTTER_CSS_PX,
+} from "../gpu/TerminalFit";
 import {
   TerminalFitQueue,
   type TerminalFitQueueDiagnostics,
@@ -721,7 +724,13 @@ export class WebGlTerminalSurface
     const bounds = measuredBounds ?? this.host.getBoundingClientRect();
     this.scrollbarSync.invalidate();
     this.scrollbarViewportHeight = Math.round(bounds.height);
-    const fit = fitTerminalViewport(bounds.width, bounds.height, this.metrics);
+    const fit = fitTerminalViewport(
+      bounds.width,
+      bounds.height,
+      this.metrics,
+      undefined,
+      TERMINAL_RIGHT_GUTTER_CSS_PX,
+    );
     if (!fit) return;
     const { cols, rows, pixelWidth, pixelHeight } = fit;
     if (cols * rows > MAX_SURFACE_CELLS) {
