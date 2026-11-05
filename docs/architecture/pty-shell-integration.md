@@ -71,7 +71,7 @@ Integration scripts live in `src-tauri/src/modules/pty/scripts/`:
 - `bashrc.bash` for bash
 - `init.fish` for fish, installed to `~/.config/fish/conf.d/terax.fish`
 
-Zsh is launched with `ZDOTDIR` pointing at a temp directory that sources our scripts and then the user's real configs, each with `ZDOTDIR` switched to the user's own directory while it runs. `ZDOTDIR` is the user's own at the prompt and in hooks and the integration directory while a command runs, so shells a command starts (`exec zsh`, nested `zsh`) are integrated again. The prompt end marker is also emitted from `zle-line-init`, which runs after the line editor drew whatever powerlevel10k or starship built. Bash uses `--rcfile` with a wrapper that sources the user's `~/.bashrc` after Terax's. Fish uses `conf.d` so no user file is replaced.
+Zsh is launched with `ZDOTDIR` pointing at a temp directory that sources our scripts and then the user's real configs, each with `ZDOTDIR` switched to the user's own directory while it runs. `ZDOTDIR` is the user's own at the prompt, in hooks and while ordinary commands run; only a command line that starts a zsh (`exec zsh`, nested `zsh`, `env X=1 zsh`, `$SHELL`) gets the integration directory exported for that command, so that shell is integrated again. The prompt end marker is also emitted from `zle-line-init`, which runs after the line editor drew whatever powerlevel10k or starship built. Bash uses `--rcfile` with a wrapper that sources the user's `~/.bashrc` after Terax's. Fish uses `conf.d` so no user file is replaced.
 
 All integrated shells emit **OSC 7** (cwd) and **OSC 133 A/B/C/D** (prompt boundaries and exit code) so Terax can track cwd and detect command boundaries without parsing the user's prompt.
 

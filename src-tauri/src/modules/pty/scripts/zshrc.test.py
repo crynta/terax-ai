@@ -61,6 +61,7 @@ class Session:
             "TERM": "xterm-256color",
             "LANG": "C.UTF-8",
             "TERAX_TERMINAL": "1",
+            "SHELL": ZSH,
             "ZDOTDIR": self.zdotdir,
         }
         if blocks:
@@ -239,7 +240,13 @@ user_dir = os.path.join(s.home, ".config/zsh")
 check("a $ZDOTDIR/conf.d loader in .zshenv finds the user's files", s.result("LOADED") == "yes", s.result("LOADED"))
 check("no glob error from a $ZDOTDIR loader", "no matches found" not in text)
 check("hooks and the prompt see the user's ZDOTDIR", s.result("ZD") == user_dir, s.result("ZD"))
-check("a running command has the integration directory exported", s.result("ENVZD") == s.zdotdir and s.result("CMDZD") == s.zdotdir, (s.result("ENVZD"), s.result("CMDZD")))
+check("an ordinary command sees the user's ZDOTDIR, in the shell and in its environment", s.result("ENVZD") == user_dir and s.result("CMDZD") == user_dir, (s.result("ENVZD"), s.result("CMDZD")))
+# `vim $ZDOTDIR/.zshrc`, `source $ZDOTDIR/.zshrc` and `cd $ZDOTDIR` expand
+# $ZDOTDIR after preexec ran, so they must find the user's directory.
+s.run('print -r -- "RESULT:WRAPPED=$(grep -c terax-shell-integration $ZDOTDIR/.zshrc):"')
+check("`$ZDOTDIR/.zshrc` typed by the user is their file, not the wrapper", s.result("WRAPPED") == "0", s.result("WRAPPED"))
+s.run('cd $ZDOTDIR; print -r -- "RESULT:PWD=$PWD:"')
+check("`cd $ZDOTDIR` goes to the user's directory", (s.result("PWD") or "").endswith(".config/zsh"), s.result("PWD"))
 check("history is not kept in the integration directory", (s.result("HIST") or "").startswith(s.home) or s.result("HIST") in (None, "none"), s.result("HIST"))
 check("the integration still reports prompts", s.marks().count("133:B") >= 2)
 check("the user's ZDOTDIR travels to child shells", s.result("USERVAR") == user_dir, s.result("USERVAR"))
@@ -263,7 +270,7 @@ s.close()
 s = Session({".zshrc": "PS1='PROMPT> '\n" + hook})
 s.run(probe)
 check("without a user ZDOTDIR the prompt sees none", s.result("ZD") == "unset", s.result("ZD"))
-check("without a user ZDOTDIR a running command still hands children the integration", s.result("ENVZD") == s.zdotdir, s.result("ENVZD"))
+check("without a user ZDOTDIR an ordinary command has none", s.result("ENVZD") == "" and s.result("CMDZD") == "unset", (s.result("ENVZD"), s.result("CMDZD")))
 check("without a user ZDOTDIR no user variable is exported", s.result("USERVAR") == "unset", s.result("USERVAR"))
 s.close()
 
@@ -293,6 +300,48 @@ for label, user_zdotdir in (("with a user ZDOTDIR", True), ("without a user ZDOT
     envs = open(os.path.join(s.home, "env.log")).read().count("env") if os.path.exists(os.path.join(s.home, "env.log")) else 0
     check(f"{label}: the user's .zshrc ran once per shell (first, exec, 2 nested, exec)", shells == 5, shells)
     check(f"{label}: the user's .zshenv ran once per shell", envs == 5, envs)
+    s.close()
+
+# Only a command line that starts a zsh gets Terax's directory exported; a zsh
+# started that way reports the ZDOTDIR it was given, the other lines report what
+# an ordinary command sees.
+READ = "$(command env | sed -n 's/^ZDOTDIR=//p')"
+for label, user_zdotdir in (("with a user ZDOTDIR", True), ("without a user ZDOTDIR", False)):
+    rc = "PS1='PROMPT> '\nalias zz=zsh\n" + hook
+    if user_zdotdir:
+        s = Session({".config/zsh/.zshrc": rc}, env={"TERAX_USER_ZDOTDIR": "@HOME@/.config/zsh"})
+        ordinary = os.path.join(s.home, ".config/zsh")
+    else:
+        s = Session({".zshrc": rc})
+        ordinary = ""
+    child = f"zsh -c 'print -r -- \"RESULT:%s={READ}:\"'"
+    starts = {
+        "zsh": child % "S1",
+        "env FOO=1 zsh": f"env FOO=1 zsh -c 'print -r -- \"RESULT:S2={READ}:\"'",
+        "FOO=1 zsh": f"FOO=1 zsh -c 'print -r -- \"RESULT:S3={READ}:\"'",
+        "command zsh": f"command zsh -c 'print -r -- \"RESULT:S4={READ}:\"'",
+        "list `echo hi; zsh`": f"echo hi; zsh -c 'print -r -- \"RESULT:S5={READ}:\"'",
+        "list `zsh; ls`": f"zsh -c 'print -r -- \"RESULT:S6={READ}:\"'; ls >/dev/null",
+        "pipeline `true | zsh`": f"true | zsh -c 'print -r -- \"RESULT:S7={READ}:\"'",
+        "absolute path": f"/bin/zsh -c 'print -r -- \"RESULT:S8={READ}:\"'",
+        "$SHELL": f"$SHELL -c 'print -r -- \"RESULT:S9={READ}:\"'",
+        "an alias for zsh": f"zz -c 'print -r -- \"RESULT:S10={READ}:\"'",
+    }
+    for index, (name, line) in enumerate(starts.items(), start=1):
+        s.run(line)
+        got = s.result(f"S{index}")
+        check(f"{label}: `{name}` is given the integration directory", got == s.zdotdir, got)
+    plain = {
+        "echo zsh": f'echo zsh; print -r -- "RESULT:N1={READ}:"',
+        "print zsh": f'print zsh | cat; print -r -- "RESULT:N2={READ}:"',
+        "grep zsh": f'grep -c zsh /dev/null; print -r -- "RESULT:N3={READ}:"',
+        "a path argument": f'ls /bin/zsh >/dev/null; print -r -- "RESULT:N4={READ}:"',
+        "a zsh word in a string": f'print -r -- "run zsh later"; print -r -- "RESULT:N5={READ}:"',
+    }
+    for index, (name, line) in enumerate(plain.items(), start=1):
+        s.run(line)
+        got = s.result(f"N{index}")
+        check(f"{label}: `{name}` leaves the user's ZDOTDIR alone", got == ordinary, got)
     s.close()
 
 # The implicit end of a command: exec zsh sends C and then the new shell's first

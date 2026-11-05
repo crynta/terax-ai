@@ -64,8 +64,64 @@ _terax_zshrc_setup() {
     fi
   }
 
+  # Whether a command line starts a zsh: the first word of any list or pipeline
+  # segment, after the usual wrappers, is zsh, a path to it, or $SHELL when that
+  # is zsh. Pure zsh word splitting, no forks; indirect launches (a function, a
+  # script, tmux) are not seen and start without the integration.
+  _terax_starts_zsh() {
+    emulate -L zsh
+    local -a words
+    local word prefix= command_position=1 skip=
+    local login_shell="${SHELL:t}"
+    words=( ${(z)1} )
+    for word in "${words[@]}"; do
+      if [[ -n "$skip" ]]; then skip=; continue; fi
+      case "$word" in
+        ';'|'&'|'&&'|'|'|'||'|'|&'|'('|')'|'{'|'}'|'!'|then|do|else|elif|if|while|until)
+          command_position=1; prefix=; continue ;;
+      esac
+      [[ -n "$command_position" ]] || continue
+      word="${(Q)word}"
+      case "$prefix" in
+        env)
+          case "$word" in
+            -u|-C|-S) skip=1; continue ;;
+            -*|*=*) continue ;;
+          esac
+          prefix=
+          ;;
+        sudo)
+          case "$word" in
+            -s|-i|--shell|--login)
+              [[ "$login_shell" == zsh ]] && return 0
+              continue ;;
+            -u|-g|-h|-p|-C|-D|-R|-T|-U|-r|-t|-c) skip=1; continue ;;
+            -*|*=*) continue ;;
+          esac
+          prefix=
+          ;;
+      esac
+      case "$word" in
+        exec|command|builtin|nocorrect|noglob|nohup|time|-|--) continue ;;
+        env) prefix=env; continue ;;
+        sudo|doas) prefix=sudo; continue ;;
+        *=*) continue ;;
+        su) [[ "$login_shell" == zsh ]] && return 0 ;;
+        zsh|-zsh|*/zsh|*/-zsh) return 0 ;;
+        '$SHELL'|'${SHELL}') [[ "$login_shell" == zsh ]] && return 0 ;;
+      esac
+      command_position=
+    done
+    return 1
+  }
+
+  # While a command runs ZDOTDIR stays the user's, so a typed `vim $ZDOTDIR/.zshrc`
+  # expands to their file. Only a command line that starts a zsh exports
+  # Terax's directory, so that shell reads the integration; the next precmd
+  # puts the user's value back.
   _terax_zdotdir_command() {
     emulate -L zsh
+    _terax_starts_zsh "${3-$1}" || return 0
     export ZDOTDIR="$_terax_zd_integration"
   }
 
