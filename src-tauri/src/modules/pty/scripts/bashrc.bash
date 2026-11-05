@@ -72,6 +72,14 @@ if [ -z "$__TERAX_HOOKS_LOADED" ]; then
     *) PROMPT_COMMAND="_terax_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}" ;;
   esac
 
+  # ble.sh takes ownership of PROMPT_COMMAND at ble-attach, which the rc file
+  # above has already run. It keeps its own copy, so the hook we just appended
+  # is never called and the host sees one OSC 7 at startup and nothing after.
+  # Its own hook list survives that handover.
+  if [ -n "${BLE_VERSION-}" ]; then
+    blehook PRECMD+=_terax_precmd 2>/dev/null
+  fi
+
   # Pre-exec marker via PS0 (bash 4.4+). PS0 is expanded just before a command
   # runs — cleaner than a DEBUG trap, which would clobber user traps and fire
   # on every command including inside PROMPT_COMMAND.
