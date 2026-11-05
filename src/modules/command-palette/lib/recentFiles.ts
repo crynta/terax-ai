@@ -3,7 +3,7 @@
 
 const KEY = "terax-palette-recent-files";
 export const MAX_RECENT_FILES = 12;
-export const MAX_RECENT_ROOTS = 24;
+const MAX_RECENT_ROOTS = 24;
 
 export type RecentStore = Record<string, string[]>;
 
