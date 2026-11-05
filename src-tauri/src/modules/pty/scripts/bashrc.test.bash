@@ -160,8 +160,39 @@ esac
 nounset="$(integration "" 'set -u; unset TERAX_BLOCKS _terax_block_seen; unset PS1; _terax_precmd >/dev/null; _terax_finish_prompt; printf ok')"
 check "the hooks do not abort under set -u" ok "$nounset"
 
+nounset_ble="$(integration 1 'set -u; unset PROMPT_COMMAND; _terax_ble_precmd >/dev/null; printf ok')"
+check "the ble.sh entry does not abort under set -u without a PROMPT_COMMAND" ok "$nounset_ble"
+
 ble_last="$(integration 1 'PROMPT_COMMAND=; _terax_ble_precmd >/dev/null; printf "%s" "$PROMPT_COMMAND"')"
 check "the ble.sh entry puts the prompt end back last" _terax_finish_prompt "$ble_last"
+
+# ble.sh restores its own PROMPT_COMMAND before every prompt, so the entry runs
+# in full each time: a fork there is latency on every prompt. A subshell shows
+# up as a different $BASHPID (bash 4+) and as a call to the shadowed builtins
+# or tools a command substitution or `(exit n)` would have needed.
+fork_log="$empty_home/forks"
+fork_cwd="$empty_home/with space & 100%"
+mkdir -p "$fork_cwd"
+: > "$fork_log"
+export TERAX_FORK_LOG="$fork_log" TERAX_FORK_CWD="$fork_cwd"
+fork_probe='
+  cd "$TERAX_FORK_CWD"
+  st() { return "$1"; }
+  declare() { echo declare >> "$TERAX_FORK_LOG"; builtin declare "$@"; }
+  uname() { echo uname >> "$TERAX_FORK_LOG"; command uname "$@"; }
+  exit() { echo exit >> "$TERAX_FORK_LOG"; builtin exit "$@"; }
+  set -T
+  trap '"'"'[ "${BASHPID-$$}" = "$$" ] || echo subshell >> "$TERAX_FORK_LOG"'"'"' DEBUG
+  PROMPT_COMMAND=; st 4; _terax_ble_precmd
+  PROMPT_COMMAND=(one two); st 5; _terax_ble_precmd
+  PROMPT_COMMAND=; st 6; _terax_ble_precmd
+  trap - DEBUG
+  printf "|%s" "${PROMPT_COMMAND[*]}"'
+forked="$(integration 1 "$fork_probe")"
+expect_contains "the ble.sh entry reports with an encoded cwd" "with%20space%20%26%20100%25" "$forked"
+expect_contains "the ble.sh entry reports each command status" "133;D;6" "$forked"
+check "the ble.sh entry forks nothing per prompt" "" "$(cat "$fork_log")"
+unset TERAX_FORK_LOG TERAX_FORK_CWD
 
 # A prompt framework that rebuilds PS1 on every prompt, the way starship does,
 # must still end each prompt with the marker: drive a real bash through it.

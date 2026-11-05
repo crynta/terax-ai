@@ -51,16 +51,22 @@ if [ -z "${__TERAX_HOOKS_LOADED-}" ]; then
     done
   }
 
-  # Returns the status it was called with, so the PROMPT_COMMAND entries after
-  # it (starship, direnv, ...) still see the user's `$?`.
-  _terax_precmd() {
-    local _terax_ret=$? _terax_cwd="$PWD"
-    printf '\e]133;D;%s\e\\' "$_terax_ret"
+  # Reports the prompt for the command status in $1; forks nothing.
+  _terax_report() {
+    local _terax_cwd="$PWD"
+    printf '\e]133;D;%s\e\\' "$1"
     case "$_terax_cwd" in
       *[!a-zA-Z0-9/._~-]*) _terax_urlencode "$_terax_cwd"; _terax_cwd="$REPLY" ;;
     esac
-    printf '\e]7;file://%s%s\e\\' "${HOSTNAME:-$(uname -n 2>/dev/null)}" "$_terax_cwd"
+    printf '\e]7;file://%s%s\e\\' "${HOSTNAME:-localhost}" "$_terax_cwd"
     printf '\e]133;A\e\\'
+  }
+
+  # Returns the status it was called with, so the PROMPT_COMMAND entries after
+  # it (starship, direnv, ...) still see the user's `$?`.
+  _terax_precmd() {
+    local _terax_ret=$?
+    _terax_report "$_terax_ret"
     return "$_terax_ret"
   }
 
@@ -94,22 +100,26 @@ if [ -z "${__TERAX_HOOKS_LOADED-}" ]; then
       || { [ "${BASH_VERSINFO[0]:-0}" -eq 5 ] && [ "${BASH_VERSINFO[1]:-0}" -ge 1 ]; }
   }
 
+  # Whether PROMPT_COMMAND needs element-wise handling. Asking `declare -p`
+  # would fork on every prompt under ble.sh; an array of one element behaves
+  # like a string, so only a longer one does not.
+  _terax_pc_is_array() {
+    [ -n "${PROMPT_COMMAND[1]+set}" ]
+  }
+
   # Puts _terax_finish_prompt last in PROMPT_COMMAND, once. Called again by the
   # ble.sh hook, which restores a PROMPT_COMMAND that never saw it.
   _terax_pc_finish_last() {
     case "${PROMPT_COMMAND[*]-}" in *_terax_finish_prompt*) return 0 ;; esac
-    case "$(declare -p PROMPT_COMMAND 2>/dev/null)" in
-      'declare -a'*)
-        if _terax_pc_runs_arrays; then
-          PROMPT_COMMAND+=(_terax_finish_prompt)
-        else
-          PROMPT_COMMAND[0]="${PROMPT_COMMAND[0]-}"$'\n'"_terax_finish_prompt"
-        fi
-        ;;
-      *)
-        PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND$'\n'}_terax_finish_prompt"
-        ;;
-    esac
+    if _terax_pc_is_array; then
+      if _terax_pc_runs_arrays; then
+        PROMPT_COMMAND+=(_terax_finish_prompt)
+      else
+        PROMPT_COMMAND[0]="${PROMPT_COMMAND[0]-}"$'\n'"_terax_finish_prompt"
+      fi
+    else
+      PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND$'\n'}_terax_finish_prompt"
+    fi
   }
 
   # ble.sh runs this from its own PRECMD hook list (see below). When a
@@ -120,37 +130,34 @@ if [ -z "${__TERAX_HOOKS_LOADED-}" ]; then
     local _terax_ret=$?
     case "${PROMPT_COMMAND[*]-}" in
       *_terax_precmd*) ;;
-      *) (exit "$_terax_ret"); _terax_precmd ;;
+      *) _terax_report "$_terax_ret" ;;
     esac
     _terax_pc_finish_last
     return "$_terax_ret"
   }
 
-  case "$(declare -p PROMPT_COMMAND 2>/dev/null)" in
-    'declare -a'*)
-      if _terax_pc_runs_arrays; then
-        _terax_has_precmd=
-        for _terax_command in "${PROMPT_COMMAND[@]}"; do
-          [ "$_terax_command" = _terax_precmd ] && _terax_has_precmd=1
-        done
-        if [ -z "$_terax_has_precmd" ]; then
-          PROMPT_COMMAND=(_terax_precmd "${PROMPT_COMMAND[@]}")
-        fi
-        unset _terax_has_precmd _terax_command
-      else
-        case "${PROMPT_COMMAND[0]-}" in
-          *_terax_precmd*) ;;
-          *) PROMPT_COMMAND[0]="_terax_precmd${PROMPT_COMMAND[0]:+;${PROMPT_COMMAND[0]}}" ;;
-        esac
+  if _terax_pc_is_array; then
+    if _terax_pc_runs_arrays; then
+      _terax_has_precmd=
+      for _terax_command in "${PROMPT_COMMAND[@]}"; do
+        [ "$_terax_command" = _terax_precmd ] && _terax_has_precmd=1
+      done
+      if [ -z "$_terax_has_precmd" ]; then
+        PROMPT_COMMAND=(_terax_precmd "${PROMPT_COMMAND[@]}")
       fi
-      ;;
-    *)
-      case "${PROMPT_COMMAND:-}" in
+      unset _terax_has_precmd _terax_command
+    else
+      case "${PROMPT_COMMAND[0]-}" in
         *_terax_precmd*) ;;
-        *) PROMPT_COMMAND="_terax_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}" ;;
+        *) PROMPT_COMMAND[0]="_terax_precmd${PROMPT_COMMAND[0]:+;${PROMPT_COMMAND[0]}}" ;;
       esac
-      ;;
-  esac
+    fi
+  else
+    case "${PROMPT_COMMAND:-}" in
+      *_terax_precmd*) ;;
+      *) PROMPT_COMMAND="_terax_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}" ;;
+    esac
+  fi
   _terax_pc_finish_last
 
   # An attached ble.sh keeps its own copy of PROMPT_COMMAND, restores it before
