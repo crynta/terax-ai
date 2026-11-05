@@ -59,6 +59,22 @@ describe("focusUntilActive", () => {
     expect(focus).toHaveBeenCalledTimes(1);
   });
 
+  it("does not start when another element already holds the focus", () => {
+    const focus = vi.fn();
+    setActive({});
+    focusUntilActive(target, focus);
+    vi.runAllTimers();
+    expect(focus).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when the target already has the focus", () => {
+    const focus = vi.fn();
+    setActive(target);
+    focusUntilActive(target, focus);
+    vi.runAllTimers();
+    expect(focus).not.toHaveBeenCalled();
+  });
+
   it("stops when cancelled", () => {
     const focus = vi.fn();
     const cancel = focusUntilActive(target, focus);
