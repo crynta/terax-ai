@@ -25,7 +25,10 @@ import {
   measureGestureBackingEnvironment,
   windowInnerSize,
 } from "../gpu/GestureBacking";
-import { fitTerminalViewport } from "../gpu/TerminalFit";
+import {
+  fitTerminalViewport,
+  TERMINAL_RIGHT_GUTTER_CSS_PX,
+} from "../gpu/TerminalFit";
 import {
   TerminalFitQueue,
   type TerminalFitQueueDiagnostics,
@@ -40,8 +43,10 @@ import {
   metricsForScale,
   rgbToCss,
 } from "../gpu/terminalVisuals";
+import { currentTextContrast } from "../gpu/textContrast";
 import { GhosttySearchController } from "../search/GhosttySearchController";
 import { TerminalSelectionController } from "../selection/TerminalSelectionController";
+import { WebGlPoolExhaustedError } from "./WebGlPoolExhaustedError";
 import {
   getWebGlTerminalRuntime,
   type WebGlRuntimeSurface,
@@ -270,8 +275,13 @@ export class WebGlTerminalSurface
     this.pixelRatioMonitor.start();
     this.resizeObserver.observe(container);
     if (this.visible && !this.documentSuspended) {
-      this.acquireRenderer();
-      this.resizeToHost();
+      try {
+        this.acquireRenderer();
+        this.resizeToHost();
+      } catch (error) {
+        this.handleRendererError(toError(error));
+        return;
+      }
     }
     this.updateScrollbar();
     if (this.visible && !this.documentSuspended) this.runtime.schedule(this);
@@ -486,6 +496,7 @@ export class WebGlTerminalSurface
     this.clearTextBlinkTimer();
     if (this.documentSuspended) return;
     if (
+      error instanceof WebGlPoolExhaustedError ||
       this.recoveringRenderer ||
       this.consecutiveRendererErrors > 0 ||
       !this.visible ||
@@ -620,6 +631,7 @@ export class WebGlTerminalSurface
       metrics: this.metrics,
       theme: this.theme,
       scale: this.scale,
+      contrast: currentTextContrast(),
     } as const;
   }
 
@@ -660,13 +672,24 @@ export class WebGlTerminalSurface
     if (devicePixelScale() !== this.scale) {
       this.syncScale();
       this.runtime.release(this);
-      this.acquireRenderer();
+      try {
+        this.acquireRenderer();
+      } catch (error) {
+        this.handleRendererError(toError(error));
+        return;
+      }
     }
 
     const bounds = measuredBounds ?? this.host.getBoundingClientRect();
     this.scrollbarSync.invalidate();
     this.scrollbarViewportHeight = Math.round(bounds.height);
-    const fit = fitTerminalViewport(bounds.width, bounds.height, this.metrics);
+    const fit = fitTerminalViewport(
+      bounds.width,
+      bounds.height,
+      this.metrics,
+      undefined,
+      TERMINAL_RIGHT_GUTTER_CSS_PX,
+    );
     if (!fit) return;
     const { cols, rows, pixelWidth, pixelHeight } = fit;
     if (cols * rows > MAX_SURFACE_CELLS) {

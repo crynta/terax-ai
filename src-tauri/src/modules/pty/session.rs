@@ -8,7 +8,7 @@ use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, Pt
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{mpsc, oneshot};
 
-use super::agent_detect::{AgentDetector, AgentSignal};
+use super::agent_detect::{AgentDetector, AgentLink, AgentSignal, Signal, TerminalNotificationEvent};
 use super::da_filter::DaFilter;
 use super::hub::{Command, Hub};
 use super::presentation::PresentationClass;
@@ -18,6 +18,7 @@ use super::terminal_colors::{ColorState, TerminalColors};
 use crate::modules::workspace::WorkspaceEnv;
 
 const AGENT_EVENT: &str = "terax:agent-signal";
+const NOTIFICATION_EVENT: &str = "terax:terminal-notification";
 
 const READ_BUF: usize = 16 * 1024;
 const EXIT_ACK_TIMEOUT: Duration = Duration::from_secs(30);
@@ -53,6 +54,10 @@ pub struct Session {
     _job: Option<crate::modules::proc::job::ProcessJob>,
     /// PID of the shell process. 0 means unknown; callers must skip checks when 0.
     pub shell_pid: u32,
+    /// Frontend pane (leaf) this terminal belongs to, when it reported one.
+    pub pane_id: Option<u32>,
+    /// Agent state shared with the control server's structured hooks.
+    pub link: Arc<AgentLink>,
     /// Label of the webview that opened this PTY and receives its output.
     pub owner: Arc<str>,
     pub killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
@@ -215,6 +220,10 @@ pub(super) struct Host {
     pub class: PresentationClass,
     /// Agent detector transitions (an app event in production).
     pub signal: Arc<dyn Fn(AgentSignal) + Send + Sync>,
+    /// Bell and OSC notifications from programs that are not known agents.
+    pub notify: Arc<dyn Fn(TerminalNotificationEvent) + Send + Sync>,
+    pub pane_id: Option<u32>,
+    pub link: Arc<AgentLink>,
     /// Runs on the waiter thread once the exit frame was delivered.
     pub reap: Box<dyn FnOnce() + Send>,
     /// The theme colour queries are answered from; unknown until pushed.
@@ -236,8 +245,10 @@ pub fn spawn(
     shell: Option<String>,
     control: Option<crate::modules::control::ShellControlEnv>,
     colors: Option<TerminalColors>,
+    pane_id: Option<u32>,
 ) -> Result<Arc<Session>, String> {
     let emitter = app.clone();
+    let notifier = app.clone();
     spawn_with(
         Host {
             id,
@@ -247,6 +258,11 @@ pub fn spawn(
             signal: Arc::new(move |signal| {
                 let _ = emitter.emit(AGENT_EVENT, signal);
             }),
+            notify: Arc::new(move |notification| {
+                let _ = notifier.emit(NOTIFICATION_EVENT, notification);
+            }),
+            pane_id,
+            link: AgentLink::new(),
             reap: Box::new(move || {
                 if let Some(state) = app.try_state::<super::PtyState>() {
                     if let Some(s) = state.take(id) {
@@ -280,6 +296,9 @@ pub(super) fn spawn_with(
         hub,
         class,
         signal,
+        notify,
+        pane_id,
+        link,
         reap,
         colors,
     } = host;
@@ -341,6 +360,8 @@ pub(super) fn spawn_with(
         #[cfg(windows)]
         _job: job,
         shell_pid,
+        pane_id,
+        link: link.clone(),
         owner,
         killer: Mutex::new(killer),
         input: input.clone(),
@@ -380,7 +401,7 @@ pub(super) fn spawn_with(
             // Reused for every filtered read: no per-chunk allocation.
             let mut filtered: Vec<u8> = Vec::with_capacity(READ_BUF);
             let mut da_filter = DaFilter::with_colors(color_state);
-            let mut agent_detect = AgentDetector::new();
+            let mut agent_detect = AgentDetector::with_link(link);
             let mut first_byte = false;
             loop {
                 match reader.read(&mut buf) {
@@ -400,7 +421,10 @@ pub(super) fn spawn_with(
                             );
                         }
                         let read = &buf[..n];
-                        agent_detect.process(read, |t| signal(t.into_signal(id)));
+                        agent_detect.process(read, |event| match event {
+                            Signal::Transition(t) => signal(t.into_signal(id)),
+                            Signal::Notification(n) => notify(n.into_event(id)),
+                        });
                         let chunk: &[u8] = if da_filter.passes_through(read) {
                             read
                         } else {
@@ -442,7 +466,11 @@ pub(super) fn spawn_with(
                     }
                 }
             }
-            agent_detect.finish(|t| signal(t.into_signal(id)));
+            agent_detect.finish(|event| {
+                if let Signal::Transition(t) = event {
+                    signal(t.into_signal(id));
+                }
+            });
             output_r.finish_reading();
         })
         .map_err(|e| spawn_error("reader", e))?;
@@ -623,6 +651,9 @@ mod tests {
                 hub: hub.clone(),
                 class: PresentationClass::Focused,
                 signal: Arc::new(|_| {}),
+                notify: Arc::new(|_| {}),
+                pane_id: None,
+                link: AgentLink::new(),
                 reap: Box::new(move || {
                     let _ = reaped.send(());
                 }),

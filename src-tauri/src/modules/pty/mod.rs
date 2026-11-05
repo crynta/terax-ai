@@ -1,4 +1,4 @@
-mod agent_detect;
+pub(crate) mod agent_detect;
 mod da_filter;
 mod foreground;
 mod gate;
@@ -35,6 +35,14 @@ use terminal_colors::TerminalColors;
 /// terminals than this, so anything larger is a malformed request.
 const MAX_PRESENTATION_BATCH: usize = 4096;
 
+/// A live terminal resolved from a frontend pane id.
+#[derive(Clone)]
+pub struct PaneTarget {
+    pub pty_id: u32,
+    pub owner: Arc<str>,
+    pub link: Arc<agent_detect::AgentLink>,
+}
+
 pub struct PtyState {
     sessions: RwLock<HashMap<u32, Arc<Session>>>,
     // Starts at 1 so freshly-handed-out ids are never 0, which the frontend
@@ -64,6 +72,23 @@ impl PtyState {
             self.hub.submit(Command::Unregister { id });
         }
         session
+    }
+
+    /// The live terminal currently bound to a frontend pane, newest first when
+    /// a pane was respawned. Finished sessions are not live.
+    pub fn pane_target(&self, pane_id: u32) -> Option<PaneTarget> {
+        let sessions = self.sessions.read().unwrap();
+        sessions
+            .iter()
+            .filter(|(_, session)| {
+                session.pane_id == Some(pane_id) && !session.finished.load(Ordering::Acquire)
+            })
+            .max_by_key(|(id, _)| **id)
+            .map(|(id, session)| PaneTarget {
+                pty_id: *id,
+                owner: session.owner.clone(),
+                link: session.link.clone(),
+            })
     }
 
     /// The window's page navigated away (reload, HMR): its stream token dies
@@ -194,6 +219,7 @@ pub async fn pty_open(
             shell,
             control_env,
             colors,
+            pane_id,
         )
     })
     .await
@@ -499,6 +525,15 @@ mod tests {
     use std::time::{Duration, Instant};
 
     fn open(state: &Arc<PtyState>, id: u32, owner: &str) -> Arc<Session> {
+        open_in_pane(state, id, owner, None)
+    }
+
+    fn open_in_pane(
+        state: &Arc<PtyState>,
+        id: u32,
+        owner: &str,
+        pane_id: Option<u32>,
+    ) -> Arc<Session> {
         let reaper = state.clone();
         let session = spawn_with(
             Host {
@@ -507,6 +542,9 @@ mod tests {
                 hub: state.hub.clone(),
                 class: PresentationClass::Hidden,
                 signal: Arc::new(|_| {}),
+                notify: Arc::new(|_| {}),
+                pane_id,
+                link: agent_detect::AgentLink::new(),
                 reap: Box::new(move || {
                     if let Some(session) = reaper.take(id) {
                         session::drop_session(session);
@@ -553,6 +591,36 @@ mod tests {
         // Both sessions are still registered: only pty_close_all reaps them.
         assert_eq!(state.sessions.read().unwrap().len(), 2);
         for id in [1, 2] {
+            if let Some(session) = state.take(id) {
+                reap(id, session, "test cleanup");
+            }
+        }
+    }
+
+    #[test]
+    fn a_pane_resolves_to_its_newest_live_terminal_only() {
+        let state = Arc::new(PtyState::default());
+        let first = open_in_pane(&state, 1, "main", Some(7));
+        let other = open_in_pane(&state, 2, "main", Some(8));
+        let unbound = open(&state, 3, "main");
+        assert_eq!(state.pane_target(7).map(|t| t.pty_id), Some(1));
+        assert_eq!(state.pane_target(8).map(|t| t.pty_id), Some(2));
+        assert!(state.pane_target(9).is_none());
+
+        // A respawn in the same pane wins over the older terminal.
+        let respawn = open_in_pane(&state, 4, "main", Some(7));
+        let target = state.pane_target(7).unwrap();
+        assert_eq!(target.pty_id, 4);
+        assert_eq!(&*target.owner, "main");
+        assert!(std::sync::Arc::ptr_eq(&target.link, &respawn.link));
+
+        // A closed or finished terminal is no longer reachable.
+        drop(state.take(4));
+        assert_eq!(state.pane_target(7).map(|t| t.pty_id), Some(1));
+        first.finished.store(true, Ordering::Release);
+        assert!(state.pane_target(7).is_none());
+        let _ = (other, unbound);
+        for id in [1, 2, 3] {
             if let Some(session) = state.take(id) {
                 reap(id, session, "test cleanup");
             }

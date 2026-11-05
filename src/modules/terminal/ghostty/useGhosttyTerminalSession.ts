@@ -6,7 +6,12 @@ import {
 } from "@/modules/terminal/ghostty/ghosttyBlockSessions";
 import { initializeSessionGeneration as startSessionInitialization } from "@/modules/terminal/ghostty/sessionInitialization";
 import { replaceSessionSurface } from "@/modules/terminal/ghostty/replaceSessionSurface";
-import { ensureMonoFontsLoaded, resolveFontFamily } from "@/lib/fonts";
+import {
+  ensureMonoFontsLoaded,
+  resolveFontFamily,
+  subscribeSymbolFonts,
+  symbolFontEpoch,
+} from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { TerminalBackendKind } from "@/modules/terminal/backend/contracts";
 import { setLeafPresentation } from "@/modules/terminal/lib/ptyPresentation";
@@ -14,7 +19,14 @@ import { PtyResizeDelivery } from "@/modules/terminal/lib/ptyResizeDelivery";
 import { useTerminalFont } from "@/modules/terminal/lib/useTerminalFont";
 import type { TerminalSearchController } from "@/modules/terminal/search/TerminalSearchController";
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { isAgentActivePty } from "../lib/agentActivity";
 import { openPty, type PtyColors, type PtySession } from "../lib/pty-bridge";
 import { writeTerminalClipboard } from "../lib/terminalClipboard";
@@ -23,6 +35,7 @@ import { GhosttySemanticEventRouter } from "./core/GhosttySemanticEventRouter";
 import { getGhosttyCoreRuntime } from "./GhosttyCoreRuntime";
 import type { GhosttyTerminalModelApi } from "./GhosttyTerminalModel";
 import {
+  fontSpecKey,
   measureTerminalFont,
   readTerminalGpuTheme,
   rgbToInt,
@@ -139,6 +152,7 @@ export function useGhosttyTerminalSession({
     (state) => state.terminalLetterSpacing,
   );
   const zoomLevel = usePreferencesStore((state) => state.zoomLevel);
+  const symbols = useSyncExternalStore(subscribeSymbolFonts, symbolFontEpoch);
   const font = useMemo<TerminalFontSpec>(
     () => ({
       family: resolveFontFamily(fontFamily),
@@ -146,8 +160,9 @@ export function useGhosttyTerminalSession({
       lineHeight: 1.2,
       letterSpacing,
       weight: fontWeight,
+      symbols,
     }),
-    [fontFamily, fontSize, fontWeight, letterSpacing, zoomLevel],
+    [fontFamily, fontSize, fontWeight, letterSpacing, zoomLevel, symbols],
   );
   const fontRef = useRef(font);
   fontRef.current = font;
@@ -507,6 +522,8 @@ async function respawnGhosttySession(
 export function ghosttySessionDiagnostics() {
   return [...sessions.values()].map((session) => ({
     leafId: session.leafId,
+    backend: session.backend,
+    font: session.font,
     blocks: ghosttyBlocks(session.leafId)?.controller?.diagnostics() ?? null,
     pty: session.pty?.id ?? null,
     visible: session.visible,
@@ -1226,16 +1243,6 @@ async function updateSessionFont(
   ghosttyBlocks(session.leafId)?.changed();
   if (session.surfaceOptions)
     session.surfaceOptions = { ...session.surfaceOptions, metrics };
-}
-
-function fontSpecKey(font: TerminalFontSpec): string {
-  return [
-    font.family,
-    font.size,
-    font.lineHeight,
-    font.letterSpacing,
-    font.weight,
-  ].join("|");
 }
 
 class BoundedPtyWriter {

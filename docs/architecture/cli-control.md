@@ -12,9 +12,12 @@ terax open <file> [--line <n>] [--no-focus] [--json]
 terax ping [--json]
 terax capabilities [--json]
 terax identify [--json]
+terax hook <agent> <event>
 ```
 
 The app must already be running. A command launched inside a Terax pane targets that pane's space, even if another space or tab has UI focus. An external client without pane context falls back to the active UI context.
+
+`terax hook` is the entry point agent hooks call. It reads the hook JSON from stdin and delivers it with `TERAX_PANE_ID`. It does nothing outside a Terax pane, never exits non-zero, and prints `{}` unless it is returning a permission decision. `TERAX_HOOK_TIMEOUT` (seconds, default 600, at most 900) bounds how long it waits for a decision, `TERAX_HOOK_WAIT=0` disables waiting, and `TERAX_HOOK_DEBUG=1` prints why a delivery failed to stderr.
 
 ## Components
 
@@ -22,6 +25,7 @@ The app must already be running. A command launched inside a Terax pane targets 
 - `src-tauri/crates/terax-cli` contains the standalone console client. It intentionally avoids Clap, Tokio, reqwest, and Tauri.
 - `src-tauri/src/modules/control.rs` owns endpoint discovery, authentication, message limits, concurrency limits, timeouts, path canonicalization, and request routing.
 - `src/modules/control/` maps a caller pane to its tab and space, then performs the small set of UI-only actions.
+- `terax-control-protocol::hook` holds the hook method types, the per-agent payload adapters, payload trimming and decision rendering. `src-tauri/src/modules/agent_events.rs` serves the method, and `src/modules/control/agents.ts` is the frontend API.
 - `scripts/build-cli.mjs` builds the target-specific helper expected by Tauri's `externalBin` bundler.
 
 Rust handles `ping`, `capabilities`, authentication, and file validation directly. Actions that must mutate React state are emitted to the main webview and completed through `control_respond`. This keeps OS validation in Rust without duplicating the tab model outside React.
@@ -39,6 +43,9 @@ Security properties:
 - Request ids are bounded and restricted to log-safe ASCII.
 - Connections and pending UI requests are capped at 32, with bounded read, write, and UI response timeouts.
 - The CLI verifies that a cache descriptor still names a live Terax process before sending its token.
+- A hook names its pane in the caller context. The pane must belong to a live PTY, hook payloads are trimmed by the CLI (at most 40 KiB, 1 MiB read from stdin) and re-bounded by the adapters, and tool and subagent events are rate limited per pane.
+- A hook that waits for a permission decision is answered twice: an interim result with `held: true` right away, then the decision. The CLI waits about two seconds for the first answer and extends the wait only after `held`, so a dead or foreign endpoint never costs the decision wait.
+- A held hook keeps its connection for at most 15 minutes, no more than four per pane and sixteen overall. It is released immediately when the pane's window has not announced decision support, and cancelled when the agent disconnects, the pane closes, or that window withdraws or reloads its page (support is tracked per window and cleared on page load). Request ids are random and only the requesting connection learns them.
 - File paths are canonicalized and required to reference a regular file inside an authorized workspace before the editor is opened.
 - The descriptor is removed only when it still belongs to the exiting process, so an older instance cannot delete a newer instance's endpoint.
 
@@ -63,7 +70,8 @@ The release profile uses one codegen unit, fat LTO, size optimization, abort-on-
 - WSL panes do not receive the control credentials or CLI launcher yet. Windows path translation and WSL networking must be implemented and tested together.
 - Terax does not yet install a global command for external Terminal.app, PowerShell, or other terminals. The bundled helper and cache descriptor already support that future installer step.
 - The CLI does not launch a stopped Terax app yet.
-- Split, tab, agent, screen-read, and input commands are not part of protocol version 1 yet.
+- Split, tab, screen-read, and input commands are not part of protocol version 1 yet.
+- Agent hooks are inert in WSL panes for the same reason the credentials are not injected there.
 
 These limits are explicit so unsupported paths fail as unavailable instead of silently targeting the wrong pane or exposing a credential for a command that cannot connect.
 

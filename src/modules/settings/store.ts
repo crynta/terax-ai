@@ -157,7 +157,7 @@ export type Preferences = {
   editorWordWrapColumn: number;
   showHidden: boolean;
   explorerGitDecorations: boolean;
-  terminalRenderer: "auto" | "webgl";
+  terminalRenderer: TerminalRendererSetting;
   terminalScreenReader: boolean;
   terminalCursorBlink: boolean;
   terminalCursorStyle: TerminalCursorStyle;
@@ -505,8 +505,7 @@ export async function loadPreferences(): Promise<Preferences> {
     explorerGitDecorations:
       get<boolean>(KEY_EXPLORER_GIT_DECORATIONS) ??
       DEFAULT_PREFERENCES.explorerGitDecorations,
-    terminalRenderer:
-      get<string>(KEY_TERMINAL_RENDERER) === "webgl" ? "webgl" : "auto",
+    terminalRenderer: coerceTerminalRenderer(get<string>(KEY_TERMINAL_RENDERER)),
     terminalScreenReader: get<boolean>(KEY_TERMINAL_SCREEN_READER) === true,
     terminalCursorBlink:
       get<boolean>(KEY_TERMINAL_CURSOR_BLINK) ??
@@ -800,9 +799,9 @@ export async function setExplorerGitDecorations(value: boolean): Promise<void> {
 }
 
 export async function setTerminalRenderer(
-  value: "auto" | "webgl",
+  value: TerminalRendererSetting,
 ): Promise<void> {
-  await writePref(KEY_TERMINAL_RENDERER, value === "webgl" ? "webgl" : "auto");
+  await writePref(KEY_TERMINAL_RENDERER, coerceTerminalRenderer(value));
 }
 
 export async function setTerminalScreenReader(value: boolean): Promise<void> {
@@ -828,6 +827,13 @@ export async function setTerminalFontFamily(value: string): Promise<void> {
 }
 
 const TERMINAL_FONT_WEIGHT_VALUES = new Set(["normal", "500", "600", "bold"]);
+
+/** Renderer for new terminals: WebGPU with WebGL fallback, WebGPU, or WebGL. */
+export type TerminalRendererSetting = "auto" | "webgpu" | "webgl";
+
+export function coerceTerminalRenderer(value: unknown): TerminalRendererSetting {
+  return value === "webgl" || value === "webgpu" ? value : "auto";
+}
 
 export function coerceFontWeight(value: string): string {
   const v = value.trim();

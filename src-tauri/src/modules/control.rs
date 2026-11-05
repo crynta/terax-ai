@@ -12,10 +12,11 @@ use serde_json::{json, Value};
 use tauri::{Emitter, Manager};
 use terax_control_protocol::{
     ControlDescriptor, ControlRequest, ControlResponse, FrontendRequest, FrontendResponse,
-    OpenParams, MAX_MESSAGE_BYTES, METHODS, METHOD_CAPABILITIES, METHOD_IDENTIFY, METHOD_OPEN,
-    METHOD_PING, PROTOCOL_VERSION, SERVER_RESPONSE_ID,
+    OpenParams, MAX_MESSAGE_BYTES, METHODS, METHOD_CAPABILITIES, METHOD_HOOK, METHOD_IDENTIFY,
+    METHOD_OPEN, METHOD_PING, PROTOCOL_VERSION, SERVER_RESPONSE_ID,
 };
 
+use crate::modules::agent_events::{self, AgentHost, HookState, TauriAgentHost};
 use crate::modules::{fs, workspace};
 
 const CONTROL_EVENT: &str = "terax:control-request";
@@ -42,6 +43,7 @@ struct ControlCore {
     shutting_down: AtomicBool,
     active_connections: AtomicUsize,
     pending: Mutex<HashMap<String, SyncSender<FrontendResponse>>>,
+    hooks: HookState,
 }
 
 #[derive(Clone)]
@@ -55,6 +57,7 @@ impl Default for ControlState {
             shutting_down: AtomicBool::new(false),
             active_connections: AtomicUsize::new(0),
             pending: Mutex::new(HashMap::new()),
+            hooks: HookState::default(),
         }))
     }
 }
@@ -86,9 +89,14 @@ impl ControlState {
         })
     }
 
+    pub fn hooks(&self) -> &HookState {
+        &self.0.hooks
+    }
+
     pub fn shutdown(&self) {
         self.0.shutting_down.store(true, Ordering::Release);
         self.0.frontend_ready.store(false, Ordering::Release);
+        self.0.hooks.broker.reset_all();
         if let Some(runtime) = self.0.runtime.get() {
             remove_own_descriptor(&runtime.descriptor_path, &runtime.token);
             if let Some(dir) = &runtime.launcher_dir {
@@ -222,21 +230,41 @@ impl Drop for ConnectionGuard {
 }
 
 fn handle_connection(mut stream: TcpStream, app: &tauri::AppHandle, state: &ControlState) {
+    serve_connection(&mut stream, state, &TauriAgentHost(app), |request| {
+        route_request(request, app, state)
+    });
+}
+
+/// Reads one request and answers it. Hooks are served here, off the UI path,
+/// because they may hold the connection while a decision is pending.
+fn serve_connection(
+    stream: &mut TcpStream,
+    state: &ControlState,
+    host: &dyn AgentHost,
+    route: impl FnOnce(ControlRequest) -> ControlResponse,
+) {
     let _ = stream.set_read_timeout(Some(IO_TIMEOUT));
     let _ = stream.set_write_timeout(Some(IO_TIMEOUT));
 
-    let request = match read_request(&mut BufReader::new(&mut stream)) {
+    let request = match read_request(&mut BufReader::new(&mut *stream)) {
         Ok(request) => request,
         Err(error) => {
             let _ = write_response(
-                &mut stream,
+                stream,
                 &ControlResponse::failure(error.response_id, error.code, error.message),
             );
             return;
         }
     };
-    let response = route_request(request, app, state);
-    let _ = write_response(&mut stream, &response);
+    let response = if request.method == METHOD_HOOK {
+        match authenticate(&request, state) {
+            Ok(()) => agent_events::handle(stream, &request, state.hooks(), host),
+            Err(response) => response,
+        }
+    } else {
+        route(request)
+    };
+    let _ = write_response(stream, &response);
 }
 
 struct ReadRequestError {
@@ -288,37 +316,48 @@ fn read_request(reader: &mut impl BufRead) -> Result<ControlRequest, ReadRequest
     })
 }
 
-fn route_request(
-    mut request: ControlRequest,
-    app: &tauri::AppHandle,
-    state: &ControlState,
-) -> ControlResponse {
+fn authenticate(request: &ControlRequest, state: &ControlState) -> Result<(), ControlResponse> {
     if !valid_request_id(&request.id) {
-        return ControlResponse::failure(
+        return Err(ControlResponse::failure(
             SERVER_RESPONSE_ID,
             "invalid_request",
             "request id must be 1-128 safe ASCII characters",
-        );
+        ));
     }
     if request.protocol != PROTOCOL_VERSION {
-        return ControlResponse::failure(
-            request.id,
+        return Err(ControlResponse::failure(
+            request.id.clone(),
             "unsupported_protocol",
             format!(
                 "protocol {} is unsupported; expected {PROTOCOL_VERSION}",
                 request.protocol
             ),
-        );
+        ));
     }
     let Some(runtime) = state.0.runtime.get() else {
-        return ControlResponse::failure(
-            request.id,
+        return Err(ControlResponse::failure(
+            request.id.clone(),
             "server_unavailable",
             "control server is not initialized",
-        );
+        ));
     };
     if !constant_time_eq(request.token.as_bytes(), runtime.token.as_bytes()) {
-        return ControlResponse::failure(request.id, "unauthorized", "invalid control token");
+        return Err(ControlResponse::failure(
+            request.id.clone(),
+            "unauthorized",
+            "invalid control token",
+        ));
+    }
+    Ok(())
+}
+
+fn route_request(
+    mut request: ControlRequest,
+    app: &tauri::AppHandle,
+    state: &ControlState,
+) -> ControlResponse {
+    if let Err(response) = authenticate(&request, state) {
+        return response;
     }
 
     match request.method.as_str() {
@@ -953,6 +992,203 @@ mod tests {
 
         remove_own_descriptor(&path, &descriptor.token);
         assert!(!path.exists());
+    }
+
+    mod hook_end_to_end {
+        use super::*;
+        use crate::modules::agent_events::test_host::FakeHost;
+        use serde_json::json;
+        use std::ffi::OsString;
+        use std::sync::Arc;
+        use terax_cli::hook::{run, HookEnvironment};
+        use terax_control_protocol::hook::{HookDecision, HookKind};
+
+        const TOKEN: &str = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90";
+
+        struct Server {
+            state: ControlState,
+            host: Arc<FakeHost>,
+            address: String,
+        }
+
+        fn serve() -> Server {
+            let state = ControlState::default();
+            assert!(state
+                .0
+                .runtime
+                .set(RuntimeInfo {
+                    address: "127.0.0.1:0".into(),
+                    token: TOKEN.into(),
+                    descriptor_path: PathBuf::from("unused-control.json"),
+                    cli_path: None,
+                    launcher_dir: None,
+                })
+                .is_ok());
+            let host = FakeHost::new(true);
+            let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind");
+            let address = listener.local_addr().expect("address").to_string();
+            let (accept_state, accept_host) = (state.clone(), host.clone());
+            thread::spawn(move || {
+                for stream in listener.incoming() {
+                    let Ok(mut stream) = stream else { break };
+                    let (state, host) = (accept_state.clone(), accept_host.clone());
+                    thread::spawn(move || {
+                        serve_connection(&mut stream, &state, host.as_ref(), |request| {
+                            ControlResponse::failure(request.id, "unknown_method", "unknown")
+                        });
+                    });
+                }
+            });
+            Server {
+                state,
+                host,
+                address,
+            }
+        }
+
+        fn environment(server: &Server, token: &str) -> HookEnvironment {
+            HookEnvironment {
+                pane_id: 3,
+                address: server.address.clone(),
+                token: token.into(),
+                decision_secs: 30,
+                wait_enabled: true,
+                debug: false,
+            }
+        }
+
+        fn invoke(
+            environment: &HookEnvironment,
+            agent: &str,
+            event: &str,
+            payload: Value,
+        ) -> String {
+            let args: Vec<OsString> = vec![agent.into(), event.into()];
+            let mut out = Vec::new();
+            run(
+                &args,
+                Some(environment),
+                Box::new(Cursor::new(payload.to_string().into_bytes())),
+                &mut out,
+            );
+            String::from_utf8(out).expect("utf-8 output")
+        }
+
+        #[test]
+        fn a_cli_hook_becomes_a_structured_event() {
+            let server = serve();
+            let output = invoke(
+                &environment(&server, TOKEN),
+                "codex",
+                "Stop",
+                json!({
+                    "session_id": "sess-1",
+                    "transcript_path": null,
+                    "cwd": "/repo",
+                    "last_assistant_message": "All done",
+                    "tool_response": "x".repeat(300_000),
+                }),
+            );
+            assert_eq!(output, "{}\n");
+
+            let events = server.host.events.lock().unwrap();
+            assert_eq!(events.len(), 1);
+            assert_eq!((events[0].pane_id, events[0].pty_id), (3, 9));
+            assert_eq!(events[0].facts.kind, HookKind::Stop);
+            assert_eq!(events[0].facts.session_id.as_deref(), Some("sess-1"));
+            assert_eq!(events[0].facts.cwd.as_deref(), Some("/repo"));
+            assert_eq!(events[0].facts.message.as_deref(), Some("All done"));
+            assert_eq!(
+                *server.host.signals.lock().unwrap(),
+                vec!["started:codex", "finished:"]
+            );
+        }
+
+        #[test]
+        fn a_wrong_token_is_rejected_without_an_event() {
+            let server = serve();
+            let output = invoke(
+                &environment(&server, &"b".repeat(64)),
+                "claude",
+                "Stop",
+                json!({ "session_id": "s" }),
+            );
+            assert_eq!(output, "{}\n");
+            assert!(server.host.events.lock().unwrap().is_empty());
+        }
+
+        #[test]
+        fn a_pane_without_a_terminal_is_rejected() {
+            let server = serve();
+            let mut environment = environment(&server, TOKEN);
+            environment.pane_id = 99;
+            invoke(&environment, "claude", "Stop", json!({}));
+            assert!(server.host.events.lock().unwrap().is_empty());
+        }
+
+        #[test]
+        fn a_permission_round_trip_returns_the_agent_decision_json() {
+            let server = serve();
+            server.state.hooks().broker.set_window_ready("main", true);
+            let (state, host) = (server.state.clone(), server.host.clone());
+            let ui = thread::spawn(move || {
+                let id = loop {
+                    let id = host
+                        .events
+                        .lock()
+                        .unwrap()
+                        .iter()
+                        .find_map(|event| event.facts.permission.as_ref()?.request_id.clone());
+                    if let Some(id) = id {
+                        break id;
+                    }
+                    thread::sleep(Duration::from_millis(5));
+                };
+                let decision = HookDecision::Allow { remember: Some(0) };
+                assert!(state.hooks().broker.resolve(&id, decision));
+            });
+            let output = invoke(
+                &environment(&server, TOKEN),
+                "claude",
+                "PermissionRequest",
+                json!({
+                    "session_id": "s",
+                    "tool_name": "Bash",
+                    "tool_input": { "command": "npm test" },
+                    "permission_suggestions": [
+                        { "type": "addRules", "behavior": "allow", "destination": "session",
+                          "rules": [{ "toolName": "Bash", "ruleContent": "npm test" }] }
+                    ],
+                }),
+            );
+            ui.join().unwrap();
+            let value: Value = serde_json::from_str(output.trim()).expect("decision json");
+            let decision = &value["hookSpecificOutput"]["decision"];
+            assert_eq!(
+                value["hookSpecificOutput"]["hookEventName"],
+                "PermissionRequest"
+            );
+            assert_eq!(decision["behavior"], "allow");
+            assert_eq!(decision["updatedPermissions"][0]["destination"], "session");
+            assert_eq!(
+                server.host.kinds(),
+                vec![HookKind::PermissionRequest, HookKind::PermissionResolved]
+            );
+        }
+
+        #[test]
+        fn a_permission_with_no_ui_falls_back_to_the_agent_prompt() {
+            let server = serve();
+            let started = std::time::Instant::now();
+            let output = invoke(
+                &environment(&server, TOKEN),
+                "claude",
+                "PermissionRequest",
+                json!({ "tool_name": "Bash" }),
+            );
+            assert_eq!(output, "{}\n");
+            assert!(started.elapsed() < Duration::from_secs(5));
+        }
     }
 
     #[cfg(unix)]

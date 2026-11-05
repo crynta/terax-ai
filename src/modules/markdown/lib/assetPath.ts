@@ -36,7 +36,7 @@ export function resolveRelativeAsset(base: string, src: string): string | null {
   return backslashes ? joined.replace(/\//g, "\\") : joined;
 }
 
-export const LOCAL_IMAGE_EXTENSIONS: ReadonlySet<string> = new Set([
+const LOCAL_IMAGE_EXTENSIONS: ReadonlySet<string> = new Set([
   "png",
   "jpg",
   "jpeg",
@@ -54,7 +54,7 @@ function toPosix(path: string): string {
   return path.replace(/\\/g, "/");
 }
 
-export function dirOf(path: string): string {
+function dirOf(path: string): string {
   const posix = toPosix(path);
   const i = posix.lastIndexOf("/");
   return i <= 0 ? posix.slice(0, i + 1) : posix.slice(0, i);
