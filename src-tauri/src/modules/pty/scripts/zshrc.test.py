@@ -78,6 +78,20 @@ class Session:
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "w") as handle:
                 handle.write(content.replace("@HOME@", self.home))
+        # Ubuntu's /etc/zsh/zshrc runs compinit unless this is set, and compinit
+        # stops at an "insecure directories" question on a machine whose fpath
+        # has a group-writable directory (a CI runner, a container). That
+        # question swallows the first typed character of every shell, with or
+        # without Terax, so the tests keep it out of the way.
+        user_dirs = [self.home]
+        if env and "TERAX_USER_ZDOTDIR" in env:
+            user_dirs.append(env["TERAX_USER_ZDOTDIR"].replace("@HOME@", self.home))
+        for directory in user_dirs:
+            os.makedirs(directory, exist_ok=True)
+            path = os.path.join(directory, ".zshenv")
+            existing = open(path).read() if os.path.exists(path) else ""
+            with open(path, "w") as handle:
+                handle.write("skip_global_compinit=1\n" + existing)
         child_env = {
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
             "HOME": self.home,
@@ -98,7 +112,8 @@ class Session:
             os.execve(ZSH, ["zsh", "-l"], child_env)
         self.pid = pid
         fcntl.ioctl(self.fd, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 120, 0, 0))
-        self.wait_for_prompts(1)
+        if not self.wait_for_prompts(1):
+            check("the shell reaches its first prompt", False, "(nothing ended a prompt in time)")
 
     def prompts(self):
         return len(re.findall(rb"\x1b\]133;B", self.out))
