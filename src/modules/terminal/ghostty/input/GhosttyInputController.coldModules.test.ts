@@ -138,7 +138,7 @@ describe("GhosttyInputController cold modules", () => {
   it("warns once per module that fails", async () => {
     const { controller } = await controllerWith({ mouse: 2, ime: 2 });
     await vi.waitFor(() => expect(warn).toHaveBeenCalledTimes(2));
-    expect(warn.mock.calls.map(([message]) => message).sort()).toEqual([
+    expect(warn.mock.calls.map((call: unknown[]) => call[0]).sort()).toEqual([
       "Terax: IME anchor failed to load",
       "Terax: mouse reporting failed to load",
     ]);
