@@ -517,7 +517,8 @@ impl AgentDetector {
     }
 
     fn bell<F: FnMut(Signal)>(&mut self, emit: &mut F) {
-        if self.link.is_hooked() {
+        // A running agent has its own entry; its bell is not a second notification.
+        if self.link.is_armed() {
             return;
         }
         let bell = TerminalNotification {
@@ -1048,6 +1049,16 @@ mod tests {
             notifications(&mut d, b"build done\x07"),
             vec![note(NotificationKind::Bell, None, "")]
         );
+    }
+
+    #[test]
+    fn an_armed_agents_bell_is_not_a_terminal_notification() {
+        let mut d = timed();
+        run(&mut d, &osc("133;C;opencode"));
+        assert!(run_all(&mut d, b"ding\x07").is_empty());
+        run(&mut d, &osc("133;D;0"));
+        advance(NOTIFY_WINDOW);
+        assert_eq!(notifications(&mut d, b"\x07").len(), 1);
     }
 
     #[test]
