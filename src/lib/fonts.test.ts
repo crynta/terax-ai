@@ -96,7 +96,7 @@ describe("terminal font availability", () => {
     expect(load).toHaveBeenCalledWith('700 14px "JetBrains Mono"');
     expect(load).toHaveBeenCalledWith(
       '400 14px "Terax Terminal Symbols"',
-      "",
+      "\ue0a0\ue718",
     );
     expect(load).toHaveBeenCalledTimes(3);
   });

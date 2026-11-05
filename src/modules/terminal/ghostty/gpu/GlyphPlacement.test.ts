@@ -56,15 +56,17 @@ describe("placeGlyph", () => {
     ).toBe(IDENTITY_PLACEMENT);
   });
 
-  it("keeps a cell-sized icon in place", () => {
-    expect(placeGlyph("", measure(), CELL.width, CELL.height)).toBe(
-      IDENTITY_PLACEMENT,
-    );
+  it("keeps a cell-sized icon in place, clipped to its cell", () => {
+    expect(placeGlyph("\ue0a0", measure(), CELL.width, CELL.height)).toEqual({
+      scale: 1,
+      shiftX: 0,
+      room: CELL.width,
+    });
   });
 
   it("shrinks an icon wider than its cell instead of overflowing into the neighbour", () => {
     const placement = placeGlyph(
-      "",
+      "\ueb99",
       measure({ advance: 9, left: 0, right: 14 }),
       CELL.width,
       CELL.height,
@@ -81,7 +83,7 @@ describe("placeGlyph", () => {
 
   it("shrinks an icon taller than the cell", () => {
     const placement = placeGlyph(
-      "",
+      "\ue718",
       measure({ ascent: 20, descent: 8 }),
       CELL.width,
       CELL.height,
@@ -91,7 +93,7 @@ describe("placeGlyph", () => {
 
   it("never enlarges a small icon", () => {
     const placement = placeGlyph(
-      "b".length === 1 ? "" : "",
+      "\uf024b".length === 1 ? "\ue000" : "\ue000",
       measure({ advance: 9, left: 0, right: 5, ascent: 5, descent: 0 }),
       CELL.width,
       CELL.height,
@@ -101,7 +103,7 @@ describe("placeGlyph", () => {
 
   it("centres an icon whose font advance differs from the cell, on whole pixels", () => {
     const placement = placeGlyph(
-      "",
+      "\ue0a0",
       measure({ advance: 5, right: 5 }),
       CELL.width,
       CELL.height,
@@ -111,20 +113,20 @@ describe("placeGlyph", () => {
     expect(Number.isInteger(placement.shiftX)).toBe(true);
     // Sub-pixel slack is ignored rather than blurring the icon.
     expect(
-      placeGlyph("", measure({ advance: 8.4 }), CELL.width, CELL.height),
-    ).toBe(IDENTITY_PLACEMENT);
+      placeGlyph("\ue0a0", measure({ advance: 8.4 }), CELL.width, CELL.height),
+    ).toMatchObject({ scale: 1, shiftX: 0 });
   });
 
   it("keeps two cells for a double-width font", () => {
     const placement = placeGlyph(
-      "",
+      "\ue0a0",
       measure({ advance: 18, left: 0, right: 17 }),
       CELL.width,
       CELL.height,
     );
-    expect(placement).toBe(IDENTITY_PLACEMENT);
+    expect(placement).toEqual({ scale: 1, shiftX: 0, room: 18 });
     const wider = placeGlyph(
-      "",
+      "\ue0a0",
       measure({ advance: 18, left: 0, right: 27 }),
       CELL.width,
       CELL.height,
@@ -134,13 +136,13 @@ describe("placeGlyph", () => {
 
   it("leaves a private-use character with a variation selector to the font", () => {
     expect(
-      placeGlyph("️", measure({ right: 30 }), CELL.width, CELL.height),
+      placeGlyph("\ue0a0️", measure({ right: 30 }), CELL.width, CELL.height),
     ).toBe(IDENTITY_PLACEMENT);
   });
 
   it("ignores a glyph with no ink", () => {
     expect(
-      placeGlyph("", measure({ left: 0, right: 0 }), CELL.width, CELL.height),
+      placeGlyph("\ue0a0", measure({ left: 0, right: 0 }), CELL.width, CELL.height),
     ).toBe(IDENTITY_PLACEMENT);
   });
 
@@ -160,7 +162,7 @@ describe("placeGlyph", () => {
             ascent: 12,
             descent: 5,
           });
-          const placement = placeGlyph("", m, cellWidth, 20);
+          const placement = placeGlyph("\ue5fa", m, cellWidth, 20);
           const span = advance >= cellWidth * 1.5 ? 2 : 1;
           const inkLeft = placement.shiftX - m.left * placement.scale;
           const inkRight = placement.shiftX + m.right * placement.scale;
@@ -215,35 +217,52 @@ describe("glyphBounds", () => {
   });
 });
 
+function fakeContext(calls: string[] = []) {
+  const note = (name: string) => vi.fn(() => calls.push(name));
+  return {
+    fillText: note("fill"),
+    save: note("save"),
+    restore: note("restore"),
+    translate: note("translate"),
+    scale: note("scale"),
+    beginPath: note("beginPath"),
+    rect: note("rect"),
+    clip: note("clip"),
+  };
+}
+
 describe("drawGlyph", () => {
   it("draws unscaled text directly at the pen position plus the shift", () => {
-    const context = {
-      fillText: vi.fn(),
-      save: vi.fn(),
-      restore: vi.fn(),
-      translate: vi.fn(),
-      scale: vi.fn(),
-    };
-    drawGlyph(context, "A", IDENTITY_PLACEMENT, 4, 20);
+    const context = fakeContext();
+    drawGlyph(context, "A", IDENTITY_PLACEMENT, 4, 20, 256);
     expect(context.fillText).toHaveBeenCalledWith("A", 4, 20);
-    drawGlyph(context, "", { scale: 1, shiftX: 3 }, 4, 20);
-    expect(context.fillText).toHaveBeenLastCalledWith("", 7, 20);
     expect(context.save).not.toHaveBeenCalled();
+  });
+
+  it("clips an icon to the cells it may cover, so its fringe cannot reach a neighbour", () => {
+    const calls: string[] = [];
+    const context = fakeContext(calls);
+    drawGlyph(context, "\ue0a0", { scale: 1, shiftX: 0, room: 9 }, 4, 20, 256);
+    expect(context.rect).toHaveBeenCalledWith(4, 0, 9, 256);
+    expect(calls).toEqual([
+      "save",
+      "beginPath",
+      "rect",
+      "clip",
+      "translate",
+      "scale",
+      "fill",
+      "restore",
+    ]);
   });
 
   it("scales a shrunken icon about its pen origin and restores the context", () => {
     const calls: string[] = [];
-    const context = {
-      fillText: vi.fn(() => calls.push("fill")),
-      save: vi.fn(() => calls.push("save")),
-      restore: vi.fn(() => calls.push("restore")),
-      translate: vi.fn(() => calls.push("translate")),
-      scale: vi.fn(() => calls.push("scale")),
-    };
-    drawGlyph(context, "", { scale: 0.5, shiftX: 2 }, 4, 20);
+    const context = fakeContext(calls);
+    drawGlyph(context, "\ue0a0", { scale: 0.5, shiftX: 2 }, 4, 20, 256);
     expect(context.translate).toHaveBeenCalledWith(6, 20);
     expect(context.scale).toHaveBeenCalledWith(0.5, 0.5);
-    expect(context.fillText).toHaveBeenCalledWith("", 0, 0);
+    expect(context.fillText).toHaveBeenCalledWith("\ue0a0", 0, 0);
     expect(calls).toEqual(["save", "translate", "scale", "fill", "restore"]);
   });
 });

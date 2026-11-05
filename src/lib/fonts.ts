@@ -36,7 +36,7 @@ const EXTENDED_SYMBOLS_FAMILY = "Terax Terminal Symbols MDI";
  */
 const FALLBACK_CHAIN = `"JetBrains Mono", "Symbols Nerd Font Mono", "Symbols Nerd Font", "${SYMBOLS_FAMILY}", "${EXTENDED_SYMBOLS_FAMILY}", SFMono-Regular, Menlo, monospace`;
 
-const PROBE_SAMPLES = ["mmmmmmmmmmlli", "Wim0123\u{f024b}"];
+const PROBE_SAMPLES = ["mmmmmmmmmmlli", "Wim0123\ue0a0\ue718\u{f024b}"];
 const PROBE_BASELINES = ["monospace", "serif", "sans-serif"];
 const PROBE_SIZE = 72;
 
@@ -55,7 +55,7 @@ export function ensureMonoFontsLoaded(): Promise<void> {
   monoReady = Promise.allSettled([
     document.fonts.load('400 14px "JetBrains Mono"'),
     document.fonts.load('700 14px "JetBrains Mono"'),
-    document.fonts.load(`400 14px "${SYMBOLS_FAMILY}"`, ""),
+    document.fonts.load(`400 14px "${SYMBOLS_FAMILY}"`, "\ue0a0\ue718"),
   ]).then(() => undefined);
   return monoReady;
 }

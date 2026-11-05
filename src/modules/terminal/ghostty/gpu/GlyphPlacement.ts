@@ -21,6 +21,11 @@ export type GlyphPlacement = {
   readonly scale: number;
   /** Device pixels the pen origin moves right of the cell's left edge. */
   readonly shiftX: number;
+  /**
+   * Device pixels from the cell's left edge that the glyph may cover. The ink is clipped to
+   * them, so an anti-aliased fringe cannot reach the neighbouring cell. Absent: unclipped.
+   */
+  readonly room?: number;
 };
 
 export const IDENTITY_PLACEMENT: GlyphPlacement = { scale: 1, shiftX: 0 };
@@ -64,7 +69,7 @@ export function placeGlyph(
   const highest = room - measure.right * scale;
   const shift = Math.min(Math.max(centred, lowest), highest);
   const shiftX = Math.abs(shift) < 0.5 ? 0 : Math.round(shift);
-  return scale === 1 && shiftX === 0 ? IDENTITY_PLACEMENT : { scale, shiftX };
+  return { scale, shiftX, room };
 }
 
 export type GlyphBounds = {
@@ -96,21 +101,38 @@ export function glyphBounds(
   return { leftExtent: left, rightExtent: right, ascent, descent };
 }
 
+/**
+ * Draws `text` with its pen origin at the cell's left edge (`penX`) and the baseline at
+ * `baselineY`, applying the placement. `height` bounds the clip rectangle.
+ */
 export function drawGlyph(
   context: Pick<
     CanvasRenderingContext2D,
-    "fillText" | "save" | "restore" | "translate" | "scale"
+    | "fillText"
+    | "save"
+    | "restore"
+    | "translate"
+    | "scale"
+    | "beginPath"
+    | "rect"
+    | "clip"
   >,
   text: string,
   placement: GlyphPlacement,
   penX: number,
   baselineY: number,
+  height: number,
 ): void {
-  if (placement.scale === 1) {
+  if (placement.scale === 1 && placement.room === undefined) {
     context.fillText(text, penX + placement.shiftX, baselineY);
     return;
   }
   context.save();
+  if (placement.room !== undefined) {
+    context.beginPath();
+    context.rect(penX, 0, placement.room, height);
+    context.clip();
+  }
   context.translate(penX + placement.shiftX, baselineY);
   context.scale(placement.scale, placement.scale);
   context.fillText(text, 0, 0);

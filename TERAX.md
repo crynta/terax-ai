@@ -126,9 +126,13 @@ flushes into a new epoch; after a flush each surface rescans its visible cells a
 re-rasterizes only what it shows. Rasterization is limited to about two
 milliseconds per frame across surfaces, leftover glyphs draw on follow-up frames,
 and a backlog from scrolled-away output keeps only visible glyphs queued.
-Grayscale text gets a DirectWrite-style contrast curve when the ratio is below 2
-or on Windows and Linux (`localStorage["terax:terminal-text-contrast"]` is
-`off`, `on` or a strength); macOS Retina is unchanged.
+Both renderers draw identical glyph pixels at every ratio (visual harness parity
+at 1, 1.25, 1.5 and 2), so grayscale text gets no contrast curve unless
+`localStorage["terax:terminal-text-contrast"]` is `on` or a strength. Private-use
+icons are fitted to their cell (`gpu/GlyphPlacement.ts`): shrunk, never enlarged,
+centred, clipped to the cell (two for a double-width font). A solid block cursor
+draws the glyph it covers in the theme's cursor accent (both cells of a wide
+character), and the fit keeps a 14 px gutter free at the right of the grid.
 Box drawing, block elements, braille, powerline separators and common legacy
 computing shapes are drawn procedurally at exactly the cell size, not from the
 font, with Ghostty's sprite geometry (`gpu/BuiltinGlyphs.ts`, pure, shared by
@@ -190,9 +194,13 @@ the first pointermove. Unmoved clicks and lost captures discard provisional pins
 Key encoding supplies the base character required by Kitty keyboard mode; plain
 keys and key releases also use Ghostty encoding when the application requests it.
 Terminal text uses the configured font, an installed Nerd Font when detected,
-or bundled JetBrains Mono. A bundled private-use-only symbol font supplies
-missing Nerd Font icons and is loaded before canvas rasterization. Native color
-emoji remain on the system fallback path. Rerun requires the complete command
+or bundled JetBrains Mono. Per codepoint the chain is that font, JetBrains Mono, an
+installed Symbols Nerd Font, then two bundled private-use-only faces: the BMP area
+(365 kB, loaded with the first terminal before rasterization) and the Material
+Design icons (349 kB, fetched when such a glyph is first drawn, blank until then;
+its arrival rebuilds the atlases through `TerminalFontSpec.symbols`). Neither is in
+the startup graph. Installed fonts are detected by canvas measurement, never
+`document.fonts.check`. Native color emoji remain on the system fallback path. Rerun requires the complete command
 submitted through Terax; truncated shell labels are never executed.
 Primary-screen full erase, scrollback erase, and terminal reset invalidate block
 pins at parse time and clear block chrome, selection, and search. Commands after
@@ -204,7 +212,9 @@ The shared command bar activates after shell integration confirms prompt input.
 Bare shells keep direct terminal input. Bash before 4.4 reports
 `OSC 133;B;terax_blocks=0` and keeps its native prompt because it lacks PS0.
 
-Settings offer Automatic or WebGL for new terminals, plus opt-in screen reader
+Settings offer Automatic or WebGL for new terminals (Automatic is WebGL on
+Windows until WebGPU is selected through `terax.experimental.terminal-backend`;
+`window.__teraxTerm().renderer` reports the choice), plus opt-in screen reader
 output. Accessible text is limited to 256 rows / 64 KiB and refreshes at most four
 times per second while visible. Ordinary URL detection runs on pointer demand;
 OSC 8 links take precedence. OSC 52 side effects retain one in-flight write and

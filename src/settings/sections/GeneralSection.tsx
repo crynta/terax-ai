@@ -625,7 +625,7 @@ function FontFamilyInput({
   return (
     <SettingRow
       title="Font family"
-      description='Nerd Font name for icons (e.g. "CaskaydiaCove Nerd Font Mono"). Leave blank to auto-detect.'
+      description='Terminal font (e.g. "CaskaydiaCove Nerd Font Mono"). Icons render without a Nerd Font; leave blank to use an installed one when found.'
     >
       <input
         type="text"

@@ -25,7 +25,7 @@
       "dist/assets/TerminalFitQueue-*.js",
       "dist/assets/ghostty-vt-*.js"
     ],
-    "limit": "71 KB",
+    "limit": "72 KB",
     "gzip": true
   },
   {
@@ -46,11 +46,11 @@
     "gzip": true
   },
   {
-    "name": "terminal private-use symbol fallback",
+    "name": "terminal private-use symbol faces (the second loads only on use)",
     "path": [
       "dist/assets/terax-terminal-symbols-*.woff2"
     ],
-    "limit": "800 KB",
+    "limit": "730 KB",
     "gzip": false,
     "brotli": false
   }

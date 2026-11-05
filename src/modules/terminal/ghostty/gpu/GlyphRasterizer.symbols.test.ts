@@ -31,6 +31,9 @@ function stub(ink: { left: number; right: number; advance: number }) {
     clearRect: () => undefined,
     save: () => transforms.push("save"),
     restore: () => transforms.push("restore"),
+    beginPath: () => undefined,
+    rect: () => undefined,
+    clip: () => transforms.push("clip"),
     translate: (x: number, y: number) => transforms.push(`translate ${x} ${y}`),
     scale: (x: number) => transforms.push(`scale ${x.toFixed(3)}`),
     fillText: (text: string, x: number, y: number) => drawn.push([text, x, y]),
@@ -76,25 +79,32 @@ describe("GlyphRasterizer private-use symbols", () => {
   it("never waits for the face on other private-use icons or text", () => {
     const { drawn } = stub({ left: 0, right: 8, advance: 8.4 });
     const rasterizer = new GlyphRasterizer(METRICS);
-    rasterizer.rasterize("", 0);
+    rasterizer.rasterize("\ue0a0", 0);
     rasterizer.rasterize("a", 0);
-    expect(drawn.map(([text]) => text)).toEqual(["", "a"]);
+    expect(drawn.map(([text]) => text)).toEqual(["\ue0a0", "a"]);
   });
 
   it("shrinks an icon that overflows the cell so it cannot reach the neighbour", () => {
     fonts.pending = false;
     const { transforms } = stub({ left: 0, right: 16.8, advance: 8.4 });
-    const glyph = new GlyphRasterizer(METRICS).rasterize("", 0);
+    const glyph = new GlyphRasterizer(METRICS).rasterize("\ueb99", 0);
     expect(transforms).toContain("scale 0.536");
     expect(glyph.width).toBeLessThanOrEqual(
       METRICS.deviceCellWidth + 2 * 2 + 1,
     );
   });
 
-  it("leaves a cell-sized icon unscaled", () => {
+  it("leaves a cell-sized icon unscaled but clipped to its cell", () => {
     fonts.pending = false;
     const { transforms } = stub({ left: 0, right: 8.4, advance: 8.4 });
-    new GlyphRasterizer(METRICS).rasterize("", 0);
+    new GlyphRasterizer(METRICS).rasterize("\ue0a0", 0);
+    expect(transforms).toContain("clip");
+    expect(transforms.some((entry) => entry.startsWith("scale 1.000"))).toBe(true);
+  });
+
+  it("draws ordinary text without a transform or a clip", () => {
+    const { transforms } = stub({ left: 0, right: 8.4, advance: 8.4 });
+    new GlyphRasterizer(METRICS).rasterize("a", 0);
     expect(transforms).toEqual([]);
   });
 });

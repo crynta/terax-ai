@@ -358,6 +358,7 @@ export class WebGlGlyphAtlas {
       placement,
       GLYPH_PADDING + left,
       GLYPH_PADDING + ascent,
+      RASTER_SIZE,
     );
 
     const rgba = context.getImageData(0, 0, width, height).data;

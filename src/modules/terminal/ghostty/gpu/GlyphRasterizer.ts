@@ -144,6 +144,7 @@ export class GlyphRasterizer {
       placement,
       GLYPH_PADDING + left,
       GLYPH_PADDING + ascent,
+      RASTER_SIZE,
     );
     this.dirtyWidth = Math.min(RASTER_SIZE, width + CLEAR_MARGIN);
     this.dirtyHeight = Math.min(RASTER_SIZE, height + CLEAR_MARGIN);
