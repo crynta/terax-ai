@@ -18,11 +18,11 @@ use crate::modules::git::plumbing::{
     branch_exists, check_branch_name, common_dir, head_commit_opt, open_worktree, os_args,
     resolve_commit, run, run_ok, stdout_text,
 };
-use crate::modules::git::process::{ensure_success, run_git};
+use crate::modules::git::process::{ensure_success, run_git, run_git_capped};
 use crate::modules::git::refs;
-use crate::modules::git::types::NETWORK_TIMEOUT_SECS;
+use crate::modules::git::types::{DEFAULT_TIMEOUT_SECS, NETWORK_TIMEOUT_SECS};
 use crate::modules::git::utils::{canonical_dir, ResolvedGitDirectory};
-use crate::modules::workspace::{WorkspaceEnv, WorkspaceRegistry};
+use crate::modules::workspace::{resolve_path, WorkspaceEnv, WorkspaceRegistry};
 
 const MAX_INCLUDE_PATTERNS: usize = 64;
 const MAX_INCLUDE_FILES: usize = 200;
@@ -117,10 +117,20 @@ fn list_entries(repo: &ResolvedGitDirectory) -> Result<Vec<WorktreeEntry>> {
     )?;
     let mut entries = parse_worktree_list(&String::from_utf8_lossy(&output.stdout));
     for entry in &mut entries {
-        entry.exists = Path::new(&entry.path).is_dir();
+        entry.exists = entry_exists(&repo.workspace, &entry.path);
     }
     Ok(entries)
 }
+
+/// Whether a path git printed exists. Git prints paths in its own environment
+/// (Linux paths inside WSL), so they are mapped to the host before being
+/// looked up.
+fn entry_exists(workspace: &WorkspaceEnv, path: &str) -> bool {
+    resolve_path(path, workspace).is_dir()
+}
+
+const WSL_WORKTREES_UNSUPPORTED: &str =
+    "creating and removing worktrees is not supported in WSL workspaces yet";
 
 /// A linked worktree is trusted only if its `.git` file points back into this
 /// repository's `worktrees/` administrative area.
@@ -376,12 +386,10 @@ pub fn add(
     worktrees_dir: &Path,
     workspace: &WorkspaceEnv,
 ) -> Result<WorktreeAdded> {
-    let repo = open_worktree(registry, repo_root, workspace)?;
-    if workspace.is_wsl() && request.path.as_deref().is_none_or(str::is_empty) {
-        return Err(GitError::Unsupported(
-            "WSL workspaces need an explicit worktree path",
-        ));
+    if workspace.is_wsl() {
+        return Err(GitError::Unsupported(WSL_WORKTREES_UNSUPPORTED));
     }
+    let repo = open_worktree(registry, repo_root, workspace)?;
     if request.include.len() > MAX_INCLUDE_PATTERNS {
         return Err(GitError::InvalidPath("too many include patterns".into()));
     }
@@ -539,22 +547,56 @@ fn copy_one(
     if std::fs::symlink_metadata(&dst).is_ok() {
         return Err("already-exists");
     }
-    let parent = dst.parent().ok_or("invalid-path")?;
-    std::fs::create_dir_all(parent).map_err(|_| "create-dir-failed")?;
-    let canonical_parent = std::fs::canonicalize(parent).map_err(|_| "create-dir-failed")?;
+    let parent = create_dirs_confined(dst_root, rel)?;
+    let canonical_parent = std::fs::canonicalize(&parent).map_err(|_| "create-dir-failed")?;
     if !canonical_parent.starts_with(dst_root) {
         return Err("outside-worktree");
     }
     let mut input = std::fs::File::open(&src).map_err(|_| "unreadable")?;
-    let mut output = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&dst)
-        .map_err(|_| "already-exists")?;
-    io::copy(&mut input, &mut output).map_err(|_| "copy-failed")?;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        // Created with its final mode, so a `0600` secret is never readable
+        // under a looser default for the moment it takes to copy it.
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        options.mode(meta.permissions().mode() & 0o7777);
+    }
+    let mut output = options.open(&dst).map_err(|_| "already-exists")?;
+    if io::copy(&mut input, &mut output).is_err() {
+        drop(output);
+        let _ = std::fs::remove_file(&dst);
+        return Err("copy-failed");
+    }
     let _ = std::fs::set_permissions(&dst, meta.permissions());
     *total += meta.len();
     Ok(())
+}
+
+/// Creates the directories above `rel` under `root` one level at a time and
+/// gives up the moment a component is not a plain directory (a symlink could
+/// lead out of the worktree), so nothing is ever created outside it. Returns
+/// the directory the file goes into.
+fn create_dirs_confined(root: &Path, rel: &str) -> std::result::Result<PathBuf, &'static str> {
+    let Some((dir, _name)) = rel.rsplit_once('/') else {
+        return Ok(root.to_path_buf());
+    };
+    let mut current = root.to_path_buf();
+    for component in dir.split('/') {
+        if component.is_empty() || component == "." || component == ".." {
+            return Err("invalid-path");
+        }
+        current.push(component);
+        match std::fs::symlink_metadata(&current) {
+            Ok(meta) if meta.is_dir() => {}
+            Ok(_) => return Err("outside-worktree"),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                std::fs::create_dir(&current).map_err(|_| "create-dir-failed")?;
+            }
+            Err(_) => return Err("create-dir-failed"),
+        }
+    }
+    Ok(current)
 }
 
 /// Copies the files matching `patterns` from `src_root` into `dst_root`, never
@@ -654,6 +696,72 @@ pub enum RemoveBlocker {
     Locked,
     Dirty,
     Unmerged,
+    /// Ignored files that are not regenerable (`.env`, local databases...):
+    /// git itself would delete them without a word.
+    Ignored,
+}
+
+const MAX_IGNORED_SAMPLE: usize = 20;
+const IGNORED_LISTING_CAP_BYTES: usize = 256 * 1024;
+
+/// Ignored entries a rebuild brings back (dependency and tool caches); losing
+/// them costs time, not data.
+const REGENERABLE: &[&str] = &[
+    "node_modules",
+    "target",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".gradle",
+    ".pnpm-store",
+    ".turbo",
+    ".next",
+    ".nuxt",
+    ".cache",
+    ".parcel-cache",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".tox",
+    ".nox",
+    ".dart_tool",
+];
+
+/// Whether an ignored entry (a file, or a directory with a trailing `/`) is
+/// regenerable: its last component, or any directory above it, is a cache or
+/// dependency directory.
+pub fn is_regenerable(entry: &str) -> bool {
+    entry
+        .trim_end_matches('/')
+        .split('/')
+        .any(|part| REGENERABLE.contains(&part))
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct IgnoredSummary {
+    /// A sample of the entries that are not regenerable.
+    pub sample: Vec<String>,
+    /// How many entries are not regenerable.
+    pub total: u32,
+    pub regenerable: u32,
+}
+
+/// Summarizes `git ls-files --others --ignored --exclude-standard --directory
+/// -z` output.
+pub fn summarize_ignored(listing: &[u8]) -> IgnoredSummary {
+    let mut summary = IgnoredSummary::default();
+    for raw in listing.split(|b| *b == 0).filter(|p| !p.is_empty()) {
+        let entry = String::from_utf8_lossy(raw);
+        if is_regenerable(&entry) {
+            summary.regenerable += 1;
+        } else {
+            summary.total += 1;
+            if summary.sample.len() < MAX_IGNORED_SAMPLE {
+                summary.sample.push(entry.into_owned());
+            }
+        }
+    }
+    summary
 }
 
 #[derive(Debug, Serialize)]
@@ -670,6 +778,11 @@ pub struct WorktreeRemoveReport {
     /// Commits on the worktree's HEAD that no other branch, remote ref or tag
     /// contains: work that exists nowhere else.
     pub unmerged_commits: u32,
+    /// Ignored files that are not regenerable (a sample, and the count).
+    pub ignored_files: Vec<String>,
+    pub ignored_total: u32,
+    /// Ignored dependency / cache entries (not blockers).
+    pub ignored_regenerable: u32,
     pub lock_reason: Option<String>,
 }
 
@@ -727,6 +840,9 @@ pub fn remove(
     force: bool,
     workspace: &WorkspaceEnv,
 ) -> Result<WorktreeRemoveReport> {
+    if workspace.is_wsl() {
+        return Err(GitError::Unsupported(WSL_WORKTREES_UNSUPPORTED));
+    }
     let repo = open_worktree(registry, repo_root, workspace)?;
     let target = PathBuf::from(path);
     let entries = list_entries(&repo)?;
@@ -761,6 +877,9 @@ pub fn remove(
         dirty_total: 0,
         untracked_count: 0,
         unmerged_commits: 0,
+        ignored_files: Vec::new(),
+        ignored_total: 0,
+        ignored_regenerable: 0,
         lock_reason: entry.lock_reason.clone(),
     };
     if entry.locked {
@@ -788,6 +907,30 @@ pub fn remove(
         report.untracked_count = untracked;
         if report.dirty_total > 0 || untracked > 0 {
             report.blockers.push(RemoveBlocker::Dirty);
+        }
+
+        // Ignored files are invisible to `status`, yet `git worktree remove`
+        // deletes them like everything else: `.env` files, local databases.
+        let ignored = run_git_capped(
+            &worktree.workspace,
+            Some(&worktree.git_path),
+            os_args([
+                "ls-files",
+                "--others",
+                "--ignored",
+                "--exclude-standard",
+                "--directory",
+                "-z",
+            ]),
+            DEFAULT_TIMEOUT_SECS,
+            IGNORED_LISTING_CAP_BYTES,
+        )?;
+        let summary = summarize_ignored(&ignored.stdout);
+        report.ignored_files = summary.sample;
+        report.ignored_total = summary.total;
+        report.ignored_regenerable = summary.regenerable;
+        if summary.total > 0 {
+            report.blockers.push(RemoveBlocker::Ignored);
         }
     }
 
@@ -824,11 +967,16 @@ pub fn remove(
         )?;
         ensure_success(&output, "git worktree remove failed")?;
     } else {
-        run_ok(
-            &main,
-            os_args(["worktree", "prune"]),
-            "git worktree prune failed",
+        // The directory is already gone (unmounted, deleted): drop this one
+        // administrative entry. A repository-wide prune would also forget every
+        // other stale worktree, such as one on a volume that is merely offline.
+        let output = run_git(
+            &main.workspace,
+            Some(&main.git_path),
+            os_args(["worktree", "remove", "--force", entry.path.as_str()]),
+            NETWORK_TIMEOUT_SECS,
         )?;
+        ensure_success(&output, "git worktree remove failed")?;
     }
     registry.revoke_derived(Path::new(&entry.path));
     report.removed = true;
@@ -870,6 +1018,59 @@ mod tests {
     use super::*;
 
     const PORCELAIN: &str = "worktree /repo\nHEAD aaaaaaaa\nbranch refs/heads/main\n\nworktree /wt/feature\nHEAD bbbbbbbb\nbranch refs/heads/feature/x\nlocked in use by task\n\nworktree /wt/detached\nHEAD cccccccc\ndetached\nlocked\n\nworktree /wt/gone\nHEAD dddddddd\ndetached\nprunable gitdir file points to non-existent location\n\nworktree /bare\nbare\n";
+
+    #[test]
+    fn regenerable_means_a_dependency_or_cache_directory_anywhere_in_the_path() {
+        for yes in [
+            "node_modules/",
+            "target/",
+            ".venv/",
+            "apps/web/node_modules/",
+            "pkg/__pycache__/",
+            ".next/",
+            "node_modules/pkg/index.js",
+        ] {
+            assert!(is_regenerable(yes), "{yes}");
+        }
+        for no in [
+            ".env",
+            "local.sqlite",
+            "data/",
+            "secrets/prod.key",
+            "dist/",
+            "build/",
+            "targets.txt",
+            "my_node_modules/",
+        ] {
+            assert!(!is_regenerable(no), "{no}");
+        }
+    }
+
+    #[test]
+    fn the_ignored_summary_counts_both_kinds_and_samples_only_the_data() {
+        let mut listing = Vec::new();
+        listing.extend_from_slice(b".env\0node_modules/\0local.sqlite\0target/\0\0");
+        for i in 0..40 {
+            listing.extend_from_slice(format!("data/f{i}\0").as_bytes());
+        }
+        let summary = summarize_ignored(&listing);
+        assert_eq!(summary.total, 42);
+        assert_eq!(summary.regenerable, 2);
+        assert_eq!(summary.sample.len(), MAX_IGNORED_SAMPLE);
+        assert_eq!(&summary.sample[..2], [".env", "local.sqlite"]);
+        assert_eq!(summarize_ignored(b""), IgnoredSummary::default());
+    }
+
+    #[test]
+    fn existence_is_looked_up_through_the_workspace_env() {
+        let dir = tempfile::tempdir().unwrap();
+        let here = dir.path().to_string_lossy().into_owned();
+        assert!(entry_exists(&WorkspaceEnv::Local, &here));
+        assert!(!entry_exists(
+            &WorkspaceEnv::Local,
+            &format!("{here}/missing")
+        ));
+    }
 
     #[test]
     fn parses_every_flag_of_the_porcelain_listing() {

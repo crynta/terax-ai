@@ -944,7 +944,7 @@ fn checkpoint_scope_between_a_checkpoint_and_the_live_worktree_includes_untracke
         from: CheckpointEndpoint::Ref {
             name: cp.info.ref_name.clone(),
         },
-        to: CheckpointEndpoint::Worktree,
+        to: CheckpointEndpoint::Worktree { tree: None },
     };
     let result = summary(&repo, &scope);
     assert_eq!(find(&result, "a.txt").status, FileStatus::Modified);
@@ -959,8 +959,8 @@ fn checkpoint_scope_between_a_checkpoint_and_the_live_worktree_includes_untracke
         &repo.registry,
         &repo.path(),
         &GitDiffScope::Checkpoint {
-            from: CheckpointEndpoint::Worktree,
-            to: CheckpointEndpoint::Worktree,
+            from: CheckpointEndpoint::Worktree { tree: None },
+            to: CheckpointEndpoint::Worktree { tree: None },
         },
         &repo.ws,
     );

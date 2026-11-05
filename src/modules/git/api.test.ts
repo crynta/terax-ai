@@ -137,6 +137,13 @@ describe("git api argument shapes", () => {
     });
   });
 
+  it("releases a watch by the key watch returned and sends nothing else", async () => {
+    await git.unwatch("/repo");
+    expect(mocks.invoke).toHaveBeenLastCalledWith("git_unwatch", {
+      repo: "/repo",
+    });
+  });
+
   it("maps branch calls", async () => {
     await git.branchCreate("/r", "feature/x");
     expect(mocks.invoke).toHaveBeenLastCalledWith("git_branch_create", {

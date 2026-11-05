@@ -27,6 +27,11 @@ pub const EVENT: &str = "terax:git-changed";
 const MAX_WORKTREE_DIRS: usize = 2048;
 const MAX_REF_DIRS: usize = 512;
 const SHALLOW_DEPTH: usize = 2;
+/// Touched worktree directories examined one by one per flush; a wider burst
+/// is answered with a single resync walk instead.
+const MAX_RESCANS_PER_FLUSH: usize = 64;
+/// How long a subscribe waits for the worker to register a repository.
+const SUBSCRIBE_TIMEOUT: Duration = Duration::from_secs(30);
 const COALESCE: Duration = Duration::from_millis(80);
 const MAX_WINDOW: Duration = Duration::from_millis(600);
 
@@ -280,22 +285,116 @@ enum Msg {
         layout: Layout,
         reply: mpsc::Sender<GitWatchInfo>,
     },
+    /// Fire and forget: the caller keeps the subscriber counts, so it never has
+    /// to wait on (or guess from) the worker.
     Unsubscribe {
         repo: String,
-        reply: mpsc::Sender<usize>,
     },
     Touched(Vec<String>),
     Shutdown,
 }
 
-struct Worker {
+/// The channel to the worker thread.
+trait Link {
+    /// `false` when the worker is gone.
+    fn send(&self, msg: Msg) -> bool;
+    /// Stops the worker and whatever feeds it.
+    fn retire(self);
+}
+
+struct WorkerLink {
     tx: mpsc::Sender<Msg>,
     tap_id: u64,
+    app: AppHandle,
+}
+
+impl Link for WorkerLink {
+    fn send(&self, msg: Msg) -> bool {
+        self.tx.send(msg).is_ok()
+    }
+
+    fn retire(self) {
+        self.app.state::<FsWatchState>().remove_tap(self.tap_id);
+        let _ = self.tx.send(Msg::Shutdown);
+    }
+}
+
+/// Subscriber counts and the worker, kept together under one lock. Counting
+/// and messaging happen in the same critical section, so a subscriber can never
+/// be told to a worker that a concurrent release is shutting down, and a worker
+/// is shut down only when the counts say nobody is left, never because it was
+/// slow to answer.
+struct Inner<L: Link> {
+    link: Option<L>,
+    counts: HashMap<String, usize>,
+}
+
+impl<L: Link> Default for Inner<L> {
+    fn default() -> Self {
+        Self {
+            link: None,
+            counts: HashMap::new(),
+        }
+    }
+}
+
+impl<L: Link> Inner<L> {
+    /// Counts a subscriber and queues its subscription; the answer arrives on
+    /// the returned channel.
+    fn attach(
+        &mut self,
+        key: String,
+        layout: Layout,
+        start: impl FnOnce() -> Result<L>,
+    ) -> Result<mpsc::Receiver<GitWatchInfo>> {
+        if self.link.is_none() {
+            self.link = Some(start()?);
+        }
+        let (reply, answer) = mpsc::channel();
+        let sent = self.link.as_ref().is_some_and(|link| {
+            link.send(Msg::Subscribe {
+                repo: key.clone(),
+                layout,
+                reply,
+            })
+        });
+        if !sent {
+            // The worker died: forget it and every count that depended on it.
+            if let Some(dead) = self.link.take() {
+                dead.retire();
+            }
+            self.counts.clear();
+            return Err(GitError::command("git watch", "the watcher stopped"));
+        }
+        *self.counts.entry(key).or_insert(0) += 1;
+        Ok(answer)
+    }
+
+    /// Drops one subscriber of `key`. A key nobody holds is ignored.
+    fn release(&mut self, key: &str) {
+        let Some(count) = self.counts.get_mut(key) else {
+            return;
+        };
+        *count -= 1;
+        if *count == 0 {
+            self.counts.remove(key);
+        }
+        if let Some(link) = &self.link {
+            let _ = link.send(Msg::Unsubscribe {
+                repo: key.to_string(),
+            });
+        }
+        if self.counts.is_empty() {
+            if let Some(link) = self.link.take() {
+                link.retire();
+            }
+        }
+    }
 }
 
 #[derive(Default)]
 pub struct GitWatchState {
-    worker: Mutex<Option<Worker>>,
+    inner: Mutex<Inner<WorkerLink>>,
 }
 
 /// Everything the engine does to the outside world, so its logic runs under
@@ -325,6 +424,9 @@ impl Host for AppHost {
 struct Engine<H: Host> {
     host: H,
     repos: HashMap<String, RepoWatch>,
+    /// Work counters (also what the tests assert on).
+    rescans: u32,
+    resyncs: u32,
 }
 
 impl<H: Host> Engine<H> {
@@ -376,20 +478,61 @@ impl<H: Host> Engine<H> {
         self.repos.len()
     }
 
-    /// Keeps the registered directories in step with the tree: new non-ignored
-    /// subdirectories of `dir` are added, vanished ones dropped.
-    fn rescan(&mut self, repo: &str, dir: &Path) {
+    /// Registered directories at or below `prefix`, found by ordering alone.
+    fn subtree(dirs: &BTreeSet<PathBuf>, prefix: &Path) -> Vec<PathBuf> {
+        dirs.range(prefix.to_path_buf()..)
+            .take_while(|d| d.starts_with(prefix))
+            .cloned()
+            .collect()
+    }
+
+    /// Rebuilds the registered set from the tree in one walk: the answer to a
+    /// burst too wide to look at directory by directory (a checkout, a
+    /// `git clean`, a branch switch).
+    fn resync(&mut self, repo: &str) {
+        self.resyncs += 1;
         let Some(watch) = self.repos.get_mut(repo) else {
             return;
         };
-        let mut gone: Vec<PathBuf> = watch
-            .worktree_dirs
-            .range(dir.to_path_buf()..)
-            .take_while(|d| d.starts_with(dir))
-            .filter(|d| !d.is_dir())
-            .cloned()
-            .collect();
-        gone.sort();
+        let (found, truncated) =
+            collect_worktree_dirs(Path::new(&watch.layout.root), MAX_WORKTREE_DIRS);
+        let now: BTreeSet<PathBuf> = found.into_iter().collect();
+        let added: Vec<PathBuf> = now.difference(&watch.worktree_dirs).cloned().collect();
+        let gone: Vec<PathBuf> = watch.worktree_dirs.difference(&now).cloned().collect();
+        watch.worktree_dirs = now;
+        watch.truncated = truncated;
+        watch.ignored.clear();
+        self.host.unwatch(&gone);
+        if let Err(reason) = self.host.watch(added) {
+            log::debug!("git watch: could not watch new directories: {reason}");
+        }
+    }
+
+    /// Keeps the registered directories in step with the tree after `dir`
+    /// changed: new non-ignored subdirectories are added, vanished ones
+    /// dropped. Only `dir` and its registered children are looked at on disk;
+    /// anything deeper is dealt with when its own parent reports, so one touch
+    /// costs a number of stats bounded by the width of `dir`, not the size of
+    /// the whole watched tree.
+    fn rescan(&mut self, repo: &str, dir: &Path) {
+        self.rescans += 1;
+        let Some(watch) = self.repos.get_mut(repo) else {
+            return;
+        };
+        let mut gone: Vec<PathBuf> = Vec::new();
+        if !dir.is_dir() {
+            gone = Self::subtree(&watch.worktree_dirs, dir);
+        } else {
+            let children: Vec<PathBuf> = Self::subtree(&watch.worktree_dirs, dir)
+                .into_iter()
+                .filter(|d| d.parent() == Some(dir))
+                .collect();
+            for child in children {
+                if !child.is_dir() {
+                    gone.extend(Self::subtree(&watch.worktree_dirs, &child));
+                }
+            }
+        }
         for path in &gone {
             watch.worktree_dirs.remove(path);
         }
@@ -497,8 +640,12 @@ impl<H: Host> Engine<H> {
             if refs_touched {
                 self.rescan_refs(&repo);
             }
-            for dir in worktree_dirs {
-                self.rescan(&repo, Path::new(&dir));
+            if worktree_dirs.len() > MAX_RESCANS_PER_FLUSH {
+                self.resync(&repo);
+            } else {
+                for dir in worktree_dirs {
+                    self.rescan(&repo, Path::new(&dir));
+                }
             }
             if !kinds.is_empty() {
                 self.host.emit(ChangedPayload {
@@ -524,6 +671,8 @@ fn run_worker(app: AppHandle, rx: mpsc::Receiver<Msg>) {
     let mut engine = Engine {
         host: AppHost(app),
         repos: HashMap::new(),
+        rescans: 0,
+        resyncs: 0,
     };
     let mut pending: HashSet<String> = HashSet::new();
     let mut window_start: Option<Instant> = None;
@@ -540,8 +689,8 @@ fn run_worker(app: AppHandle, rx: mpsc::Receiver<Msg>) {
             }) => {
                 let _ = reply.send(engine.subscribe(repo, layout));
             }
-            Ok(Msg::Unsubscribe { repo, reply }) => {
-                let _ = reply.send(engine.unsubscribe(&repo));
+            Ok(Msg::Unsubscribe { repo }) => {
+                engine.unsubscribe(&repo);
             }
             Ok(Msg::Touched(dirs)) => {
                 window_start.get_or_insert_with(Instant::now);
@@ -582,11 +731,7 @@ fn layout_for(repo: &crate::modules::git::utils::ResolvedGitDirectory) -> Result
 }
 
 impl GitWatchState {
-    fn ensure_worker(&self, app: &AppHandle) -> Result<mpsc::Sender<Msg>> {
-        let mut guard = self.worker.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(worker) = guard.as_ref() {
-            return Ok(worker.tx.clone());
-        }
+    fn start_worker(app: &AppHandle) -> Result<WorkerLink> {
         let (tx, rx) = mpsc::channel::<Msg>();
         let tap_tx = Mutex::new(tx.clone());
         let tap_id = app
@@ -597,16 +742,23 @@ impl GitWatchState {
                 }
             }));
         let worker_app = app.clone();
-        std::thread::Builder::new()
+        if let Err(e) = std::thread::Builder::new()
             .name("terax-git-watch".into())
             .stack_size(512 * 1024)
             .spawn(move || run_worker(worker_app, rx))
-            .map_err(GitError::Io)?;
-        *guard = Some(Worker {
-            tx: tx.clone(),
+        {
+            app.state::<FsWatchState>().remove_tap(tap_id);
+            return Err(GitError::Io(e));
+        }
+        Ok(WorkerLink {
+            tx,
             tap_id,
-        });
-        Ok(tx)
+            app: app.clone(),
+        })
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Inner<WorkerLink>> {
+        self.inner.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     pub fn subscribe(
@@ -628,51 +780,29 @@ impl GitWatchState {
             });
         }
         let layout = layout_for(&repo)?;
-        let tx = self.ensure_worker(app)?;
-        let (reply, answer) = mpsc::channel();
-        tx.send(Msg::Subscribe {
-            repo: key,
-            layout,
-            reply,
-        })
-        .map_err(|_| GitError::command("git watch", "watcher stopped"))?;
-        answer
-            .recv_timeout(Duration::from_secs(30))
-            .map_err(|_| GitError::command("git watch", "watcher did not answer"))
-    }
-
-    pub fn unsubscribe(
-        &self,
-        app: &AppHandle,
-        registry: &WorkspaceRegistry,
-        repo_root: &str,
-        workspace: &WorkspaceEnv,
-    ) -> Result<()> {
-        let repo = open_worktree(registry, repo_root, workspace)?;
-        let mut guard = self.worker.lock().unwrap_or_else(|e| e.into_inner());
-        let Some(worker) = guard.as_ref() else {
-            return Ok(());
-        };
-        let (reply, answer) = mpsc::channel();
-        if worker
-            .tx
-            .send(Msg::Unsubscribe {
-                repo: repo.git_path.clone(),
-                reply,
-            })
-            .is_err()
-        {
-            *guard = None;
-            return Ok(());
-        }
-        let remaining = answer.recv_timeout(Duration::from_secs(30)).unwrap_or(0);
-        if remaining == 0 {
-            if let Some(worker) = guard.take() {
-                app.state::<FsWatchState>().remove_tap(worker.tap_id);
-                let _ = worker.tx.send(Msg::Shutdown);
+        let answer = self
+            .lock()
+            .attach(key.clone(), layout, || Self::start_worker(app))?;
+        // Waited for outside the lock, so a slow registration blocks nobody.
+        match answer.recv_timeout(SUBSCRIBE_TIMEOUT) {
+            Ok(info) if info.watching => Ok(info),
+            Ok(refused) => {
+                self.lock().release(&key);
+                Ok(refused)
+            }
+            Err(_) => {
+                // The subscription is still queued; releasing queues its undo
+                // right behind it.
+                self.lock().release(&key);
+                Err(GitError::command("git watch", "the watcher did not answer"))
             }
         }
-        Ok(())
+    }
+
+    /// Releases one subscription by the `repo` key `subscribe` returned. It
+    /// touches no repository, so it works after the worktree is gone.
+    pub fn unsubscribe(&self, key: &str) {
+        self.lock().release(key);
     }
 }
 
@@ -715,6 +845,8 @@ mod tests {
         let engine = Engine {
             host: host.clone(),
             repos: HashMap::new(),
+            rescans: 0,
+            resyncs: 0,
         };
         let resolved = open_worktree(&repo.registry, &repo.path(), &repo.ws).unwrap();
         let layout = layout_for(&resolved).unwrap();
@@ -852,6 +984,8 @@ mod tests {
         let mut engine = Engine {
             host: host.clone(),
             repos: HashMap::new(),
+            rescans: 0,
+            resyncs: 0,
         };
         let resolved = open_worktree(&repo.registry, &linked.to_string_lossy(), &repo.ws).unwrap();
         let layout = layout_for(&resolved).unwrap();
@@ -872,6 +1006,281 @@ mod tests {
         let reported = events(&host);
         assert_eq!(reported.len(), 1);
         assert!(reported[0].contains(&"head") && reported[0].contains(&"refs"));
+    }
+
+    #[derive(Default)]
+    struct LinkLog {
+        messages: Mutex<Vec<String>>,
+        retired: std::sync::atomic::AtomicBool,
+        sent_after_retire: std::sync::atomic::AtomicU32,
+        dead: std::sync::atomic::AtomicBool,
+    }
+
+    #[derive(Clone)]
+    struct FakeLink(Arc<LinkLog>);
+
+    impl Link for FakeLink {
+        fn send(&self, msg: Msg) -> bool {
+            use std::sync::atomic::Ordering::SeqCst;
+            if self.0.dead.load(SeqCst) {
+                return false;
+            }
+            if self.0.retired.load(SeqCst) {
+                self.0.sent_after_retire.fetch_add(1, SeqCst);
+            }
+            let text = match msg {
+                Msg::Subscribe { repo, .. } => format!("subscribe {repo}"),
+                Msg::Unsubscribe { repo } => format!("unsubscribe {repo}"),
+                Msg::Touched(_) => "touched".to_string(),
+                Msg::Shutdown => "shutdown".to_string(),
+            };
+            self.0.messages.lock().unwrap().push(text);
+            true
+        }
+
+        fn retire(self) {
+            self.0
+                .retired
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    fn lay() -> Layout {
+        Layout {
+            root: "/r".into(),
+            git_dir: "/r/.git".into(),
+            common_dir: "/r/.git".into(),
+        }
+    }
+
+    fn attach(inner: &mut Inner<FakeLink>, key: &str, started: &mut Vec<FakeLink>) {
+        inner
+            .attach(key.to_string(), lay(), || {
+                let link = FakeLink(Arc::new(LinkLog::default()));
+                started.push(link.clone());
+                Ok(link)
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn the_worker_lives_exactly_as_long_as_somebody_is_subscribed() {
+        let mut inner = Inner::<FakeLink>::default();
+        let mut started = Vec::new();
+        attach(&mut inner, "/a", &mut started);
+        attach(&mut inner, "/a", &mut started);
+        attach(&mut inner, "/b", &mut started);
+        assert_eq!(started.len(), 1, "one worker serves every repository");
+
+        inner.release("/a");
+        inner.release("/b");
+        assert!(!started[0]
+            .0
+            .retired
+            .load(std::sync::atomic::Ordering::SeqCst));
+        inner.release("/a");
+        assert!(started[0]
+            .0
+            .retired
+            .load(std::sync::atomic::Ordering::SeqCst));
+        assert!(inner.link.is_none() && inner.counts.is_empty());
+    }
+
+    #[test]
+    fn releasing_an_unknown_key_never_shuts_anything_down() {
+        let mut inner = Inner::<FakeLink>::default();
+        let mut started = Vec::new();
+        attach(&mut inner, "/a", &mut started);
+        inner.release("/never-subscribed");
+        inner.release("/never-subscribed");
+        assert!(!started[0]
+            .0
+            .retired
+            .load(std::sync::atomic::Ordering::SeqCst));
+        assert_eq!(inner.counts.get("/a"), Some(&1));
+        assert_eq!(*started[0].0.messages.lock().unwrap(), vec!["subscribe /a"]);
+    }
+
+    #[test]
+    fn a_subscriber_after_the_last_release_gets_a_live_worker_not_the_retired_one() {
+        let mut inner = Inner::<FakeLink>::default();
+        let mut started = Vec::new();
+        attach(&mut inner, "/a", &mut started);
+        inner.release("/a");
+        attach(&mut inner, "/b", &mut started);
+        assert_eq!(started.len(), 2);
+        let first = &started[0].0;
+        let second = &started[1].0;
+        assert!(first.retired.load(std::sync::atomic::Ordering::SeqCst));
+        assert_eq!(
+            first
+                .sent_after_retire
+                .load(std::sync::atomic::Ordering::SeqCst),
+            0
+        );
+        assert!(!second.retired.load(std::sync::atomic::Ordering::SeqCst));
+        assert_eq!(*second.messages.lock().unwrap(), vec!["subscribe /b"]);
+    }
+
+    #[test]
+    fn concurrent_subscribers_and_releasers_never_reach_a_retired_worker() {
+        let inner = Arc::new(Mutex::new(Inner::<FakeLink>::default()));
+        let started: Arc<Mutex<Vec<FakeLink>>> = Arc::new(Mutex::new(Vec::new()));
+        let threads: Vec<_> = (0..6)
+            .map(|n| {
+                let inner = inner.clone();
+                let started = started.clone();
+                std::thread::spawn(move || {
+                    let key = format!("/repo-{}", n % 3);
+                    for _ in 0..300 {
+                        inner
+                            .lock()
+                            .unwrap()
+                            .attach(key.clone(), lay(), || {
+                                let link = FakeLink(Arc::new(LinkLog::default()));
+                                started.lock().unwrap().push(link.clone());
+                                Ok(link)
+                            })
+                            .unwrap();
+                        inner.lock().unwrap().release(&key);
+                    }
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap();
+        }
+        let inner = inner.lock().unwrap();
+        assert!(inner.link.is_none() && inner.counts.is_empty());
+        let started = started.lock().unwrap();
+        assert!(!started.is_empty());
+        for link in started.iter() {
+            assert!(link.0.retired.load(std::sync::atomic::Ordering::SeqCst));
+            assert_eq!(
+                link.0
+                    .sent_after_retire
+                    .load(std::sync::atomic::Ordering::SeqCst),
+                0
+            );
+        }
+    }
+
+    #[test]
+    fn a_dead_worker_is_replaced_and_its_counts_forgotten() {
+        let mut inner = Inner::<FakeLink>::default();
+        let mut started = Vec::new();
+        attach(&mut inner, "/a", &mut started);
+        started[0]
+            .0
+            .dead
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let refused = inner.attach("/b".into(), lay(), || {
+            Ok(FakeLink(Arc::new(LinkLog::default())))
+        });
+        assert!(refused.is_err());
+        assert!(inner.link.is_none() && inner.counts.is_empty());
+        attach(&mut inner, "/b", &mut started);
+        assert_eq!(
+            started.len(),
+            2,
+            "the next subscriber starts a fresh worker"
+        );
+    }
+
+    #[test]
+    fn a_watch_is_released_by_its_key_after_the_worktree_is_gone() {
+        let repo = TestRepo::new();
+        let scratch = tempfile::tempdir().unwrap();
+        let linked = std::fs::canonicalize(scratch.path()).unwrap().join("wt");
+        repo.git(&[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "gone",
+            &linked.to_string_lossy(),
+        ]);
+        repo.registry.authorize(&linked).unwrap();
+
+        let host = FakeHost::default();
+        let mut engine = Engine {
+            host: host.clone(),
+            repos: HashMap::new(),
+            rescans: 0,
+            resyncs: 0,
+        };
+        let resolved = open_worktree(&repo.registry, &linked.to_string_lossy(), &repo.ws).unwrap();
+        let layout = layout_for(&resolved).unwrap();
+        let key = resolved.git_path.clone();
+        engine.subscribe(key.clone(), layout);
+        assert!(!host.watched.lock().unwrap().is_empty());
+
+        // Normal flow: the worktree is removed, then the view unmounts.
+        std::fs::remove_dir_all(&linked).unwrap();
+        repo.git(&["worktree", "prune"]);
+        assert!(open_worktree(&repo.registry, &linked.to_string_lossy(), &repo.ws).is_err());
+
+        assert_eq!(engine.unsubscribe(&key), 0);
+        assert!(
+            host.watched.lock().unwrap().is_empty(),
+            "every registered directory is released without touching git"
+        );
+    }
+
+    #[test]
+    fn a_touch_only_looks_at_its_directory_and_that_directorys_children() {
+        let repo = TestRepo::new();
+        for dir in ["a/b/c", "a/d", "x/y/z"] {
+            std::fs::create_dir_all(repo.root.join(dir)).unwrap();
+            repo.write(&format!("{dir}/f.txt"), "x\n");
+        }
+        repo.commit_all("tree");
+        let (mut engine, host, key, layout) = engine_for(&repo);
+        engine.subscribe(key, layout);
+        let watched =
+            |h: &FakeHost, rel: &str| h.watched.lock().unwrap().contains(&repo.root.join(rel));
+        assert!(watched(&host, "a/b/c"));
+
+        // Two levels down vanish without their parent being reported.
+        std::fs::remove_dir_all(repo.root.join("a/b/c")).unwrap();
+        engine.flush(touched(&[&to_canon(&repo.root)]));
+        assert!(
+            watched(&host, "a/b/c"),
+            "a root touch does not stat every descendant"
+        );
+        assert_eq!(engine.rescans, 1);
+
+        // The parent's own report cleans it up.
+        engine.flush(touched(&[&to_canon(repo.root.join("a/b"))]));
+        assert!(!watched(&host, "a/b/c"));
+        assert!(watched(&host, "a/b"));
+
+        // A removed child takes its whole registered subtree with it.
+        std::fs::remove_dir_all(repo.root.join("x")).unwrap();
+        engine.flush(touched(&[&to_canon(&repo.root)]));
+        assert!(!watched(&host, "x") && !watched(&host, "x/y") && !watched(&host, "x/y/z"));
+    }
+
+    #[test]
+    fn a_burst_wider_than_the_rescan_budget_is_answered_with_one_resync() {
+        let repo = TestRepo::new();
+        for i in 0..(MAX_RESCANS_PER_FLUSH + 10) {
+            std::fs::create_dir_all(repo.root.join(format!("d{i:03}"))).unwrap();
+        }
+        let (mut engine, host, key, layout) = engine_for(&repo);
+        engine.subscribe(key, layout);
+        std::fs::create_dir_all(repo.root.join("brand-new/inner")).unwrap();
+        std::fs::remove_dir_all(repo.root.join("d000")).unwrap();
+
+        let dirs: Vec<String> = (1..(MAX_RESCANS_PER_FLUSH + 10))
+            .map(|i| to_canon(repo.root.join(format!("d{i:03}"))))
+            .collect();
+        let refs: Vec<&str> = dirs.iter().map(String::as_str).collect();
+        engine.flush(touched(&refs));
+        assert_eq!((engine.rescans, engine.resyncs), (0, 1));
+        let watched = host.watched.lock().unwrap().clone();
+        assert!(watched.contains(&repo.root.join("brand-new/inner")));
+        assert!(!watched.contains(&repo.root.join("d000")));
     }
 
     fn layout() -> Layout {

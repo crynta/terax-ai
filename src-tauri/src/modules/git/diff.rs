@@ -518,9 +518,211 @@ pub fn totals(files: &[DiffFileSummary]) -> DiffTotals {
     })
 }
 
+/// Decodes a git C-quoted name (`"a\tb\303\251"`); an unquoted name is returned
+/// as is.
+pub fn unquote_c_style(raw: &[u8]) -> Vec<u8> {
+    let Some(inner) = raw
+        .strip_prefix(b"\"")
+        .and_then(|rest| rest.strip_suffix(b"\""))
+    else {
+        return raw.to_vec();
+    };
+    let mut out = Vec::with_capacity(inner.len());
+    let mut bytes = inner.iter().copied().peekable();
+    while let Some(byte) = bytes.next() {
+        if byte != b'\\' {
+            out.push(byte);
+            continue;
+        }
+        match bytes.next() {
+            Some(b'n') => out.push(b'\n'),
+            Some(b't') => out.push(b'\t'),
+            Some(b'r') => out.push(b'\r'),
+            Some(b'a') => out.push(7),
+            Some(b'b') => out.push(8),
+            Some(b'f') => out.push(12),
+            Some(b'v') => out.push(11),
+            Some(digit @ b'0'..=b'3') => {
+                let mut value = u32::from(digit - b'0');
+                for _ in 0..2 {
+                    match bytes.peek() {
+                        Some(next @ b'0'..=b'7') => {
+                            value = value * 8 + u32::from(next - b'0');
+                            bytes.next();
+                        }
+                        _ => break,
+                    }
+                }
+                out.push(value as u8);
+            }
+            Some(other) => out.push(other),
+            None => out.push(b'\\'),
+        }
+    }
+    out
+}
+
+fn strip_side_prefix(name: &[u8], side: u8) -> Option<String> {
+    let name = unquote_c_style(name);
+    if name == b"/dev/null" {
+        return None;
+    }
+    let rest = name.strip_prefix(&[side, b'/']).unwrap_or(&name);
+    Some(String::from_utf8_lossy(rest).into_owned())
+}
+
+/// `(old, new)` paths a file section names in its header (`None` on the side
+/// that does not exist: `/dev/null`, or no line at all).
+pub fn header_paths(header: &[u8]) -> (Option<String>, Option<String>) {
+    let mut old: Option<String> = None;
+    let mut new: Option<String> = None;
+    for line in header.split(|b| *b == b'\n') {
+        if let Some(name) = line.strip_prefix(b"rename from ") {
+            old = Some(String::from_utf8_lossy(&unquote_c_style(name)).into_owned());
+        } else if let Some(name) = line.strip_prefix(b"rename to ") {
+            new = Some(String::from_utf8_lossy(&unquote_c_style(name)).into_owned());
+        } else if let Some(name) = line.strip_prefix(b"copy from ") {
+            old = Some(String::from_utf8_lossy(&unquote_c_style(name)).into_owned());
+        } else if let Some(name) = line.strip_prefix(b"copy to ") {
+            new = Some(String::from_utf8_lossy(&unquote_c_style(name)).into_owned());
+        } else if let Some(name) = line.strip_prefix(b"--- ") {
+            let name = name.split(|b| *b == b'\t').next().unwrap_or(name);
+            old = strip_side_prefix(name, b'a');
+        } else if let Some(name) = line.strip_prefix(b"+++ ") {
+            let name = name.split(|b| *b == b'\t').next().unwrap_or(name);
+            new = strip_side_prefix(name, b'b');
+        }
+    }
+    (old, new)
+}
+
+/// The section of a multi-file patch that belongs to `path` (its new name, or
+/// its old name when it was deleted). A section that names neither is never
+/// taken for it: the caller gets an empty diff instead of another file's hunks.
+pub fn select_section(sections: Vec<ParsedFileDiff>, path: &str) -> ParsedFileDiff {
+    let mut fallback: Option<ParsedFileDiff> = None;
+    for section in sections {
+        let (old, new) = header_paths(&section.header);
+        if new.as_deref() == Some(path) {
+            return section;
+        }
+        if new.is_none() && old.as_deref() == Some(path) && fallback.is_none() {
+            fallback = Some(section);
+        }
+    }
+    fallback.unwrap_or_default()
+}
+
+/// Keeps leading hunks while their lines fit in `max_lines`, so one rewritten
+/// file cannot turn into a multi-megabyte IPC response. A first hunk that alone
+/// is over the cap is cut to it. Returns whether anything was dropped.
+pub fn cap_lines(hunks: &mut Vec<DiffHunk>, max_lines: usize) -> bool {
+    let mut total = 0usize;
+    let mut keep = 0usize;
+    for hunk in hunks.iter() {
+        if total + hunk.lines.len() > max_lines {
+            break;
+        }
+        total += hunk.lines.len();
+        keep += 1;
+    }
+    if keep == hunks.len() {
+        return false;
+    }
+    hunks.truncate(keep.max(1));
+    if keep == 0 {
+        if let Some(first) = hunks.first_mut() {
+            first.lines.truncate(max_lines);
+        }
+    }
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn c_style_names_decode_to_their_bytes() {
+        assert_eq!(unquote_c_style(b"plain/name"), b"plain/name");
+        assert_eq!(unquote_c_style(b"\"a\\tb\\\"c\\\\d\""), b"a\tb\"c\\d");
+        assert_eq!(
+            unquote_c_style(b"\"caf\\303\\251\""),
+            "caf\u{e9}".as_bytes()
+        );
+        assert_eq!(unquote_c_style(b"\"nl\\n\""), b"nl\n");
+        assert_eq!(unquote_c_style(b"\"\\1\""), b"\x01");
+    }
+
+    #[test]
+    fn header_paths_read_renames_deletions_and_additions() {
+        let rename = b"diff --git a/old name.txt b/new name.txt\nsimilarity index 90%\nrename from old name.txt\nrename to new name.txt\n--- a/old name.txt\n+++ b/new name.txt\n";
+        assert_eq!(
+            header_paths(rename),
+            (Some("old name.txt".into()), Some("new name.txt".into()))
+        );
+        let deleted = b"diff --git a/gone.txt b/gone.txt\ndeleted file mode 100644\n--- a/gone.txt\n+++ /dev/null\n";
+        assert_eq!(header_paths(deleted), (Some("gone.txt".into()), None));
+        let added =
+            b"diff --git a/new.txt b/new.txt\nnew file mode 100644\n--- /dev/null\n+++ b/new.txt\n";
+        assert_eq!(header_paths(added), (None, Some("new.txt".into())));
+        let quoted = b"diff --git \"a/we\\\"ird\" \"b/we\\\"ird\"\n--- \"a/we\\\"ird\"\n+++ \"b/we\\\"ird\"\n";
+        assert_eq!(
+            header_paths(quoted),
+            (Some("we\"ird".into()), Some("we\"ird".into()))
+        );
+        let mode_only = b"diff --git a/run.sh b/run.sh\nold mode 100644\nnew mode 100755\n";
+        assert_eq!(header_paths(mode_only), (None, None));
+    }
+
+    #[test]
+    fn the_section_for_a_path_is_chosen_by_name_not_by_position() {
+        let patch = "diff --git a/other.txt b/other.txt\n--- a/other.txt\n+++ b/other.txt\n@@ -1 +1 @@\n-x\n+y\ndiff --git a/wanted.txt b/wanted.txt\n--- a/wanted.txt\n+++ b/wanted.txt\n@@ -1 +1 @@\n-1\n+2\ndiff --git a/gone.txt b/gone.txt\ndeleted file mode 100644\n--- a/gone.txt\n+++ /dev/null\n@@ -1 +0,0 @@\n-bye\n";
+        let sections = parse_unified(patch.as_bytes());
+        assert_eq!(sections.len(), 3);
+        let wanted = select_section(sections.clone(), "wanted.txt");
+        assert_eq!(wanted.hunks[0].lines[0].text, b"1");
+        let gone = select_section(sections.clone(), "gone.txt");
+        assert_eq!(gone.hunks[0].lines[0].text, b"bye");
+        let missing = select_section(sections, "nope.txt");
+        assert!(missing.hunks.is_empty(), "never another file's hunks");
+    }
+
+    #[test]
+    fn line_cap_keeps_whole_leading_hunks_and_cuts_a_giant_first_one() {
+        let hunk = |lines: usize| DiffHunk {
+            id: String::new(),
+            header: Vec::new(),
+            old_start: 1,
+            old_lines: 0,
+            new_start: 1,
+            new_lines: 0,
+            lines: (0..lines)
+                .map(|i| DiffLine {
+                    kind: LineKind::Add,
+                    text: Vec::new(),
+                    old_line: None,
+                    new_line: Some(i as u32 + 1),
+                    no_newline: false,
+                })
+                .collect(),
+            added: lines as u32,
+            removed: 0,
+        };
+        let mut fits = vec![hunk(10), hunk(10)];
+        assert!(!cap_lines(&mut fits, 20));
+        assert_eq!(fits.len(), 2);
+
+        let mut over = vec![hunk(10), hunk(10), hunk(10)];
+        assert!(cap_lines(&mut over, 25));
+        assert_eq!(over.len(), 2, "only complete hunks are kept");
+
+        let mut giant = vec![hunk(100), hunk(5)];
+        assert!(cap_lines(&mut giant, 30));
+        assert_eq!(giant.len(), 1);
+        assert_eq!(giant[0].lines.len(), 30);
+        assert_eq!(giant[0].added, 100, "totals still describe the real hunk");
+    }
 
     const SAMPLE: &str = "diff --git a/src/a.txt b/src/a.txt\nindex 1111111..2222222 100644\n--- a/src/a.txt\n+++ b/src/a.txt\n@@ -1,3 +1,4 @@ fn demo\n one\n-two\n+TWO\n+two and a half\n three\n@@ -10 +11 @@\n-ten\n+eleven\n";
 

@@ -136,7 +136,8 @@ describe("subscribeGitChanges", () => {
     emit({ repo: "/repo", kinds: ["index"] });
     expect(handler).toHaveBeenCalledWith(["index"]);
     unsubscribe();
-    expect(mocks.unwatch).toHaveBeenCalledWith("/repo/src/deep");
+    // Released by the key the backend returned, which needs no repository on disk.
+    expect(mocks.unwatch).toHaveBeenCalledWith("/repo");
   });
 
   it("releases the listener when the backend refuses to watch", async () => {

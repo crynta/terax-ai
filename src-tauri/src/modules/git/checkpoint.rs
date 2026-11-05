@@ -14,8 +14,7 @@ use serde::Serialize;
 use crate::modules::git::diff::{parse_raw_numstat_z, DiffFileSummary, FileStatus};
 use crate::modules::git::errors::{GitError, Result};
 use crate::modules::git::plumbing::{
-    git_dir, head_commit_opt, lock_for, open_worktree, os_args, resolve_commit, run, run_ok,
-    stdout_text,
+    git_dir, head_commit_opt, lock_for, open_worktree, os_args, run, run_ok, stdout_text,
 };
 use crate::modules::git::process::{ensure_success, run_git_with, RunOptions};
 use crate::modules::git::refs;
@@ -89,6 +88,28 @@ impl Drop for TempIndex {
     }
 }
 
+const NULL_DEVICE: &str = if cfg!(windows) { "NUL" } else { "/dev/null" };
+
+/// Config for every plumbing call a checkpoint makes: no filesystem-monitor
+/// daemon is started or consulted, no hook of the user's can run, and a file
+/// with mixed line endings is snapshotted instead of failing `core.safecrlf`.
+pub fn plumbing_config() -> Vec<OsString> {
+    os_args([
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        &format!("core.hooksPath={NULL_DEVICE}"),
+        "-c",
+        "core.safecrlf=false",
+    ])
+}
+
+fn with_plumbing_config(args: Vec<OsString>) -> Vec<OsString> {
+    let mut full = plumbing_config();
+    full.extend(args);
+    full
+}
+
 fn run_indexed(
     repo: &ResolvedGitDirectory,
     temp: &TempIndex,
@@ -98,7 +119,7 @@ fn run_indexed(
     run_git_with(
         &repo.workspace,
         Some(&repo.git_path),
-        args,
+        with_plumbing_config(args),
         SNAPSHOT_TIMEOUT_SECS,
         temp.options(stdin),
     )
@@ -258,6 +279,9 @@ pub struct CheckpointInfo {
     /// HEAD when the checkpoint was taken; `None` for an unborn branch.
     pub parent: Option<String>,
     pub created_at_secs: i64,
+    /// The worktree that made it (not sent to the frontend).
+    #[serde(skip)]
+    pub worktree_id: Option<String>,
 }
 
 /// What a checkpoint does and does not capture, stated in the result so the UI
@@ -302,40 +326,23 @@ fn now_secs() -> i64 {
         .unwrap_or(0)
 }
 
-pub fn create(
-    registry: &WorkspaceRegistry,
-    worktree: &str,
-    task_id: &str,
-    turn: u32,
-    workspace: &WorkspaceEnv,
-) -> Result<CheckpointCreated> {
-    if !refs::is_valid_task_id(task_id) {
-        return Err(GitError::InvalidRef(task_id.to_string()));
-    }
-    let started = Instant::now();
-    let repo = open_worktree(registry, worktree, workspace)?;
-    ensure_supported(&repo)?;
-    let lock = lock_for(&git_dir(&repo)?);
-    let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
-
-    let mut snapshot = snapshot_tree(&repo, true)?;
-    let parent = head_commit_opt(&repo)?;
-    let name = refs::checkpoint_ref(task_id, turn);
-    let message = format!("terax checkpoint {task_id}/{turn}");
-    let mut args = os_args([
-        "-c",
-        "commit.gpgsign=false",
-        "commit-tree",
-        snapshot.tree.as_str(),
-    ]);
-    if let Some(parent) = parent.as_deref() {
+/// A commit object for `tree` (no ref, no HEAD movement, never signed, a fixed
+/// identity so a missing `user.name` cannot fail it).
+fn write_commit(
+    repo: &ResolvedGitDirectory,
+    tree: &str,
+    parent: Option<&str>,
+    message: &str,
+) -> Result<String> {
+    let mut args = os_args(["-c", "commit.gpgsign=false", "commit-tree", tree]);
+    if let Some(parent) = parent {
         args.extend(os_args(["-p", parent]));
     }
-    args.extend(os_args(["-m", message.as_str()]));
+    args.extend(os_args(["-m", message]));
     let output = run_git_with(
         &repo.workspace,
         Some(&repo.git_path),
-        args,
+        with_plumbing_config(args),
         crate::modules::git::types::DEFAULT_TIMEOUT_SECS,
         RunOptions {
             env: ["AUTHOR", "COMMITTER"]
@@ -357,10 +364,45 @@ pub fn create(
         },
     )?;
     ensure_success(&output, "git commit-tree failed")?;
-    let commit = stdout_text(&output);
+    Ok(stdout_text(&output))
+}
+
+pub fn create(
+    registry: &WorkspaceRegistry,
+    worktree: &str,
+    task_id: &str,
+    turn: u32,
+    workspace: &WorkspaceEnv,
+) -> Result<CheckpointCreated> {
+    if !refs::is_valid_task_id(task_id) {
+        return Err(GitError::InvalidRef(task_id.to_string()));
+    }
+    let started = Instant::now();
+    let repo = open_worktree(registry, worktree, workspace)?;
+    ensure_supported(&repo)?;
+    let lock = lock_for(&git_dir(&repo)?);
+    let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+
+    let name = refs::checkpoint_ref(task_id, turn);
+    let mine = worktree_id(&repo)?;
+    // A task id reused by another worktree must not overwrite its checkpoints.
+    let taken = list_records(&repo, task_id)?
+        .into_iter()
+        .any(|r| r.name == name && r.worktree_id.as_deref() != Some(mine.as_str()));
+    if taken {
+        return Err(GitError::command(
+            "git checkpoint create",
+            "that checkpoint belongs to another worktree",
+        ));
+    }
+
+    let mut snapshot = snapshot_tree(&repo, true)?;
+    let parent = head_commit_opt(&repo)?;
+    let message = format!("terax checkpoint {task_id}/{turn}{WORKTREE_MARK}{mine}");
+    let commit = write_commit(&repo, &snapshot.tree, parent.as_deref(), &message)?;
     run_ok(
         &repo,
-        os_args(["update-ref", name.as_str(), commit.as_str()]),
+        with_plumbing_config(os_args(["update-ref", name.as_str(), commit.as_str()])),
         "git update-ref failed",
     )?;
 
@@ -373,6 +415,7 @@ pub fn create(
             tree: snapshot.tree,
             parent,
             created_at_secs: now_secs(),
+            worktree_id: None,
         },
         consistent: snapshot.consistent,
         passes: snapshot.passes,
@@ -383,44 +426,108 @@ pub fn create(
     })
 }
 
-const LIST_FORMAT: &str =
-    "--format=%(refname)%00%(objectname)%00%(tree)%00%(parent)%00%(committerdate:unix)";
+const LIST_FORMAT: &str = "--format=%(refname)%00%(objectname)%00%(tree)%00%(parent)%00%(committerdate:unix)%00%(contents:subject)";
 
-/// Parses `for-each-ref` output in `LIST_FORMAT`, ordered by turn.
-pub fn parse_checkpoint_list(output: &[u8]) -> Vec<CheckpointInfo> {
-    let mut infos: Vec<CheckpointInfo> = String::from_utf8_lossy(output)
+/// Every checkpoint ref's commit message ends with the id of the worktree that
+/// made it, because refs live in the repository shared by all its worktrees:
+/// only the owner may list, restore or prune them.
+const WORKTREE_MARK: &str = " wt:";
+
+/// Stable id of a worktree: its private git directory.
+pub fn worktree_id(repo: &ResolvedGitDirectory) -> Result<String> {
+    let dir = crate::modules::fs::to_canon(git_dir(repo)?);
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in dir.bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    Ok(format!("{hash:016x}"))
+}
+
+/// The worktree id a checkpoint commit subject ends with.
+pub fn subject_worktree_id(subject: &str) -> Option<&str> {
+    let id = subject.rsplit_once(WORKTREE_MARK)?.1.trim();
+    (!id.is_empty()).then_some(id)
+}
+
+/// One line of `for-each-ref` output in `LIST_FORMAT`.
+struct RefRecord {
+    name: String,
+    commit: String,
+    tree: String,
+    parent: Option<String>,
+    created_at_secs: i64,
+    worktree_id: Option<String>,
+}
+
+fn parse_ref_records(output: &[u8]) -> Vec<RefRecord> {
+    String::from_utf8_lossy(output)
         .lines()
         .filter_map(|line| {
             let mut fields = line.split('\0');
-            let name = fields.next()?;
+            let name = fields.next()?.to_string();
             let commit = fields.next()?.to_string();
             let tree = fields.next()?.to_string();
             let parent = fields.next()?.split_whitespace().next().map(str::to_string);
             let created_at_secs = fields.next()?.parse().unwrap_or(0);
-            let (task, turn) = refs::parse_checkpoint_ref(name)?;
-            Some(CheckpointInfo {
-                ref_name: name.to_string(),
-                task_id: task.to_string(),
-                turn,
+            let subject = fields.next().unwrap_or("");
+            Some(RefRecord {
+                name,
                 commit,
                 tree,
                 parent,
                 created_at_secs,
+                worktree_id: subject_worktree_id(subject).map(str::to_string),
             })
         })
+        .collect()
+}
+
+fn info_of(record: RefRecord) -> Option<CheckpointInfo> {
+    let (task, turn) = refs::parse_checkpoint_ref(&record.name)?;
+    Some(CheckpointInfo {
+        task_id: task.to_string(),
+        turn,
+        ref_name: record.name,
+        commit: record.commit,
+        tree: record.tree,
+        parent: record.parent,
+        created_at_secs: record.created_at_secs,
+        worktree_id: record.worktree_id,
+    })
+}
+
+/// Parses `for-each-ref` output in `LIST_FORMAT`: the turn checkpoints, ordered
+/// by turn (safety snapshots are not turns and are left out).
+pub fn parse_checkpoint_list(output: &[u8]) -> Vec<CheckpointInfo> {
+    let mut infos: Vec<CheckpointInfo> = parse_ref_records(output)
+        .into_iter()
+        .filter_map(info_of)
         .collect();
     infos.sort_by_key(|info| info.turn);
     infos
 }
 
-fn list_for(repo: &ResolvedGitDirectory, task_id: &str) -> Result<Vec<CheckpointInfo>> {
+fn list_records(repo: &ResolvedGitDirectory, task_id: &str) -> Result<Vec<RefRecord>> {
     let prefix = refs::checkpoint_task_prefix(task_id);
     let output = run_ok(
         repo,
         os_args(["for-each-ref", LIST_FORMAT, prefix.as_str()]),
         "git for-each-ref failed",
     )?;
-    Ok(parse_checkpoint_list(&output.stdout))
+    Ok(parse_ref_records(&output.stdout))
+}
+
+/// This worktree's turn checkpoints of `task_id`, ordered by turn.
+fn list_for(repo: &ResolvedGitDirectory, task_id: &str) -> Result<Vec<CheckpointInfo>> {
+    let mine = worktree_id(repo)?;
+    let mut infos: Vec<CheckpointInfo> = list_records(repo, task_id)?
+        .into_iter()
+        .filter(|r| r.worktree_id.as_deref() == Some(mine.as_str()))
+        .filter_map(info_of)
+        .collect();
+    infos.sort_by_key(|info| info.turn);
+    Ok(infos)
 }
 
 pub fn list(
@@ -448,20 +555,27 @@ pub fn prune(
     let repo = open_worktree(registry, worktree, workspace)?;
     let lock = lock_for(&git_dir(&repo)?);
     let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
-    let infos = list_for(&repo, task_id)?;
-    if infos.is_empty() {
+    // Turn checkpoints and the safety snapshots of restores, this worktree's
+    // only: another worktree may use the same task id.
+    let mine = worktree_id(&repo)?;
+    let names: Vec<String> = list_records(&repo, task_id)?
+        .into_iter()
+        .filter(|r| r.worktree_id.as_deref() == Some(mine.as_str()))
+        .map(|r| r.name)
+        .collect();
+    if names.is_empty() {
         return Ok(0);
     }
     let mut script = String::new();
-    for info in &infos {
+    for name in &names {
         script.push_str("delete ");
-        script.push_str(&info.ref_name);
+        script.push_str(name);
         script.push('\n');
     }
     let output = run_git_with(
         &repo.workspace,
         Some(&repo.git_path),
-        os_args(["update-ref", "--stdin"]),
+        with_plumbing_config(os_args(["update-ref", "--stdin"])),
         crate::modules::git::types::DEFAULT_TIMEOUT_SECS,
         RunOptions {
             stdin: Some(script.into_bytes()),
@@ -469,7 +583,7 @@ pub fn prune(
         },
     )?;
     ensure_success(&output, "git update-ref failed")?;
-    Ok(infos.len() as u32)
+    Ok(names.len() as u32)
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -512,7 +626,63 @@ pub struct RestoreReport {
     /// Index entries of the touched paths were reset to HEAD.
     pub index_synced: bool,
     pub consistent: bool,
+    /// Files that kept changing under the pre-restore snapshot and were left
+    /// out of it.
+    pub unstable_paths: Vec<String>,
+    /// The working tree as it was before this restore, kept under a ref so the
+    /// restore can be undone by restoring this ref. Present whenever the
+    /// restore could drop work that no checkpoint holds.
+    pub safety: Option<SafetySnapshot>,
     pub atomic: bool,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SafetySnapshot {
+    #[serde(rename = "ref")]
+    pub ref_name: String,
+    pub commit: String,
+    pub tree: String,
+}
+
+fn now_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Records `tree` (the working tree about to be overwritten) under a fresh
+/// `refs/terax/checkpoints/<task>/prerestore-<millis>` ref. An existing ref is
+/// never replaced.
+fn write_safety_snapshot(
+    repo: &ResolvedGitDirectory,
+    task_id: &str,
+    tree: &str,
+    parent: Option<&str>,
+    worktree: &str,
+) -> Result<SafetySnapshot> {
+    let message = format!("terax prerestore {task_id}{WORKTREE_MARK}{worktree}");
+    let commit = write_commit(repo, tree, parent, &message)?;
+    for millis in (now_millis()..).take(50) {
+        let name = refs::prerestore_ref(task_id, millis);
+        // An empty old value makes update-ref fail if the ref already exists.
+        let output = run(
+            repo,
+            with_plumbing_config(os_args(["update-ref", name.as_str(), commit.as_str(), ""])),
+        )?;
+        if output.exit_code == Some(0) {
+            return Ok(SafetySnapshot {
+                ref_name: name,
+                commit,
+                tree: tree.to_string(),
+            });
+        }
+    }
+    Err(GitError::command(
+        "git update-ref failed",
+        "could not create the pre-restore safety ref",
+    ))
 }
 
 fn tree_of(repo: &ResolvedGitDirectory, commit: &str) -> Result<String> {
@@ -631,7 +801,7 @@ fn sync_index_to_head(repo: &ResolvedGitDirectory, paths: &[String]) -> bool {
             ])
         };
         args.extend(os_args(chunk));
-        match run(repo, args) {
+        match run(repo, with_plumbing_config(args)) {
             Ok(output) if output.exit_code == Some(0) => {}
             _ => return false,
         }
@@ -646,7 +816,7 @@ pub fn restore(
     force: bool,
     workspace: &WorkspaceEnv,
 ) -> Result<RestoreReport> {
-    let Some((task_id, _turn)) = refs::parse_checkpoint_ref(reference) else {
+    let Some(task_id) = refs::parse_restore_source(reference) else {
         return Err(GitError::InvalidRef(reference.to_string()));
     };
     let repo = open_worktree(registry, worktree, workspace)?;
@@ -654,14 +824,21 @@ pub fn restore(
     let lock = lock_for(&git_dir(&repo)?);
     let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
 
-    let target_commit = resolve_commit(&repo, reference)?;
-    let target_tree = tree_of(&repo, &target_commit)?;
-    let checkpoints = list_for(&repo, task_id)?;
-    let latest = checkpoints.last().cloned();
-    let target_parent = checkpoints
-        .iter()
-        .find(|info| info.ref_name == reference)
-        .and_then(|info| info.parent.clone());
+    // The refs are shared by every worktree of the repository; only a
+    // checkpoint this worktree made may be restored into it.
+    let mine = worktree_id(&repo)?;
+    let target = list_records(&repo, task_id)?
+        .into_iter()
+        .find(|r| r.name == reference && r.worktree_id.as_deref() == Some(mine.as_str()))
+        .ok_or_else(|| {
+            GitError::command(
+                "git checkpoint restore",
+                "no such checkpoint for this worktree",
+            )
+        })?;
+    let target_tree = tree_of(&repo, &target.commit)?;
+    let latest = list_for(&repo, task_id)?.pop();
+    let target_parent = target.parent.clone();
 
     let snapshot = snapshot_tree(&repo, true)?;
     let mut report = RestoreReport {
@@ -676,6 +853,8 @@ pub fn restore(
         head_moved: head_commit_opt(&repo)? != target_parent,
         index_synced: true,
         consistent: snapshot.consistent,
+        unstable_paths: snapshot.unstable_paths.clone(),
+        safety: None,
         atomic: false,
     };
 
@@ -702,21 +881,6 @@ pub fn restore(
     let mut plan = plan_restore(&changes);
     report.skipped.append(&mut plan.skipped);
 
-    let mut touched: Vec<String> = Vec::new();
-    for path in &plan.deletes {
-        match remove_tracked_path(&repo.local_path, path) {
-            Ok(true) => {
-                report.removed += 1;
-                touched.push(path.clone());
-            }
-            Ok(false) => {}
-            Err(reason) => report.skipped.push(Skipped {
-                path: path.clone(),
-                reason,
-            }),
-        }
-    }
-
     // A path that is on disk but was not in the snapshot is an ignored file;
     // it is never overwritten.
     let in_snapshot: std::collections::HashSet<&str> = changes
@@ -737,7 +901,23 @@ pub fn restore(
         }
     }
 
-    if !writes.is_empty() {
+    // Everything that can fail before the working tree is touched happens now:
+    // the safety snapshot (so a forced or lossy restore can be undone) and the
+    // private index the files are written from.
+    let needs_safety = force || latest.as_ref().is_none_or(|l| l.tree != snapshot.tree);
+    if needs_safety {
+        let head = head_commit_opt(&repo)?;
+        report.safety = Some(write_safety_snapshot(
+            &repo,
+            task_id,
+            &snapshot.tree,
+            head.as_deref(),
+            &mine,
+        )?);
+    }
+    let staged = if writes.is_empty() {
+        None
+    } else {
         let temp = TempIndex::empty(&repo)?;
         let read = run_indexed(
             &repo,
@@ -746,6 +926,25 @@ pub fn restore(
             None,
         )?;
         ensure_success(&read, "git read-tree failed")?;
+        Some(temp)
+    };
+
+    let mut touched: Vec<String> = Vec::new();
+    for path in &plan.deletes {
+        match remove_tracked_path(&repo.local_path, path) {
+            Ok(true) => {
+                report.removed += 1;
+                touched.push(path.clone());
+            }
+            Ok(false) => {}
+            Err(reason) => report.skipped.push(Skipped {
+                path: path.clone(),
+                reason,
+            }),
+        }
+    }
+
+    if let Some(temp) = staged {
         let mut list: Vec<u8> = Vec::new();
         for path in &writes {
             list.extend_from_slice(path.as_bytes());
@@ -897,9 +1096,14 @@ mod tests {
             tree: "t".into(),
             parent: None,
             created_at_secs: 5,
+            worktree_id: Some("abc".into()),
         };
         let json = serde_json::to_value(&info).unwrap();
         assert_eq!(json["ref"], "refs/terax/checkpoints/t/1");
         assert_eq!(json["createdAtSecs"], 5);
+        assert!(
+            json.get("worktreeId").is_none(),
+            "internal field stays internal"
+        );
     }
 }

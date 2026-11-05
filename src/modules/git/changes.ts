@@ -103,6 +103,7 @@ export async function subscribeGitChanges(
     done = true;
     remove();
     releaseListener();
-    void git.unwatch(repoRoot).catch(() => {});
+    // By the key the backend returned: the worktree may be gone by now.
+    void git.unwatch(info.repo).catch(() => {});
   };
 }

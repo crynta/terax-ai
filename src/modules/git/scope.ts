@@ -1,4 +1,4 @@
-import type { CheckpointEndpoint, GitDiffScope } from "./types";
+import type { CheckpointEndpoint, DiffSide, GitDiffScope } from "./types";
 
 const SHORT_SHA = 7;
 
@@ -60,6 +60,28 @@ export function scopeKey(scope: GitDiffScope): string {
       return `checkpoint:${end(scope.from)}..${end(scope.to)}`;
     }
   }
+}
+
+/**
+ * Pins the live working-tree end of a checkpoint scope to the snapshot a
+ * summary of that scope returned. Use the result for every `diffFile` call of
+ * the same view: the files then agree with the summary and none of them takes
+ * a new snapshot of the whole tree. Other scopes are returned as they are.
+ */
+export function freezeScope(
+  scope: GitDiffScope,
+  summary: { from: DiffSide; to: DiffSide },
+): GitDiffScope {
+  if (scope.kind !== "checkpoint") return scope;
+  const pin = (end: CheckpointEndpoint, side: DiffSide): CheckpointEndpoint =>
+    end.kind === "worktree" && side.kind === "worktree" && side.tree
+      ? { kind: "worktree", tree: side.tree }
+      : end;
+  return {
+    kind: "checkpoint",
+    from: pin(scope.from, summary.from),
+    to: pin(scope.to, summary.to),
+  };
 }
 
 export function sameScope(a: GitDiffScope, b: GitDiffScope): boolean {

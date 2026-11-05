@@ -107,6 +107,21 @@ pub fn empty_tree(repo: &ResolvedGitDirectory) -> Result<String> {
     Ok(stdout_text(&output))
 }
 
+/// `id` must be the hex id of an existing tree object (a snapshot an earlier
+/// call returned), never a name or an expression.
+pub fn verify_tree(repo: &ResolvedGitDirectory, id: &str) -> Result<()> {
+    let hex = (40..=64).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_hexdigit());
+    if !hex {
+        return Err(GitError::InvalidRef(id.to_string()));
+    }
+    let output = run(repo, os_args(["cat-file", "-t", id]))?;
+    if output.exit_code == Some(0) && stdout_text(&output) == "tree" {
+        Ok(())
+    } else {
+        Err(GitError::InvalidRef(id.to_string()))
+    }
+}
+
 /// `name` as a branch: screened, then judged by `git check-ref-format`.
 pub fn check_branch_name(repo: &ResolvedGitDirectory, name: &str) -> Result<()> {
     if !refs::is_plausible_ref_name(name) {

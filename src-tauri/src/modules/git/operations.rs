@@ -521,10 +521,11 @@ fn push_set_upstream(repo_root: &ResolvedGitDirectory) -> Result<GitPushResult> 
             },
         )
     })?;
+    crate::modules::git::plumbing::check_branch_name(repo_root, &branch)?;
     let output = run_git(
         &repo_root.workspace,
         Some(&repo_root.git_path),
-        ["push", "--set-upstream", remote.as_str(), branch.as_str()],
+        set_upstream_args(&remote, &branch),
         NETWORK_TIMEOUT_SECS,
     )?;
     ensure_success(&output, "git push failed")?;
@@ -533,6 +534,14 @@ fn push_set_upstream(repo_root: &ResolvedGitDirectory) -> Result<GitPushResult> 
         branch: Some(branch),
         pushed: true,
     })
+}
+
+/// `--` ends option parsing, so neither name can ever be read as a flag.
+fn set_upstream_args(remote: &str, branch: &str) -> Vec<String> {
+    ["push", "--set-upstream", "--", remote, branch]
+        .into_iter()
+        .map(str::to_string)
+        .collect()
 }
 
 const LOG_FORMAT: &str = "%H%x1f%an%x1f%ae%x1f%at%x1f%P%x1f%s";
@@ -1216,6 +1225,15 @@ pub fn checkout_branch(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn set_upstream_push_ends_option_parsing_before_the_names() {
+        let args = set_upstream_args("origin", "feature/x");
+        assert_eq!(args, ["push", "--set-upstream", "--", "origin", "feature/x"]);
+        let dashes = args.iter().position(|a| a == "--").unwrap();
+        assert!(args[..dashes].iter().all(|a| a == "push" || a.starts_with("--")));
+        assert!(args[dashes + 1..].iter().all(|a| !a.starts_with("--")));
+    }
 
     #[test]
     fn sha_is_safe_accepts_hex() {

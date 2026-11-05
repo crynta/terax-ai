@@ -280,9 +280,6 @@ export const git = {
       repoRoot,
       workspace: currentWorkspaceEnv(),
     }),
-  unwatch: (repoRoot: string) =>
-    invoke<void>("git_unwatch", {
-      repoRoot,
-      workspace: currentWorkspaceEnv(),
-    }),
+  /** `repo` is the key `watch` returned; it resolves nothing, so it also works once the worktree is gone. */
+  unwatch: (repo: string) => invoke<void>("git_unwatch", { repo }),
 };

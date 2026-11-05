@@ -6,6 +6,8 @@ pub mod diff;
 #[cfg(test)]
 mod edge_tests;
 pub mod errors;
+#[cfg(test)]
+mod hardening_tests;
 pub mod operations;
 pub mod parser;
 pub mod patch;

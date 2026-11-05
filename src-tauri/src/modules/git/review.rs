@@ -18,7 +18,7 @@ use crate::modules::git::errors::{GitError, Result};
 use crate::modules::git::patch::{build_patch, Anchor, HunkPick, PatchError};
 use crate::modules::git::plumbing::{
     empty_tree, head_commit_opt, lock_for, open_worktree, os_args, relative_spec, resolve_commit,
-    resolve_commit_opt, run, run_ok, stdout_text,
+    resolve_commit_opt, run, run_ok, stdout_text, verify_tree,
 };
 use crate::modules::git::process::{
     decode_text, ensure_success, run_git_capped, run_git_with, RunOptions,
@@ -35,13 +35,25 @@ const MAX_UNTRACKED_FILES: usize = 2000;
 const UNTRACKED_COUNT_FILES: usize = 300;
 const UNTRACKED_COUNT_FILE_MAX: u64 = 1024 * 1024;
 const UNTRACKED_COUNT_TOTAL_BYTES: u64 = 16 * 1024 * 1024;
-const MAX_SYNTH_LINES: usize = 20_000;
+/// Lines of one file's diff sent over IPC (each costs about 100 bytes of JSON),
+/// for synthesized and git-produced diffs alike.
+const MAX_DIFF_LINES: usize = 20_000;
+const MAX_SYNTH_LINES: usize = MAX_DIFF_LINES;
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum CheckpointEndpoint {
-    Ref { name: String },
-    Worktree,
+    Ref {
+        name: String,
+    },
+    /// The working tree. Without `tree` it is snapshotted now; passing the
+    /// `tree` an earlier summary returned pins that snapshot, so every file
+    /// diff of one review view agrees with its summary and none of them walks
+    /// the whole tree again.
+    Worktree {
+        #[serde(default)]
+        tree: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
@@ -152,7 +164,9 @@ pub fn resolve_scope(repo: &ResolvedGitDirectory, scope: &GitDiffScope) -> Resul
             })
         }
         GitDiffScope::Checkpoint { from, to } => {
-            if from == to && *from == CheckpointEndpoint::Worktree {
+            if matches!(from, CheckpointEndpoint::Worktree { .. })
+                && matches!(to, CheckpointEndpoint::Worktree { .. })
+            {
                 return Err(GitError::command(
                     "git diff",
                     "both ends of the checkpoint range are the working tree",
@@ -180,14 +194,15 @@ fn resolve_endpoint(
             let id = resolve_commit(repo, name)?;
             Ok((id.clone(), DiffSide::Rev { id }))
         }
-        CheckpointEndpoint::Worktree => {
-            let snapshot = checkpoint::snapshot_tree(repo, false)?;
-            Ok((
-                snapshot.tree.clone(),
-                DiffSide::Worktree {
-                    tree: Some(snapshot.tree),
-                },
-            ))
+        CheckpointEndpoint::Worktree { tree } => {
+            let tree = match tree {
+                Some(pinned) => {
+                    verify_tree(repo, pinned)?;
+                    pinned.clone()
+                }
+                None => checkpoint::snapshot_tree(repo, false)?.tree,
+            };
+            Ok((tree.clone(), DiffSide::Worktree { tree: Some(tree) }))
         }
     }
 }
@@ -233,6 +248,8 @@ pub fn merge_base(
 fn diff_command(flags: &[&str], scope: &ResolvedScope, pathspecs: &[String]) -> Vec<OsString> {
     let mut args = os_args([
         "--literal-pathspecs",
+        "-c",
+        "core.quotepath=false",
         "diff",
         "--no-color",
         "--no-ext-diff",
@@ -582,7 +599,14 @@ fn file_facts(
         ]),
         "git ls-files failed",
     )?;
-    if listed.stdout.split(|b| *b == 0).all(|p| p.is_empty()) {
+    // `ls-files` lists every untracked file under a directory pathspec, so a
+    // directory would otherwise pass for an untracked file. Only an entry that
+    // is exactly this path counts.
+    if !listed
+        .stdout
+        .split(|b| *b == 0)
+        .any(|entry| entry == path.as_bytes())
+    {
         return Ok(None);
     }
     let mut summary = untracked_entry(path);
@@ -601,11 +625,8 @@ fn file_facts(
     }))
 }
 
-fn parse_file_patch(output: &GitOutput) -> ParsedFileDiff {
-    parse_unified(&output.stdout)
-        .into_iter()
-        .next()
-        .unwrap_or_default()
+fn parse_file_patch(output: &GitOutput, path: &str) -> ParsedFileDiff {
+    diff::select_section(parse_unified(&output.stdout), path)
 }
 
 /// The hunks of `path` in `scope` (synthesized for an untracked file), whether
@@ -640,8 +661,9 @@ fn fetch_parsed(
     if !output.truncated {
         ensure_success(&output, "git diff failed")?;
     }
-    let mut parsed = parse_file_patch(&output);
-    let cut = output.truncated || parsed.incomplete;
+    let mut parsed = parse_file_patch(&output, &facts.summary.path);
+    let capped = diff::cap_lines(&mut parsed.hunks, MAX_DIFF_LINES);
+    let cut = output.truncated || parsed.incomplete || capped;
     if cut {
         parsed.incomplete = true;
     }
@@ -1065,6 +1087,37 @@ fn with_prefix(prefix: &[&str], tail: Vec<OsString>) -> Vec<OsString> {
     args
 }
 
+/// Reverting a staged rename puts `old` back from HEAD, which must therefore
+/// be in HEAD and must not already be occupied by something else (restoring
+/// over an unrelated file would destroy it).
+fn ensure_rename_revertible(repo: &ResolvedGitDirectory, old: &str) -> Result<()> {
+    let in_head = run(repo, os_args(["cat-file", "-e", &format!("HEAD:{old}")]))?;
+    if in_head.exit_code != Some(0) {
+        return Err(GitError::command(
+            "git restore",
+            format!("{old} is not in HEAD; nothing was changed"),
+        ));
+    }
+    let occupied = std::fs::symlink_metadata(repo.local_path.join(old)).is_ok();
+    let indexed = run(
+        repo,
+        os_args([
+            "--literal-pathspecs",
+            "ls-files",
+            "--error-unmatch",
+            "--",
+            old,
+        ]),
+    )?;
+    if occupied || indexed.exit_code == Some(0) {
+        return Err(GitError::command(
+            "git restore",
+            format!("{old} exists again; nothing was changed"),
+        ));
+    }
+    Ok(())
+}
+
 /// Whole-file stage / unstage / revert, which also covers the changes a hunk
 /// patch cannot express: new, deleted, renamed, binary and mode-only files.
 fn whole_file(
@@ -1112,6 +1165,9 @@ fn whole_file(
         }
         ApplyMode::Revert => {
             if facts.untracked {
+                if std::fs::symlink_metadata(repo.local_path.join(rel)).is_ok_and(|m| m.is_dir()) {
+                    return Err(GitError::InvalidPath(format!("{rel} is a directory")));
+                }
                 run_ok(
                     repo,
                     with_prefix(
@@ -1133,31 +1189,53 @@ fn whole_file(
                         )?;
                     }
                     FileStatus::Renamed | FileStatus::Copied => {
-                        run_ok(
+                        // Two steps, ordered so that a failure can never lose
+                        // anything: every precondition is checked first, the
+                        // old side is put back (it only creates a file) and
+                        // only then is the new side removed.
+                        let mut restored_old: Option<&str> = None;
+                        if status == FileStatus::Renamed {
+                            let old = old.ok_or_else(|| {
+                                GitError::InvalidPath("a rename needs its old path".into())
+                            })?;
+                            ensure_rename_revertible(repo, old)?;
+                            run_ok(
+                                repo,
+                                with_prefix(
+                                    &[
+                                        "--literal-pathspecs",
+                                        "restore",
+                                        "--source=HEAD",
+                                        "--staged",
+                                        "--worktree",
+                                    ],
+                                    paths_args(old, None),
+                                ),
+                                "git restore failed",
+                            )?;
+                            restored_old = Some(old);
+                        }
+                        let removed = run_ok(
                             repo,
                             with_prefix(
                                 &["--literal-pathspecs", "rm", "-f", "-q"],
                                 paths_args(rel, None),
                             ),
                             "git rm failed",
-                        )?;
-                        if status == FileStatus::Renamed {
-                            if let Some(old) = old {
-                                run_ok(
+                        );
+                        if let Err(error) = removed {
+                            // Undo the first half: `old` was absent before (checked
+                            // above), so taking it out again restores the start state.
+                            if let Some(old) = restored_old {
+                                let _ = run(
                                     repo,
                                     with_prefix(
-                                        &[
-                                            "--literal-pathspecs",
-                                            "restore",
-                                            "--source=HEAD",
-                                            "--staged",
-                                            "--worktree",
-                                        ],
+                                        &["--literal-pathspecs", "rm", "-f", "-q"],
                                         paths_args(old, None),
                                     ),
-                                    "git restore failed",
-                                )?;
+                                );
                             }
+                            return Err(error);
                         }
                     }
                     _ => {

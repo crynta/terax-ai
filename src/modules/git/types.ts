@@ -100,7 +100,12 @@ export type GitBranchListResult = {
 
 export type CheckpointEndpoint =
   | { kind: "ref"; name: string }
-  | { kind: "worktree" };
+  /**
+   * The live working tree. Without `tree` it is snapshotted on every call;
+   * pass the `tree` a summary returned (`freezeScope`) so the file diffs of one
+   * view agree with it and none of them walks the whole tree again.
+   */
+  | { kind: "worktree"; tree?: string };
 
 /** What the review view is looking at. */
 export type GitDiffScope =
@@ -288,7 +293,15 @@ export type WorktreeAdded = {
 
 export type ChangedPath = { path: string; status: GitFileStatus };
 
-export type WorktreeRemoveBlocker = "locked" | "dirty" | "unmerged";
+/**
+ * `ignored`: files git ignores but that are not regenerable (`.env`, local
+ * databases), which removal would delete without a word.
+ */
+export type WorktreeRemoveBlocker =
+  | "locked"
+  | "dirty"
+  | "unmerged"
+  | "ignored";
 
 export type WorktreeRemoveReport = {
   removed: boolean;
@@ -299,6 +312,11 @@ export type WorktreeRemoveReport = {
   dirtyTotal: number;
   untrackedCount: number;
   unmergedCommits: number;
+  /** A sample of the ignored, non-regenerable entries, and how many there are. */
+  ignoredFiles: string[];
+  ignoredTotal: number;
+  /** Ignored dependency / cache entries (`node_modules`, `target`...): not blockers. */
+  ignoredRegenerable: number;
   lockReason: string | null;
 };
 
@@ -346,8 +364,18 @@ export type RestoreReport = {
   headMoved: boolean;
   indexSynced: boolean;
   consistent: boolean;
+  /** Files that kept changing under the pre-restore snapshot and were left out. */
+  unstablePaths: string[];
+  /**
+   * The working tree as it was before this restore, kept under a ref. Restoring
+   * `safety.ref` undoes the restore. Present whenever the restore could drop
+   * work that no turn checkpoint holds (always when forced).
+   */
+  safety: SafetySnapshot | null;
   atomic: boolean;
 };
+
+export type SafetySnapshot = { ref: string; commit: string; tree: string };
 
 // ------------------------------------------------------------- branches
 

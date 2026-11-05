@@ -274,19 +274,10 @@ pub async fn git_watch(
     .await
 }
 
+/// `repo` is the `repo` key `git_watch` returned. Nothing is resolved or run:
+/// the worktree may already be gone, and its watch must still be released.
 #[tauri::command]
-pub async fn git_unwatch(
-    repo_root: String,
-    workspace: Option<WorkspaceEnv>,
-    app: AppHandle,
-) -> Result<(), String> {
-    let workspace = WorkspaceEnv::from_option(workspace);
-    let handle = app.clone();
-    blocking(app, move |r| {
-        handle
-            .state::<GitWatchState>()
-            .unsubscribe(&handle, r, &repo_root, &workspace)
-            .map_err(Into::into)
-    })
-    .await
+pub async fn git_unwatch(repo: String, app: AppHandle) -> Result<(), String> {
+    app.state::<GitWatchState>().unsubscribe(&repo);
+    Ok(())
 }

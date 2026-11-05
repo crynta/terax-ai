@@ -331,13 +331,14 @@ where
         .env("GCM_INTERACTIVE", "Never")
         .env("GCM_PROVIDER", "")
         .env("LC_ALL", "C")
-        // A repository redirect inherited from the launching shell must never
-        // steer an invocation; callers that want one pass it in `options.env`.
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_INDEX_FILE")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    // A repository or configuration redirect inherited from the launching shell
+    // must never steer an invocation; callers that want one pass it in
+    // `options.env`.
+    for name in inherited_git_env_to_strip(std::env::vars_os().map(|(key, _)| key)) {
+        cmd.env_remove(name);
+    }
     for (key, value) in &options.env {
         cmd.env(key, value);
     }
@@ -372,6 +373,39 @@ where
         timed_out: captured.timed_out,
         truncated: captured.stdout_truncated,
     })
+}
+
+/// Variables that redirect git to another repository, object store, namespace
+/// or configuration. Fixed names are always listed (removing an unset variable
+/// is harmless); the numbered `GIT_CONFIG_KEY_<n>` / `GIT_CONFIG_VALUE_<n>`
+/// pairs are matched against what is actually set.
+const REDIRECTING_GIT_VARS: &[&str] = &[
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_COMMON_DIR",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_NAMESPACE",
+    "GIT_PREFIX",
+    "GIT_CEILING_DIRECTORIES",
+    "GIT_CONFIG_COUNT",
+    "GIT_CONFIG_PARAMETERS",
+];
+
+pub(crate) fn inherited_git_env_to_strip(
+    inherited: impl Iterator<Item = OsString>,
+) -> Vec<OsString> {
+    let mut out: Vec<OsString> = REDIRECTING_GIT_VARS.iter().map(OsString::from).collect();
+    for key in inherited {
+        let Some(name) = key.to_str() else {
+            continue;
+        };
+        if name.starts_with("GIT_CONFIG_KEY_") || name.starts_with("GIT_CONFIG_VALUE_") {
+            out.push(key);
+        }
+    }
+    out
 }
 
 fn build_git_command(
@@ -468,6 +502,52 @@ mod tests {
     #[cfg(windows)]
     use std::ffi::OsString;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn inherited_redirects_are_all_stripped_but_unrelated_config_is_kept() {
+        let inherited = [
+            "PATH",
+            "HOME",
+            "GIT_CONFIG_GLOBAL",
+            "GIT_CONFIG_NOSYSTEM",
+            "GIT_CONFIG_KEY_0",
+            "GIT_CONFIG_VALUE_0",
+            "GIT_CONFIG_KEY_12",
+            "GIT_AUTHOR_NAME",
+        ]
+        .map(std::ffi::OsString::from);
+        let strip: Vec<String> = super::inherited_git_env_to_strip(inherited.into_iter())
+            .into_iter()
+            .map(|n| n.to_string_lossy().into_owned())
+            .collect();
+        for must in [
+            "GIT_DIR",
+            "GIT_WORK_TREE",
+            "GIT_INDEX_FILE",
+            "GIT_COMMON_DIR",
+            "GIT_OBJECT_DIRECTORY",
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+            "GIT_NAMESPACE",
+            "GIT_PREFIX",
+            "GIT_CEILING_DIRECTORIES",
+            "GIT_CONFIG_COUNT",
+            "GIT_CONFIG_PARAMETERS",
+            "GIT_CONFIG_KEY_0",
+            "GIT_CONFIG_VALUE_0",
+            "GIT_CONFIG_KEY_12",
+        ] {
+            assert!(strip.iter().any(|n| n == must), "{must} must be stripped");
+        }
+        for keep in [
+            "PATH",
+            "HOME",
+            "GIT_CONFIG_GLOBAL",
+            "GIT_CONFIG_NOSYSTEM",
+            "GIT_AUTHOR_NAME",
+        ] {
+            assert!(!strip.iter().any(|n| n == keep), "{keep} must be kept");
+        }
+    }
 
     #[test]
     fn extracts_simple_version() {
@@ -613,10 +693,10 @@ mod tests {
 
     #[test]
     fn leaves_unrelated_stderr_untouched() {
-        assert!(
-            classify_auth_error("fatal: not a git repository (or any of the parent directories)")
-                .is_none()
-        );
+        assert!(classify_auth_error(
+            "fatal: not a git repository (or any of the parent directories)"
+        )
+        .is_none());
         assert!(classify_auth_error("").is_none());
         assert!(
             classify_auth_error("error: RPC failed because the HTTP client could not connect")

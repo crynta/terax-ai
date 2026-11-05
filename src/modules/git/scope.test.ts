@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   checkpointRef,
+  freezeScope,
   isLiveScope,
   sameScope,
   scopeKey,
@@ -86,6 +87,64 @@ describe("scopeKey / sameScope", () => {
       to: { kind: "ref", name: "worktree" },
     };
     expect(sameScope(live, named)).toBe(false);
+  });
+});
+
+describe("freezeScope", () => {
+  const ref = checkpointRef("t", 2);
+
+  it("pins the worktree end to the snapshot the summary returned", () => {
+    const live = sinceCheckpointScope(ref);
+    const frozen = freezeScope(live, {
+      from: { kind: "rev", id: "c0ffee" },
+      to: { kind: "worktree", tree: "abc123" },
+    });
+    expect(frozen).toEqual({
+      kind: "checkpoint",
+      from: { kind: "ref", name: ref },
+      to: { kind: "worktree", tree: "abc123" },
+    });
+    expect(live.kind === "checkpoint" && live.to).toEqual({ kind: "worktree" });
+  });
+
+  it("pins either end and keeps refs and unpinned sides as they are", () => {
+    const frozen = freezeScope(
+      {
+        kind: "checkpoint",
+        from: { kind: "worktree" },
+        to: { kind: "ref", name: ref },
+      },
+      {
+        from: { kind: "worktree", tree: "t1" },
+        to: { kind: "rev", id: "x" },
+      },
+    );
+    expect(frozen).toEqual({
+      kind: "checkpoint",
+      from: { kind: "worktree", tree: "t1" },
+      to: { kind: "ref", name: ref },
+    });
+    const unpinned = freezeScope(sinceCheckpointScope(ref), {
+      from: { kind: "rev", id: "x" },
+      to: { kind: "worktree" },
+    });
+    expect(unpinned).toEqual(sinceCheckpointScope(ref));
+  });
+
+  it("leaves every other scope alone and does not change its identity", () => {
+    const summary = {
+      from: { kind: "index" as const },
+      to: { kind: "worktree" as const },
+    };
+    expect(freezeScope({ kind: "unstaged" }, summary)).toEqual({
+      kind: "unstaged",
+    });
+    const live = sinceCheckpointScope(ref);
+    const frozen = freezeScope(live, {
+      from: { kind: "rev", id: "x" },
+      to: { kind: "worktree", tree: "abc" },
+    });
+    expect(sameScope(live, frozen)).toBe(true);
   });
 });
 

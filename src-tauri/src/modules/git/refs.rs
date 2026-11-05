@@ -78,6 +78,33 @@ pub fn parse_checkpoint_ref(name: &str) -> Option<(&str, u32)> {
     Some((task, turn.parse().ok()?))
 }
 
+/// The ref a restore saves the pre-restore working tree under.
+pub fn prerestore_ref(task_id: &str, millis: u64) -> String {
+    format!("{CHECKPOINT_PREFIX}{task_id}/prerestore-{millis}")
+}
+
+/// `(task id, millis)` of a pre-restore safety ref.
+pub fn parse_prerestore_ref(name: &str) -> Option<(&str, u64)> {
+    let rest = name.strip_prefix(CHECKPOINT_PREFIX)?;
+    let (task, tail) = rest.split_once('/')?;
+    let millis = tail.strip_prefix("prerestore-")?;
+    if !is_valid_task_id(task) || millis.is_empty() || millis.len() > 20 {
+        return None;
+    }
+    if !millis.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    Some((task, millis.parse().ok()?))
+}
+
+/// The task a ref names when it is something a restore may start from: a turn
+/// checkpoint or a pre-restore safety snapshot.
+pub fn parse_restore_source(name: &str) -> Option<&str> {
+    parse_checkpoint_ref(name)
+        .map(|(task, _)| task)
+        .or_else(|| parse_prerestore_ref(name).map(|(task, _)| task))
+}
+
 /// Lowercase `[a-z0-9._-]` slug of at most `max` characters, never empty and
 /// never starting with a dot or dash.
 pub fn slugify(input: &str, max: usize) -> String {
