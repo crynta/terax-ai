@@ -53,7 +53,12 @@ import {
 import { useShallow } from "zustand/react/shallow";
 import { selectTabAgentStatus } from "./lib/tabAgentStatus";
 import { labelFor } from "./lib/tabLabel";
-import type { EditorTab, Tab, TerminalTab } from "./lib/useTabs";
+import {
+  canReplaceLastTab,
+  type EditorTab,
+  type Tab,
+  type TerminalTab,
+} from "./lib/useTabs";
 import { NewTabMenu } from "./NewTabMenu";
 
 type Props = {
@@ -240,6 +245,7 @@ export function TabBar({
               }
             />
             {tabs.map((t, i) => {
+              const canClose = tabs.length > 1 || canReplaceLastTab(t);
               const isPreview =
                 (t.kind === "editor" || t.kind === "git-diff") && t.preview;
               const isActive = t.id === activeId;
@@ -324,7 +330,7 @@ export function TabBar({
                   onPointerCancel={(e) => endDrag(e.currentTarget)}
                   onDoubleClick={() => isPreview && onPin(t.id)}
                   onAuxClick={(e) => {
-                    if (e.button === 1 && tabs.length > 1) {
+                    if (e.button === 1 && canClose) {
                       e.preventDefault();
                       e.stopPropagation();
                       onClose(t.id);
@@ -351,11 +357,7 @@ export function TabBar({
                       ? "text-foreground dark:text-foreground"
                       : "text-muted-foreground hover:text-foreground/80 dark:text-muted-foreground",
                     draggingId === t.id && "opacity-50",
-                    compact
-                      ? "px-1.5!"
-                      : tabs.length === 1
-                        ? "px-2!"
-                        : "ps-2! pe-1!",
+                    compact ? "px-1.5!" : !canClose ? "px-2!" : "ps-2! pe-1!",
                   )}
                 >
                   <span
@@ -476,7 +478,7 @@ export function TabBar({
                       />
                     ) : null}
                   </span>
-                  {tabs.length > 1 && (
+                  {canClose && (
                     <span
                       role="button"
                       aria-label="Close tab"
