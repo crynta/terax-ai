@@ -157,7 +157,7 @@ export function parseTerminalNotification(
 
 type Fanout<T> = {
   subscribe: (handler: (value: T) => void) => () => void;
-  /** Resolves once the native listener is attached (or failed to attach). */
+  /** Resolves once the native listener is attached; rejects if attaching failed. */
   ready: () => Promise<void>;
 };
 
@@ -171,6 +171,7 @@ function fanout<T>(
 ): Fanout<T> {
   const handlers = new Set<(value: T) => void>();
   let attached: Promise<UnlistenFn> | null = null;
+  let attachResult: Promise<void> = Promise.resolve();
 
   const attach = () => {
     const pending = listen<unknown>(eventName, (event) => {
@@ -185,6 +186,9 @@ function fanout<T>(
       }
     });
     attached = pending;
+    attachResult = pending.then(() => undefined);
+    // Rejections reach whoever calls ready(); this only marks it observed.
+    attachResult.catch(() => undefined);
     pending.catch((error) => {
       if (attached === pending) attached = null;
       console.error(`[terax] could not listen for ${eventName}:`, error);
@@ -203,13 +207,7 @@ function fanout<T>(
         void release.then((unlisten) => unlisten()).catch(() => undefined);
       };
     },
-    ready: () =>
-      attached
-        ? attached.then(
-            () => undefined,
-            () => undefined,
-          )
-        : Promise.resolve(),
+    ready: () => attachResult,
   };
 }
 

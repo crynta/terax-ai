@@ -7,12 +7,19 @@ import type {
   AgentState,
   CurrentTool,
   HookEventKind,
+  PendingPermission,
   Provenance,
   ToolInfo,
   WaitingReason,
 } from "./types";
 
 export const emptyRegistry: AgentRegistry = {};
+
+// Hooks come from a process Terax does not control, so every collection that
+// grows with them is bounded.
+const MAX_RUNNING_TOOLS = 64;
+const MAX_PENDING_PERMISSIONS = 8;
+const MAX_SUBAGENTS = 64;
 
 const NEEDS_YOU: ReadonlySet<AgentState> = new Set([
   "needs-approval",
@@ -118,7 +125,7 @@ function create(
     currentTool: null,
     runningTools: {},
     subagents: {},
-    pendingPermission: null,
+    pendingPermissions: [],
     turn: 0,
     provenance,
     startedAt: at,
@@ -149,7 +156,7 @@ function quiet(agent: Agent): Agent {
     ...agent,
     currentTool: null,
     runningTools: {},
-    pendingPermission: null,
+    pendingPermissions: [],
     subagents: {},
   };
 }
@@ -165,11 +172,30 @@ function runningKey(
 ): string | null {
   const direct = toolKey(tool);
   if (direct in running) return direct;
+  // Two different known ids are two calls, even with identical input; the call
+  // fallback is only for a side that never learned an id.
   const match = Object.entries(running).find(
     ([, entry]) =>
-      entry.name === tool.name && entry.inputPreview === tool.inputPreview,
+      (entry.id === null || tool.id === undefined) &&
+      entry.name === tool.name &&
+      entry.inputPreview === tool.inputPreview,
   );
   return match ? match[0] : null;
+}
+
+/** Keeps the newest `limit` entries by start time. */
+function newest<T extends { startedAt: number }>(
+  entries: Readonly<Record<string, T>>,
+  limit: number,
+): Readonly<Record<string, T>> {
+  const keys = Object.keys(entries);
+  if (keys.length <= limit) return entries;
+  const kept = keys
+    .sort((a, b) => (entries[b]?.startedAt ?? 0) - (entries[a]?.startedAt ?? 0))
+    .slice(0, limit);
+  return Object.fromEntries(
+    kept.flatMap((key) => (entries[key] ? [[key, entries[key]]] : [])),
+  );
 }
 
 function latest(
@@ -180,6 +206,22 @@ function latest(
     if (!best || entry.startedAt >= best.startedAt) best = entry;
   }
   return best;
+}
+
+/** Adds a request, replacing the same one; keeps the newest few. */
+function addPermission(
+  pending: readonly PendingPermission[],
+  request: PendingPermission,
+): readonly PendingPermission[] {
+  const same = (other: PendingPermission) =>
+    request.requestId !== null
+      ? other.requestId === request.requestId
+      : other.requestId === null &&
+        other.tool === request.tool &&
+        other.inputPreview === request.inputPreview;
+  return [...pending.filter((other) => !same(other)), request].slice(
+    -MAX_PENDING_PERMISSIONS,
+  );
 }
 
 function put(registry: AgentRegistry, agent: Agent): AgentRegistry {
@@ -333,7 +375,10 @@ function applyHook(agent: Agent, event: AgentHookEvent): Agent {
       };
       const next: Agent = {
         ...agent,
-        runningTools: { ...agent.runningTools, [toolKey(tool)]: entry },
+        runningTools: newest(
+          { ...agent.runningTools, [toolKey(tool)]: entry },
+          MAX_RUNNING_TOOLS,
+        ),
         currentTool: entry,
       };
       // Background hooks race the synchronous permission hook and parallel
@@ -356,45 +401,58 @@ function applyHook(agent: Agent, event: AgentHookEvent): Agent {
         runningTools,
         currentTool: latest(runningTools),
       };
-      const pending = agent.pendingPermission;
-      const answered =
-        pending !== null &&
-        tool !== undefined &&
-        pending.tool === tool.name &&
-        pending.inputPreview === tool.inputPreview;
-      return answered
-        ? setState({ ...next, pendingPermission: null }, "working", null, at)
-        : next;
+      const answered = tool
+        ? agent.pendingPermissions.findIndex(
+            (pending) =>
+              pending.tool === tool.name &&
+              pending.inputPreview === tool.inputPreview,
+          )
+        : -1;
+      if (answered === -1) return next;
+      const remaining = agent.pendingPermissions.filter(
+        (_, index) => index !== answered,
+      );
+      const settled: Agent = { ...next, pendingPermissions: remaining };
+      return remaining.length === 0
+        ? setState(settled, "working", null, at)
+        : settled;
     }
     case "permission-request": {
       const permission = event.permission;
       const next: Agent = {
         ...agent,
         lastMessage: event.message ?? agent.lastMessage,
-        pendingPermission: permission
-          ? {
+        pendingPermissions: permission
+          ? addPermission(agent.pendingPermissions, {
               requestId: permission.requestId ?? null,
               tool: permission.tool,
               inputPreview: permission.inputPreview,
               suggestions: permission.suggestions ?? [],
               at,
-            }
-          : null,
+            })
+          : agent.pendingPermissions,
       };
       return setState(next, "needs-approval", "permission", at);
     }
     case "permission-resolved": {
-      const pending = agent.pendingPermission;
       const id = event.permission?.requestId;
-      if (!pending || (id !== undefined && pending.requestId !== id)) {
-        return agent;
-      }
-      const cleared = { ...agent, pendingPermission: null };
+      const index =
+        id === undefined
+          ? -1
+          : agent.pendingPermissions.findIndex(
+              (pending) => pending.requestId === id,
+            );
+      if (index === -1) return agent;
+      const remaining = agent.pendingPermissions.filter(
+        (_, position) => position !== index,
+      );
+      const cleared: Agent = { ...agent, pendingPermissions: remaining };
       // The agent dropping the hook means the user answered at its own prompt.
       const outcome = event.permission?.outcome;
-      return outcome === "allow" ||
-        outcome === "deny" ||
-        outcome === "agent-gone"
+      const answered =
+        outcome === "allow" || outcome === "deny" || outcome === "agent-gone";
+      // Other requests of the same terminal keep the approval state alive.
+      return answered && remaining.length === 0
         ? setState(cleared, "working", null, at)
         : cleared;
     }
@@ -444,17 +502,20 @@ function applyHook(agent: Agent, event: AgentHookEvent): Agent {
       if (!subagent) return agent;
       return {
         ...agent,
-        subagents: {
-          ...agent.subagents,
-          [subagent.id]: {
-            id: subagent.id,
-            type: subagent.type,
-            state: "running",
-            startedAt: at,
-            endedAt: null,
-            message: null,
+        subagents: newest(
+          {
+            ...agent.subagents,
+            [subagent.id]: {
+              id: subagent.id,
+              type: subagent.type,
+              state: "running",
+              startedAt: at,
+              endedAt: null,
+              message: null,
+            },
           },
-        },
+          MAX_SUBAGENTS,
+        ),
       };
     }
     case "subagent-stop": {
@@ -463,17 +524,20 @@ function applyHook(agent: Agent, event: AgentHookEvent): Agent {
       const previous = agent.subagents[subagent.id];
       return {
         ...agent,
-        subagents: {
-          ...agent.subagents,
-          [subagent.id]: {
-            id: subagent.id,
-            type: subagent.type,
-            state: "done",
-            startedAt: previous?.startedAt ?? at,
-            endedAt: at,
-            message: event.message ?? previous?.message ?? null,
+        subagents: newest(
+          {
+            ...agent.subagents,
+            [subagent.id]: {
+              id: subagent.id,
+              type: subagent.type,
+              state: "done",
+              startedAt: previous?.startedAt ?? at,
+              endedAt: at,
+              message: event.message ?? previous?.message ?? null,
+            },
           },
-        },
+          MAX_SUBAGENTS,
+        ),
       };
     }
     case "session-end":

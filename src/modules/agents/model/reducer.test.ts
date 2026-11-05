@@ -219,7 +219,7 @@ describe("permission requests", () => {
       waitingReason: "permission",
       lastMessage: "Run tests",
     });
-    expect(agent.pendingPermission).toMatchObject({
+    expect(agent.pendingPermissions[0]).toMatchObject({
       requestId: "d-1",
       tool: "Bash",
       inputPreview: "npm test",
@@ -234,7 +234,7 @@ describe("permission requests", () => {
     );
     agent = agentOf(registry);
     expect(agent.state).toBe("working");
-    expect(agent.pendingPermission).toBeNull();
+    expect(agent.pendingPermissions).toEqual([]);
     expect(agent.attentionSince).toBeNull();
   });
 
@@ -257,7 +257,7 @@ describe("permission requests", () => {
         }),
       );
       expect(agentOf(registry).state, outcome).toBe(state);
-      expect(agentOf(registry).pendingPermission !== null, outcome).toBe(
+      expect(agentOf(registry).pendingPermissions.length > 0, outcome).toBe(
         pending,
       );
     }
@@ -274,7 +274,7 @@ describe("permission requests", () => {
         permission: { ...permission("d-0"), outcome: "allow" },
       }),
     );
-    expect(agentOf(after).pendingPermission?.requestId).toBe("d-1");
+    expect(agentOf(after).pendingPermissions[0]?.requestId).toBe("d-1");
     expect(agentOf(after).state).toBe("needs-approval");
   });
 
@@ -283,7 +283,7 @@ describe("permission requests", () => {
       hook("prompt"),
       hook("permission-request", { permission: permission() }),
     );
-    expect(agentOf(registry).pendingPermission?.requestId).toBeNull();
+    expect(agentOf(registry).pendingPermissions[0]?.requestId).toBeNull();
   });
 
   it("goes back to work when the approved tool finishes", () => {
@@ -294,7 +294,7 @@ describe("permission requests", () => {
     );
     expect(agentOf(registry)).toMatchObject({
       state: "working",
-      pendingPermission: null,
+      pendingPermissions: [],
     });
   });
 });
@@ -319,7 +319,7 @@ describe("background tool hooks racing a pending approval", () => {
       state: "needs-approval",
       waitingReason: "permission",
     });
-    expect(agentOf(registry).pendingPermission?.requestId).toBe("d-1");
+    expect(agentOf(registry).pendingPermissions[0]?.requestId).toBe("d-1");
     expect(agentOf(registry).attentionSince).not.toBeNull();
   });
 
@@ -332,7 +332,7 @@ describe("background tool hooks racing a pending approval", () => {
       hook("tool-end", { tool: { name: "Bash", inputPreview: "ls" } }),
     );
     expect(agentOf(registry).state).toBe("needs-approval");
-    expect(agentOf(registry).pendingPermission?.tool).toBe("Bash");
+    expect(agentOf(registry).pendingPermissions[0]?.tool).toBe("Bash");
   });
 
   it("is resolved only by the end of the tool that was waiting", () => {
@@ -342,7 +342,7 @@ describe("background tool hooks racing a pending approval", () => {
     registry = reduceAgents(registry, hook("tool-end", { tool: bash }));
     expect(agentOf(registry)).toMatchObject({
       state: "working",
-      pendingPermission: null,
+      pendingPermissions: [],
       attentionSince: null,
     });
     expect(agentOf(registry).runningTools).toEqual({});
@@ -596,7 +596,7 @@ describe("process and OSC signals", () => {
     expect(agentOf(registry)).toMatchObject({
       state: "exited",
       attentionSince: null,
-      pendingPermission: null,
+      pendingPermissions: [],
       currentTool: null,
     });
     expect(reduceAgents(registry, signal("exited"))).toBe(registry);
@@ -704,5 +704,150 @@ describe("notificationEffect", () => {
     expect(notificationEffect("auth_success")).toBeNull();
     expect(notificationEffect("idle_prompt")?.reason).toBe("idle");
     expect(notificationEffect(undefined)?.reason).toBe("attention");
+  });
+});
+
+describe("several approvals pending at once", () => {
+  const first = { ...permission("d-1"), inputPreview: "npm test" };
+  const second = { ...permission("d-2"), inputPreview: "npm run lint" };
+
+  function both(): AgentRegistry {
+    return run(
+      hook("prompt"),
+      hook("permission-request", { permission: first }),
+      hook("permission-request", { permission: second }),
+    );
+  }
+
+  it("tracks each request by id, oldest first", () => {
+    const agent = agentOf(both());
+    expect(agent.state).toBe("needs-approval");
+    expect(agent.pendingPermissions.map((p) => p.requestId)).toEqual([
+      "d-1",
+      "d-2",
+    ]);
+  });
+
+  it("stays blocked until every request is handled", () => {
+    let registry = reduceAgents(
+      both(),
+      hook("permission-resolved", {
+        permission: { ...first, outcome: "allow" },
+      }),
+    );
+    expect(agentOf(registry).state).toBe("needs-approval");
+    expect(
+      agentOf(registry).pendingPermissions.map((p) => p.requestId),
+    ).toEqual(["d-2"]);
+    registry = reduceAgents(
+      registry,
+      hook("permission-resolved", {
+        permission: { ...second, outcome: "deny" },
+      }),
+    );
+    expect(agentOf(registry)).toMatchObject({
+      state: "working",
+      pendingPermissions: [],
+    });
+  });
+
+  it("ends only the approval whose tool finished", () => {
+    let registry = reduceAgents(
+      both(),
+      hook("tool-end", {
+        tool: { name: "Bash", inputPreview: "npm run lint" },
+      }),
+    );
+    expect(agentOf(registry).state).toBe("needs-approval");
+    expect(
+      agentOf(registry).pendingPermissions.map((p) => p.requestId),
+    ).toEqual(["d-1"]);
+    registry = reduceAgents(
+      registry,
+      hook("tool-end", { tool: { name: "Bash", inputPreview: "npm test" } }),
+    );
+    expect(agentOf(registry).state).toBe("working");
+  });
+
+  it("replaces a repeated request and ignores resolutions it does not know", () => {
+    let registry = reduceAgents(
+      both(),
+      hook("permission-request", { permission: first }),
+    );
+    expect(agentOf(registry).pendingPermissions).toHaveLength(2);
+    const before = registry;
+    registry = reduceAgents(
+      registry,
+      hook("permission-resolved", {
+        permission: { ...permission("d-9"), outcome: "allow" },
+      }),
+    );
+    expect(registry[PTY]?.pendingPermissions).toHaveLength(2);
+    registry = reduceAgents(
+      before,
+      hook("permission-resolved", {
+        permission: { tool: "Bash", inputPreview: "" },
+      }),
+    );
+    expect(agentOf(registry).pendingPermissions).toHaveLength(2);
+  });
+});
+
+describe("bounds on hook-driven collections", () => {
+  it("keeps the newest running tools", () => {
+    const events: AgentModelEvent[] = [hook("prompt")];
+    for (let index = 0; index < 200; index++) {
+      events.push(
+        hook("tool-start", {
+          tool: {
+            name: "Bash",
+            inputPreview: `cmd ${index}`,
+            id: `t-${index}`,
+          },
+        }),
+      );
+    }
+    const agent = agentOf(run(...events));
+    const ids = Object.keys(agent.runningTools);
+    expect(ids).toHaveLength(64);
+    expect(ids).toContain("t-199");
+    expect(ids).not.toContain("t-0");
+    expect(agent.currentTool?.id).toBe("t-199");
+  });
+
+  it("keeps the newest approvals and subagents", () => {
+    const events: AgentModelEvent[] = [hook("prompt")];
+    for (let index = 0; index < 20; index++) {
+      events.push(
+        hook("permission-request", {
+          permission: permission(`d-${index}`),
+        }),
+      );
+    }
+    for (let index = 0; index < 100; index++) {
+      events.push(
+        hook("subagent-start", {
+          subagent: { id: `a-${index}`, type: "x", state: "running" },
+        }),
+      );
+    }
+    const agent = agentOf(run(...events));
+    expect(agent.pendingPermissions).toHaveLength(8);
+    expect(
+      agent.pendingPermissions[agent.pendingPermissions.length - 1]?.requestId,
+    ).toBe("d-19");
+    expect(Object.keys(agent.subagents)).toHaveLength(64);
+    expect(agent.subagents["a-99"]).toBeDefined();
+    expect(agent.subagents["a-0"]).toBeUndefined();
+  });
+
+  it("does not merge two calls that have different ids and the same input", () => {
+    const a = { name: "Bash", inputPreview: "npm test", id: "t-1" };
+    const b = { ...a, id: "t-2" };
+    let registry = run(hook("prompt"), hook("tool-start", { tool: a }));
+    registry = reduceAgents(registry, hook("tool-end", { tool: b }));
+    expect(Object.keys(agentOf(registry).runningTools)).toEqual(["t-1"]);
+    registry = reduceAgents(registry, hook("tool-end", { tool: a }));
+    expect(agentOf(registry).runningTools).toEqual({});
   });
 });

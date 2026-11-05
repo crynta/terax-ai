@@ -27,7 +27,7 @@ function agent(
     currentTool: null,
     runningTools: {},
     subagents: {},
-    pendingPermission: null,
+    pendingPermissions: [],
     turn: 0,
     provenance: "hook",
     startedAt: 0,

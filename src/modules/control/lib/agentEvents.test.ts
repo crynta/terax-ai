@@ -174,8 +174,10 @@ describe("event fan-out", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     native.listen.mockRejectedValueOnce(new Error("denied"));
     mod.subscribeAgentEvents(vi.fn());
-    await mod.agentEventsReady();
+    await expect(mod.agentEventsReady()).rejects.toThrow("denied");
+    await expect(mod.agentEventsReady()).rejects.toThrow("denied");
     mod.subscribeAgentEvents(vi.fn());
+    await expect(mod.agentEventsReady()).resolves.toBeUndefined();
     expect(native.listen).toHaveBeenCalledTimes(2);
     spy.mockRestore();
   });

@@ -140,7 +140,8 @@ export type Agent = {
   /** Tools that started and have not ended, by tool id (name and input without one). */
   runningTools: Readonly<Record<string, CurrentTool>>;
   subagents: Readonly<Record<string, SubagentSummary>>;
-  pendingPermission: PendingPermission | null;
+  /** Approvals the agent is blocked on, oldest first; a terminal can have several. */
+  pendingPermissions: readonly PendingPermission[];
   /** Prompts submitted in this run of the agent. */
   turn: number;
   provenance: Provenance;
