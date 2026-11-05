@@ -741,19 +741,102 @@ pub fn is_regenerable(entry: &str) -> bool {
 pub struct IgnoredSummary {
     /// A sample of the entries that are not regenerable.
     pub sample: Vec<String>,
-    /// How many entries are not regenerable.
+    /// How many entries are not regenerable and differ from the main checkout.
     pub total: u32,
     pub regenerable: u32,
+    /// Entries byte-identical to the main checkout's copy (typically files
+    /// that `include` copied in and nobody touched): nothing is lost with them.
+    pub identical: u32,
+}
+
+const COMPARE_MAX_FILES: usize = 200;
+const COMPARE_MAX_BYTES: u64 = 16 * 1024 * 1024;
+
+fn same_bytes(a: &Path, b: &Path, budget: &mut u64) -> bool {
+    use std::io::Read;
+    let (Ok(ma), Ok(mb)) = (std::fs::symlink_metadata(a), std::fs::symlink_metadata(b)) else {
+        return false;
+    };
+    if ma.file_type().is_symlink() || mb.file_type().is_symlink() {
+        return ma.file_type().is_symlink()
+            && mb.file_type().is_symlink()
+            && std::fs::read_link(a).ok() == std::fs::read_link(b).ok();
+    }
+    if !ma.is_file() || !mb.is_file() || ma.len() != mb.len() || ma.len() > *budget {
+        return false;
+    }
+    *budget -= ma.len();
+    let (Ok(mut fa), Ok(mut fb)) = (std::fs::File::open(a), std::fs::File::open(b)) else {
+        return false;
+    };
+    let (mut ba, mut bb) = (vec![0u8; 16 * 1024], vec![0u8; 16 * 1024]);
+    loop {
+        let na = match fa.read(&mut ba) {
+            Ok(n) => n,
+            Err(_) => return false,
+        };
+        if na == 0 {
+            return fb.read(&mut bb).is_ok_and(|n| n == 0);
+        }
+        if fb.read_exact(&mut bb[..na]).is_err() || ba[..na] != bb[..na] {
+            return false;
+        }
+    }
+}
+
+fn same_tree(main: &Path, wt: &Path, files: &mut usize, budget: &mut u64) -> bool {
+    let Ok(read) = std::fs::read_dir(wt) else {
+        return false;
+    };
+    for entry in read.flatten() {
+        let name = entry.file_name();
+        let (theirs, ours) = (main.join(&name), wt.join(&name));
+        let Ok(kind) = entry.file_type() else {
+            return false;
+        };
+        if kind.is_dir() {
+            if !theirs.is_dir() || !same_tree(&theirs, &ours, files, budget) {
+                return false;
+            }
+        } else {
+            *files += 1;
+            if *files > COMPARE_MAX_FILES || !same_bytes(&theirs, &ours, budget) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Whether an ignored entry of the worktree (a file, or a directory with a
+/// trailing `/`) exists in the main checkout with exactly the same bytes. A
+/// comparison that outgrows its budget answers `false`: when in doubt the entry
+/// counts as data.
+pub fn identical_to_main(main_root: &Path, worktree_root: &Path, entry: &str) -> bool {
+    let rel = entry.trim_end_matches('/');
+    if rel.is_empty() || validate_include_pattern(rel).is_err() {
+        return false;
+    }
+    let (main, worktree) = (main_root.join(rel), worktree_root.join(rel));
+    let mut budget = COMPARE_MAX_BYTES;
+    if entry.ends_with('/') {
+        let mut files = 0;
+        main.is_dir() && same_tree(&main, &worktree, &mut files, &mut budget)
+    } else {
+        same_bytes(&main, &worktree, &mut budget)
+    }
 }
 
 /// Summarizes `git ls-files --others --ignored --exclude-standard --directory
-/// -z` output.
-pub fn summarize_ignored(listing: &[u8]) -> IgnoredSummary {
+/// -z` output; `identical` tells which entries match the main checkout.
+pub fn summarize_ignored(listing: &[u8], identical: impl Fn(&str) -> bool) -> IgnoredSummary {
     let mut summary = IgnoredSummary::default();
     for raw in listing.split(|b| *b == 0).filter(|p| !p.is_empty()) {
         let entry = String::from_utf8_lossy(raw);
         if is_regenerable(&entry) {
             summary.regenerable += 1;
+        } else if identical(&entry) {
+            summary.identical += 1;
         } else {
             summary.total += 1;
             if summary.sample.len() < MAX_IGNORED_SAMPLE {
@@ -783,6 +866,9 @@ pub struct WorktreeRemoveReport {
     pub ignored_total: u32,
     /// Ignored dependency / cache entries (not blockers).
     pub ignored_regenerable: u32,
+    /// Ignored entries byte-identical to the main checkout's copy (not
+    /// blockers): what `include` copied in and nobody changed.
+    pub ignored_identical: u32,
     pub lock_reason: Option<String>,
 }
 
@@ -880,6 +966,7 @@ pub fn remove(
         ignored_files: Vec::new(),
         ignored_total: 0,
         ignored_regenerable: 0,
+        ignored_identical: 0,
         lock_reason: entry.lock_reason.clone(),
     };
     if entry.locked {
@@ -925,10 +1012,13 @@ pub fn remove(
             DEFAULT_TIMEOUT_SECS,
             IGNORED_LISTING_CAP_BYTES,
         )?;
-        let summary = summarize_ignored(&ignored.stdout);
+        let summary = summarize_ignored(&ignored.stdout, |entry| {
+            identical_to_main(&main.local_path, &worktree.local_path, entry)
+        });
         report.ignored_files = summary.sample;
         report.ignored_total = summary.total;
         report.ignored_regenerable = summary.regenerable;
+        report.ignored_identical = summary.identical;
         if summary.total > 0 {
             report.blockers.push(RemoveBlocker::Ignored);
         }
@@ -1053,12 +1143,12 @@ mod tests {
         for i in 0..40 {
             listing.extend_from_slice(format!("data/f{i}\0").as_bytes());
         }
-        let summary = summarize_ignored(&listing);
+        let summary = summarize_ignored(&listing, |_| false);
         assert_eq!(summary.total, 42);
         assert_eq!(summary.regenerable, 2);
         assert_eq!(summary.sample.len(), MAX_IGNORED_SAMPLE);
         assert_eq!(&summary.sample[..2], [".env", "local.sqlite"]);
-        assert_eq!(summarize_ignored(b""), IgnoredSummary::default());
+        assert_eq!(summarize_ignored(b"", |_| false), IgnoredSummary::default());
     }
 
     #[test]

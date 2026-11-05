@@ -96,6 +96,13 @@ export async function subscribeGitChanges(
     releaseListener();
     throw error;
   }
+  if (!info.watching) {
+    // The backend holds no subscription for this call (WSL, or it refused and
+    // already released it): nothing to listen to and, above all, nothing to
+    // unwatch, or the release would land on another subscriber's watch.
+    releaseListener();
+    return () => {};
+  }
   const remove = dispatcher.add(info.repo, handler, filter);
   let done = false;
   return () => {

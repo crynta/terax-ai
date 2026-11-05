@@ -317,6 +317,8 @@ export type WorktreeRemoveReport = {
   ignoredTotal: number;
   /** Ignored dependency / cache entries (`node_modules`, `target`...): not blockers. */
   ignoredRegenerable: number;
+  /** Ignored entries byte-identical to the main checkout's copy (what `include` copied in and nobody changed): not blockers. */
+  ignoredIdentical: number;
   lockReason: string | null;
 };
 
@@ -356,6 +358,12 @@ export type RestoreReport = {
   restored: boolean;
   refusal: "changedSinceLatest" | null;
   latestRef: string | null;
+  /**
+   * What `dirty` was measured against: the last restore's target when a restore
+   * happened after the latest checkpoint (so restoring forward is not refused),
+   * otherwise `latestRef`.
+   */
+  baselineRef: string | null;
   dirty: ChangedPath[];
   dirtyTotal: number;
   written: number;

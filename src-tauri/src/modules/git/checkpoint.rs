@@ -7,6 +7,7 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
@@ -15,6 +16,7 @@ use crate::modules::git::diff::{parse_raw_numstat_z, DiffFileSummary, FileStatus
 use crate::modules::git::errors::{GitError, Result};
 use crate::modules::git::plumbing::{
     git_dir, head_commit_opt, lock_for, open_worktree, os_args, run, run_ok, stdout_text,
+    verify_tree,
 };
 use crate::modules::git::process::{ensure_success, run_git_with, RunOptions};
 use crate::modules::git::refs;
@@ -34,16 +36,91 @@ const SNAPSHOT_TIMEOUT_SECS: u64 = NETWORK_TIMEOUT_SECS;
 
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+const WORKTREE_ID_FILE: &str = "terax-worktree-id";
+const LAST_RESTORE_FILE: &str = "terax-last-restore";
+const NO_HOOKS_DIR: &str = "terax-no-hooks";
+
+static ID_LOCK: Mutex<()> = Mutex::new(());
+
+/// A worktree's private git directory (`.git`, or `.git/worktrees/<name>`) and
+/// what checkpoints keep in it: an empty hooks directory, the worktree's random
+/// id and the marker of the last restore. It moves with the worktree, so
+/// renaming or moving the directory does not orphan anything.
+struct Admin {
+    dir: PathBuf,
+    hooks: PathBuf,
+}
+
+fn is_valid_worktree_id(text: &str) -> bool {
+    text.len() == 32 && text.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+impl Admin {
+    fn new(repo: &ResolvedGitDirectory) -> Result<Self> {
+        let dir = git_dir(repo)?;
+        let hooks = dir.join(NO_HOOKS_DIR);
+        Ok(Self { dir, hooks })
+    }
+
+    /// `args` behind the plumbing config (see `plumbing_config`); makes sure the
+    /// empty hooks directory exists.
+    fn plumb(&self, args: Vec<OsString>) -> Result<Vec<OsString>> {
+        std::fs::create_dir_all(&self.hooks)?;
+        Ok(with_plumbing_config(&self.hooks, args))
+    }
+
+    /// The id, if this worktree ever made a checkpoint. Reading never writes.
+    fn existing_worktree_id(&self) -> Option<String> {
+        std::fs::read_to_string(self.dir.join(WORKTREE_ID_FILE))
+            .ok()
+            .map(|t| t.trim().to_string())
+            .filter(|t| is_valid_worktree_id(t))
+    }
+
+    /// The id every checkpoint of this worktree is stamped with, created once
+    /// from the system's random source and kept in the git directory.
+    fn worktree_id(&self) -> Result<String> {
+        let path = self.dir.join(WORKTREE_ID_FILE);
+        let read = || self.existing_worktree_id();
+        if let Some(id) = read() {
+            return Ok(id);
+        }
+        let _guard = ID_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(id) = read() {
+            return Ok(id);
+        }
+        let mut bytes = [0u8; 16];
+        getrandom::fill(&mut bytes)
+            .map_err(|e| GitError::command("git checkpoint", format!("no random source: {e}")))?;
+        let id: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+        // Written whole under a temporary name, then published without
+        // replacing an existing file, so a reader never sees half an id.
+        let staging = self.dir.join(format!("{WORKTREE_ID_FILE}.{id}"));
+        std::fs::write(&staging, &id)?;
+        let published = std::fs::hard_link(&staging, &path);
+        let _ = std::fs::remove_file(&staging);
+        match published {
+            Ok(()) => Ok(id),
+            Err(_) => read().ok_or_else(|| {
+                GitError::command("git checkpoint", "could not record the worktree id")
+            }),
+        }
+    }
+}
+
 /// A throwaway index file inside the git directory, removed on drop.
 struct TempIndex {
     path: PathBuf,
+    hooks: PathBuf,
 }
 
 impl TempIndex {
     /// Seeds the copy from the real index when there is one, so unchanged files
     /// are recognized by their cached stat data and never rehashed.
     fn seeded(repo: &ResolvedGitDirectory) -> Result<Self> {
-        let dir = git_dir(repo)?;
+        let admin = Admin::new(repo)?;
+        std::fs::create_dir_all(&admin.hooks)?;
+        let dir = admin.dir;
         let unique = format!(
             "terax-snapshot-{}-{}-{}.index",
             std::process::id(),
@@ -58,7 +135,10 @@ impl TempIndex {
         if real.is_file() {
             std::fs::copy(&real, &path)?;
         }
-        Ok(Self { path })
+        Ok(Self {
+            path,
+            hooks: admin.hooks,
+        })
     }
 
     fn empty(repo: &ResolvedGitDirectory) -> Result<Self> {
@@ -88,24 +168,22 @@ impl Drop for TempIndex {
     }
 }
 
-const NULL_DEVICE: &str = if cfg!(windows) { "NUL" } else { "/dev/null" };
-
 /// Config for every plumbing call a checkpoint makes: no filesystem-monitor
-/// daemon is started or consulted, no hook of the user's can run, and a file
-/// with mixed line endings is snapshotted instead of failing `core.safecrlf`.
-pub fn plumbing_config() -> Vec<OsString> {
-    os_args([
-        "-c",
-        "core.fsmonitor=false",
-        "-c",
-        &format!("core.hooksPath={NULL_DEVICE}"),
-        "-c",
-        "core.safecrlf=false",
-    ])
+/// daemon is started or consulted, no hook of the user's can run (`hooks` is a
+/// real, empty directory, which every platform resolves the same way), and a
+/// file with mixed line endings is snapshotted instead of failing
+/// `core.safecrlf`.
+pub fn plumbing_config(hooks: &Path) -> Vec<OsString> {
+    let mut hooks_arg = OsString::from("core.hooksPath=");
+    hooks_arg.push(hooks);
+    let mut args = os_args(["-c", "core.fsmonitor=false", "-c"]);
+    args.push(hooks_arg);
+    args.extend(os_args(["-c", "core.safecrlf=false"]));
+    args
 }
 
-fn with_plumbing_config(args: Vec<OsString>) -> Vec<OsString> {
-    let mut full = plumbing_config();
+fn with_plumbing_config(hooks: &Path, args: Vec<OsString>) -> Vec<OsString> {
+    let mut full = plumbing_config(hooks);
     full.extend(args);
     full
 }
@@ -119,7 +197,7 @@ fn run_indexed(
     run_git_with(
         &repo.workspace,
         Some(&repo.git_path),
-        with_plumbing_config(args),
+        with_plumbing_config(&temp.hooks, args),
         SNAPSHOT_TIMEOUT_SECS,
         temp.options(stdin),
     )
@@ -330,6 +408,7 @@ fn now_secs() -> i64 {
 /// identity so a missing `user.name` cannot fail it).
 fn write_commit(
     repo: &ResolvedGitDirectory,
+    admin: &Admin,
     tree: &str,
     parent: Option<&str>,
     message: &str,
@@ -342,7 +421,7 @@ fn write_commit(
     let output = run_git_with(
         &repo.workspace,
         Some(&repo.git_path),
-        with_plumbing_config(args),
+        admin.plumb(args)?,
         crate::modules::git::types::DEFAULT_TIMEOUT_SECS,
         RunOptions {
             env: ["AUTHOR", "COMMITTER"]
@@ -380,11 +459,12 @@ pub fn create(
     let started = Instant::now();
     let repo = open_worktree(registry, worktree, workspace)?;
     ensure_supported(&repo)?;
-    let lock = lock_for(&git_dir(&repo)?);
+    let admin = Admin::new(&repo)?;
+    let lock = lock_for(&admin.dir);
     let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
 
     let name = refs::checkpoint_ref(task_id, turn);
-    let mine = worktree_id(&repo)?;
+    let mine = admin.worktree_id()?;
     // A task id reused by another worktree must not overwrite its checkpoints.
     let taken = list_records(&repo, task_id)?
         .into_iter()
@@ -399,12 +479,14 @@ pub fn create(
     let mut snapshot = snapshot_tree(&repo, true)?;
     let parent = head_commit_opt(&repo)?;
     let message = format!("terax checkpoint {task_id}/{turn}{WORKTREE_MARK}{mine}");
-    let commit = write_commit(&repo, &snapshot.tree, parent.as_deref(), &message)?;
+    let commit = write_commit(&repo, &admin, &snapshot.tree, parent.as_deref(), &message)?;
     run_ok(
         &repo,
-        with_plumbing_config(os_args(["update-ref", name.as_str(), commit.as_str()])),
+        admin.plumb(os_args(["update-ref", name.as_str(), commit.as_str()]))?,
         "git update-ref failed",
     )?;
+    // The newest checkpoint is now what the worktree is measured against.
+    clear_last_restore(&admin);
 
     Ok(CheckpointCreated {
         info: CheckpointInfo {
@@ -433,15 +515,39 @@ const LIST_FORMAT: &str = "--format=%(refname)%00%(objectname)%00%(tree)%00%(par
 /// only the owner may list, restore or prune them.
 const WORKTREE_MARK: &str = " wt:";
 
-/// Stable id of a worktree: its private git directory.
-pub fn worktree_id(repo: &ResolvedGitDirectory) -> Result<String> {
-    let dir = crate::modules::fs::to_canon(git_dir(repo)?);
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for byte in dir.bytes() {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    Ok(format!("{hash:016x}"))
+/// What the worktree is expected to look like right after a restore: the
+/// restored checkpoint's tree. Kept in the worktree's git directory until the
+/// next checkpoint is made (which replaces it as the baseline).
+struct LastRestore {
+    task_id: String,
+    ref_name: String,
+    tree: String,
+}
+
+fn read_last_restore(admin: &Admin) -> Option<LastRestore> {
+    let text = std::fs::read_to_string(admin.dir.join(LAST_RESTORE_FILE)).ok()?;
+    let mut lines = text.lines();
+    let task_id = lines.next()?.to_string();
+    let ref_name = lines.next()?.to_string();
+    let tree = lines.next()?.to_string();
+    (refs::is_valid_task_id(&task_id) && refs::parse_restore_source(&ref_name).is_some()).then_some(
+        LastRestore {
+            task_id,
+            ref_name,
+            tree,
+        },
+    )
+}
+
+fn write_last_restore(admin: &Admin, task_id: &str, ref_name: &str, tree: &str) {
+    let _ = std::fs::write(
+        admin.dir.join(LAST_RESTORE_FILE),
+        format!("{task_id}\n{ref_name}\n{tree}\n"),
+    );
+}
+
+fn clear_last_restore(admin: &Admin) {
+    let _ = std::fs::remove_file(admin.dir.join(LAST_RESTORE_FILE));
 }
 
 /// The worktree id a checkpoint commit subject ends with.
@@ -519,8 +625,15 @@ fn list_records(repo: &ResolvedGitDirectory, task_id: &str) -> Result<Vec<RefRec
 }
 
 /// This worktree's turn checkpoints of `task_id`, ordered by turn.
-fn list_for(repo: &ResolvedGitDirectory, task_id: &str) -> Result<Vec<CheckpointInfo>> {
-    let mine = worktree_id(repo)?;
+fn list_for(
+    repo: &ResolvedGitDirectory,
+    admin: &Admin,
+    task_id: &str,
+) -> Result<Vec<CheckpointInfo>> {
+    // A worktree that never made a checkpoint has no id and owns nothing.
+    let Some(mine) = admin.existing_worktree_id() else {
+        return Ok(Vec::new());
+    };
     let mut infos: Vec<CheckpointInfo> = list_records(repo, task_id)?
         .into_iter()
         .filter(|r| r.worktree_id.as_deref() == Some(mine.as_str()))
@@ -540,7 +653,7 @@ pub fn list(
         return Err(GitError::InvalidRef(task_id.to_string()));
     }
     let repo = open_worktree(registry, worktree, workspace)?;
-    list_for(&repo, task_id)
+    list_for(&repo, &Admin::new(&repo)?, task_id)
 }
 
 pub fn prune(
@@ -553,11 +666,14 @@ pub fn prune(
         return Err(GitError::InvalidRef(task_id.to_string()));
     }
     let repo = open_worktree(registry, worktree, workspace)?;
-    let lock = lock_for(&git_dir(&repo)?);
+    let admin = Admin::new(&repo)?;
+    let lock = lock_for(&admin.dir);
     let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
     // Turn checkpoints and the safety snapshots of restores, this worktree's
     // only: another worktree may use the same task id.
-    let mine = worktree_id(&repo)?;
+    let Some(mine) = admin.existing_worktree_id() else {
+        return Ok(0);
+    };
     let names: Vec<String> = list_records(&repo, task_id)?
         .into_iter()
         .filter(|r| r.worktree_id.as_deref() == Some(mine.as_str()))
@@ -575,7 +691,7 @@ pub fn prune(
     let output = run_git_with(
         &repo.workspace,
         Some(&repo.git_path),
-        with_plumbing_config(os_args(["update-ref", "--stdin"])),
+        admin.plumb(os_args(["update-ref", "--stdin"]))?,
         crate::modules::git::types::DEFAULT_TIMEOUT_SECS,
         RunOptions {
             stdin: Some(script.into_bytes()),
@@ -583,6 +699,7 @@ pub fn prune(
         },
     )?;
     ensure_success(&output, "git update-ref failed")?;
+    clear_last_restore(&admin);
     Ok(names.len() as u32)
 }
 
@@ -603,7 +720,8 @@ pub struct Skipped {
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum RestoreRefusal {
-    /// Files changed since the latest checkpoint; restoring would lose them.
+    /// Files changed since the latest checkpoint, or since the last restore
+    /// when that is newer; restoring would lose them.
     ChangedSinceLatest,
 }
 
@@ -613,8 +731,11 @@ pub struct RestoreReport {
     pub restored: bool,
     pub refusal: Option<RestoreRefusal>,
     pub latest_ref: Option<String>,
-    /// Files that differ between the working tree and the latest checkpoint
-    /// (capped at `MAX_DIRTY_REPORTED`).
+    /// What the working tree was compared against: the last restore's target
+    /// when a restore happened after the latest checkpoint, else `latest_ref`.
+    pub baseline_ref: Option<String>,
+    /// Files that differ between the working tree and the baseline (capped at
+    /// `MAX_DIRTY_REPORTED`).
     pub dirty: Vec<ChangedPath>,
     pub dirty_total: u32,
     pub written: u32,
@@ -657,19 +778,20 @@ fn now_millis() -> u64 {
 /// never replaced.
 fn write_safety_snapshot(
     repo: &ResolvedGitDirectory,
+    admin: &Admin,
     task_id: &str,
     tree: &str,
     parent: Option<&str>,
     worktree: &str,
 ) -> Result<SafetySnapshot> {
     let message = format!("terax prerestore {task_id}{WORKTREE_MARK}{worktree}");
-    let commit = write_commit(repo, tree, parent, &message)?;
+    let commit = write_commit(repo, admin, tree, parent, &message)?;
     for millis in (now_millis()..).take(50) {
         let name = refs::prerestore_ref(task_id, millis);
         // An empty old value makes update-ref fail if the ref already exists.
         let output = run(
             repo,
-            with_plumbing_config(os_args(["update-ref", name.as_str(), commit.as_str(), ""])),
+            admin.plumb(os_args(["update-ref", name.as_str(), commit.as_str(), ""]))?,
         )?;
         if output.exit_code == Some(0) {
             return Ok(SafetySnapshot {
@@ -784,7 +906,7 @@ fn remove_tracked_path(root: &Path, rel: &str) -> std::result::Result<bool, Stri
     Ok(true)
 }
 
-fn sync_index_to_head(repo: &ResolvedGitDirectory, paths: &[String]) -> bool {
+fn sync_index_to_head(repo: &ResolvedGitDirectory, admin: &Admin, paths: &[String]) -> bool {
     let has_head = matches!(head_commit_opt(repo), Ok(Some(_)));
     for chunk in paths.chunks(INDEX_SYNC_CHUNK) {
         let mut args = if has_head {
@@ -801,7 +923,10 @@ fn sync_index_to_head(repo: &ResolvedGitDirectory, paths: &[String]) -> bool {
             ])
         };
         args.extend(os_args(chunk));
-        match run(repo, with_plumbing_config(args)) {
+        let Ok(args) = admin.plumb(args) else {
+            return false;
+        };
+        match run(repo, args) {
             Ok(output) if output.exit_code == Some(0) => {}
             _ => return false,
         }
@@ -821,12 +946,18 @@ pub fn restore(
     };
     let repo = open_worktree(registry, worktree, workspace)?;
     ensure_supported(&repo)?;
-    let lock = lock_for(&git_dir(&repo)?);
+    let admin = Admin::new(&repo)?;
+    let lock = lock_for(&admin.dir);
     let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
 
     // The refs are shared by every worktree of the repository; only a
     // checkpoint this worktree made may be restored into it.
-    let mine = worktree_id(&repo)?;
+    let mine = admin.existing_worktree_id().ok_or_else(|| {
+        GitError::command(
+            "git checkpoint restore",
+            "no such checkpoint for this worktree",
+        )
+    })?;
     let target = list_records(&repo, task_id)?
         .into_iter()
         .find(|r| r.name == reference && r.worktree_id.as_deref() == Some(mine.as_str()))
@@ -837,14 +968,28 @@ pub fn restore(
             )
         })?;
     let target_tree = tree_of(&repo, &target.commit)?;
-    let latest = list_for(&repo, task_id)?.pop();
+    let latest = list_for(&repo, &admin, task_id)?.pop();
     let target_parent = target.parent.clone();
+
+    // What the worktree should look like if nobody touched it since: the tree
+    // the last restore wrote when that happened after the latest checkpoint
+    // (making a checkpoint clears the marker), otherwise the latest checkpoint.
+    // Without this, restoring forward (turn 1, then turn 2) would always count
+    // the first restore itself as a change.
+    let after_restore = read_last_restore(&admin)
+        .filter(|r| r.task_id == task_id && verify_tree(&repo, &r.tree).is_ok());
+    let (baseline_tree, baseline_ref) = match (&after_restore, &latest) {
+        (Some(restore), _) => (Some(restore.tree.clone()), Some(restore.ref_name.clone())),
+        (None, Some(latest)) => (Some(latest.tree.clone()), Some(latest.ref_name.clone())),
+        (None, None) => (None, None),
+    };
 
     let snapshot = snapshot_tree(&repo, true)?;
     let mut report = RestoreReport {
         restored: false,
         refusal: None,
         latest_ref: latest.as_ref().map(|l| l.ref_name.clone()),
+        baseline_ref,
         dirty: Vec::new(),
         dirty_total: 0,
         written: 0,
@@ -859,8 +1004,8 @@ pub fn restore(
     };
 
     if !force {
-        if let Some(latest) = &latest {
-            let dirty = diff_trees(&repo, &latest.tree, &snapshot.tree)?;
+        if let Some(baseline) = &baseline_tree {
+            let dirty = diff_trees(&repo, baseline, &snapshot.tree)?;
             if !dirty.is_empty() {
                 report.dirty_total = dirty.len() as u32;
                 report.dirty = dirty
@@ -904,11 +1049,12 @@ pub fn restore(
     // Everything that can fail before the working tree is touched happens now:
     // the safety snapshot (so a forced or lossy restore can be undone) and the
     // private index the files are written from.
-    let needs_safety = force || latest.as_ref().is_none_or(|l| l.tree != snapshot.tree);
+    let needs_safety = force || baseline_tree.as_ref().is_none_or(|t| *t != snapshot.tree);
     if needs_safety {
         let head = head_commit_opt(&repo)?;
         report.safety = Some(write_safety_snapshot(
             &repo,
+            &admin,
             task_id,
             &snapshot.tree,
             head.as_deref(),
@@ -964,8 +1110,9 @@ pub fn restore(
     touched.sort();
     touched.dedup();
     if !touched.is_empty() {
-        report.index_synced = sync_index_to_head(&repo, &touched);
+        report.index_synced = sync_index_to_head(&repo, &admin, &touched);
     }
+    write_last_restore(&admin, task_id, reference, &target_tree);
     report.restored = true;
     Ok(report)
 }

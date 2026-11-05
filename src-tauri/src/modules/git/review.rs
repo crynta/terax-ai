@@ -250,7 +250,15 @@ fn diff_command(flags: &[&str], scope: &ResolvedScope, pathspecs: &[String]) -> 
         "--literal-pathspecs",
         "-c",
         "core.quotepath=false",
+        // The header parser reads `a/` and `b/`; a user's `diff.mnemonicPrefix`
+        // (`i/`, `w/`, `c/`) or `diff.noprefix` must not change what git prints.
+        "-c",
+        "diff.mnemonicPrefix=false",
+        "-c",
+        "diff.noprefix=false",
         "diff",
+        "--src-prefix=a/",
+        "--dst-prefix=b/",
         "--no-color",
         "--no-ext-diff",
         "--no-textconv",

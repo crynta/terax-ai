@@ -168,8 +168,18 @@ fn a_clean_restore_needs_no_safety_ref_but_one_that_drops_work_has_one() {
     assert!(clean.restored);
     assert!(clean.safety.is_none(), "turn 2 already holds that state");
 
-    // Now the worktree holds turn 1's state while the latest checkpoint is
-    // turn 2: restoring again is refused, and a refusal leaves no safety ref.
+    // The worktree now holds exactly what the restore wrote: restoring again is
+    // a clean no-op. An edit after it is what gets refused, with no safety ref.
+    let again = checkpoint::restore(
+        &repo.registry,
+        &repo.path(),
+        &cp1.info.ref_name,
+        false,
+        &repo.ws,
+    )
+    .unwrap();
+    assert!(again.restored && again.safety.is_none());
+    repo.write("a.txt", "an edit after the restore\n");
     let refused = checkpoint::restore(
         &repo.registry,
         &repo.path(),
@@ -575,14 +585,20 @@ fn checkpoints_survive_a_strict_safecrlf_config_and_mixed_line_endings() {
 
 #[test]
 fn plumbing_config_disables_the_fsmonitor_hooks_and_strict_crlf() {
-    let config: Vec<String> = checkpoint::plumbing_config()
+    let config: Vec<String> = checkpoint::plumbing_config(Path::new("/a repo/.git/terax-no-hooks"))
         .into_iter()
         .map(|a| a.to_string_lossy().into_owned())
         .collect();
-    let joined = config.join(" ");
-    assert!(joined.contains("core.fsmonitor=false"));
-    assert!(joined.contains("core.hooksPath="));
-    assert!(joined.contains("core.safecrlf=false"));
+    assert!(config.contains(&"core.fsmonitor=false".to_string()));
+    assert!(config.contains(&"core.safecrlf=false".to_string()));
+    assert!(
+        config.contains(&"core.hooksPath=/a repo/.git/terax-no-hooks".to_string()),
+        "the hooks directory is one argument, spaces and all: {config:?}"
+    );
+    assert!(
+        !config.iter().any(|a| a.contains("/dev/null") || a == "NUL"),
+        "no device name: a real empty directory resolves the same everywhere"
+    );
 }
 
 #[test]

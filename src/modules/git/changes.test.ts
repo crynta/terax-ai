@@ -140,6 +140,43 @@ describe("subscribeGitChanges", () => {
     expect(mocks.unwatch).toHaveBeenCalledWith("/repo");
   });
 
+  it("never releases a watch the backend did not grant", async () => {
+    const other = await subscribeGitChanges("/repo", vi.fn());
+    mocks.watch.mockResolvedValueOnce({
+      watching: false,
+      repo: "/repo",
+      watchedDirs: 0,
+      truncated: false,
+      reason: "wsl-unsupported",
+    });
+    const handler = vi.fn();
+    const refused = await subscribeGitChanges("/repo", handler);
+    refused();
+    refused();
+    expect(mocks.unwatch).not.toHaveBeenCalled();
+    emit({ repo: "/repo", kinds: ["index"] });
+    expect(handler).not.toHaveBeenCalled();
+
+    // The earlier, granted subscription is untouched and still ends normally.
+    other();
+    expect(mocks.unwatch).toHaveBeenCalledTimes(1);
+    expect(mocks.unwatch).toHaveBeenCalledWith("/repo");
+  });
+
+  it("releases the shared listener when only refused subscriptions were made", async () => {
+    mocks.watch.mockResolvedValueOnce({
+      watching: false,
+      repo: "/repo",
+      watchedDirs: 0,
+      truncated: false,
+      reason: "wsl-unsupported",
+    });
+    const unsubscribe = await subscribeGitChanges("/repo", vi.fn());
+    unsubscribe();
+    await vi.waitFor(() => expect(mocks.unlisten).toHaveBeenCalledTimes(1));
+    expect(mocks.unwatch).not.toHaveBeenCalled();
+  });
+
   it("releases the listener when the backend refuses to watch", async () => {
     mocks.watch.mockRejectedValue(new Error("not a repository"));
     await expect(subscribeGitChanges("/nope", vi.fn())).rejects.toThrow(

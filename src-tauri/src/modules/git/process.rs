@@ -388,7 +388,6 @@ const REDIRECTING_GIT_VARS: &[&str] = &[
     "GIT_ALTERNATE_OBJECT_DIRECTORIES",
     "GIT_NAMESPACE",
     "GIT_PREFIX",
-    "GIT_CEILING_DIRECTORIES",
     "GIT_CONFIG_COUNT",
     "GIT_CONFIG_PARAMETERS",
 ];
@@ -510,6 +509,7 @@ mod tests {
             "HOME",
             "GIT_CONFIG_GLOBAL",
             "GIT_CONFIG_NOSYSTEM",
+            "GIT_CEILING_DIRECTORIES",
             "GIT_CONFIG_KEY_0",
             "GIT_CONFIG_VALUE_0",
             "GIT_CONFIG_KEY_12",
@@ -529,7 +529,6 @@ mod tests {
             "GIT_ALTERNATE_OBJECT_DIRECTORIES",
             "GIT_NAMESPACE",
             "GIT_PREFIX",
-            "GIT_CEILING_DIRECTORIES",
             "GIT_CONFIG_COUNT",
             "GIT_CONFIG_PARAMETERS",
             "GIT_CONFIG_KEY_0",
@@ -544,6 +543,8 @@ mod tests {
             "GIT_CONFIG_GLOBAL",
             "GIT_CONFIG_NOSYSTEM",
             "GIT_AUTHOR_NAME",
+            // A deliberate user bound on repository discovery, not a redirect.
+            "GIT_CEILING_DIRECTORIES",
         ] {
             assert!(!strip.iter().any(|n| n == keep), "{keep} must be kept");
         }
