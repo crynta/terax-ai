@@ -20,7 +20,9 @@ export function quoteShellArg(
   if (windows) {
     return `'${value.replace(/['‘’]/g, "$&$&")}'`;
   }
-  return `'${value.replace(/'/g, "'\\''")}'`;
+  // Fish also interprets backslashes inside single quotes. Keep both
+  // apostrophes and backslashes in unquoted escaped segments.
+  return `'${value.replace(/['\\]/g, (c) => "'\\" + c + "'")}'`;
 }
 
 export function escapeForShell(path: string, windows = IS_WINDOWS): string {
@@ -96,7 +98,7 @@ export function shellDialect(program: string): ShellDialect | null {
     .replace(/\.exe$/, "");
   if (name === "cmd") return "cmd";
   if (name === "powershell" || name === "pwsh") return "powershell";
-  if (["bash", "zsh", "sh", "fish", "wsl"].includes(name ?? "")) return "posix";
+  if (["bash", "zsh", "sh", "fish"].includes(name ?? "")) return "posix";
   return null;
 }
 

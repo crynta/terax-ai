@@ -308,12 +308,8 @@ pub(super) fn spawn_with(
     let pty_system = native_pty_system();
     let pair = pty_system.openpty(size).map_err(|e| e.to_string())?;
 
-    let cmd = build_command()?;
-    let shell_program = cmd
-        .get_argv()
-        .first()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_default();
+    let mut cmd = build_command()?;
+    let shell_program = super::shell_init::launched_shell(&mut cmd);
     let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);
 

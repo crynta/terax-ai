@@ -230,7 +230,9 @@ it("classifies the launched shell and refuses expanding Command Prompt paths", a
   const { shellDialect, quotePathArg } = await import("./shellQuote");
   expect(shellDialect("C:\\Program Files\\Git\\bin\\bash.exe")).toBe("posix");
   expect(shellDialect("C:\\Windows\\System32\\cmd.exe")).toBe("cmd");
-  expect(shellDialect("wsl.exe")).toBe("posix");
+  expect(shellDialect("wsl.exe")).toBeNull();
+  expect(shellDialect("/usr/bin/pwsh")).toBe("powershell");
+  expect(shellDialect("/usr/bin/fish")).toBe("posix");
   expect(shellDialect("pwsh.exe")).toBe("powershell");
   expect(quotePathArg("C:\\files\\a & b.txt", "cmd")).toBe(
     '"C:\\files\\a & b.txt"',
