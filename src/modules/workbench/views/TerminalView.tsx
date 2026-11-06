@@ -1,4 +1,3 @@
-import { native } from "@/modules/ai/lib/native";
 import type { TerminalTab } from "@/modules/tabs/lib/tabs";
 import { useTerminalDropStore } from "@/modules/terminal/lib/dropStore";
 import type { TerminalSearchController } from "@/modules/terminal/search/TerminalSearchController";
@@ -8,23 +7,13 @@ import {
 } from "@/modules/terminal/TerminalPane";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { memo, useCallback, useState } from "react";
-import { closeTabsReplacingLast, reportTerminalCwd } from "../actions";
+import { closeTabsReplacingLast, restartTerminal } from "../actions";
 import { planClose } from "../model/workbench";
 import { snapshot } from "../store";
 import { setViewHandle } from "../viewHandles";
+import { reportCwd } from "./terminalCwd";
 import { exitAction } from "./terminalExit";
 import type { ViewProps } from "./types";
-
-const authorizedCwds = new Set<string>();
-
-function onCwd(leafId: number, cwd: string) {
-  reportTerminalCwd(leafId, cwd);
-  if (!cwd || authorizedCwds.has(cwd)) return;
-  authorizedCwds.add(cwd);
-  native.workspaceAuthorize(cwd).catch(() => {
-    authorizedCwds.delete(cwd);
-  });
-}
 
 function onSearchReady(leafId: number, search: TerminalSearchController) {
   setViewHandle(leafId, "search", search);
@@ -41,22 +30,21 @@ export const TerminalView = memo(function TerminalView({
       setViewHandle(id, "terminal", handle),
     [id],
   );
-  // The session spawns when the view first mounts.
-  const [mountedAt] = useState(() => performance.now());
   const [deadCode, setDeadCode] = useState<number | null>(null);
   const onExit = useCallback(
-    (leafId: number, code: number) => {
+    (leafId: number, code: number, livedMs: number) => {
       const state = snapshot();
       const action = exitAction({
         onlyTabInWindow: state.tabs.length === 1,
         mustStay: planClose(state, [leafId]).kept.includes(leafId),
-        livedMs: performance.now() - mountedAt,
+        livedMs,
       });
       if (action === "close-window") void getCurrentWindow().close();
       else if (action === "keep") setDeadCode(code);
+      else if (action === "respawn") restartTerminal(leafId);
       else closeTabsReplacingLast([leafId]);
     },
-    [mountedAt],
+    [],
   );
   return (
     <div data-pane-leaf={id} className="relative h-full w-full">
@@ -68,7 +56,7 @@ export const TerminalView = memo(function TerminalView({
         blocks={tab.blocks ?? false}
         ref={setRef}
         onSearchReady={onSearchReady}
-        onCwd={onCwd}
+        onCwd={reportCwd}
         onExit={onExit}
       />
       <DropOverlay leafId={id} />
@@ -85,7 +73,7 @@ export const TerminalView = memo(function TerminalView({
           <button
             type="button"
             className="rounded-md border px-3 py-1.5 hover:bg-accent focus-visible:outline-2"
-            onClick={() => closeTabsReplacingLast([id])}
+            onClick={() => restartTerminal(id)}
           >
             Restart shell
           </button>

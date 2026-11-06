@@ -259,12 +259,18 @@ describe("PTY bridge over the multiplexed stream", () => {
     const { openPty, useAgentActivityStore } = await load();
     nativeInvoke(60);
     const onExit = vi.fn();
+    let now = 0;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+    // Slow frontend/stream setup must not count as a long-running shell.
+    now = 10_000;
     const session = await openPty(80, 24, { onData: vi.fn(), onExit });
+    now += 25;
     mocks.signal?.({ payload: { id: 60, kind: "started", agent: "codex" } });
     await flush();
     heldPoll().reply([{ kind: "exit", id: session.id, code: 0 }]);
     await flush();
-    expect(onExit).toHaveBeenCalledWith(0);
+    expect(onExit).toHaveBeenCalledWith(0, 25);
+    clock.mockRestore();
     expect(useAgentActivityStore.getState().agents[60]).toBeUndefined();
     expect(useAgentActivityStore.getState().phases[60]).toBeUndefined();
     // The last terminal is gone: the held poll is released, nothing else runs.

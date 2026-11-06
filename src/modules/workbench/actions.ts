@@ -576,6 +576,14 @@ export function closeTabsReplacingLast(tabIds: readonly number[]): number[] {
   return closeTabsNow(tabIds);
 }
 
+/** Restarts a shell in its existing card slot, preserving its options. */
+export function restartTerminal(tabId: number) {
+  const tab = wb.tabById(snapshot(), tabId);
+  if (tab?.kind !== "terminal") return;
+  const next = { ...tab, id: allocId(), cold: false };
+  commit((s) => wb.replaceTabId(s, tabId, next));
+}
+
 export function reportTerminalCwd(tabId: number, cwd: string) {
   commit((s) =>
     wb.updateTab(s, tabId, (t) =>

@@ -76,7 +76,7 @@ type Callbacks = {
   onModel?: (model: GhosttyTerminalModelApi | null) => void;
   onError?: (error: GhosttySessionFailure | null) => void;
   onSearchReady?: (search: TerminalSearchController) => void;
-  onExit?: (code: number) => void;
+  onExit?: (code: number, livedMs: number) => void;
   onCwd?: (cwd: string) => void;
 };
 
@@ -137,7 +137,7 @@ type Options = {
   focused: boolean;
   initialCwd?: string;
   blocks?: boolean;
-  onExit?: (code: number) => void;
+  onExit?: (code: number, livedMs: number) => void;
   onCwd?: (cwd: string) => void;
   onSearchReady?: (search: TerminalSearchController) => void;
 };
@@ -194,7 +194,7 @@ export function useGhosttyTerminalSession({
       onModel: setModel,
       onError: setError,
       onSearchReady: (search) => callbackRef.current.onSearchReady?.(search),
-      onExit: (code) => callbackRef.current.onExit?.(code),
+      onExit: (code, livedMs) => callbackRef.current.onExit?.(code, livedMs),
       onCwd: (cwd) => callbackRef.current.onCwd?.(cwd),
     };
     setError(sessionFailure(session));
@@ -844,13 +844,13 @@ async function initializeSessionGeneration(
           ghosttyBlocks(session.leafId)?.changed();
         }
       },
-      onExit: (code) => {
+      onExit: (code, livedMs) => {
         if (session.disposed || generation !== session.generation) return;
         session.shellExited = true;
         session.cancelFocusRetry?.();
         session.writer.detach();
         session.pty = null;
-        session.callbacks.onExit?.(code);
+        session.callbacks.onExit?.(code, livedMs);
       },
     },
     session.initialCwd,
@@ -990,7 +990,8 @@ function applyBlockInputMode(
   if (!changed) return;
   input.setAttribute("data-terax-block-prompt", String(prompt));
   surface?.setCursorEnabled(!prompt);
-  if (session.visible && session.focused) focusSessionSurface(session, surface);
+  if (session.visible && session.focused && focusIsMovable(currentFocus()))
+    focusSessionSurface(session, surface);
 }
 
 /**

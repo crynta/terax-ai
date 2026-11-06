@@ -123,6 +123,7 @@ export function Divider({ taskId, divider }: Props) {
   return (
     // biome-ignore lint/a11y/useSemanticElements: a focusable separator needs a div.
     <div
+      data-workbench-divider=""
       role="separator"
       aria-orientation={row ? "vertical" : "horizontal"}
       aria-valuemin={0}

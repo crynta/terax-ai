@@ -89,3 +89,50 @@ it("reuses an editor opened with Windows separators", async () => {
       .tabs.filter((t) => t.kind === "editor" && t.id === first),
   ).toHaveLength(1);
 });
+
+it("restarts a terminal in place with sibling views and preserves its options", async () => {
+  const { restartTerminal } = await import("./actions");
+  const { updateTab } = await import("./model/workbench");
+  commit((s) =>
+    updateTab(s, 1, (t) => ({
+      ...t,
+      cwd: "/repo",
+      customTitle: "Build",
+      blocks: true,
+      private: true,
+    })),
+  );
+  const before = useWorkbench.getState();
+  restartTerminal(1);
+  const after = useWorkbench.getState();
+  const next = after.tabs[0];
+  expect(next.id).not.toBe(1);
+  expect(next).toMatchObject({
+    kind: "terminal",
+    spaceId: "p",
+    title: "a",
+    cwd: "/repo",
+    customTitle: "Build",
+    blocks: true,
+    private: true,
+  });
+  expect(after.tasks[0].layout).toEqual(card(11, [next.id, 2, 3], next.id));
+  expect(after.tasks[0].focusedCardId).toBe(before.tasks[0].focusedCardId);
+  expect(after.tabs.slice(1)).toEqual(before.tabs.slice(1));
+  expect(disposeSession).toHaveBeenCalledExactlyOnceWith(1);
+});
+
+it("restarts a background local-task terminal without changing active focus", async () => {
+  const { newTask, restartTerminal } = await import("./actions");
+  const { tabId, taskId } = newTask({ activate: false });
+  const before = useWorkbench.getState();
+  restartTerminal(tabId);
+  const after = useWorkbench.getState();
+  expect(after.activeTaskByProject).toEqual(before.activeTaskByProject);
+  expect(after.tasks.find((t) => t.id === taskId)?.layout).not.toEqual(
+    before.tasks.find((t) => t.id === taskId)?.layout,
+  );
+  expect(after.tabs).toHaveLength(before.tabs.length);
+  expect(after.tabs.some((t) => t.id === tabId)).toBe(false);
+  expect(disposeSession).toHaveBeenCalledExactlyOnceWith(tabId);
+});

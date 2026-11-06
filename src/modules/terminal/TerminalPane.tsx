@@ -39,7 +39,7 @@ export type TerminalPaneProps = {
   /** Enable command-block decorations (OSC 133) for this terminal. */
   blocks?: boolean;
   onSearchReady?: (leafId: number, addon: TerminalSearchController) => void;
-  onExit?: (leafId: number, code: number) => void;
+  onExit?: (leafId: number, code: number, livedMs: number) => void;
   onCwd?: (leafId: number, cwd: string) => void;
 };
 
@@ -83,7 +83,7 @@ const GhosttyTerminalPane = memo(
       initialCwd,
       blocks,
       onSearchReady: (search) => onSearchReady?.(leafId, search),
-      onExit: (code) => onExit?.(leafId, code),
+      onExit: (code, livedMs) => onExit?.(leafId, code, livedMs),
       onCwd: (cwd) => onCwd?.(leafId, cwd),
     });
 

@@ -88,7 +88,7 @@ export function ptyTransportDiagnostics() {
 
 export type PtyHandlers = {
   onData: (bytes: Uint8Array) => void | Promise<void>;
-  onExit?: (code: number) => void;
+  onExit?: (code: number, livedMs: number) => void;
   onOutputStatus?: (status: PtyOutputStatus) => void;
 };
 
@@ -178,6 +178,7 @@ export async function openPty(
     releaseHandlers();
     throw error;
   }
+  const spawnedAt = performance.now();
   const sessionId = id;
   if (released) {
     clearAgentActivity(sessionId);
@@ -187,7 +188,7 @@ export async function openPty(
     // frame can precede this call.
     progress = stream.register(sessionId, receiver, (code) => {
       try {
-        handlers.onExit?.(code);
+        handlers.onExit?.(code, performance.now() - spawnedAt);
       } finally {
         releaseHandlers();
       }

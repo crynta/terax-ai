@@ -544,8 +544,8 @@ async function resizeScenario(run: ScenarioRun): Promise<void> {
 /**
  * Drives a divider with DOM pointer events at `hz` samples a second along `position`. WebKit
  * reports `buttons` from the physical mouse, so a synthetic NSEvent drag looks released to the
- * divider library; pointer events dispatched here go through the library's own document
- * listeners and everything after them (layout, React, observers, the renderer) is the real path.
+ * divider; pointer events dispatched on the grip go through React's pointer
+ * handlers and everything after them (layout, React, observers, the renderer) is the real path.
  * A late timer skips ahead to the sample for the time it woke at, like a mouse that coalesces.
  */
 async function dragWithPointer(
@@ -595,10 +595,10 @@ async function dragWithPointer(
         events,
         Math.max(index + 1, Math.floor(((now - began) * hz) / 1000)),
       );
-      fire("pointermove", document, position(index), 1);
+      fire("pointermove", handle, position(index), 1);
       sent += 1;
     }
-    fire("pointerup", document, position(events), 0);
+    fire("pointerup", handle, position(events), 0);
     return {
       events,
       sent,
@@ -620,11 +620,7 @@ async function splitDragScenario(run: ScenarioRun): Promise<void> {
   const layout = await splitLayout(run, scenario.variant ?? "sa");
   // The divider between the panes, not the sidebar's (the first handle in the document).
   const handle = () =>
-    document
-      .querySelector("[data-pane-leaf]")
-      ?.closest('[data-slot="resizable-panel-group"]')
-      ?.querySelector<HTMLElement>(':scope > [data-slot="resizable-handle"]') ??
-    null;
+    document.querySelector<HTMLElement>("[data-workbench-divider]");
   await run.waitFor(() => handle() !== null, "pane divider");
   await pause(1000);
   await run.sync("setup", {

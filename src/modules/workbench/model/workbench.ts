@@ -415,7 +415,7 @@ export function openDocument(
 }
 
 /** Puts `next` in place of tab `oldId`, inheriting its card slot. */
-function replaceTabId(
+export function replaceTabId(
   state: WorkbenchState,
   oldId: number,
   next: Tab,

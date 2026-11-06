@@ -1,8 +1,4 @@
 import { cn } from "@/lib/utils";
-import {
-  currentFocus,
-  focusIsMovable,
-} from "@/modules/terminal/lib/focusGuard";
 import { memo, useEffect, useLayoutEffect, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { activateTab } from "../actions";
@@ -10,11 +6,12 @@ import { cards, computeFrames } from "../model/layout";
 import { tabById } from "../model/workbench";
 import { useActiveTask, useWorkbench } from "../store";
 import { requestTerminalRemeasure } from "../terminalGeometry";
-import { viewHandle } from "../viewHandles";
+import { useViewHandle } from "../viewHandles";
 import { isMounted, View, viewSpec } from "../views/registry";
 import { CardChrome } from "./CardChrome";
 import { Divider } from "./Divider";
 import { bodyStyle, cardFrame, cardStyle } from "./geometry";
+import { focusView } from "./focusView";
 import { slotOf } from "./slot";
 
 /**
@@ -61,6 +58,9 @@ export function WorkbenchSurface() {
         aria-hidden="true"
         className="zoom-exempt pointer-events-none absolute inset-0 overflow-hidden"
       />
+      <div className="absolute inset-0 z-0">
+        <TabLayer />
+      </div>
       {task &&
         shown.map(({ id, frame }) => (
           <CardChrome
@@ -76,7 +76,6 @@ export function WorkbenchSurface() {
             maximized={task.maximizedCardId === id}
           />
         ))}
-      <TabLayer />
       {task &&
         dividers.map((d) => (
           <Divider
@@ -94,21 +93,12 @@ const TabLayer = memo(function TabLayer() {
   return ids.map((id) => <TabSlot key={id} id={id} />);
 });
 
-/** Keyboard focus goes to the view, unless the user is typing elsewhere. */
-function focusView(id: number, slot: HTMLElement) {
-  const active = currentFocus();
-  if (slot.contains(active as Node | null) || !focusIsMovable(active)) return;
-  const terminal = viewHandle(id, "terminal");
-  if (terminal) return terminal.focus();
-  const editor = viewHandle(id, "editor");
-  if (editor) return editor.focus();
-  slot.focus({ preventScroll: true });
-}
-
 const TabSlot = memo(function TabSlot({ id }: { id: number }) {
   const tab = useWorkbench((s) => tabById(s, id));
   const slot = useWorkbench(useShallow((s) => slotOf(s, id)));
   const ref = useRef<HTMLDivElement>(null);
+  const terminal = useViewHandle(id, "terminal");
+  const editor = useViewHandle(id, "editor");
   const focused = !!slot?.focused && !!slot.visible;
 
   // A card that moved without resizing fires no observer; tell the canvas.
@@ -128,8 +118,8 @@ const TabSlot = memo(function TabSlot({ id }: { id: number }) {
   }, [slot, tab?.kind]);
 
   useEffect(() => {
-    if (focused && ref.current) focusView(id, ref.current);
-  }, [focused, id]);
+    if (focused && ref.current) focusView(ref.current, terminal ?? editor);
+  }, [focused, terminal, editor]);
 
   if (!tab || !slot || !isMounted(tab, slot.visible)) return null;
   const { inset } = viewSpec(tab.kind);

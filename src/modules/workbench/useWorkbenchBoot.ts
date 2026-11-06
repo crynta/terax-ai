@@ -158,6 +158,11 @@ export function useWorkbenchBoot({
         }
       } catch (e) {
         console.error("[terax] workbench boot failed:", e);
+        if (!useSpaces.getState().hydrated)
+          toast.error(
+            "Could not restore projects. Task and layout changes will not be saved; reload to retry.",
+            { duration: Number.POSITIVE_INFINITY },
+          );
         if (snapshot().tasks.length === 0) {
           const id = useSpaces.getState().activeId ?? DEFAULT_PROJECT_ID;
           hydrateWorkbench({
