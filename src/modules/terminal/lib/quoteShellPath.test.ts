@@ -62,7 +62,7 @@ describe("literal drop arguments", () => {
 
 it("round trips literal paths through the platform shell", () => {
   const windows = process.platform === "win32";
-  for (const path of [
+  const paths = [
     "/tmp/$(echo expanded).txt",
     "/tmp/$variable",
     "/tmp/tick`name",
@@ -70,24 +70,23 @@ it("round trips literal paths through the platform shell", () => {
     "/tmp/it's file.txt",
     "/tmp/literal\\name",
     "/tmp/a\\'b.txt",
-  ]) {
-    const quoted = quoteShellPath(path, windows);
-    const output = windows
-      ? execFileSync(
-          "powershell.exe",
-          [
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            `[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); function Capture([string]$value) { [Console]::Write($value) }; Capture ${quoted}`,
-          ],
-          { encoding: "utf8" },
-        )
-      : execFileSync("/bin/sh", ["-c", `printf '%s' ${quoted}`], {
-          encoding: "utf8",
-        });
-    expect(output).toBe(path);
-  }
+  ];
+  const quoted = paths.map((path) => quoteShellPath(path, windows));
+  const output = windows
+    ? execFileSync(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          `[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); function Capture([string]$value) { [Console]::Write($value); [Console]::Write([char]0) }; ${quoted.map((path) => `Capture ${path}`).join("; ")}`,
+        ],
+        { encoding: "utf8" },
+      )
+    : execFileSync("/bin/sh", ["-c", `printf '%s\\0' ${quoted.join(" ")}`], {
+        encoding: "utf8",
+      });
+  expect(output).toBe(`${paths.join("\0")}\0`);
 });
 
 const fishProgram = process.platform === "win32" ? "" : spawnSync("/bin/sh", ["-c", "command -v fish"], { encoding: "utf8" }).stdout.trim();
