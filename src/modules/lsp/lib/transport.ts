@@ -36,6 +36,7 @@ function isServerRequest(msg: unknown): msg is ServerRequest {
 export class TauriLspTransport implements Transport {
   private sessionId: number | null = null;
   private closed = false;
+  private closing: Promise<void> | null = null;
   private onMsg: ((message: string) => void) | null = null;
   private onCloseCb: (() => void) | null = null;
   private onErrorCb: ((error: Error) => void) | null = null;
@@ -130,14 +131,27 @@ export class TauriLspTransport implements Transport {
   }
 
   close(): void {
-    if (this.closed) {
-      this.sessionId = null;
-      return;
-    }
+    void this.stop().catch((error) =>
+      console.error("[lsp] shutdown failed", error),
+    );
+  }
+
+  stop(): Promise<void> {
+    if (this.closing) return this.closing;
     this.closed = true;
-    if (this.sessionId != null) {
-      void invoke("lsp_kill", { id: this.sessionId }).catch(() => {});
+    if (this.sessionId === null || this.exitInfo) {
       this.sessionId = null;
+      return Promise.resolve();
     }
+    this.closing = invoke<void>("lsp_kill", { id: this.sessionId }).then(
+      () => {
+        this.sessionId = null;
+      },
+      (error) => {
+        this.closing = null;
+        throw error;
+      },
+    );
+    return this.closing;
   }
 }
