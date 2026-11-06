@@ -17,7 +17,7 @@ function mouseEvent(
   }) as MouseEvent;
 }
 
-function harness(anyMotion = false) {
+function harness(tracking = 1002) {
   const target = new FakeElement();
   const send = vi.fn<(report: Uint8Array) => void>();
   const mouse = new TerminalMouse({
@@ -32,7 +32,7 @@ function harness(anyMotion = false) {
         focusReporting: false,
         synchronizedOutput: false,
       }),
-      mode: (mode) => mode === 1006 || mode === (anyMotion ? 1003 : 1002),
+      mode: (mode) => mode === 1006 || mode === tracking,
     },
     cellSize: () => ({ width: 10, height: 20 }),
     send,
@@ -84,7 +84,7 @@ describe("TerminalMouse press ownership", () => {
   });
 
   it("reports hover as no-button motion before and after a drag", () => {
-    const h = harness(true);
+    const h = harness(1003);
     h.target.dispatchEvent(mouseEvent("mousemove"));
     h.target.dispatchEvent(mouseEvent("mousedown"));
     h.target.dispatchEvent(mouseEvent("mousemove"));
@@ -109,4 +109,21 @@ describe("TerminalMouse press ownership", () => {
     h.target.dispatchEvent(mouseEvent("mousedown"));
     expect(h.reports()).toEqual(["\x1b[<0;2;2M"]);
   });
+
+  it.each(["mouseup", "blur"])(
+    "keeps X10 press-only on %s and omits modifiers",
+    (end) => {
+      const h = harness(9);
+      h.target.dispatchEvent(
+        mouseEvent("mousedown", { ctrlKey: true, altKey: true }),
+      );
+      h.target.dispatchEvent(mouseEvent("mousemove"));
+      if (end === "blur")
+        h.target.ownerDocument.defaultView.dispatchEvent(new Event("blur"));
+      else h.target.ownerDocument.dispatchEvent(mouseEvent("mouseup"));
+      h.target.dispatchEvent(mouseEvent("mousemove"));
+      expect(h.reports()).toEqual(["\x1b[<0;2;2M"]);
+      h.mouse.dispose();
+    },
+  );
 });

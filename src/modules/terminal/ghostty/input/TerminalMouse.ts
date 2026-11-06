@@ -184,14 +184,15 @@ export class TerminalMouse {
     release: boolean,
     event: MouseEvent,
   ): Uint8Array {
-    const encodedButton = button + terminalMouseModifiers(event);
+    const modifiers = this.host.model.mode(9)
+      ? 0
+      : terminalMouseModifiers(event);
+    const encodedButton = button + modifiers;
     if (this.host.model.mode(1006))
       return encoder.encode(
         `\x1b[<${encodedButton};${col};${row}${release ? "m" : "M"}`,
       );
-    const legacyButton = release
-      ? 3 + terminalMouseModifiers(event)
-      : encodedButton;
+    const legacyButton = release ? 3 + modifiers : encodedButton;
     const utf8 = this.host.model.mode(1005);
     const limit = utf8 ? 2047 : 255;
     const bytes = [
@@ -213,6 +214,7 @@ export class TerminalMouse {
     release: boolean,
     event: MouseEvent,
   ): void {
+    if (release && this.host.model.mode(9)) return;
     this.host.send(this.report(button, position, release, event));
   }
 }
