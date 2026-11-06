@@ -101,8 +101,8 @@ describe("matchBinding", () => {
     ).toBe(false);
   });
 
-  it("falls back to the physical code for shift combinations", () => {
-    // Shift turns Period into ">"; ⌘⇧. still matches the "." binding.
+  it("matches recognized shifted punctuation by its logical key", () => {
+    // The logical ">" names period even when its physical position moves.
     expect(
       matchBinding(
         event({ key: ">", code: "Period", shiftKey: true, metaKey: true }),
@@ -114,7 +114,7 @@ describe("matchBinding", () => {
         event({ key: ">", code: "Comma", shiftKey: true, metaKey: true }),
         { key: ".", shift: true, meta: true },
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("follows a layout that types another letter on the key (Dvorak Ctrl+Shift+C is on KeyI)", () => {

@@ -136,7 +136,7 @@ export const WIN_LINUX_DEFAULTS: Readonly<
     { ctrl: true, key: "=" },
     { ...CS, key: "+" },
   ],
-  "view.zoomOut": [{ ...CS, key: "_" }],
+  "view.zoomOut": [{ ...CS, key: "-" }],
   "view.zoomReset": [{ ctrl: true, key: "0" }],
   "view.zenMode": [{ ...CS, key: "'" }],
   "editor.undo": [{ ctrl: true, key: "z" }],

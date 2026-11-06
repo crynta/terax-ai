@@ -367,6 +367,21 @@ const CODE_TO_KEY: Record<string, string> = {
   Space: " ",
 };
 
+const UNSHIFTED_PUNCTUATION: Record<string, string> = {
+  "~": "`",
+  _: "-",
+  "+": "=",
+  "{": "[",
+  "}": "]",
+  "|": "\\",
+  ":": ";",
+  '"': "'",
+  "<": ",",
+  ">": ".",
+  "?": "/",
+};
+const PUNCTUATION_BASE_KEYS = new Set(Object.values(UNSHIFTED_PUNCTUATION));
+
 // Option and Shift combinations rewrite e.key (macOS Option gives "«", "…",
 // dead keys; Shift turns "." into ">"); the physical key survives in e.code.
 function keyFromCode(code: string): string | null {
@@ -400,11 +415,28 @@ export function matchBinding(
   // Special case for Jump to Tab 1-9
   if (id === "tab.selectByIndex") {
     if (tabDigit(e, !!binding.shift) === null) return false;
-  } else if (eventKey !== bindingKey) {
+  } else if (binding.shift && !binding.alt && UNSHIFTED_PUNCTUATION[eventKey]) {
+    // Recognized shifted punctuation names its logical key, even on Dvorak.
+    if (
+      UNSHIFTED_PUNCTUATION[eventKey] !==
+      (UNSHIFTED_PUNCTUATION[bindingKey] ?? bindingKey)
+    )
+      return false;
+  } else if (
+    eventKey !== bindingKey ||
+    (binding.shift && !binding.alt && PUNCTUATION_BASE_KEYS.has(bindingKey))
+  ) {
     if (!binding.alt && !binding.shift) return false;
-    // A Latin letter is the layout's own answer (Dvorak, Colemak): only a
-    // symbol, a dead key or another script falls back to the physical key.
+    // A Latin letter is the layout's own answer (Dvorak, Colemak).
     if (/^[a-z]$/.test(eventKey)) return false;
+    // Shift alone cannot turn punctuation into a letter shortcut.
+    if (
+      !binding.alt &&
+      /^[a-z]$/.test(bindingKey) &&
+      eventKey.length === 1 &&
+      !/^\p{L}$/u.test(eventKey)
+    )
+      return false;
     if (keyFromCode(e.code) !== bindingKey) return false;
   }
 

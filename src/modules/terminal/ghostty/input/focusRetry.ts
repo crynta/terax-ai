@@ -13,11 +13,13 @@ const FOCUS_RETRY_DELAYS_MS: readonly number[] = [16, 48, 120, 300];
 export function focusUntilActive(
   target: Element,
   focus: () => void,
+  canFocus: () => boolean,
   delays: readonly number[] = FOCUS_RETRY_DELAYS_MS,
 ): () => void {
   let attempt = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const run = (): void => {
+    if (!canFocus()) return;
     const holder = document.activeElement;
     if (holder === target || (holder !== null && holder !== document.body))
       return;

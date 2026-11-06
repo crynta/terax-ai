@@ -377,6 +377,31 @@ describe.each([
   },
 );
 
+describe("Windows and Linux shifted punctuation layout audit", () => {
+  it.each([
+    ["Dvorak comma", "<", "KeyW", "ai.toggleMini"],
+    ["AZERTY period", "/", "Period", "explorer.toggleHidden"],
+    ["AZERTY minus", "°", "Minus", "view.zoomOut"],
+    ["US minus", "_", "Minus", "view.zoomOut"],
+    ["Dvorak slash", "?", "BracketLeft", "explorer.search"],
+  ])("%s fires only its intended shortcut", (_, key, code, expected) => {
+    const event = {
+      key,
+      code,
+      ctrlKey: true,
+      shiftKey: true,
+      altKey: false,
+      metaKey: false,
+    } as KeyboardEvent;
+    const matches = ids.filter((id) =>
+      WIN_LINUX_DEFAULTS[id].some((binding) =>
+        matchBinding(event, binding, id),
+      ),
+    );
+    expect(matches).toEqual([expected]);
+  });
+});
+
 describe("Windows and Linux: Jump to tab", () => {
   const binding = WIN_LINUX_DEFAULTS["tab.selectByIndex"][0];
   const press = (key: string, code: string, extra: Partial<KeyboardEvent>) =>
@@ -508,6 +533,8 @@ function codeOf(key: string): string {
   if (/^[0-9]$/.test(key)) return `Digit${key}`;
   const map: Record<string, string> = {
     "\\": "Backslash",
+    "`": "Backquote",
+    ";": "Semicolon",
     "/": "Slash",
     ",": "Comma",
     ".": "Period",
