@@ -684,6 +684,33 @@ mod tests {
     }
 
     #[test]
+    fn spawned_wsl_session_stores_the_login_shell_instead_of_the_launcher() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let launcher = directory.path().join("wsl.exe");
+        std::fs::write(&launcher, "#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::set_permissions(&launcher, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        for shell in ["/usr/bin/pwsh", "/bin/bash", "/usr/bin/fish"] {
+            let hub = Hub::new();
+            let mut frontend = Frontend::open(&hub, "main");
+            let (host, reaped) = host(1, &hub);
+            let session = spawn_with(host, PtySize::default(), || {
+                let mut command = CommandBuilder::new("wsl.exe");
+                command.env("PATH", directory.path());
+                command.env("TERAX_WSL_LOGIN_SHELL", shell);
+                Ok(command)
+            })
+            .unwrap();
+            frontend.run_until_exit(1, &session);
+            reaped.recv_timeout(Duration::from_secs(5)).unwrap();
+            assert_eq!(frontend.exit, Some(0));
+            assert_eq!(session.shell_program, shell);
+        }
+    }
+
+    #[test]
     fn output_arrives_in_order_and_the_exit_frame_follows_every_data_frame() {
         let (_hub, session, mut frontend, reaped) =
             start("printf hello; sleep 0.05; printf ' world'; exit 7");
