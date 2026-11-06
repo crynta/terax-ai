@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,10 +18,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import {
-  getBindingTokens,
-  SHORTCUTS,
-} from "@/modules/shortcuts/shortcuts";
+import { getBindingTokens, SHORTCUTS } from "@/modules/shortcuts/shortcuts";
 import {
   type CustomEndpoint,
   compatModelIdForEndpoint,
@@ -147,6 +145,10 @@ const LOCAL_META: Partial<Record<ProviderId, LocalMeta>> = {
     ),
   },
 };
+
+function reportCredentialRemovalError(error: unknown): void {
+  toast.error("Could not remove credential", { description: String(error) });
+}
 
 export function ModelsSection() {
   const [keys, setKeys] = useState<KeysMap | null>(null);
@@ -328,19 +330,16 @@ export function ModelsSection() {
     (p) => p.id !== "openai-compatible" && !visibleIds.has(p.id),
   );
 
-  const removeProvider = (id: ProviderId) => {
+  const removeProvider = async (id: ProviderId) => {
+    await onClearKey(id);
     if (id === "openrouter") {
-      void setOpenrouterModelId("");
-      void onClearKey(id);
+      await setOpenrouterModelId("");
     } else if (isLocalProvider(id)) {
       const cfg = localConfig(id);
       if (cfg) {
-        void cfg.setModelId("");
-        if (id === "openai-compatible") void cfg.setBaseURL("");
+        await cfg.setModelId("");
+        if (id === "openai-compatible") await cfg.setBaseURL("");
       }
-      if (id === "openai-compatible") void onClearKey(id);
-    } else {
-      void onClearKey(id);
     }
     setAdding((prev) => {
       const next = new Set(prev);
@@ -400,8 +399,12 @@ export function ModelsSection() {
                   meta={LOCAL_META[p.id]!}
                   compatKey={keys[p.id]}
                   onSaveKey={(v) => onSaveKey(p.id, v)}
-                  onClearKey={() => onClearKey(p.id)}
-                  onRemove={() => removeProvider(p.id)}
+                  onClearKey={() =>
+                    onClearKey(p.id).catch(reportCredentialRemovalError)
+                  }
+                  onRemove={() =>
+                    removeProvider(p.id).catch(reportCredentialRemovalError)
+                  }
                 />
               ) : isLocalProvider(p.id) ? (
                 <LocalProviderCard
@@ -411,8 +414,12 @@ export function ModelsSection() {
                   config={localConfig(p.id)!}
                   meta={LOCAL_META[p.id]!}
                   onSaveKey={(v) => onSaveKey(p.id, v)}
-                  onClearKey={() => onClearKey(p.id)}
-                  onRemove={() => removeProvider(p.id)}
+                  onClearKey={() =>
+                    onClearKey(p.id).catch(reportCredentialRemovalError)
+                  }
+                  onRemove={() =>
+                    removeProvider(p.id).catch(reportCredentialRemovalError)
+                  }
                 />
               ) : (
                 <ProviderKeyCard
@@ -420,8 +427,12 @@ export function ModelsSection() {
                   provider={p}
                   currentKey={keys[p.id]}
                   onSave={(v) => onSaveKey(p.id, v)}
-                  onClear={() => onClearKey(p.id)}
-                  onRemove={() => removeProvider(p.id)}
+                  onClear={() =>
+                    onClearKey(p.id).catch(reportCredentialRemovalError)
+                  }
+                  onRemove={() =>
+                    removeProvider(p.id).catch(reportCredentialRemovalError)
+                  }
                 />
               ),
             )}
@@ -431,9 +442,15 @@ export function ModelsSection() {
                 endpoint={ep}
                 endpointKey={epKeys[ep.id] ?? null}
                 onSaveKey={(v) => onSaveEndpointKey(ep.id, v)}
-                onClearKey={() => onClearEndpointKey(ep.id)}
+                onClearKey={() =>
+                  onClearEndpointKey(ep.id).catch(reportCredentialRemovalError)
+                }
                 onUpdate={(patch) => updateCustomEndpoint(ep.id, patch)}
-                onRemove={() => removeCustomEndpoint(ep.id)}
+                onRemove={() =>
+                  removeCustomEndpoint(ep.id).catch(
+                    reportCredentialRemovalError,
+                  )
+                }
               />
             ))}
           </div>
