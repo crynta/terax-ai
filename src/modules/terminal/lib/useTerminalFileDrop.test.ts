@@ -71,7 +71,7 @@ it.each([true, false])(
       leafIdAtPoint: () => 3,
       paste,
       setTarget: vi.fn(),
-      windowsShell: () => windows,
+      dialect: () => (windows ? "powershell" : "posix"),
     });
     target.dropPath(["/mnt/c/it's $(Get-Date).txt"], 1, 2);
     expect(paste).toHaveBeenCalledWith(

@@ -508,6 +508,20 @@ pub fn pty_diagnostics(state: tauri::State<PtyState>) -> PtyDiagnostics {
 }
 
 #[tauri::command]
+pub fn pty_session_shell(
+    state: tauri::State<PtyState>,
+    webview: tauri::Webview,
+    id: u32,
+) -> Result<String, String> {
+    let sessions = state.sessions.read().unwrap();
+    let session = sessions.get(&id).ok_or("no session")?;
+    if session.owner.as_ref() != webview.label() {
+        return Err("session belongs to another webview".into());
+    }
+    Ok(session.shell_program.clone())
+}
+
+#[tauri::command]
 pub fn pty_shell_name() -> String {
     shell_init::detect_shell_name()
 }

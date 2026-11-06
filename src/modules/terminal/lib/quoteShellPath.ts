@@ -1,13 +1,19 @@
 import { IS_WINDOWS } from "@/lib/platform";
-import { quoteShellArg } from "@/lib/shellQuote";
+import { quotePathArg, type ShellDialect } from "@/lib/shellQuote";
 
-export function quoteShellPath(path: string, windows = IS_WINDOWS): string {
-  return quoteShellArg(path, windows, true);
+export function quoteShellPath(
+  path: string,
+  windows: boolean | ShellDialect = IS_WINDOWS,
+): string {
+  return quotePathArg(
+    path,
+    typeof windows === "boolean" ? (windows ? "powershell" : "posix") : windows,
+  );
 }
 
 export function formatDroppedPaths(
   paths: string[],
-  windows = IS_WINDOWS,
+  windows: boolean | ShellDialect = IS_WINDOWS,
 ): string {
   return `${paths.map((path) => quoteShellPath(path, windows)).join(" ")} `;
 }

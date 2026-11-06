@@ -85,3 +85,27 @@ export function unescapeForShell(
   }
   return value;
 }
+
+export type ShellDialect = "posix" | "powershell" | "cmd";
+
+export function shellDialect(program: string): ShellDialect | null {
+  const name = program
+    .split(/[\\/]/)
+    .pop()
+    ?.toLowerCase()
+    .replace(/\.exe$/, "");
+  if (name === "cmd") return "cmd";
+  if (name === "powershell" || name === "pwsh") return "powershell";
+  if (["bash", "zsh", "sh", "fish", "wsl"].includes(name ?? "")) return "posix";
+  return null;
+}
+
+export function quotePathArg(value: string, dialect: ShellDialect): string {
+  if (dialect !== "cmd")
+    return quoteShellArg(value, dialect === "powershell", true);
+  if (/[%!"\r\n]/.test(value))
+    throw new Error(
+      "This filename cannot be pasted literally into Command Prompt.",
+    );
+  return WINDOWS_UNQUOTED_SAFE.test(value) ? value : `"${value}"`;
+}

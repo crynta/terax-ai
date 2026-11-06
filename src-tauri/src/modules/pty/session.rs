@@ -8,7 +8,9 @@ use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, Pt
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{mpsc, oneshot};
 
-use super::agent_detect::{AgentDetector, AgentLink, AgentSignal, Signal, TerminalNotificationEvent};
+use super::agent_detect::{
+    AgentDetector, AgentLink, AgentSignal, Signal, TerminalNotificationEvent,
+};
 use super::da_filter::DaFilter;
 use super::hub::{Command, Hub};
 use super::presentation::PresentationClass;
@@ -54,6 +56,7 @@ pub struct Session {
     _job: Option<crate::modules::proc::job::ProcessJob>,
     /// PID of the shell process. 0 means unknown; callers must skip checks when 0.
     pub shell_pid: u32,
+    pub shell_program: String,
     /// Frontend pane (leaf) this terminal belongs to, when it reported one.
     pub pane_id: Option<u32>,
     /// Agent state shared with the control server's structured hooks.
@@ -306,6 +309,11 @@ pub(super) fn spawn_with(
     let pair = pty_system.openpty(size).map_err(|e| e.to_string())?;
 
     let cmd = build_command()?;
+    let shell_program = cmd
+        .get_argv()
+        .first()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);
 
@@ -360,6 +368,7 @@ pub(super) fn spawn_with(
         #[cfg(windows)]
         _job: job,
         shell_pid,
+        shell_program,
         pane_id,
         link: link.clone(),
         owner,

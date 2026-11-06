@@ -78,7 +78,7 @@ it("round trips literal paths through the platform shell", () => {
             "-NoProfile",
             "-NonInteractive",
             "-Command",
-            `[Console]::Write(${quoted})`,
+            `[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); function Capture([string]$value) { [Console]::Write($value) }; Capture ${quoted}`,
           ],
           { encoding: "utf8" },
         )

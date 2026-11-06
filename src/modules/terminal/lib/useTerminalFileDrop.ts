@@ -1,10 +1,12 @@
 import { IS_WINDOWS } from "@/lib/platform";
-import { currentWorkspaceEnv } from "@/modules/workspace";
+import { shellDialect, type ShellDialect } from "@/lib/shellQuote";
+import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useEffect } from "react";
 import { useTerminalDropStore } from "./dropStore";
 import { formatDroppedPaths } from "./quoteShellPath";
-import { pasteIntoSession } from "./terminalSessionApi";
+import { pasteIntoSession, ptyIdForLeaf } from "./terminalSessionApi";
 
 export type TerminalPathDropTarget = {
   updateTarget: (clientX: number, clientY: number) => boolean;
@@ -16,7 +18,9 @@ type TerminalPathDropDeps = {
   leafIdAtPoint: (clientX: number, clientY: number) => number | null;
   paste: (leafId: number, text: string) => boolean;
   setTarget: (leafId: number | null) => void;
-  windowsShell?: () => boolean;
+  dialect?: (
+    leafId: number,
+  ) => ShellDialect | null | Promise<ShellDialect | null>;
 };
 
 // Tauri reports the drop point in physical pixels on some platforms and logical
@@ -36,11 +40,26 @@ function leafIdAt(x: number, y: number): number | null {
   return Number.isFinite(id) ? id : null;
 }
 
+function dialectForLeaf(
+  leafId: number,
+): ShellDialect | null | Promise<ShellDialect | null> {
+  if (!IS_WINDOWS) return "posix";
+  const id = ptyIdForLeaf(leafId);
+  if (id === null) return null;
+  return invoke<string>("pty_session_shell", { id }).then((program) => {
+    if (ptyIdForLeaf(leafId) !== id) return null;
+    const dialect = shellDialect(program);
+    if (dialect === null)
+      throw new Error("File drops are unavailable for this shell.");
+    return dialect;
+  });
+}
+
 export function createTerminalPathDropTarget({
   leafIdAtPoint,
   paste,
   setTarget,
-  windowsShell = () => IS_WINDOWS && currentWorkspaceEnv().kind === "local",
+  dialect = dialectForLeaf,
 }: TerminalPathDropDeps): TerminalPathDropTarget {
   return {
     updateTarget(clientX, clientY) {
@@ -52,7 +71,18 @@ export function createTerminalPathDropTarget({
       setTarget(null);
       const leafId = leafIdAtPoint(clientX, clientY);
       if (leafId === null) return false;
-      paste(leafId, formatDroppedPaths(paths, windowsShell()));
+      const insert = (shell: ShellDialect | null) => {
+        if (shell === null) return;
+        try {
+          paste(leafId, formatDroppedPaths(paths, shell));
+        } catch (error) {
+          toast.error(String(error));
+        }
+      };
+      const shell = dialect(leafId);
+      if (shell instanceof Promise)
+        void shell.then(insert).catch((error) => toast.error(String(error)));
+      else insert(shell);
       return true;
     },
     clearTarget() {
