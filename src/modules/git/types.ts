@@ -420,3 +420,73 @@ export type GitWatchInfo = {
 };
 
 export type GitChangedEvent = { repo: string; kinds: GitChangeKind[] };
+
+export type ProjectConfig = {
+  worktree: {
+    dir: string;
+    include: string[];
+    shared: string[];
+    branchPrefix: string;
+  };
+  scripts: {
+    setup: string;
+    run: string;
+    archive: string;
+    runMode: "concurrent" | "exclusive";
+  };
+  ports: { base: number; perTask: number };
+  layout: { default: { cards: string[] } };
+  actions: { name: string; run: string }[];
+};
+
+type TaskBase =
+  | { kind: "current" }
+  | { kind: "branch"; name: string }
+  | { kind: "origin"; branch: string };
+
+export type TaskCreateRequest = { name: string; base?: TaskBase | null };
+
+type TaskSnapshot = {
+  reference: string;
+  commit: string;
+  parent: string;
+  capturesIgnoredFiles: boolean;
+};
+
+export type TaskWorktree = {
+  id: string;
+  name: string;
+  root: string;
+  path: string;
+  branch: string;
+  status: "creating" | "active" | "archived";
+  port: number;
+  portCount: number;
+  snapshot: TaskSnapshot | null;
+  archiveScript: string;
+  include: string[];
+  shared: string[];
+};
+
+export type TaskCreated = {
+  task: TaskWorktree;
+  env: Record<string, string>;
+  setupScript: string;
+  copied: string[];
+  shared: string[];
+  skipped: { path: string; reason: string }[];
+  includeTruncated: boolean;
+};
+
+export type TaskArchive = {
+  task: TaskWorktree;
+  snapshot: TaskSnapshot;
+  removal: WorktreeRemoveReport;
+  archiveScript: string;
+};
+
+export type TaskDiskUsage = {
+  bytes: number;
+  entries: number;
+  truncated: boolean;
+};

@@ -525,6 +525,44 @@ fn write_commit(
     Ok(stdout_text(&output))
 }
 
+pub(crate) fn task_snapshot(
+    repo: &ResolvedGitDirectory,
+    id: &str,
+) -> Result<super::task_state::TaskSnapshot> {
+    let snapshot = snapshot_tree(repo, true)?;
+    if !snapshot.consistent || !snapshot.unstable_paths.is_empty() || !snapshot.warnings.is_empty()
+    {
+        return Err(GitError::command(
+            "task archive",
+            "could not capture a complete, stable snapshot; stop writers and retry",
+        ));
+    }
+    let parent = super::plumbing::resolve_commit(repo, "HEAD")?;
+    let admin = Admin::new(repo)?;
+    let commit = write_commit(
+        repo,
+        &admin,
+        &snapshot.tree,
+        Some(&parent),
+        "task archive snapshot",
+    )?;
+    let mut random = [0u8; 16];
+    getrandom::fill(&mut random).map_err(|e| GitError::command("task snapshot", e.to_string()))?;
+    let suffix: String = random.iter().map(|b| format!("{b:02x}")).collect();
+    let reference = format!("refs/terax/tasks/{id}/archive/{suffix}");
+    run_ok(
+        repo,
+        admin.plumb(os_args(["update-ref", &reference, &commit, ""]))?,
+        "git update-ref failed",
+    )?;
+    Ok(super::task_state::TaskSnapshot {
+        reference,
+        commit,
+        parent,
+        captures_ignored_files: false,
+    })
+}
+
 pub fn create(
     registry: &WorkspaceRegistry,
     worktree: &str,

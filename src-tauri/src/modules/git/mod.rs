@@ -30,3 +30,10 @@ mod untracked;
 pub mod utils;
 pub mod watch;
 pub mod worktree;
+
+pub mod commands_tasks;
+pub mod project_config;
+mod task_state;
+pub mod task_worktree;
+#[cfg(test)]
+mod task_worktree_tests;

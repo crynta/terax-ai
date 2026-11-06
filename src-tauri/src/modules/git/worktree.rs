@@ -386,6 +386,37 @@ pub fn add(
     worktrees_dir: &Path,
     workspace: &WorkspaceEnv,
 ) -> Result<WorktreeAdded> {
+    add_inner(registry, repo_root, request, worktrees_dir, workspace, None)
+}
+
+pub(crate) fn add_claimed(
+    registry: &WorkspaceRegistry,
+    repo_root: &str,
+    request: &WorktreeAddRequest,
+    path: PathBuf,
+    workspace: &WorkspaceEnv,
+) -> Result<WorktreeAdded> {
+    add_inner(
+        registry,
+        repo_root,
+        request,
+        Path::new(""),
+        workspace,
+        Some(Target {
+            path,
+            claimed: true,
+        }),
+    )
+}
+
+fn add_inner(
+    registry: &WorkspaceRegistry,
+    repo_root: &str,
+    request: &WorktreeAddRequest,
+    worktrees_dir: &Path,
+    workspace: &WorkspaceEnv,
+    claimed: Option<Target>,
+) -> Result<WorktreeAdded> {
     if workspace.is_wsl() {
         return Err(GitError::Unsupported(WSL_WORKTREES_UNSUPPORTED));
     }
@@ -411,7 +442,14 @@ pub fn add(
         },
     };
 
-    let mut git_args = os_args(["worktree", "add"]);
+    let mut git_args = if claimed.is_some() {
+        let hooks = super::plumbing::git_dir(&repo)?.join("terax-task-hooks");
+        std::fs::create_dir_all(&hooks)?;
+        super::checkpoint::plumbing_config(&hooks)
+    } else {
+        Vec::new()
+    };
+    git_args.extend(os_args(["worktree", "add"]));
     let branch_name = match &request.branch {
         WorktreeBranch::NewBranch { name } => {
             check_branch_name(&repo, name)?;
@@ -445,7 +483,10 @@ pub fn add(
         .first()
         .map(|e| PathBuf::from(&e.path))
         .unwrap_or_else(|| repo.local_path.clone());
-    let target = choose_target(registry, &repo, &main_path, worktrees_dir, request)?;
+    let target = match claimed {
+        Some(target) => target,
+        None => choose_target(registry, &repo, &main_path, worktrees_dir, request)?,
+    };
     let target_arg = crate::modules::git::utils::git_arg(&target.path);
 
     git_args.push("--".into());
@@ -577,7 +618,10 @@ fn copy_one(
 /// gives up the moment a component is not a plain directory (a symlink could
 /// lead out of the worktree), so nothing is ever created outside it. Returns
 /// the directory the file goes into.
-fn create_dirs_confined(root: &Path, rel: &str) -> std::result::Result<PathBuf, &'static str> {
+pub(crate) fn create_dirs_confined(
+    root: &Path,
+    rel: &str,
+) -> std::result::Result<PathBuf, &'static str> {
     let Some((dir, _name)) = rel.rsplit_once('/') else {
         return Ok(root.to_path_buf());
     };
@@ -619,6 +663,24 @@ pub fn walk_depth(pattern: &str, prefix: &str) -> Option<usize> {
 /// file-count and byte budgets. Literal patterns are `stat`ed directly; only a
 /// wildcard pattern walks, and only below its static directory prefix.
 pub fn copy_included(src_root: &Path, dst_root: &Path, patterns: &[String]) -> CopyReport {
+    copy_included_inner(src_root, dst_root, patterns, None)
+        .expect("unfiltered copying has no git operations")
+}
+
+pub(crate) fn copy_ignored_included(
+    repo: &ResolvedGitDirectory,
+    dst: &Path,
+    patterns: &[String],
+) -> Result<CopyReport> {
+    copy_included_inner(&repo.local_path, dst, patterns, Some(repo))
+}
+
+fn copy_included_inner(
+    src_root: &Path,
+    dst_root: &Path,
+    patterns: &[String],
+    repo: Option<&ResolvedGitDirectory>,
+) -> Result<CopyReport> {
     let mut report = CopyReport::default();
     let mut candidates: Vec<String> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
@@ -691,6 +753,35 @@ pub fn copy_included(src_root: &Path, dst_root: &Path, patterns: &[String]) -> C
     }
 
     candidates.sort();
+    if let Some(repo) = repo.filter(|_| !candidates.is_empty()) {
+        let input = candidates
+            .iter()
+            .flat_map(|p| p.bytes().chain(std::iter::once(0)))
+            .collect();
+        let output = super::process::run_git_with(
+            &repo.workspace,
+            Some(&repo.git_path),
+            os_args(["check-ignore", "--stdin", "-z"]),
+            DEFAULT_TIMEOUT_SECS,
+            super::process::RunOptions {
+                stdin: Some(input),
+                stdout_cap: 4 * 1024 * 1024,
+                ..Default::default()
+            },
+        )?;
+        if output.timed_out || output.truncated || !matches!(output.exit_code, Some(0 | 1)) {
+            return Err(GitError::command(
+                "task include",
+                "could not determine ignored files",
+            ));
+        }
+        let ignored: HashSet<_> = output
+            .stdout
+            .split(|b| *b == 0)
+            .filter_map(|p| std::str::from_utf8(p).ok())
+            .collect();
+        candidates.retain(|p| ignored.contains(p.as_str()));
+    }
     let mut total = 0u64;
     for rel in candidates {
         if report.copied.len() >= MAX_INCLUDE_FILES {
@@ -709,7 +800,7 @@ pub fn copy_included(src_root: &Path, dst_root: &Path, patterns: &[String]) -> C
             }
         }
     }
-    report
+    Ok(report)
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -994,6 +1085,35 @@ pub fn remove_with_limits(
     workspace: &WorkspaceEnv,
     limits: RemoveLimits,
 ) -> Result<WorktreeRemoveReport> {
+    remove_inner(registry, repo_root, path, force, workspace, limits, false)
+}
+
+pub(crate) fn inspect_removal(
+    registry: &WorkspaceRegistry,
+    repo_root: &str,
+    path: &str,
+    workspace: &WorkspaceEnv,
+) -> Result<WorktreeRemoveReport> {
+    remove_inner(
+        registry,
+        repo_root,
+        path,
+        false,
+        workspace,
+        RemoveLimits::default(),
+        true,
+    )
+}
+
+fn remove_inner(
+    registry: &WorkspaceRegistry,
+    repo_root: &str,
+    path: &str,
+    force: bool,
+    workspace: &WorkspaceEnv,
+    limits: RemoveLimits,
+    inspect: bool,
+) -> Result<WorktreeRemoveReport> {
     if workspace.is_wsl() {
         return Err(GitError::Unsupported(WSL_WORKTREES_UNSUPPORTED));
     }
@@ -1119,7 +1239,7 @@ pub fn remove_with_limits(
         report.blockers.push(RemoveBlocker::Inconclusive);
     }
 
-    if !force && !report.blockers.is_empty() {
+    if inspect || (!force && !report.blockers.is_empty()) {
         return Ok(report);
     }
 
