@@ -15,6 +15,7 @@ vi.mock("@/modules/workspace", () => ({
 }));
 
 import type { TerminalLinkHit } from "@/modules/terminal/ghostty/core/terminalLinks";
+import { invoke } from "@tauri-apps/api/core";
 import { activateTerminalLink, type LinkActivationDeps } from "./terminalLinks";
 
 function deps(files: Record<string, "file" | "dir" | "symlink"> = {}) {
@@ -102,7 +103,10 @@ describe("activateTerminalLink", () => {
     const { api, calls } = deps();
     await activateTerminalLink(path("src/missing.ts", 3), context(), api);
     expect(calls.openInEditor).not.toHaveBeenCalled();
-    expect(calls.inform).toHaveBeenCalledWith("File not found", "src/missing.ts");
+    expect(calls.inform).toHaveBeenCalledWith(
+      "File not found",
+      "src/missing.ts",
+    );
   });
 
   it("falls back to the git diff path without its a/ prefix", async () => {
@@ -124,7 +128,82 @@ describe("activateTerminalLink", () => {
     expect(calls.openInEditor).toHaveBeenCalledWith("/tmp/a.txt", 1);
     await activateTerminalLink(url("file://other/tmp/a.txt"), context(), api);
     expect(calls.openInEditor).toHaveBeenCalledTimes(1);
-    expect(calls.inform).toHaveBeenCalledWith("Remote file link ignored", "other");
+    expect(calls.inform).toHaveBeenCalledWith(
+      "Remote file link ignored",
+      "other",
+    );
+  });
+
+  it.each([
+    "file:///%2Fserver/share",
+    "file:///%5Cserver/share",
+    "file:///%5C%5Cserver%5Cshare",
+    "file:///%2F%5Cserver/share",
+    "file:///%5C%2Fserver/share",
+    "file:///%5C%5C%3F%5CUNC%5Cserver%5Cshare",
+    "file:///%5C%5C.%5Cpipe%5Cname",
+    "file://localhost//server/share",
+  ])(
+    "never touches the filesystem for a decoded network/device URL (%s)",
+    async (uri) => {
+      const { api, calls } = deps();
+      const stat = vi.spyOn(api, "stat");
+      const canonicalize = vi.spyOn(api, "canonicalize");
+      await activateTerminalLink(url(uri), context(), api);
+      expect(stat).not.toHaveBeenCalled();
+      expect(canonicalize).not.toHaveBeenCalled();
+      expect(calls.openInEditor).not.toHaveBeenCalled();
+      expect(calls.reveal).not.toHaveBeenCalled();
+      expect(calls.openUrl).not.toHaveBeenCalled();
+    },
+  );
+
+  it("passes the local-only restriction to both native filesystem commands", async () => {
+    const native = vi.mocked(invoke);
+    native.mockReset();
+    native
+      .mockResolvedValueOnce({ kind: "symlink" })
+      .mockResolvedValueOnce("/tmp/target")
+      .mockResolvedValueOnce({ kind: "file" });
+    await activateTerminalLink(url("file:///tmp/link"), context());
+    expect(native.mock.calls).toEqual([
+      [
+        "fs_stat",
+        { path: "/tmp/link", workspace: { kind: "local" }, localOnly: true },
+      ],
+      [
+        "fs_canonicalize",
+        { path: "/tmp/link", workspace: { kind: "local" }, localOnly: true },
+      ],
+      [
+        "fs_stat",
+        { path: "/tmp/target", workspace: { kind: "local" }, localOnly: true },
+      ],
+    ]);
+  });
+
+  it("does not stat or open a network path returned from canonicalization", async () => {
+    const { api, calls } = deps({ "/tmp/link": "symlink" });
+    api.canonicalize = async () => "\\\\server\\share\\file";
+    const stat = vi.spyOn(api, "stat");
+    await activateTerminalLink(url("file:///tmp/link"), context(), api);
+    expect(stat).toHaveBeenCalledExactlyOnceWith("/tmp/link", true);
+    expect(calls.openInEditor).not.toHaveBeenCalled();
+    expect(calls.reveal).not.toHaveBeenCalled();
+  });
+
+  it("opens the filesystem-resolved parent of a symlink rather than a lexical parent", async () => {
+    const { api, calls } = deps({
+      "/work/app/build/../main.ts": "file",
+      "/external/main.ts": "file",
+    });
+    api.canonicalize = vi.fn(async () => "/external/main.ts");
+    await activateTerminalLink(path("build/../main.ts", 12), context(), api);
+    expect(api.canonicalize).toHaveBeenCalledWith(
+      "/work/app/build/../main.ts",
+      false,
+    );
+    expect(calls.openInEditor).toHaveBeenCalledWith("/external/main.ts", 12);
   });
 
   it("restores focus and does not throw when opening fails", async () => {

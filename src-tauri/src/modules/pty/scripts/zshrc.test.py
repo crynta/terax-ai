@@ -324,6 +324,20 @@ check("a ZDOTDIR set by .zshenv does not skip the integration", s.marks().count(
 check("that ZDOTDIR is what the prompt sees", s.result("ZD") == os.path.join(s.home, ".config/zsh"), s.result("ZD"))
 s.close()
 
+# A login profile may select the directory for the subsequent rc and login files.
+for profile, initial in ((".zprofile", None), (".config/first/.zprofile", "@HOME@/.config/first")):
+    s = Session({
+        profile: 'export ZDOTDIR="@HOME@/.config/second"\n',
+        ".config/second/.zshrc": "PS1='PROMPT> '\nA_LOADED=profile-rc\n" + hook,
+        ".config/second/.zlogin": "LOGIN_LOADED=yes\n",
+    }, env={"TERAX_USER_ZDOTDIR": initial} if initial else None)
+    s.run(probe + '; print -r -- "RESULT:LOGIN=$LOGIN_LOADED:"')
+    check("a profile-selected ZDOTDIR loads its rc", s.result("LOADED") == "profile-rc", s.result("LOADED"))
+    check("a profile-selected ZDOTDIR loads its login", s.result("LOGIN") == "yes", s.result("LOGIN"))
+    check("profile-selected ZDOTDIR reaches hooks", s.result("ZD") == os.path.join(s.home, ".config/second"), s.result("ZD"))
+    check("profile-selected ZDOTDIR keeps integration", s.marks().count("133:B") >= 2)
+    s.close()
+
 # No ZDOTDIR at all: the prompt must not see one, a running command does.
 s = Session({".zshrc": "PS1='PROMPT> '\n" + hook})
 s.run(probe)

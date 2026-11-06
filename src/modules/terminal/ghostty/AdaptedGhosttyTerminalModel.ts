@@ -93,8 +93,6 @@ export class AdaptedGhosttyTerminalModel implements GhosttyTerminalModelApi {
 
   private readonly terminal: TeraxGhosttyTerminal;
   private blockMatch: { line: number; col: number; len: number } | null = null;
-  private writeSplitter: ((bytes: Uint8Array) => readonly number[]) | null =
-    null;
   private readonly directCellReader = new GhosttyRenderCellView();
   private readonly damageListeners = new Set<() => void>();
   private replySink: ((bytes: Uint8Array) => void) | null;
@@ -294,25 +292,11 @@ export class AdaptedGhosttyTerminalModel implements GhosttyTerminalModelApi {
     if (bytes.byteLength === 0) return;
 
     this.blockMatch = null;
-    let from = 0;
-    const cuts = this.writeSplitter?.(bytes);
-    if (cuts) {
-      for (const cut of cuts) {
-        this.feed(bytes.subarray(from, cut));
-        from = cut;
-      }
-    }
-    this.feed(bytes.subarray(from));
+    this.feed(bytes);
     this.synchronizedOutputPresentation.observe(
       this.modesValue.synchronizedOutput,
     );
     this.requestPresentation();
-  }
-
-  setWriteSplitter(
-    splitter: ((bytes: Uint8Array) => readonly number[]) | null,
-  ): void {
-    this.writeSplitter = splitter;
   }
 
   private feed(bytes: Uint8Array): void {

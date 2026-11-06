@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { openExternalUrl } from "@/lib/external-link";
 import {
   isLocalFileHost,
+  isNetworkOrDevicePath,
   type LinkConfirmReason,
   type LinkPlan,
   pathCandidates,
@@ -26,8 +27,8 @@ type StatKind = "file" | "dir" | "symlink";
 
 export type LinkActivationDeps = {
   openUrl(url: string, focus: () => void): Promise<void>;
-  stat(path: string): Promise<StatKind | null>;
-  canonicalize(path: string): Promise<string | null>;
+  stat(path: string, localOnly: boolean): Promise<StatKind | null>;
+  canonicalize(path: string, localOnly: boolean): Promise<string | null>;
   home(): Promise<string | null>;
   hostname(): Promise<string | null>;
   openInEditor(path: string, line: number): void;
@@ -93,7 +94,7 @@ async function runPlan(
         deps.inform("Remote file link ignored", plan.host);
         return;
       }
-      await openLocalPath([plan.path], undefined, deps);
+      await openLocalPath([plan.path], undefined, deps, true);
       return;
     }
     case "path": {
@@ -115,9 +116,10 @@ async function openLocalPath(
   candidates: readonly string[],
   line: number | undefined,
   deps: LinkActivationDeps,
+  localOnly = false,
 ): Promise<boolean> {
   for (const candidate of candidates) {
-    const target = await existingTarget(candidate, deps);
+    const target = await existingTarget(candidate, deps, localOnly);
     if (!target) continue;
     if (target.kind === "dir") await deps.reveal(target.path);
     else deps.openInEditor(target.path, line ?? 1);
@@ -129,13 +131,19 @@ async function openLocalPath(
 async function existingTarget(
   path: string,
   deps: LinkActivationDeps,
+  localOnly: boolean,
 ): Promise<{ path: string; kind: "file" | "dir" } | null> {
-  const kind = await deps.stat(path);
+  if (localOnly && isNetworkOrDevicePath(path)) return null;
+  const kind = await deps.stat(path, localOnly);
   if (kind === null) return null;
-  if (kind !== "symlink") return { path, kind };
-  const canonical = await deps.canonicalize(path);
-  const resolved = canonical ? await deps.stat(canonical) : null;
-  return { path, kind: resolved === "dir" ? "dir" : "file" };
+  if (kind !== "symlink" && !path.split("/").includes(".."))
+    return { path, kind };
+  const canonical = await deps.canonicalize(path, localOnly);
+  if (!canonical || (localOnly && isNetworkOrDevicePath(canonical)))
+    return null;
+  const resolved = await deps.stat(canonical, localOnly);
+  if (resolved === null) return null;
+  return { path: canonical, kind: resolved === "dir" ? "dir" : "file" };
 }
 
 function truncate(text: string, max = 200): string {
@@ -144,22 +152,26 @@ function truncate(text: string, max = 200): string {
 
 const defaultDeps: LinkActivationDeps = {
   openUrl: (url, focus) => openExternalUrl(url, focus),
-  stat: async (path) => {
+  stat: async (path, localOnly) => {
     const stat = await invoke<{ kind: StatKind }>("fs_stat", {
       path,
+      localOnly,
       workspace: currentWorkspaceEnv(),
     }).catch(() => null);
     return stat?.kind ?? null;
   },
-  canonicalize: (path) =>
+  canonicalize: (path, localOnly) =>
     invoke<string>("fs_canonicalize", {
       path,
+      localOnly,
       workspace: currentWorkspaceEnv(),
     }).catch(() => null),
   home: async () => {
     const env = currentWorkspaceEnv();
     try {
-      return env.kind === "wsl" ? await getWslHome(env.distro) : await homeDir();
+      return env.kind === "wsl"
+        ? await getWslHome(env.distro)
+        : await homeDir();
     } catch {
       return null;
     }

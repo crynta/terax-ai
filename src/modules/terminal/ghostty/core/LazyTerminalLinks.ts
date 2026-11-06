@@ -41,6 +41,7 @@ const MAX_QUEUED_EVENTS = 64;
  * first terminal's chunk, and closure variables minify where members do not.
  */
 export class LazyTerminalLinks {
+  readonly ingest: (event: Event) => void;
   /** The cells under the pointer changed meaning (output, scroll). */
   readonly invalidate: () => void;
   readonly dispose: () => void;
@@ -75,9 +76,11 @@ export class LazyTerminalLinks {
       if (on) {
         target.addEventListener("pointerup", onRelease);
         keyTarget.addEventListener("keyup", onKey);
+        keyTarget.addEventListener("blur", onLeave);
       } else {
         target.removeEventListener("pointerup", onRelease);
         keyTarget.removeEventListener("keyup", onKey);
+        keyTarget.removeEventListener("blur", onLeave);
       }
     };
 
@@ -146,6 +149,15 @@ export class LazyTerminalLinks {
     target.addEventListener("pointerleave", onLeave);
     target.addEventListener("pointercancel", onLeave);
 
+    this.ingest = (event) => {
+      if (active) return active.ingest(event);
+      if (event.type === "pointermove" || event.type === "pointerdown")
+        onPointer(event as PointerEvent);
+      else if (event.type === "pointerup") onRelease(event as PointerEvent);
+      else if (event.type === "keydown" || event.type === "keyup")
+        onKey(event as KeyboardEvent);
+      else onLeave();
+    };
     this.invalidate = () => active?.invalidate();
     this.dispose = () => {
       if (disposed) return;

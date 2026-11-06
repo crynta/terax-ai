@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const instance = { invalidate: vi.fn(), dispose: vi.fn() };
+const instance = { ingest: vi.fn(), invalidate: vi.fn(), dispose: vi.fn() };
 // biome-ignore lint/complexity/useArrowFunction: it is called with `new`
 const LazyTerminalLinks = vi.fn(function () {
   return instance;
@@ -13,7 +13,10 @@ import { deferTerminalLinks } from "./terminalLinksLoader";
 
 afterEach(() => vi.clearAllMocks());
 
-const options = {} as LazyTerminalLinksOptions;
+const options = {
+  target: new EventTarget(),
+  keyTarget: new EventTarget(),
+} as unknown as LazyTerminalLinksOptions;
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("deferTerminalLinks", () => {
@@ -30,11 +33,26 @@ describe("deferTerminalLinks", () => {
     expect(instance.dispose).toHaveBeenCalledOnce();
   });
 
-  it("tears down the trigger of a surface disposed while the module loaded", async () => {
+  it("never creates a trigger for a surface disposed while the module loaded", async () => {
     const links = deferTerminalLinks(options);
     links.dispose();
     await tick();
-    expect(instance.dispose).toHaveBeenCalledOnce();
+    expect(LazyTerminalLinks).not.toHaveBeenCalled();
+  });
+
+  it("preserves clicks and modifier changes during the first module load", async () => {
+    const links = deferTerminalLinks(options);
+    const events = [
+      new Event("pointerdown"),
+      new Event("pointerup"),
+      new Event("keyup"),
+    ];
+    options.target.dispatchEvent(events[0]);
+    options.target.dispatchEvent(events[1]);
+    (options.keyTarget as Window).dispatchEvent(events[2]);
+    await tick();
+    expect(instance.ingest.mock.calls.map(([event]) => event)).toEqual(events);
+    links.dispose();
   });
 
   it("reports a trigger that fails to start instead of throwing", async () => {

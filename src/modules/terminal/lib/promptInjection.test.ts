@@ -1,7 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-
-const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
+import { describe, expect, it } from "vitest";
 
 import {
   type InjectionTarget,
@@ -9,8 +6,6 @@ import {
   shellAcceptsInjectedCommand,
   writeAtShellPrompt,
 } from "./promptInjection";
-
-afterEach(() => vi.clearAllMocks());
 
 const idle: ShellInputState = {
   integrated: true,
@@ -20,59 +15,43 @@ const idle: ShellInputState = {
   agentActive: false,
 };
 
-const never = () => Promise.reject(new Error("the OS must not be asked"));
-
 describe("shellAcceptsInjectedCommand", () => {
   it("accepts a command at an integrated prompt", async () => {
-    expect(await shellAcceptsInjectedCommand(idle, never)).toBe(true);
+    expect(await shellAcceptsInjectedCommand(idle)).toBe(true);
   });
 
   it("refuses while a command owns the foreground", async () => {
     expect(
-      await shellAcceptsInjectedCommand(
-        { ...idle, commandRunning: true },
-        never,
-      ),
+      await shellAcceptsInjectedCommand({ ...idle, commandRunning: true }),
     ).toBe(false);
   });
 
   it("refuses full-screen programs and coding agents whatever the shell reported", async () => {
     expect(
-      await shellAcceptsInjectedCommand(
-        { ...idle, alternateScreen: true },
-        never,
-      ),
+      await shellAcceptsInjectedCommand({ ...idle, alternateScreen: true }),
     ).toBe(false);
     expect(
-      await shellAcceptsInjectedCommand({ ...idle, agentActive: true }, never),
+      await shellAcceptsInjectedCommand({ ...idle, agentActive: true }),
     ).toBe(false);
     expect(
-      await shellAcceptsInjectedCommand(
-        { ...idle, integrated: false, alternateScreen: true },
-        never,
-      ),
+      await shellAcceptsInjectedCommand({
+        ...idle,
+        integrated: false,
+        alternateScreen: true,
+      }),
     ).toBe(false);
   });
 
-  it("checks unintegrated shells without trusting their command markers", async () => {
-    const state = { ...idle, integrated: false, commandRunning: true };
-    expect(await shellAcceptsInjectedCommand(state, async () => false)).toBe(
-      true,
-    );
-    expect(await shellAcceptsInjectedCommand(state, async () => true)).toBe(
+  it("rejects unintegrated shells even without a foreground child", () => {
+    expect(shellAcceptsInjectedCommand({ ...idle, integrated: false })).toBe(
       false,
     );
   });
 
-  it("asks the operating system when the shell cannot report command starts", async () => {
-    // Bash before 4.4: prompts are marked, but a running command is not.
-    const old: ShellInputState = { ...idle, commandTracked: false };
-    const busy = vi.fn(async () => true);
-    expect(await shellAcceptsInjectedCommand(old, busy)).toBe(false);
-    expect(busy).toHaveBeenCalledOnce();
-    expect(await shellAcceptsInjectedCommand(old, async () => false)).toBe(
-      true,
-    );
+  it("rejects legacy shells whose builtins can consume stdin without a command-start marker", () => {
+    expect(
+      shellAcceptsInjectedCommand({ ...idle, commandTracked: false }),
+    ).toBe(false);
   });
 });
 
@@ -104,60 +83,59 @@ describe("writeAtShellPrompt", () => {
 
   it("types the command at an idle prompt", async () => {
     const { target, written } = session();
-    expect(await writeAtShellPrompt(target, "cd /tmp\r", false)).toBe(true);
+    expect(await writeAtShellPrompt(target, "cd /tmp\r", () => false)).toBe(
+      true,
+    );
     expect(written).toEqual(["cd /tmp\r"]);
-    expect(mocks.invoke).not.toHaveBeenCalled();
   });
 
   it("types nothing while a coding agent owns the terminal", async () => {
     const { target, written } = session();
-    expect(await writeAtShellPrompt(target, "cd /tmp\r", true)).toBe(false);
+    expect(await writeAtShellPrompt(target, "cd /tmp\r", () => true)).toBe(
+      false,
+    );
     expect(written).toEqual([]);
   });
 
-  it("asks the operating system when the shell cannot report command starts", async () => {
+  it("does not type into an untracked builtin such as read", () => {
     const { target, written } = session({ commandTracked: false });
-    mocks.invoke.mockResolvedValueOnce(true);
-    expect(await writeAtShellPrompt(target, "cd /tmp\r", false)).toBe(false);
-    expect(mocks.invoke).toHaveBeenCalledWith("pty_has_foreground_job", {
-      id: 7,
-    });
-    mocks.invoke.mockResolvedValueOnce(false);
-    expect(await writeAtShellPrompt(target, "cd /tmp\r", false)).toBe(true);
-    expect(written).toEqual(["cd /tmp\r"]);
-  });
-
-  it("checks for a running program before writing to an unintegrated shell", async () => {
-    const { target, written } = session({ promptIntegrated: false });
-    mocks.invoke.mockResolvedValueOnce(true);
-    expect(await writeAtShellPrompt(target, "cd /tmp\r", false)).toBe(false);
+    expect(writeAtShellPrompt(target, "cd /tmp\r", () => false)).toBe(false);
     expect(written).toEqual([]);
-    expect(mocks.invoke).toHaveBeenCalledWith("pty_has_foreground_job", {
-      id: 7,
-    });
-    mocks.invoke.mockResolvedValueOnce(false);
-    expect(await writeAtShellPrompt(target, "cd /tmp\r", false)).toBe(true);
-    expect(written).toEqual(["cd /tmp\r"]);
   });
 
-  it("types nothing once the shell exited or the pane closed while it waited", async () => {
-    const exited = session({ commandTracked: false });
-    mocks.invoke.mockImplementationOnce(async () => {
-      (exited.target as { shellExited: boolean }).shellExited = true;
-      return false;
-    });
-    expect(await writeAtShellPrompt(exited.target, "cd /tmp\r", false)).toBe(
-      false,
-    );
-    const closed = session({ commandTracked: false });
-    mocks.invoke.mockImplementationOnce(async () => {
-      (closed.target as { disposed: boolean }).disposed = true;
-      return false;
-    });
-    expect(await writeAtShellPrompt(closed.target, "cd /tmp\r", false)).toBe(
-      false,
-    );
-    expect(exited.written).toEqual([]);
-    expect(closed.written).toEqual([]);
+  it("does not type into an unintegrated shell", () => {
+    const { target, written } = session({ promptIntegrated: false });
+    expect(writeAtShellPrompt(target, "cd /tmp\r", () => false)).toBe(false);
+    expect(written).toEqual([]);
+  });
+
+  it("types nothing once the shell exited or the pane closed", () => {
+    for (const overrides of [
+      { shellExited: true },
+      { disposed: true },
+      { pty: null },
+      { model: null },
+    ]) {
+      const { target, written } = session(overrides);
+      expect(writeAtShellPrompt(target, "cd /tmp\r", () => false)).toBe(false);
+      expect(written).toEqual([]);
+    }
+  });
+
+  it("reads current command, screen and agent state and writes without yielding", () => {
+    const { target, written } = session();
+    target.commandRunning = true;
+    expect(writeAtShellPrompt(target, "cd /tmp\r", () => false)).toBe(false);
+    target.commandRunning = false;
+    target.model = { modes: () => ({ alternateScreen: true }) };
+    expect(writeAtShellPrompt(target, "cd /tmp\r", () => false)).toBe(false);
+    target.model = { modes: () => ({ alternateScreen: false }) };
+    let active = true;
+    const agentActive = () => active;
+    expect(writeAtShellPrompt(target, "cd /tmp\r", agentActive)).toBe(false);
+    expect(written).toEqual([]);
+    active = false;
+    expect(writeAtShellPrompt(target, "cd /tmp\r", agentActive)).toBe(true);
+    expect(written).toEqual(["cd /tmp\r"]);
   });
 });

@@ -166,6 +166,20 @@ describe.each(["ghostty-vt", "ghostty-vt-scalar"])(
       }
     });
 
+    it("tracks an implicit prompt endpoint through narrow and wide reflow", () => {
+      const { model, blocks, write, dispose } = create();
+      try {
+        const output = "abcdefghijklmnopqrstuvwxyz0123456789";
+        write(`\x1b]133;B\x07\x1b]133;C;exec\x07${output}\x1b]133;A\x07prompt> \x1b]133;B\x07`);
+        for (const cols of [10, 40, 15, 20]) {
+          model.resize(cols, 6);
+          expect(blocks.readById("1")?.output).toBe(output);
+        }
+      } finally {
+        dispose();
+      }
+    });
+
     it("resolves each event of a chunk at the point where it was parsed", () => {
       const { blocks, write, dispose } = create();
       try {

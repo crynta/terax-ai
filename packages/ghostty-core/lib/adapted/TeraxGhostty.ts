@@ -27,10 +27,10 @@ export const ADAPTED_GHOSTTY_COMMIT =
 export const ADAPTED_RESTTY_COMMIT =
   "7700b14a7643ba9240818209ef1e0aa90d83ad77";
 export const ADAPTED_GHOSTTY_WASM_SHA256 =
-  "302b7952e0f84d1701b64a4348f597bbe5ab2bc1f2b58c12d6cf775251a895f7";
+  "c9ccce8ec16c109401b0fd7e98d40b47bb096dc74d35afe34f582f4c26338418";
 
 export const ADAPTED_GHOSTTY_SCALAR_WASM_SHA256 =
-  "c9cffe386b771bd1a76b493bf064b30abb30fd5ef3d36d700226b318309c1cad";
+  "04d229b448e1176d42d879f07bf7cf88447026f6476d2a9b3fdea6e5a85cf794";
 
 let wasmSimdAvailable: boolean | undefined;
 
@@ -1811,8 +1811,11 @@ function decodeTerminalEvent(
         body: textDecoder.decode(payload.subarray(4 + titleLength)),
       };
     }
-    case 6:
-      return { type: "prompt-start" };
+    case 6: {
+      if (payload.byteLength < 4) return { type: "prompt-start" };
+      const marker = new DataView(payload.buffer, payload.byteOffset, payload.byteLength).getUint32(0, true);
+      return marker ? { type: "prompt-start", marker } : { type: "prompt-start" };
+    }
     case 7:
       return { type: "prompt-continuation" };
     case 8:

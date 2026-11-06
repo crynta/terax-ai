@@ -251,11 +251,15 @@ export function useGhosttyTerminalSession({
   );
   const writeAtPrompt = useCallback(
     async (data: string) => {
-      const session = sessions.get(leafId);
-      if (!session || session.shellExited || session.disposed) return false;
+      const expected = sessions.get(leafId);
+      const pty = expected?.pty;
+      if (!pty) return false;
       const { writeAtShellPrompt } = await import("../lib/promptInjection");
-      const agent = session.pty && isAgentActivePty(session.pty.id);
-      return writeAtShellPrompt(session, data, !!agent);
+      const session = sessions.get(leafId);
+      if (!session || session !== expected || session.pty !== pty) return false;
+      return writeAtShellPrompt(session, data, () =>
+        !!session.pty && isAgentActivePty(session.pty.id),
+      );
     },
     [leafId],
   );
@@ -712,6 +716,7 @@ async function initializeSessionGeneration(
     onCommandState: (running) => {
       session.promptIntegrated = true;
       session.commandRunning = running;
+      session.commandTracked = false;
       if (!running) mark("firstPromptMs");
     },
   });

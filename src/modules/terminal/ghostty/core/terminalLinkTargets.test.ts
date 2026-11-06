@@ -81,7 +81,7 @@ describe("planLinkActivation", () => {
     for (const text of [
       "https://example.com/a",
       "example.com/a",
-      "HTTPS://EXAMPLE.COM/a/",
+      "HTTPS://EXAMPLE.COM/a",
     ]) {
       expect(
         planLinkActivation(hit("https://example.com/a", "osc8", text)),
@@ -100,6 +100,22 @@ describe("planLinkActivation", () => {
       ),
     ).toMatchObject({ type: "block", reason: "length" });
   });
+
+  it.each(["/Safe", "/a?file=SAFE", "/a#SAFE", "/a/"])(
+    "confirms case-sensitive paths, queries, fragments and trailing slashes (%s)",
+    (shown) => {
+      const target = shown === "/a/" ? "/a" : shown.toLowerCase();
+      expect(
+        planLinkActivation(
+          hit(
+            `https://example.com${target}`,
+            "osc8",
+            `HTTPS://EXAMPLE.COM${shown}`,
+          ),
+        ),
+      ).toMatchObject({ type: "confirm-url", reason: "mismatch" });
+    },
+  );
 
   it("resolves file URLs to local paths and drops the drive slash", () => {
     expect(planLinkActivation(hit("file:///tmp/a%20b.txt"))).toEqual({
@@ -175,9 +191,9 @@ describe("link text and hosts", () => {
     expect(linkDestinationLabel(hit("https://x.test/\u001b[31m"))).toBe(
       "https://x.test/[31m",
     );
-    expect(linkDestinationLabel(hit(`https://x.test/${"a".repeat(1000)}`))).toHaveLength(
-      303,
-    );
+    expect(
+      linkDestinationLabel(hit(`https://x.test/${"a".repeat(1000)}`)),
+    ).toHaveLength(303);
   });
 
   it("treats only this machine as a local file host", () => {
@@ -190,15 +206,27 @@ describe("link text and hosts", () => {
 });
 
 describe("path resolution", () => {
-  it("anchors relative paths at the pane cwd and normalizes dots", () => {
+  it("anchors relative paths without collapsing symlink-sensitive parent segments", () => {
     expect(
       resolveLinkPath("./src/../lib/a.ts", { cwd: "/work/app", home: null }),
-    ).toBe("/work/app/lib/a.ts");
+    ).toBe("/work/app/./src/../lib/a.ts");
     expect(resolveLinkPath("a.ts", { cwd: null, home: null })).toBeNull();
     expect(resolveLinkPath("/etc/hosts", { cwd: null, home: null })).toBe(
       "/etc/hosts",
     );
   });
+
+  it.each(["//server/share/project", "\\\\server\\share\\project"])(
+    "preserves the root of a UNC cwd (%s)",
+    (cwd) => {
+      expect(resolveLinkPath("src\\main.ts", { cwd, home: null })).toBe(
+        "//server/share/project/src/main.ts",
+      );
+      expect(resolveLinkPath("../main.ts", { cwd, home: null })).toBe(
+        "//server/share/project/../main.ts",
+      );
+    },
+  );
 
   it("expands home and keeps Windows drives in canonical form", () => {
     expect(resolveLinkPath("~/x.md", { cwd: null, home: "/Users/me/" })).toBe(

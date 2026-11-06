@@ -98,7 +98,9 @@ describe("TerminalLinkInteraction", () => {
     const t = setup();
     t.fire("pointermove", 50, 15);
     expect(t.overlay.show).not.toHaveBeenCalled();
-    t.keys.dispatchEvent(Object.assign(new Event("keydown"), { metaKey: true }));
+    t.keys.dispatchEvent(
+      Object.assign(new Event("keydown"), { metaKey: true }),
+    );
     expect(t.overlay.show).toHaveBeenCalledWith(LINK);
     t.keys.dispatchEvent(Object.assign(new Event("keyup"), { metaKey: false }));
     expect(t.overlay.hide).toHaveBeenCalled();
@@ -199,9 +201,15 @@ describe("TerminalLinkInteraction", () => {
 
   it("takes over a press, release and key change that happened while it loaded", () => {
     const key = (type: string, metaKey: boolean) =>
-      Object.assign(new Event(type), { metaKey, ctrlKey: false, shiftKey: false });
+      Object.assign(new Event(type), {
+        metaKey,
+        ctrlKey: false,
+        shiftKey: false,
+      });
     const t = setup();
-    t.interaction.ingest(pointerEvent("pointerdown", 50, 15, { metaKey: true }));
+    t.interaction.ingest(
+      pointerEvent("pointerdown", 50, 15, { metaKey: true }),
+    );
     t.interaction.ingest(pointerEvent("pointerup", 50, 15, { metaKey: true }));
     expect(t.onActivate).toHaveBeenCalledWith(LINK);
 
@@ -212,6 +220,23 @@ describe("TerminalLinkInteraction", () => {
     late.interaction.ingest(key("keyup", false));
     expect(late.overlay.hide).toHaveBeenCalled();
   });
+
+  it.each([false, true])(
+    "rechecks the destination before release even with pending damage (%s)",
+    (same) => {
+      const t = setup();
+      t.fire("pointerdown", 50, 15, { metaKey: true });
+      t.hitAt.mockReturnValue(
+        same ? { ...LINK } : { ...LINK, uri: "https://changed.test" },
+      );
+      t.interaction.invalidate();
+      t.fire("pointerup", 50, 15, { metaKey: true });
+      expect(t.hitAt).toHaveBeenCalledTimes(2);
+      expect(t.onActivate).toHaveBeenCalledTimes(same ? 1 : 0);
+      t.flush();
+      expect(t.onActivate).toHaveBeenCalledTimes(same ? 1 : 0);
+    },
+  );
 
   it("follows the modifier after a press that came with no earlier movement", () => {
     const t = setup();

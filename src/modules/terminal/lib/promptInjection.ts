@@ -1,5 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
-
 export type ShellInputState = {
   /** The shell has reported OSC 133 at least once. */
   readonly integrated: boolean;
@@ -16,18 +14,12 @@ export type ShellInputState = {
 /**
  * Whether text typed on the user's behalf (a breadcrumb `cd`) would reach the
  * shell. Anything else that owns the foreground, a TUI or an agent, would take
- * it as its own input. Without command-start markers the operating system is
- * asked instead. Windows conservatively counts background children too because
- * ConPTY has no foreground process group.
+ * it as its own input. Native foreground checks cannot detect a shell builtin
+ * reading stdin, so both prompt and command-start markers are required.
  */
-export async function shellAcceptsInjectedCommand(
-  state: ShellInputState,
-  hasForegroundJob: () => Promise<boolean>,
-): Promise<boolean> {
+export function shellAcceptsInjectedCommand(state: ShellInputState): boolean {
   if (state.alternateScreen || state.agentActive) return false;
-  if (!state.integrated || !state.commandTracked) {
-    return !(await hasForegroundJob());
-  }
+  if (!state.integrated || !state.commandTracked) return false;
   return !state.commandRunning;
 }
 
@@ -49,26 +41,20 @@ export type InjectionTarget = {
  * Types a shell command on the user's behalf only when the shell will read it:
  * never into a running command, a full-screen program or a coding agent.
  */
-export async function writeAtShellPrompt(
+export function writeAtShellPrompt(
   session: InjectionTarget,
   data: string,
-  agentActive: boolean,
-): Promise<boolean> {
-  const { pty } = session;
-  const accepts = await shellAcceptsInjectedCommand(
-    {
-      integrated: session.promptIntegrated,
-      commandRunning: session.commandRunning,
-      commandTracked: session.commandTracked,
-      alternateScreen: session.model?.modes().alternateScreen ?? false,
-      agentActive,
-    },
-    () =>
-      pty
-        ? invoke<boolean>("pty_has_foreground_job", { id: pty.id })
-        : Promise.resolve(false),
-  );
-  // The shell can exit or the pane close while the operating system answers.
-  if (!accepts || session.shellExited || session.disposed) return false;
+  agentActive: () => boolean,
+): boolean {
+  if (session.shellExited || session.disposed || !session.pty || !session.model)
+    return false;
+  const accepts = shellAcceptsInjectedCommand({
+    integrated: session.promptIntegrated,
+    commandRunning: session.commandRunning,
+    commandTracked: session.commandTracked,
+    alternateScreen: session.model?.modes().alternateScreen ?? false,
+    agentActive: agentActive(),
+  });
+  if (!accepts) return false;
   return session.writer.enqueue(new TextEncoder().encode(data));
 }

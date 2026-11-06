@@ -142,7 +142,8 @@ export class TerminalLinkInteraction {
     if (!down) return;
     this.observe(event);
     if (!this.pointer?.modifier) return;
-    this.evaluate();
+    this.cellKey = -1;
+    this.evaluate(true);
     const hit = this.hit;
     if (!hit || !sameLink(hit, down)) return;
     event.preventDefault();

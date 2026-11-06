@@ -168,7 +168,9 @@ pub async fn fs_write_file(
 pub async fn fs_canonicalize(
     path: String,
     workspace: Option<WorkspaceEnv>,
+    local_only: Option<bool>,
 ) -> Result<String, String> {
+    validate_link_path(&path, local_only)?;
     blocking(move || {
         let workspace = WorkspaceEnv::from_option(workspace);
         let p = resolve_path(&path, &workspace);
@@ -179,8 +181,25 @@ pub async fn fs_canonicalize(
 }
 
 #[tauri::command]
-pub async fn fs_stat(path: String, workspace: Option<WorkspaceEnv>) -> Result<FileStat, String> {
+pub async fn fs_stat(
+    path: String,
+    workspace: Option<WorkspaceEnv>,
+    local_only: Option<bool>,
+) -> Result<FileStat, String> {
+    validate_link_path(&path, local_only)?;
     blocking(move || stat_path(path, workspace)).await
+}
+
+fn validate_link_path(path: &str, local_only: Option<bool>) -> Result<(), String> {
+    if local_only == Some(true)
+        && path
+            .as_bytes()
+            .get(..2)
+            .is_some_and(|prefix| prefix.iter().all(|byte| matches!(byte, b'/' | b'\\')))
+    {
+        return Err("network and device paths are not local file links".into());
+    }
+    Ok(())
 }
 
 fn stat_path(path: String, workspace: Option<WorkspaceEnv>) -> Result<FileStat, String> {
@@ -208,6 +227,58 @@ fn stat_path(path: String, workspace: Option<WorkspaceEnv>) -> Result<FileStat, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn local_file_links_reject_network_paths_before_filesystem_access() {
+        for path in [
+            r"\\server\share\file",
+            "//server/share/file",
+            r"/\server/share/file",
+            r"\/server\share\file",
+            r"\\?\C:\file",
+            r"\\.\pipe\name",
+            r"/\?\UNC\server\share",
+            r"\/.\pipe\name",
+        ] {
+            let expected = "network and device paths are not local file links";
+            assert_eq!(
+                fs_stat(path.into(), None, Some(true)).await.err().unwrap(),
+                expected
+            );
+            assert_eq!(
+                fs_canonicalize(path.into(), None, Some(true))
+                    .await
+                    .unwrap_err(),
+                expected
+            );
+            assert!(validate_link_path(path, None).is_ok());
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn link_parent_segments_resolve_after_symlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join("workspace");
+        let external = dir.path().join("external");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(external.join("build")).unwrap();
+        std::fs::write(external.join("main.ts"), "outside").unwrap();
+        std::fs::write(workspace.join("main.ts"), "inside").unwrap();
+        std::os::unix::fs::symlink(external.join("build"), workspace.join("build")).unwrap();
+        let path = workspace
+            .join("build/../main.ts")
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(
+            fs_stat(path.clone(), None, Some(true)).await.unwrap().size,
+            7
+        );
+        assert_eq!(
+            fs_canonicalize(path, None, Some(true)).await.unwrap(),
+            super::super::to_canon(std::fs::canonicalize(external.join("main.ts")).unwrap())
+        );
+    }
 
     #[test]
     fn read_file_classifies_utf8_as_text() {

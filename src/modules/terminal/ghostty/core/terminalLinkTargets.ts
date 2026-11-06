@@ -83,9 +83,7 @@ export function planLinkActivation(hit: TerminalLinkHit): LinkPlan {
   return { type: "block", reason: "scheme", scheme };
 }
 
-function fileUrlToLocal(
-  parsed: URL,
-): { host: string; path: string } | null {
+function fileUrlToLocal(parsed: URL): { host: string; path: string } | null {
   let path: string;
   try {
     path = decodeURIComponent(parsed.pathname);
@@ -97,9 +95,13 @@ function fileUrlToLocal(
   // (file:///%2Fserver/share is //server/share), and on Windows opening it
   // would reach out to that server. UNC and device prefixes, in any mix of
   // slashes and backslashes, are never local.
-  if (/^[\\/]{2}/.test(path)) return null;
+  if (isNetworkOrDevicePath(path)) return null;
   if (/^\/[A-Za-z]:(?:\/|$)/.test(path)) path = path.slice(1);
   return { host: parsed.hostname, path };
+}
+
+export function isNetworkOrDevicePath(path: string): boolean {
+  return /^[\\/]{2}/.test(path);
 }
 
 /** An empty or loopback host, or the machine's own name (short or full). */
@@ -116,11 +118,6 @@ export function isLocalFileHost(
 
 const SCHEMED = /^[a-z][a-z0-9+.-]*:\/\//i;
 
-function comparable(text: string, keepScheme: boolean): string {
-  const trimmed = text.trim().replace(/\/+$/, "").toLowerCase();
-  return keepScheme ? trimmed : trimmed.replace(SCHEMED, "");
-}
-
 /**
  * Whether the text drawn for an OSC 8 link is its address. Anything else, from
  * "click here" to another site's name, is the classic bait-and-switch and gets
@@ -132,13 +129,17 @@ export function linkTextIsDestination(
   uri: string,
   href: string = uri,
 ): boolean {
-  const keepScheme = SCHEMED.test(text.trim());
-  const shown = comparable(text, keepScheme);
-  if (shown === "") return false;
-  return (
-    shown === comparable(uri, keepScheme) ||
-    shown === comparable(href, keepScheme)
-  );
+  const shown = text.trim();
+  if (!shown) return false;
+  try {
+    const destination = new URL(href);
+    const address = new URL(
+      SCHEMED.test(shown) ? shown : `${destination.protocol}//${shown}`,
+    );
+    return address.href === destination.href;
+  } catch {
+    return false;
+  }
 }
 
 const MAX_DESTINATION_LABEL = 300;
@@ -155,7 +156,6 @@ export function linkDestinationLabel(hit: TerminalLinkHit): string {
     : clean;
 }
 
-
 export type PathContext = {
   readonly cwd: string | null;
   readonly home: string | null;
@@ -170,8 +170,9 @@ export function resolveLinkPath(
   context: PathContext,
 ): string | null {
   let path = raw;
-  const windowsCwd = context.cwd !== null && /^[A-Za-z]:/.test(context.cwd);
-  if (windowsCwd || /^[A-Za-z]:[\\/]/.test(path) || /^~\\/.test(path)) {
+  const windowsCwd =
+    context.cwd !== null && /^(?:[A-Za-z]:|[\\/]{2})/.test(context.cwd);
+  if (windowsCwd || /^(?:[A-Za-z]:[\\/]|[\\/]{2}|~\\)/.test(path)) {
     path = path.replace(/\\/g, "/");
   }
   if (path.startsWith("~/")) {
@@ -181,7 +182,8 @@ export function resolveLinkPath(
     if (!context.cwd) return null;
     path = `${context.cwd.replace(/\\/g, "/").replace(/\/+$/, "")}/${path}`;
   }
-  return normalizePath(path);
+  // The filesystem must resolve .. after following any preceding symlink.
+  return path;
 }
 
 /** Candidates to try in order: git diff headers prefix paths with a/ and b/. */
@@ -192,16 +194,4 @@ export function pathCandidates(raw: string): string[] {
 
 function isAbsolutePath(path: string): boolean {
   return path.startsWith("/") || /^[A-Za-z]:\//.test(path);
-}
-
-function normalizePath(path: string): string {
-  const drive = /^[A-Za-z]:/.exec(path)?.[0] ?? "";
-  const rest = path.slice(drive.length);
-  const out: string[] = [];
-  for (const part of rest.split("/")) {
-    if (part === "" || part === ".") continue;
-    if (part === "..") out.pop();
-    else out.push(part);
-  }
-  return `${drive}/${out.join("/")}`;
 }
