@@ -1,7 +1,7 @@
 import { MarkdownCode } from "@/components/ai-elements/markdown-code";
 import { checkReadable } from "@/modules/ai/lib/security";
 import { cn } from "@/lib/utils";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { useAssetGrant } from "@/lib/useAssetGrant";
 import {
   memo,
   useCallback,
@@ -106,18 +106,19 @@ const MarkdownBody = memo(function MarkdownBody({
   boundary: string;
   content: string;
 }) {
+  const assetUrlFor = useAssetGrant(boundary);
   const rehypePlugins = useMemo(() => {
     const d = defaultRehypePlugins;
     return [
       d.raw,
       d.sanitize,
-      rehypeLocalImages(path, (abs) => convertFileSrc(abs), {
+      rehypeLocalImages(path, (abs) => assetUrlFor(abs) ?? "data:,", {
         boundary,
         isReadable: (abs) => checkReadable(abs).ok,
       }),
       d.harden,
     ];
-  }, [path, boundary]);
+  }, [path, boundary, assetUrlFor]);
 
   return (
     <Streamdown

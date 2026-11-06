@@ -16,7 +16,7 @@ import {
 import { Prec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { vim } from "@replit/codemirror-vim";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { useAssetGrant } from "@/lib/useAssetGrant";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import {
   forwardRef,
@@ -125,6 +125,7 @@ export const EditorPane = memo(
         path,
         onDirtyChange,
       });
+    const assetUrlFor = useAssetGrant((doc.status === "binary" || doc.status === "toolarge") && mediaPreviewKind(path) ? path : null);
     const reloadRef = useRef(reload);
     reloadRef.current = reload;
     const adoptDiskTextRef = useRef(adoptDiskText);
@@ -583,7 +584,8 @@ export const EditorPane = memo(
       const isPdf = kind === "pdf";
 
       if (isImage || isVideo || isAudio || isPdf) {
-        const assetUrl = convertFileSrc(path);
+        const assetUrl = assetUrlFor(path);
+        if (!assetUrl) return <div className="p-4 text-xs text-muted-foreground">Loading media preview…</div>;
         return (
           <div className="flex h-full min-h-0 flex-col items-center justify-center bg-background p-4 overflow-auto">
             {isImage && (

@@ -1,3 +1,4 @@
+pub mod assets;
 pub mod clipboard;
 pub mod copy;
 pub mod file;
