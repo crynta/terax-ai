@@ -2,7 +2,6 @@ import type { TerminalRendererSetting } from "@/modules/settings/store";
 import type { TerminalBackendKind } from "./contracts";
 
 const STORAGE_KEY = "terax.experimental.terminal-backend";
-const DEFAULT_BACKEND: TerminalBackendKind = "ghostty-webgpu";
 export type Platform = "windows" | "linux" | "mac" | "other";
 
 export function detectPlatform(userAgent: string): Platform {
@@ -23,26 +22,31 @@ function currentPlatform(): Platform {
   );
 }
 
+function defaultBackend(): TerminalBackendKind {
+  // Windows stays on WebGL until WebView2 passes the pixel gate at 100/125/150%.
+  return currentPlatform() === "windows" ? "ghostty-webgl" : "ghostty-webgpu";
+}
+
 export function selectedTerminalBackend(): TerminalBackendKind {
   const configured = parseTerminalBackend(
     import.meta.env.VITE_TERMINAL_BACKEND,
   );
   if (configured) return configured;
-  if (typeof window === "undefined") return DEFAULT_BACKEND;
+  if (typeof window === "undefined") return defaultBackend();
   try {
     return (
       parseTerminalBackend(window.localStorage.getItem(STORAGE_KEY)) ??
-      DEFAULT_BACKEND
+      defaultBackend()
     );
   } catch {
-    return DEFAULT_BACKEND;
+    return defaultBackend();
   }
 }
 
 export function setSelectedTerminalBackend(kind: TerminalBackendKind): void {
   if (typeof window === "undefined") return;
   try {
-    if (kind === DEFAULT_BACKEND) window.localStorage.removeItem(STORAGE_KEY);
+    if (kind === defaultBackend()) window.localStorage.removeItem(STORAGE_KEY);
     else window.localStorage.setItem(STORAGE_KEY, kind);
   } catch {
     // Storage can be disabled by the webview policy. The build default remains.
@@ -75,9 +79,9 @@ function resolvedTerminalBackend(): TerminalBackendKind {
 }
 
 /**
- * The backend new terminals use for a Settings choice. WebGPU (also under Automatic, which
- * additionally honours the experimental override) falls back to WebGL where the webview has
- * no WebGPU; WebGL is always WebGL.
+ * Automatic defaults to WebGL on Windows and honours the experimental override.
+ * Elsewhere it prefers WebGPU, as does an explicit WebGPU choice on any platform,
+ * falling back to WebGL where the webview has no WebGPU.
  */
 export function terminalBackendFor(
   setting: TerminalRendererSetting,
