@@ -1,3 +1,6 @@
+import { useSpaces } from "@/modules/spaces/lib/useSpaces";
+import { workspaceScopeKey } from "@/modules/workspace";
+import { toast } from "sonner";
 import { isMarkdownPath } from "@/lib/utils";
 import {
   type AgentInstanceCount,
@@ -612,10 +615,28 @@ export function placeTask(
   targetId: number,
   edge: "top" | "bottom",
 ) {
+  const target = wb.taskById(snapshot(), targetId);
+  if (!target || !canTransferTask(taskId, target.projectId)) return;
   commit((s) => wb.placeTask(s, taskId, targetId, edge));
 }
 
+function canTransferTask(taskId: number, projectId: string): boolean {
+  const task = wb.taskById(snapshot(), taskId);
+  if (!task) return false;
+  if (task.projectId === projectId) return true;
+  const spaces = useSpaces.getState().spaces;
+  const from = spaces.find((p) => p.id === task.projectId)?.env;
+  const to = spaces.find((p) => p.id === projectId)?.env;
+  if (from && to && workspaceScopeKey(from) === workspaceScopeKey(to))
+    return true;
+  toast.error(
+    "Tasks can only move between projects using the same environment.",
+  );
+  return false;
+}
+
 export function moveTaskToProject(taskId: number, projectId: string) {
+  if (!canTransferTask(taskId, projectId)) return;
   commit((s) => wb.moveTaskToProject(s, taskId, projectId));
 }
 

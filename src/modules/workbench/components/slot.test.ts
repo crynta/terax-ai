@@ -8,7 +8,7 @@ import {
   toggleMaximize,
   type WorkbenchState,
 } from "../model/workbench";
-import { slotOf } from "./slot";
+import { slotOf, visibleTabIds } from "./slot";
 
 const term = (id: number): Tab => ({
   id,
@@ -64,4 +64,11 @@ describe("slotOf", () => {
     expect(slotOf(state, 3)).toMatchObject({ x: 0.5, y: 0, w: 0.5, h: 1 });
     expect(slotOf(state, 99)).toBeNull();
   });
+});
+
+it("acknowledges only shown views while keeping every card in the task", () => {
+  expect(visibleTabIds(state)).toEqual([1, 3]);
+  const maximized = toggleMaximize(state, 10, 13);
+  expect(visibleTabIds(maximized)).toEqual([3]);
+  expect(maximized.tasks[0].layout).toEqual(state.tasks[0].layout);
 });

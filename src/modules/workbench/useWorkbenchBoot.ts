@@ -65,18 +65,23 @@ export function useWorkbenchBoot({
         const { spaces, activeId, workbench, legacy } = await loadAll();
 
         if (spaces.length === 0) {
-          const root = launchCwd ?? home ?? null;
           await usePreferencesStore
             .getState()
             .init()
             .catch(() => {});
+          const env = parseWorkspaceScopeKey(
+            usePreferencesStore.getState().defaultWorkspaceEnv,
+          );
+          const resolvedHome = await adoptWorkspaceEnv(env);
+          const root =
+            env.kind === "wsl"
+              ? resolvedHome
+              : (launchCwd ?? home ?? resolvedHome);
           const meta: SpaceMeta = {
             id: DEFAULT_PROJECT_ID,
             name: "Default",
             root,
-            env: parseWorkspaceScopeKey(
-              usePreferencesStore.getState().defaultWorkspaceEnv,
-            ),
+            env,
             createdAt: Date.now(),
             updatedAt: Date.now(),
           };
@@ -139,7 +144,11 @@ export function useWorkbenchBoot({
         const restoredHome = await adoptWorkspaceEnv(env);
 
         await Promise.allSettled(
-          terminalCwds(tabs).map((cwd) => native.workspaceAuthorize(cwd)),
+          spaces.flatMap((space) =>
+            terminalCwds(tabs.filter((tab) => tab.spaceId === space.id)).map(
+              (cwd) => native.workspaceAuthorize(cwd, space.env),
+            ),
+          ),
         );
 
         useSpaces.getState().hydrate(spaces, active);

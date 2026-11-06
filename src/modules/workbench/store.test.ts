@@ -163,3 +163,57 @@ it.each(["unchanged", "project", "sidebar"])(
     }
   },
 );
+
+it.each(["project", "task"] as const)(
+  "guards %s drops across environments but permits same-environment transfers",
+  async (drop) => {
+    const { useSpaces } = await import("@/modules/spaces/lib/useSpaces");
+    const { newTask, placeTask, moveTaskToProject } = await import("./actions");
+    const source = newTask({ projectId: "p", cwd: "/source" });
+    const target = newTask({ projectId: "q" });
+    const spaces = [
+      {
+        id: "p",
+        name: "P",
+        root: null,
+        env: { kind: "wsl", distro: "Ubuntu" } as const,
+        createdAt: 0,
+        updatedAt: 0,
+      },
+      {
+        id: "q",
+        name: "Q",
+        root: null,
+        env: { kind: "local" } as const,
+        createdAt: 0,
+        updatedAt: 0,
+      },
+    ];
+    useSpaces.setState({ spaces });
+    const move = () =>
+      drop === "project"
+        ? moveTaskToProject(source.taskId, "q")
+        : placeTask(source.taskId, target.taskId, "top");
+    const before = useWorkbench.getState();
+    move();
+    expect(useWorkbench.getState()).toBe(before);
+    useSpaces.setState({
+      spaces: spaces.map((p) => ({
+        ...p,
+        env: { kind: "wsl", distro: p.id === "p" ? "Ubuntu" : "Debian" },
+      })),
+    });
+    move();
+    expect(useWorkbench.getState()).toBe(before);
+    useSpaces.setState({
+      spaces: spaces.map((p) => ({
+        ...p,
+        env: { kind: "wsl", distro: "Ubuntu" },
+      })),
+    });
+    move();
+    expect(
+      useWorkbench.getState().tasks.find((t) => t.id === source.taskId),
+    ).toMatchObject({ projectId: "q", cwd: "/source" });
+  },
+);

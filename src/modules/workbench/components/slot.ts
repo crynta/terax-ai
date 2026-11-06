@@ -1,4 +1,4 @@
-import { findCard } from "../model/layout";
+import { cards, findCard } from "../model/layout";
 import {
   activeTask,
   focusedTabId,
@@ -30,4 +30,16 @@ export function slotOf(state: WorkbenchState, id: number): Slot | null {
     findCard(task.layout, cardId)?.activeTabId === id &&
     (task.maximizedCardId === null || task.maximizedCardId === cardId);
   return { visible, focused: focusedTabId(task) === id, ...frame };
+}
+
+/** Active views the user can see, excluding cards hidden by maximization. */
+export function visibleTabIds(state: WorkbenchState): number[] {
+  const task = activeTask(state);
+  return task
+    ? cards(task.layout)
+        .filter(
+          (c) => task.maximizedCardId === null || c.id === task.maximizedCardId,
+        )
+        .map((c) => c.activeTabId)
+    : [];
 }

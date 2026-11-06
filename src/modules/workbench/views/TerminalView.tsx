@@ -1,5 +1,4 @@
 import { useSpaces } from "@/modules/spaces/lib/useSpaces";
-import { LOCAL_WORKSPACE } from "@/modules/workspace";
 import type { TerminalTab } from "@/modules/tabs/lib/tabs";
 import { useTerminalDropStore } from "@/modules/terminal/lib/dropStore";
 import type { TerminalSearchController } from "@/modules/terminal/search/TerminalSearchController";
@@ -27,6 +26,9 @@ export const TerminalView = memo(function TerminalView({
   focused,
 }: ViewProps<TerminalTab>) {
   const id = tab.id;
+  const workspace = useSpaces(
+    (s) => s.spaces.find((p) => p.id === tab.spaceId)?.env,
+  );
   const setRef = useCallback(
     (handle: TerminalPaneHandle | null) =>
       setViewHandle(id, "terminal", handle),
@@ -48,6 +50,15 @@ export const TerminalView = memo(function TerminalView({
     },
     [],
   );
+  if (!workspace)
+    return (
+      <div
+        role="alert"
+        className="grid h-full place-items-center p-6 text-center text-sm text-muted-foreground"
+      >
+        Project environment is unavailable. Reload to restore this terminal.
+      </div>
+    );
   return (
     <div data-pane-leaf={id} className="relative h-full w-full">
       <TerminalPane
@@ -55,10 +66,7 @@ export const TerminalView = memo(function TerminalView({
         visible={visible}
         focused={focused}
         initialCwd={tab.cwd}
-        workspace={
-          useSpaces.getState().spaces.find((p) => p.id === tab.spaceId)?.env ??
-          LOCAL_WORKSPACE
-        }
+        workspace={workspace}
         blocks={tab.blocks ?? false}
         ref={setRef}
         onSearchReady={onSearchReady}

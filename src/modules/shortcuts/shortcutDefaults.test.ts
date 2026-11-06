@@ -179,6 +179,7 @@ const TUI_EVENTS: { name: string; event: Partial<KeyboardEvent> }[] = [
 
 /** Claimed by the OS, the clipboard or an input method. */
 const RESERVED: KeyBinding[] = [
+  { ctrl: true, shift: true, key: "0" },
   { ctrl: true, shift: true, key: "c" },
   { ctrl: true, shift: true, key: "v" },
   { ctrl: true, shift: true, key: "u" },

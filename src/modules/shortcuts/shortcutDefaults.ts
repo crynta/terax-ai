@@ -133,7 +133,7 @@ export const WIN_LINUX_DEFAULTS: Readonly<
   "tab.next": [{ ctrl: true, key: "Tab" }],
   "tab.prev": [{ ...CS, key: "Tab" }],
   "tab.selectByIndex": [{ ...CS, key: "1" }],
-  "task.new": [{ ...CS, key: "0" }],
+  "task.new": [{ ...CS, alt: true, key: "Enter" }],
   "space.next": [{ ctrl: true, alt: true, key: "PageDown" }],
   "space.prev": [{ ctrl: true, alt: true, key: "PageUp" }],
   "space.overview": [{ ...CS, key: "s" }],

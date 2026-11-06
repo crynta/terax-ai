@@ -1,3 +1,4 @@
+import { visibleTabIds } from "@/modules/workbench/components/slot";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -214,13 +215,11 @@ export default function App() {
       return task ? tabIdsOf(task.layout) : [];
     }),
   );
-  const shownTabIds = useWorkbench(
-    useShallow((s) => {
-      const task = activeTaskOf(s);
-      return task ? cards(task.layout).map((c) => c.activeTabId) : [];
-    }),
-  );
-  const cardCount = shownTabIds.length;
+  const shownTabIds = useWorkbench(useShallow(visibleTabIds));
+  const cardCount = useWorkbench((s) => {
+    const task = activeTaskOf(s);
+    return task ? cards(task.layout).length : 0;
+  });
   const booted = useWorkbench((s) => s.booted);
 
   // Refs for callbacks that run outside render (timers, event listeners).
