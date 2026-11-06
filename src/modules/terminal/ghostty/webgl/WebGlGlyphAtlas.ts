@@ -7,6 +7,7 @@ import { extendedSymbolsPending } from "@/lib/fonts";
 import { CellFlags } from "@terax/ghostty-core/protocol";
 import {
   BuiltinGlyphRenderer,
+  builtinGlyphPending,
   builtinLineThickness,
   isBuiltinGlyph,
 } from "../gpu/BuiltinGlyphs";
@@ -207,6 +208,8 @@ export class WebGlGlyphAtlas {
       const key = codepoint * 4;
       const cached = this.simpleGlyphs.get(key);
       if (cached) return cached;
+      // Blank until the drawing code has loaded; the atlas is rebuilt when it does.
+      if (builtinGlyphPending(codepoint)) return NULL_GLYPH;
       const entry = this.rasterizeBuiltin(codepoint);
       if (entry) {
         this.simpleGlyphs.set(key, entry);
