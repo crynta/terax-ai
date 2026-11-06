@@ -94,7 +94,8 @@ function isAltGraph(event: KeyboardLike, ctx: KeyContext): boolean {
   if (!ctx.isWindows || !event.ctrlKey || !event.altKey) return false;
   const { key } = event;
   if (key.length !== 1 || /^[a-z]$/i.test(key)) return false;
-  return key !== baseTextForCode(event.code, event.shiftKey);
+  const base = baseTextForCode(event.code, event.shiftKey);
+  return base !== null && key !== base;
 }
 
 function isOptionMeta(event: KeyboardLike, ctx: KeyContext): boolean {

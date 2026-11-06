@@ -474,6 +474,37 @@ describe("routeKeyDown on a layout with AltGr", () => {
   );
 
   it.each([
+    ["0", "Numpad0", Key.KP_0],
+    ["1", "Numpad1", Key.KP_1],
+    ["+", "NumpadAdd", Key.KP_PLUS],
+    ["-", "NumpadSubtract", Key.KP_MINUS],
+    ["*", "NumpadMultiply", Key.KP_MULTIPLY],
+    ["/", "NumpadDivide", Key.KP_DIVIDE],
+    [".", "NumpadDecimal", Key.KP_PERIOD],
+    [",", "NumpadDecimal", Key.KP_PERIOD],
+    ["=", "NumpadEqual", Key.KP_EQUAL],
+  ])(
+    "keeps Ctrl+Alt+%s on %s a chord unless AltGraph is reported",
+    (key, code, mapped) => {
+      for (const shiftKey of [false, true]) {
+        expect(
+          routeKeyDown({ ...press(false), key, code, shiftKey }, ctx),
+        ).toEqual({
+          kind: "key",
+          key: mapped,
+        });
+        expect(
+          routeKeyDown({ ...press(true), key, code, shiftKey }, ctx),
+        ).toEqual({
+          kind: "text",
+          text: key,
+          key: null,
+        });
+      }
+    },
+  );
+
+  it.each([
     ["a", "KeyQ"],
     ["z", "KeyW"],
     ["x", "KeyB"],
