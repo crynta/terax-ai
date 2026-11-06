@@ -19,7 +19,8 @@ This runs full headless Chromium at native display scale **and** Playwright
 native `devicePixelContentBoxSize` at scale 1 and introduces screenshot scaling
 artifacts; the gate checks that the native device box equals the backing store.
 `CHROME_PATH` can select an existing executable, or `CHROME_CHANNEL=chrome` an
-installed Chrome (used by the frontend CI job, without another browser download).
+installed Chrome. Frontend CI caches the full Chromium build pinned by Playwright
+and uses SwiftShader for both renderers on the GPU-less Linux runner.
 
 The same fixed glyph/stem pattern goes through WebGL and WebGPU. Each screenshot
 is compared against its renderer's raw texture, and the two raw textures are
