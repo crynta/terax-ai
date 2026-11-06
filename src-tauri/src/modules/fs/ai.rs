@@ -1,70 +1,17 @@
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 
 use globset::{Glob, GlobSetBuilder};
 use ignore::WalkBuilder;
-use regex::{RegexBuilder, RegexSetBuilder};
-use serde::Deserialize;
+use regex::RegexBuilder;
 use tauri::Manager;
 
 use super::file::ReadResult;
 use super::grep::{GlobHit, GlobResponse, GrepHit, GrepResponse};
+use super::read_policy::readable;
 use super::tree::DirEntry;
 use crate::modules::workspace::{resolve_path, WorkspaceEnv, WorkspaceRegistry};
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PathPolicy {
-    secret_basenames: Vec<String>,
-    protected_dirs: Vec<String>,
-}
-
-fn readable(path: &Path) -> Result<(), String> {
-    static POLICY: OnceLock<(regex::RegexSet, Vec<String>)> = OnceLock::new();
-    let (patterns, directories) = POLICY.get_or_init(|| {
-        let policy: PathPolicy = serde_json::from_str(include_str!(
-            "../../../../src/modules/ai/lib/pathPolicy.json"
-        ))
-        .expect("valid path policy");
-        (
-            RegexSetBuilder::new(policy.secret_basenames)
-                .case_insensitive(true)
-                .build()
-                .expect("valid secret patterns"),
-            policy.protected_dirs,
-        )
-    });
-    let path = path.to_string_lossy();
-    if path.is_empty() || path.chars().any(|c| c < ' ') {
-        return Err("refused invalid AI path".into());
-    }
-    let normalized = path.replace('\\', "/");
-    let basename = normalized.rsplit('/').next().unwrap_or("");
-    if patterns.is_match(basename) {
-        return Err("refused sensitive AI file".into());
-    }
-    let comparison = normalized
-        .split('/')
-        .map(|part| {
-            part.split(':')
-                .next()
-                .unwrap_or("")
-                .trim_end_matches(|c: char| c == '.' || c.is_whitespace())
-                .to_lowercase()
-        })
-        .collect::<Vec<_>>()
-        .join("/");
-    let comparison = format!("{comparison}/");
-    if directories
-        .iter()
-        .any(|dir| comparison.contains(&format!("{dir}/")))
-    {
-        return Err("refused protected AI directory".into());
-    }
-    Ok(())
-}
 
 fn authorized(registry: &WorkspaceRegistry, path: &Path) -> Result<PathBuf, String> {
     readable(path)?;
@@ -240,15 +187,13 @@ pub async fn ai_glob(
         let mut hits = Vec::new();
         let mut truncated = false;
         for entry in walk(&registry, &root_path)?.flatten() {
-            if !entry.file_type().is_some_and(|kind| kind.is_file())
-                || authorized(&registry, entry.path()).is_err()
-            {
+            if !entry.file_type().is_some_and(|kind| kind.is_file()) {
                 continue;
             }
             let Ok(rel) = entry.path().strip_prefix(&root_path) else {
                 continue;
             };
-            if !matcher.is_match(rel) {
+            if !matcher.is_match(rel) || authorized(&registry, entry.path()).is_err() {
                 continue;
             }
             if hits.len() == cap {
@@ -263,6 +208,27 @@ pub async fn ai_glob(
         Ok(GlobResponse { hits, truncated })
     })
     .await
+}
+
+fn matching_lines<'a>(
+    content: &'a str,
+    matcher: &'a regex::Regex,
+) -> impl Iterator<Item = (usize, &'a str)> + 'a {
+    content
+        .split_terminator('\n')
+        .enumerate()
+        .filter(|(_, text)| matcher.is_match(text))
+}
+
+fn clip_line(text: &str) -> String {
+    let mut chars = text.chars();
+    let prefix: String = chars.by_ref().take(160).collect();
+    let remaining = chars.count();
+    if remaining == 0 {
+        prefix
+    } else {
+        format!("{prefix}…[+{remaining}]")
+    }
 }
 
 #[tauri::command]
@@ -308,10 +274,7 @@ pub async fn ai_grep(
                 continue;
             };
             files_scanned += 1;
-            for (line, text) in content.split('\n').enumerate() {
-                if !matcher.is_match(text) {
-                    continue;
-                }
+            for (line, text) in matching_lines(&content, &matcher) {
                 if hits.len() == cap {
                     truncated = true;
                     break 'files;
@@ -320,7 +283,7 @@ pub async fn ai_grep(
                     path: super::display_path(entry.path(), &root_path, &root, &workspace),
                     rel: super::to_canon(rel),
                     line: (line + 1) as u64,
-                    text: text.into(),
+                    text: clip_line(text),
                 });
             }
         }
@@ -337,6 +300,20 @@ pub async fn ai_grep(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn grep_has_no_phantom_lines_and_bounds_native_hit_text() {
+        let empty = regex::Regex::new("^$").unwrap();
+        assert_eq!(matching_lines("hello\n", &empty).count(), 0);
+        assert_eq!(matching_lines("", &empty).count(), 0);
+        assert_eq!(
+            matching_lines("\n", &empty).collect::<Vec<_>>(),
+            vec![(0, "")]
+        );
+        assert_eq!(clip_line("short"), "short");
+        let text = "界".repeat(1_000_000);
+        assert_eq!(clip_line(&text), format!("{}…[+999840]", "界".repeat(160)));
+    }
 
     #[test]
     fn shared_policy_protects_secrets_and_control_descriptors() {
