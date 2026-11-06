@@ -1,6 +1,8 @@
 import { Button } from "@/components/ui/button";
 import { WindowControls } from "@/components/WindowControls";
 import { IS_MAC, USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
+import { useFullscreen } from "@/lib/useFullscreen";
+import { cn } from "@/lib/utils";
 import { NotificationBell } from "@/modules/agents";
 import type { AgentLaunchRequest } from "@/modules/agents/lib/launcher";
 import type { Tab } from "@/modules/tabs";
@@ -100,6 +102,8 @@ export function Header({
     return () => ro.disconnect();
   }, []);
 
+  const fullscreen = useFullscreen();
+
   const settingsButton = (
     <Button
       variant="ghost"
@@ -116,9 +120,10 @@ export function Header({
     <div
       ref={rootRef}
       data-tauri-drag-region
-      className={`flex h-10 shrink-0 items-center gap-2 select-none ${
-        IS_MAC ? "pr-2 pl-20" : "pr-0 pl-2"
-      }`}
+      className={cn(
+        "flex h-10 shrink-0 items-center gap-2 select-none",
+        IS_MAC ? (fullscreen ? "pr-2 pl-2" : "pr-2 pl-20") : "pr-0 pl-2",
+      )}
     >
       <div className="flex shrink-0 items-center gap-0.5">
         <Button
