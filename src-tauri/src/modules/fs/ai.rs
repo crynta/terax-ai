@@ -13,9 +13,18 @@ use super::read_policy::readable;
 use super::tree::DirEntry;
 use crate::modules::workspace::{resolve_path, WorkspaceEnv, WorkspaceRegistry};
 
+fn path_error(error: std::io::Error) -> String {
+    if error.kind() == std::io::ErrorKind::NotFound {
+        // Stable IPC distinction for plan snapshots; other failures must not imply creation.
+        "AI file not found".into()
+    } else {
+        error.to_string()
+    }
+}
+
 fn authorized(registry: &WorkspaceRegistry, path: &Path) -> Result<PathBuf, String> {
     readable(path)?;
-    let canonical = std::fs::canonicalize(path).map_err(|e| e.to_string())?;
+    let canonical = std::fs::canonicalize(path).map_err(path_error)?;
     readable(&canonical)?;
     if !registry.is_authorized(&canonical) {
         return Err("AI path is outside the authorized workspace".into());
@@ -77,7 +86,7 @@ pub fn read_file(
         use std::os::unix::fs::OpenOptionsExt;
         options.custom_flags(libc::O_NONBLOCK);
     }
-    let file = options.open(path).map_err(|e| e.to_string())?;
+    let file = options.open(path).map_err(path_error)?;
     let actual = opened_path(&file)?;
     readable(&actual)?;
     if !registry.is_authorized(&actual) {
@@ -300,6 +309,30 @@ pub async fn ai_grep(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_missing_files_report_the_plan_creation_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("file.txt");
+        let registry = WorkspaceRegistry::default();
+        assert_eq!(
+            read_file(&registry, &path, 1024).err().unwrap(),
+            "AI file not found"
+        );
+        std::fs::write(&path, "existing").unwrap();
+        assert_ne!(
+            read_file(&registry, &path, 1024).err().unwrap(),
+            "AI file not found"
+        );
+        assert_ne!(
+            path_error(std::io::Error::from(std::io::ErrorKind::PermissionDenied)),
+            "AI file not found"
+        );
+        registry.authorize(dir.path()).unwrap();
+        assert!(
+            matches!(read_file(&registry, &path, 1024).unwrap(), ReadResult::Text { content, .. } if content == "existing")
+        );
+    }
 
     #[test]
     fn grep_has_no_phantom_lines_and_bounds_native_hit_text() {
