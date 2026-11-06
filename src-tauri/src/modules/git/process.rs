@@ -401,7 +401,8 @@ fn harden_inspection(args: &mut Vec<OsString>) {
         }
         args.splice(
             command..command,
-            ["-c".into(), "core.fsmonitor=false".into()],
+            // Git 2.23 treats "false" as a hook filename; an empty path disables it.
+            ["-c".into(), "core.fsmonitor=".into()],
         );
     }
 }
@@ -532,6 +533,27 @@ mod tests {
     #[cfg(windows)]
     use std::ffi::OsString;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn inspection_disables_fsmonitor_as_an_empty_hook_path_for_git_2_23() {
+        let mut args: Vec<OsString> = ["-c", "core.fsmonitor=false", "status", "--porcelain"]
+            .into_iter()
+            .map(OsString::from)
+            .collect();
+        harden_inspection(&mut args);
+        assert_eq!(
+            args,
+            [
+                "-c",
+                "core.fsmonitor=false",
+                "-c",
+                "core.fsmonitor=",
+                "status",
+                "--porcelain"
+            ]
+            .map(OsString::from)
+        );
+    }
 
     #[test]
     fn inherited_redirects_are_all_stripped_but_unrelated_config_is_kept() {
