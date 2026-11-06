@@ -338,12 +338,14 @@ fn add_everything(
     temp: &TempIndex,
     warnings: &mut Vec<String>,
     unstable: &mut Vec<String>,
+    excluded: &[String],
 ) -> Result<()> {
     for attempt in 1..=(ADD_ATTEMPTS + MAX_UNSTABLE_FILES as u32) {
         let mut args = os_args(["add", "-A", "--ignore-errors", "--", "."]);
         args.extend(
             unstable
                 .iter()
+                .chain(excluded)
                 .map(|path| OsString::from(format!(":(exclude,literal){path}"))),
         );
         let output = run_indexed(repo, temp, args, None)?;
@@ -396,15 +398,24 @@ fn write_tree(repo: &ResolvedGitDirectory, temp: &TempIndex) -> Result<String> {
 pub fn snapshot_tree(repo: &ResolvedGitDirectory, verify: bool) -> Result<Snapshot> {
     ensure_supported(repo)?;
     let temp = TempIndex::seeded(repo)?;
+    snapshot_index(repo, verify, &temp, &[])
+}
+
+fn snapshot_index(
+    repo: &ResolvedGitDirectory,
+    verify: bool,
+    temp: &TempIndex,
+    excluded: &[String],
+) -> Result<Snapshot> {
     let mut warnings = Vec::new();
     let mut unstable = Vec::new();
-    add_everything(repo, &temp, &mut warnings, &mut unstable)?;
-    let mut tree = write_tree(repo, &temp)?;
+    add_everything(repo, temp, &mut warnings, &mut unstable, excluded)?;
+    let mut tree = write_tree(repo, temp)?;
     let mut passes = 1;
     let mut consistent = false;
     while verify && passes < MAX_PASSES {
-        add_everything(repo, &temp, &mut warnings, &mut unstable)?;
-        let again = write_tree(repo, &temp)?;
+        add_everything(repo, temp, &mut warnings, &mut unstable, excluded)?;
+        let again = write_tree(repo, temp)?;
         passes += 1;
         if again == tree {
             consistent = true;
@@ -523,6 +534,120 @@ fn write_commit(
     )?;
     ensure_success(&output, "git commit-tree failed")?;
     Ok(stdout_text(&output))
+}
+
+fn prepare_archive_index(repo: &ResolvedGitDirectory, temp: &TempIndex) -> Result<()> {
+    let listing = run_indexed(
+        repo,
+        temp,
+        os_args(["ls-files", "--stage", "-v", "-z"]),
+        None,
+    )?;
+    ensure_success(&listing, "task archive index scan failed")?;
+    if listing.truncated {
+        return Err(GitError::command(
+            "task archive",
+            "index scan was truncated",
+        ));
+    }
+    let mut assumed = Vec::new();
+    for record in listing.stdout.split(|b| *b == 0).filter(|p| !p.is_empty()) {
+        let path = record
+            .splitn(2, |b| *b == b'\t')
+            .nth(1)
+            .ok_or_else(|| GitError::command("task archive", "invalid index record"))?;
+        if matches!(record.first(), Some(b'S' | b's')) {
+            return Err(GitError::command(
+                "task archive",
+                "skip-worktree entries must be materialized before archiving",
+            ));
+        }
+        if record.get(2..8) == Some(b"160000") {
+            let relative = std::str::from_utf8(path)
+                .map_err(|_| GitError::command("task archive", "non-UTF-8 submodule path"))?;
+            let directory = super::utils::resolve_within_repo(&repo.local_path, relative)?;
+            if directory.is_dir() && std::fs::read_dir(&directory)?.next().is_some() {
+                return Err(GitError::command("task archive", format!("submodule {relative} contains data that the task snapshot cannot preserve; deinitialize it after saving its work")));
+            }
+        }
+        if record.first().is_some_and(u8::is_ascii_lowercase) {
+            assumed.extend_from_slice(path);
+            assumed.push(0);
+        }
+    }
+    if !assumed.is_empty() {
+        let output = run_indexed(
+            repo,
+            temp,
+            os_args(["update-index", "--no-assume-unchanged", "-z", "--stdin"]),
+            Some(assumed),
+        )?;
+        ensure_success(&output, "task archive index flags failed")?;
+    }
+    Ok(())
+}
+
+pub(crate) fn task_snapshot(
+    repo: &ResolvedGitDirectory,
+    id: &str,
+    excluded: &[String],
+) -> Result<super::task_state::TaskSnapshot> {
+    let temp = TempIndex::seeded(repo)?;
+    prepare_archive_index(repo, &temp)?;
+    let mut excluded = excluded.to_vec();
+    if !excluded.is_empty() {
+        let input = excluded
+            .iter()
+            .flat_map(|p| p.bytes().chain(std::iter::once(0)))
+            .collect();
+        let ignored = run_indexed(
+            repo,
+            &temp,
+            os_args(["check-ignore", "--stdin", "-z"]),
+            Some(input),
+        )?;
+        if ignored.timed_out || ignored.truncated || !matches!(ignored.exit_code, Some(0 | 1)) {
+            return Err(GitError::command(
+                "task archive",
+                "shared-link ignore check failed",
+            ));
+        }
+        // An exclusion below an ignored directory makes git add treat that directory as explicit.
+        excluded.retain(|p| !ignored.stdout.split(|b| *b == 0).any(|b| b == p.as_bytes()));
+    }
+    let snapshot = snapshot_index(repo, true, &temp, &excluded)?;
+    prepare_archive_index(repo, &temp)?;
+    if !snapshot.consistent || !snapshot.unstable_paths.is_empty() || !snapshot.warnings.is_empty()
+    {
+        return Err(GitError::command(
+            "task archive",
+            "could not capture a complete, stable snapshot; stop writers and retry",
+        ));
+    }
+    let parent = super::plumbing::resolve_commit(repo, "HEAD")?;
+    let admin = Admin::new(repo)?;
+    let commit = write_commit(
+        repo,
+        &admin,
+        &snapshot.tree,
+        Some(&parent),
+        "task archive snapshot",
+    )?;
+    let mut random = [0u8; 16];
+    getrandom::fill(&mut random).map_err(|e| GitError::command("task snapshot", e.to_string()))?;
+    let suffix: String = random.iter().map(|b| format!("{b:02x}")).collect();
+    let reference = format!("refs/terax/tasks/{id}/archive/{suffix}");
+    run_ok(
+        repo,
+        admin.plumb(os_args(["update-ref", &reference, &commit, ""]))?,
+        "git update-ref failed",
+    )?;
+    Ok(super::task_state::TaskSnapshot {
+        reference,
+        commit,
+        parent,
+        captures_ignored_files: false,
+    })
 }
 
 pub fn create(

@@ -4941,6 +4941,7 @@ dependencies = [
  "terax-cli",
  "terax-control-protocol",
  "tokio",
+ "toml 1.1.6+spec-1.1.0",
  "wasmparser",
  "which",
  "window-vibrancy 0.6.0",
