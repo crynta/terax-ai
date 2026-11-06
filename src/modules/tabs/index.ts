@@ -6,6 +6,7 @@ export {
   MAX_PANES_PER_TAB,
   useTabs,
   nextActiveInSpace,
+  canReplaceLastTab,
   planCloseTabsToRight,
   planCloseOtherTabs,
   type CloseTabsPlan,
