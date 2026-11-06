@@ -100,6 +100,11 @@ pub struct DecisionBroker {
 }
 
 impl DecisionBroker {
+    #[cfg(test)]
+    pub(crate) fn pending_count(&self) -> usize {
+        self.pending.lock().unwrap().len()
+    }
+
     /// Whether `window` shows decisions; only that window receives the events.
     pub fn ui_ready(&self, window: &str) -> bool {
         self.ready_windows

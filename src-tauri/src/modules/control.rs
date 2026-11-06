@@ -4,7 +4,7 @@ use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, SyncSender};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, SystemTime};
 
@@ -54,6 +54,8 @@ struct ControlCore {
     pending: Mutex<HashMap<String, SyncSender<FrontendResponse>>>,
     hooks: HookState,
     panes: Mutex<HashMap<u32, PaneCredential>>,
+    starting: Mutex<HashSet<String>>,
+    started: Condvar,
 }
 
 #[derive(Clone)]
@@ -69,6 +71,8 @@ impl Default for ControlState {
             pending: Mutex::new(HashMap::new()),
             hooks: HookState::default(),
             panes: Mutex::new(HashMap::new()),
+            starting: Mutex::new(HashSet::new()),
+            started: Condvar::new(),
         }))
     }
 }
@@ -80,6 +84,23 @@ pub struct ShellControlEnv {
     pub pane_id: u32,
     pub cli_path: Option<String>,
     pub cli_bin_dir: Option<PathBuf>,
+}
+
+pub struct PendingShell {
+    state: ControlState,
+    token: String,
+}
+
+impl Drop for PendingShell {
+    fn drop(&mut self) {
+        self.state
+            .0
+            .starting
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&self.token);
+        self.state.0.started.notify_all();
+    }
 }
 
 impl ControlState {
@@ -100,8 +121,23 @@ impl ControlState {
         })
     }
 
+    pub fn pending_shell(&self, env: &ShellControlEnv) -> PendingShell {
+        self.0
+            .starting
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(env.token.clone());
+        PendingShell {
+            state: self.clone(),
+            token: env.token.clone(),
+        }
+    }
+
     pub fn activate_shell(&self, env: &ShellControlEnv, pty_id: u32, host: &dyn AgentHost) {
         let mut panes = self.0.panes.lock().unwrap_or_else(|e| e.into_inner());
+        if self.0.shutting_down.load(Ordering::Acquire) {
+            return;
+        }
         // Pending spawns have no registered credential yet. Prune closed and
         // superseded generations when another terminal becomes live.
         panes.retain(|pane, credential| {
@@ -134,6 +170,12 @@ impl ControlState {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clear();
+        self.0
+            .starting
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+        self.0.started.notify_all();
         if let Some(runtime) = self.0.runtime.get() {
             remove_own_descriptor(&runtime.descriptor_path, &runtime.token);
             if let Some(dir) = &runtime.launcher_dir {
@@ -401,6 +443,27 @@ fn authenticate(
         } else {
             Ok(None)
         };
+    }
+    // Shell startup files may call the CLI before spawn returns. Wait for
+    // publication (or failed-spawn cleanup), without admitting a pending token.
+    let starting = state.0.starting.lock().unwrap_or_else(|e| e.into_inner());
+    let (starting, timeout) = state
+        .0
+        .started
+        .wait_timeout_while(starting, FRONTEND_TIMEOUT, |tokens| {
+            tokens.contains(&request.token)
+        })
+        .unwrap_or_else(|e| e.into_inner());
+    if timeout.timed_out() && starting.contains(&request.token) {
+        return Err(ControlResponse::failure(
+            request.id.clone(),
+            "server_unavailable",
+            "terminal is still starting",
+        ));
+    }
+    drop(starting);
+    if state.0.shutting_down.load(Ordering::Acquire) {
+        return Err(unauthorized());
     }
     let pane = request.caller.pane_id.ok_or_else(unauthorized)?;
     let mut panes = state.0.panes.lock().unwrap_or_else(|e| e.into_inner());
@@ -1258,6 +1321,74 @@ mod tests {
             let credential = panes.get(&3).unwrap();
             assert_eq!(credential.seen.len(), RECENT_HOOK_IDS);
             assert_eq!(credential.order.len(), RECENT_HOOK_IDS);
+        }
+
+        #[test]
+        fn startup_cli_waits_for_publication_and_failed_spawns_never_authenticate() {
+            for succeeds in [true, false] {
+                let server = serve();
+                let env = server.state.shell_env(3).unwrap();
+                let pending = server.state.pending_shell(&env);
+                let request = ControlRequest {
+                    protocol: PROTOCOL_VERSION,
+                    id: "startup".into(),
+                    token: env.token.clone(),
+                    method: METHOD_PING.into(),
+                    params: json!({}),
+                    caller: terax_control_protocol::CallerContext { pane_id: Some(3) },
+                };
+                let (began_tx, began_rx) = mpsc::channel();
+                let (done_tx, done_rx) = mpsc::channel();
+                let (state, host) = (server.state.clone(), server.host.clone());
+                let worker = thread::spawn(move || {
+                    began_tx.send(()).unwrap();
+                    done_tx
+                        .send(authenticate(&request, &state, host.as_ref()))
+                        .unwrap();
+                });
+                began_rx.recv().unwrap();
+                assert!(done_rx.recv_timeout(Duration::from_millis(100)).is_err());
+                if succeeds {
+                    server.state.activate_shell(&env, 9, server.host.as_ref());
+                }
+                drop(pending);
+                assert_eq!(done_rx.recv().unwrap().is_ok(), succeeds);
+                worker.join().unwrap();
+                assert!(server.state.0.starting.lock().unwrap().is_empty());
+            }
+        }
+
+        #[test]
+        fn a_generation_change_after_authentication_cannot_emit_or_register_a_decision() {
+            let server = serve();
+            server.state.hooks().broker.set_window_ready("main", true);
+            let request = ControlRequest {
+                protocol: PROTOCOL_VERSION,
+                id: "generation-race".into(),
+                token: server.token.clone(),
+                method: METHOD_HOOK.into(),
+                params: json!({"agent":"claude", "event":"PermissionRequest", "payload":{}, "wait_secs":1}),
+                caller: terax_control_protocol::CallerContext { pane_id: Some(3) },
+            };
+            let pty = authenticate(&request, &server.state, server.host.as_ref())
+                .unwrap()
+                .unwrap();
+            assert_eq!(pty, 9);
+            server.host.live.lock().unwrap().as_mut().unwrap().pty_id = 10;
+            let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            let _client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+            let (stream, _) = listener.accept().unwrap();
+            let response = agent_events::handle_bound(
+                &stream,
+                &request,
+                server.state.hooks(),
+                server.host.as_ref(),
+                pty,
+            );
+            assert_eq!(response.error.unwrap().code, "unauthorized");
+            assert!(server.host.events.lock().unwrap().is_empty());
+            assert!(server.host.signals.lock().unwrap().is_empty());
+            assert_eq!(server.state.hooks().broker.pending_count(), 0);
         }
 
         #[test]
