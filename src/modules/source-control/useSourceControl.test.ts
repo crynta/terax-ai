@@ -118,6 +118,7 @@ describe("planContextRefresh", () => {
     contextPath: "/repo/app",
     repoRoot: "/repo",
     hasRepo: true,
+    isLoading: false,
     ageMs: 60_000,
   };
 
@@ -137,6 +138,12 @@ describe("planContextRefresh", () => {
     // Fresh but a different repository: must refetch.
     expect(
       planContextRefresh({ ...loaded, ageMs: 500, contextPath: "/other" }),
+    ).toBe("refresh");
+  });
+
+  it("refreshes when a context change may have invalidated an in-flight request", () => {
+    expect(
+      planContextRefresh({ ...loaded, ageMs: 500, isLoading: true }),
     ).toBe("refresh");
   });
 

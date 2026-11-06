@@ -170,6 +170,7 @@ export function planContextRefresh(input: {
   contextPath: string | null;
   repoRoot: string | null;
   hasRepo: boolean;
+  isLoading: boolean;
   /** Milliseconds since the last completed refresh. */
   ageMs: number;
 }): ContextRefreshPlan {
@@ -179,7 +180,12 @@ export function planContextRefresh(input: {
     if (!input.hasRepo && input.repoRoot === null) return "keep";
     return sameRepo ? "keep" : "clear";
   }
-  if (input.ageMs < SC_STATUS_TTL_MS && sameRepo && input.hasRepo) {
+  if (
+    !input.isLoading &&
+    input.ageMs < SC_STATUS_TTL_MS &&
+    sameRepo &&
+    input.hasRepo
+  ) {
     return "reuse";
   }
   return "refresh";
@@ -350,17 +356,14 @@ export function useSourceControl(
 
         if (reusableRoot) {
           try {
-            repo = stateRef.current.repo ?? null;
             status = await git.status(reusableRoot);
             if (!isCurrentRequest()) return;
-            if (!repo || repo.repoRoot !== reusableRoot) {
-              repo = {
-                repoRoot: reusableRoot,
-                branch: status.branch,
-                upstream: status.upstream,
-                isDetached: status.isDetached,
-              };
-            }
+            repo = {
+              repoRoot: reusableRoot,
+              branch: status.branch,
+              upstream: status.upstream,
+              isDetached: status.isDetached,
+            };
           } catch {
             const snapshot = await git.panelSnapshot(contextPath);
             if (!isCurrentRequest()) return;
@@ -444,9 +447,9 @@ export function useSourceControl(
         if (!isCurrentRequest()) return;
         setState((current) => ({
           ...current,
-          repo: null,
-          hasRepo: false,
-          status: null,
+          repo: reusableRoot ? current.repo : null,
+          hasRepo: !!reusableRoot,
+          status: reusableRoot ? current.status : null,
           isLoading: false,
           localError: normalizeError(error),
         }));
@@ -548,6 +551,7 @@ export function useSourceControl(
         contextPath,
         repoRoot: current.repo?.repoRoot ?? null,
         hasRepo: current.hasRepo,
+        isLoading: current.isLoading,
         ageMs: Date.now() - lastRefreshAtRef.current,
       });
       switch (plan) {

@@ -200,6 +200,82 @@ it("holds no watch without a live enabled consumer and releases on hide", async 
   expect(harness.watch).toHaveBeenCalledTimes(1);
 });
 
+it("refreshes the new context when cd invalidates an in-flight watched refresh", async () => {
+  render({ path: "/real/repo/a" });
+  await settle({ path: "/real/repo/a" });
+  let finish!: (value: typeof status) => void;
+  harness.status.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const refresh = harness.watch.mock.calls[0][1] as () => Promise<void>;
+  const pending = refresh();
+  render({ path: "/real/repo/a" });
+  expect(summary.isLoading).toBe(true);
+  const changed = { ...status, ahead: 1 };
+  harness.status.mockResolvedValue(changed);
+  render({ path: "/real/repo/b" });
+  await settle({ path: "/real/repo/b" });
+  expect(summary.isLoading).toBe(false);
+  expect(summary.status).toEqual(changed);
+  finish(status);
+  await pending;
+  render({ path: "/real/repo/b" });
+  expect(summary.status).toEqual(changed);
+  expect(harness.watch).toHaveBeenCalledTimes(1);
+  expect(harness.release).not.toHaveBeenCalled();
+});
+
+it("retains the watch after a transient error so the next change can recover", async () => {
+  const props = { path: "/real/repo" };
+  render(props);
+  await settle(props);
+  const refresh = harness.watch.mock.calls[0][1] as () => Promise<void>;
+  harness.status.mockRejectedValueOnce(new Error("status failed"));
+  harness.snapshot.mockRejectedValueOnce(new Error("repository unavailable"));
+  await refresh();
+  render(props);
+  expect(summary.localError).toBe("repository unavailable");
+  expect(summary.repo).toEqual(repo);
+  expect(harness.release).not.toHaveBeenCalled();
+  await refresh();
+  render(props);
+  expect(summary.localError).toBeNull();
+  expect(summary.isLoading).toBe(false);
+  expect(harness.watch).toHaveBeenCalledTimes(1);
+});
+
+it("releases the watch when a successful snapshot confirms the repository is gone", async () => {
+  const props = { path: "/real/repo" };
+  render(props);
+  await settle(props);
+  harness.status.mockRejectedValueOnce(new Error("status failed"));
+  harness.snapshot.mockResolvedValueOnce({ repo: null, status: null });
+  await harness.watch.mock.calls[0][1]();
+  render(props);
+  expect(summary.repo).toBeNull();
+  expect(summary.localError).toBeNull();
+  expect(harness.release).toHaveBeenCalledTimes(1);
+});
+
+it("updates repository metadata after a branch or upstream change", async () => {
+  const props = { path: "/real/repo" };
+  harness.snapshot.mockResolvedValue({
+    repo: { ...repo, upstream: "origin/main" },
+    status: { ...status, upstream: "origin/main" },
+  });
+  render(props);
+  await settle(props);
+  harness.status.mockResolvedValue({ ...status, branch: "feature" });
+  await harness.watch.mock.calls[0][1]();
+  render(props);
+  expect(summary.repo?.branch).toBe("feature");
+  expect(summary.upstream).toBeNull();
+  expect(harness.watch).toHaveBeenCalledTimes(1);
+});
+
 it.each(["local", "wsl"] as const)(
   "keeps focus fallback in %s workspaces",
   async (kind) => {
