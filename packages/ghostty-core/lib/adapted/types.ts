@@ -261,6 +261,7 @@ export type TeraxGhosttyWasmExports = WebAssembly.Exports & {
   readonly restty_scrollbar_total: (handle: number) => number;
   readonly restty_scrollbar_offset: (handle: number) => number;
   readonly restty_scrollbar_len: (handle: number) => number;
+  readonly restty_active_cursor_x: (handle: number) => number;
   readonly restty_active_cursor_y: (handle: number) => number;
   readonly restty_selection_set: (
     handle: number,

@@ -685,6 +685,7 @@ fn run(shared: Arc<Shared>) {
 
 #[cfg(test)]
 mod tests {
+    use super::super::presentation::{INTERACTIVE_COALESCE, SUSTAINED_COALESCE, SUSTAINED_WINDOW};
     use super::super::wire::{decode_frames, Frame, RESPONSE_CAP};
     use super::*;
     use crate::modules::pty::output::MAX_IN_FLIGHT_BYTES;
@@ -1735,5 +1736,377 @@ mod tests {
             focused.0
         );
         assert!(responses * 3 < v1_ops);
+    }
+
+    /// Round trip from a burst of output to the response that carries it, for a
+    /// terminal that was idle for `idle` before it, in a harness whose frontend
+    /// polls again at once.
+    fn burst_latency(class: PresentationClass, idle: Duration) -> Duration {
+        let mut h = Harness::new();
+        let token = h.open();
+        let queue = h.register(1, class);
+        h.attach(token, &[1]);
+        // A previous burst the frontend fully acknowledged.
+        h.push(&queue, b"prompt$ ");
+        h.advance(ms(300));
+        h.responses();
+        h.poll(token, &[ack(1, 8)]);
+        h.advance(idle);
+        let start = h.now;
+        h.push(&queue, b"ls output\r\n");
+        loop {
+            h.step();
+            if !h.frames().is_empty() {
+                return h.now - start;
+            }
+            assert!(h.now - start < ms(1000), "no response for {class:?}");
+            h.advance(ms(1));
+        }
+    }
+
+    #[test]
+    fn a_short_burst_after_idle_on_a_focused_terminal_waits_one_interactive_tick() {
+        for idle in [ms(41), ms(100), ms(1000), Duration::from_secs(25)] {
+            assert_eq!(
+                burst_latency(PresentationClass::Focused, idle),
+                INTERACTIVE_COALESCE,
+                "idle {idle:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_sustained_cadence_never_outlives_the_output_that_caused_it() {
+        let mut h = Harness::new();
+        let token = h.open();
+        let queue = h.register(1, PresentationClass::Focused);
+        h.attach(token, &[1]);
+        let mut sent = 0u64;
+        // A stream that pushes every 10 ms is delivered at the display cadence.
+        for _ in 0..30 {
+            h.advance(ms(10));
+            h.push(&queue, b"frame");
+            h.advance(SUSTAINED_COALESCE);
+            for (_, body) in h.responses() {
+                sent += body.len() as u64 - 17;
+            }
+            h.poll(token, &[ack(1, sent)]);
+        }
+        assert!(sent > 0);
+        // The first burst after it stops is back on the interactive deadline.
+        h.advance(SUSTAINED_WINDOW + ms(1));
+        let start = h.now;
+        h.push(&queue, b"$ ");
+        h.step();
+        h.advance(INTERACTIVE_COALESCE);
+        assert!(!h.frames().is_empty());
+        assert_eq!(h.now - start, INTERACTIVE_COALESCE);
+    }
+
+    #[test]
+    fn keystroke_echo_is_delivered_within_the_sustained_deadline_at_any_typing_speed() {
+        for gap in [5u64, 20, 33, 40, 41, 80, 250] {
+            let mut h = Harness::new();
+            let token = h.open();
+            let queue = h.register(1, PresentationClass::Focused);
+            h.attach(token, &[1]);
+            let mut acked = 0u64;
+            let mut worst = Duration::ZERO;
+            for _ in 0..40 {
+                let start = h.now;
+                h.push(&queue, b"x");
+                loop {
+                    h.step();
+                    if let Some((_, body)) = h.responses().first() {
+                        acked += (body.len() - 17) as u64;
+                        break;
+                    }
+                    h.advance(ms(1));
+                    assert!(h.now - start <= SUSTAINED_COALESCE, "gap {gap} ms");
+                }
+                worst = worst.max(h.now - start);
+                h.poll(token, &[ack(1, acked)]);
+                h.advance(ms(gap).saturating_sub(h.now - start));
+            }
+            assert!(worst <= SUSTAINED_COALESCE, "gap {gap} ms: {worst:?}");
+        }
+    }
+
+    #[test]
+    fn a_hidden_flood_does_not_delay_the_focused_terminal_beyond_its_own_deadline() {
+        let mut h = Harness::new();
+        let token = h.open();
+        let flood = h.register(1, PresentationClass::Hidden);
+        let typed = h.register(2, PresentationClass::Focused);
+        h.attach(token, &[1, 2]);
+        let mut acked_flood = 0u64;
+        let mut acked_typed = 0u64;
+        let mut worst = Duration::ZERO;
+        for round in 0..50 {
+            // Typing pauses between keys, so each key starts a fresh burst.
+            h.advance(SUSTAINED_WINDOW + ms(1));
+            h.push(&flood, &vec![b'f'; 300 * 1024]);
+            h.advance(ms(7));
+            let start = h.now;
+            h.push(&typed, b"k");
+            loop {
+                h.step();
+                let mut seen = false;
+                for (_, body) in h.responses() {
+                    for frame in decode_frames(&body).unwrap() {
+                        if let Frame::Data { id, payload, .. } = frame {
+                            if id == 1 {
+                                acked_flood += payload.len() as u64;
+                            } else {
+                                acked_typed += payload.len() as u64;
+                                seen = true;
+                            }
+                        }
+                    }
+                    h.poll(token, &[ack(1, acked_flood), ack(2, acked_typed)]);
+                }
+                if seen {
+                    break;
+                }
+                h.advance(ms(1));
+                assert!(h.now - start < ms(100), "round {round}");
+            }
+            worst = worst.max(h.now - start);
+        }
+        assert!(worst <= INTERACTIVE_COALESCE, "{worst:?}");
+    }
+
+    const ACK_ONLY_BYTES: u64 = (MAX_IN_FLIGHT_BYTES / 2) as u64;
+
+    /// The webview side of the stream following `PtyOutputHub.ts`: acknowledgements
+    /// ride on the next poll, an ack-only request goes out only for half a window
+    /// of unsent progress or after a `sync`, and parsing completes at a fixed rate
+    /// in whole data frames.
+    struct Frontend {
+        token: u64,
+        id: u32,
+        parse_bytes_per_ms: u64,
+        received: u64,
+        parsed: u64,
+        sent: u64,
+        urgent: bool,
+        attach_sent: bool,
+        poll_out: bool,
+        parse_free_ms: u64,
+        parsing: std::collections::VecDeque<(u64, u64)>,
+        exit: Option<(u64, i32)>,
+        last_parsed_ms: u64,
+        responses: u64,
+    }
+
+    impl Frontend {
+        fn new(token: u64, id: u32, parse_bytes_per_ms: u64) -> Self {
+            Self {
+                token,
+                id,
+                parse_bytes_per_ms,
+                received: 0,
+                parsed: 0,
+                sent: 0,
+                urgent: false,
+                attach_sent: false,
+                poll_out: false,
+                parse_free_ms: 0,
+                parsing: Default::default(),
+                exit: None,
+                last_parsed_ms: 0,
+                responses: 0,
+            }
+        }
+
+        fn collect(&mut self) -> Vec<Ack> {
+            if self.attach_sent && self.parsed <= self.sent {
+                return Vec::new();
+            }
+            self.attach_sent = true;
+            self.sent = self.sent.max(self.parsed);
+            if self.sent >= self.received {
+                self.urgent = false;
+            }
+            vec![Ack {
+                id: self.id,
+                bytes: self.parsed,
+            }]
+        }
+
+        fn needs_ack_only(&self) -> bool {
+            if !self.attach_sent {
+                return true;
+            }
+            let unsent = self.parsed - self.sent;
+            unsent > 0 && (self.urgent || unsent >= ACK_ONLY_BYTES)
+        }
+
+        fn issue_poll(&mut self, h: &mut Harness) {
+            if self.exit.is_some() || self.poll_out {
+                return;
+            }
+            let acks = self.collect();
+            self.poll_out = true;
+            h.request(Endpoint::Poll, self.token, &acks);
+        }
+
+        fn send_ack_only(&mut self, h: &mut Harness) {
+            let acks = self.collect();
+            if acks.is_empty() {
+                return;
+            }
+            h.request(Endpoint::Ack, self.token, &acks);
+            assert!(h.responses().iter().all(|(_, body)| body.is_empty()));
+        }
+
+        fn kick(&mut self, h: &mut Harness) {
+            if self.exit.is_some() {
+                return;
+            }
+            if !self.poll_out {
+                self.issue_poll(h);
+            } else if self.needs_ack_only() {
+                self.send_ack_only(h);
+            }
+        }
+
+        /// Runs the hub, then handles every response it produced.
+        fn settle(&mut self, h: &mut Harness, now_ms: u64) {
+            h.step();
+            loop {
+                let responses = h.responses();
+                if responses.is_empty() {
+                    return;
+                }
+                for (status, body) in responses {
+                    assert_eq!(status, STATUS_OK);
+                    self.poll_out = false;
+                    self.responses += 1;
+                    // Poll again before parsing, as the hub does.
+                    self.issue_poll(h);
+                    for frame in decode_frames(&body).unwrap() {
+                        match frame {
+                            Frame::Data {
+                                offset, payload, ..
+                            } => {
+                                assert_eq!(offset, self.received, "gapless stream");
+                                self.received += payload.len() as u64;
+                                let start = self.parse_free_ms.max(now_ms);
+                                let finish = start
+                                    + (payload.len() as u64).div_ceil(self.parse_bytes_per_ms);
+                                self.parse_free_ms = finish;
+                                self.parsing.push_back((finish, self.received));
+                            }
+                            Frame::Sync { .. } => {
+                                if self.sent < self.received {
+                                    self.urgent = true;
+                                }
+                            }
+                            Frame::Exit { code, .. } => self.exit = Some((now_ms, code)),
+                            Frame::Failed { reason, .. } => panic!("failed frame: {reason}"),
+                        }
+                    }
+                    if self.exit.is_none() && self.poll_out && self.needs_ack_only() {
+                        self.send_ack_only(h);
+                    }
+                }
+                h.step();
+            }
+        }
+
+        fn parse_until(&mut self, h: &mut Harness, now_ms: u64) {
+            let mut progressed = false;
+            while let Some(&(finish, end)) = self.parsing.front() {
+                if finish > now_ms {
+                    break;
+                }
+                self.parsing.pop_front();
+                self.parsed = end;
+                self.last_parsed_ms = finish;
+                progressed = true;
+            }
+            if progressed {
+                self.kick(h);
+                self.settle(h, now_ms);
+            }
+        }
+    }
+
+    /// A shell that writes `total` bytes at `produce_per_ms` (blocking, as the
+    /// reader does, while the queue is full) and then exits, against a frontend
+    /// parsing at `parse_per_ms`. Returns `(ms from last parse to exit, responses)`.
+    fn run_to_exit(
+        class: PresentationClass,
+        total: u64,
+        produce_per_ms: u64,
+        parse_per_ms: u64,
+    ) -> (u64, u64) {
+        use super::super::output::MAX_BUFFERED_BYTES;
+        let mut h = Harness::new();
+        let token = h.open();
+        let queue = h.register(1, class);
+        let mut fe = Frontend::new(token, 1, parse_per_ms);
+        fe.issue_poll(&mut h);
+        fe.settle(&mut h, 0);
+        let (mut produced, mut elapsed) = (0u64, 0u64);
+        while fe.exit.is_none() {
+            elapsed += 1;
+            assert!(elapsed < 20_000, "no exit frame within 20 s of virtual time");
+            h.advance(ms(1));
+            if produced < total {
+                let n = produce_per_ms.min(total - produced);
+                let summary = queue.summary();
+                if summary.pending_len + summary.in_flight_bytes + n as usize <= MAX_BUFFERED_BYTES
+                {
+                    h.push(&queue, &vec![b'x'; n as usize]);
+                    produced += n;
+                    if produced == total {
+                        queue.begin_exit(Duration::from_secs(30));
+                        queue.finish_reading();
+                        queue.set_exit_code(0);
+                    }
+                }
+            }
+            fe.settle(&mut h, elapsed);
+            fe.parse_until(&mut h, elapsed);
+        }
+        let summary = queue.summary();
+        assert!(!summary.timed_out, "exit came from the drain deadline");
+        assert_eq!(fe.exit.map(|(_, code)| code), Some(0));
+        assert_eq!(fe.received, total);
+        assert_eq!(fe.parsed, total);
+        (fe.exit.unwrap().0 - fe.last_parsed_ms, fe.responses)
+    }
+
+    #[test]
+    fn exit_after_output_is_delivered_right_after_the_last_parse_whatever_the_rates() {
+        let mib = 1024 * 1024;
+        let cases = [
+            // (total, produced per ms, parsed per ms)
+            (20 * 1024, 20 * 1024, 500_000),
+            (3 * mib, 1_000_000, 500_000),
+            (3 * mib, 1_000_000, 20_000),
+            (3 * mib, 1_000_000, 2_000),
+            (3 * mib, 200_000, 2_000_000),
+            (600 * 1024, 5_000, 20_000),
+            (300 * 1024, 200, 500_000),
+            (64 * 1024, 100, 100),
+        ];
+        for class in [
+            PresentationClass::Focused,
+            PresentationClass::Visible,
+            PresentationClass::Hidden,
+            PresentationClass::Occluded,
+        ] {
+            for (total, produce, parse) in cases {
+                let (after_parse, responses) = run_to_exit(class, total, produce, parse);
+                assert!(
+                    after_parse <= 1,
+                    "{class:?} {total} bytes at {produce}/ms parsed at {parse}/ms: exit \
+                     {after_parse} ms after the last parse ({responses} responses)"
+                );
+            }
+        }
     }
 }

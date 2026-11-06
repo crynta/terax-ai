@@ -1,4 +1,6 @@
 import { loadSessionRenderer } from "@/modules/terminal/ghostty/loadSessionRenderer";
+import { currentWorkspaceEnv, workspaceScopeKey } from "@/modules/workspace";
+import { useSpaces } from "@/modules/spaces/lib/useSpaces";
 import {
   ensureGhosttyBlocks,
   ghosttyBlocks,
@@ -10,7 +12,6 @@ import {
   currentFocus,
   focusIsMovable,
 } from "@/modules/terminal/lib/focusGuard";
-import { openExternalUrl } from "@/lib/external-link";
 import {
   ensureMonoFontsLoaded,
   resolveFontFamily,
@@ -32,6 +33,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { isAgentActivePty } from "../lib/agentActivity";
 import { openPty, type PtySession } from "../lib/pty-bridge";
 import { writeTerminalClipboard } from "../lib/terminalClipboard";
 import { LatestClipboardWrite } from "@/modules/terminal/lib/LatestClipboardWrite";
@@ -48,7 +50,10 @@ import {
 import { getWebGpuTerminalRuntime } from "./gpu/WebGpuTerminalRuntime";
 import { WebGpuTerminalSurface } from "./gpu/WebGpuTerminalSurface";
 import { GhosttyInputController } from "./input/GhosttyInputController";
-import { encodeTerminalSubmission } from "./input/terminalInputEncoding";
+import {
+  encodeTerminalSubmission,
+  enqueueTerminalInput,
+} from "./input/terminalInputEncoding";
 import type {
   WebGlTerminalSurface,
   WebGlTerminalSurfaceOptions,
@@ -94,6 +99,11 @@ type GhosttySession = {
   startupError: string | null;
   rendererError: string | null;
   shellExited: boolean;
+  /** OSC 133 has been seen, so `commandRunning` can be trusted. */
+  promptIntegrated: boolean;
+  commandRunning: boolean;
+  /** The shell's prompts say whether a command started. */
+  commandTracked: boolean;
   disposed: boolean;
   generation: number;
   initializing: Promise<void> | null;
@@ -247,6 +257,22 @@ export function useGhosttyTerminalSession({
     },
     [leafId],
   );
+  const writeAtPrompt = useCallback(
+    async (data: string) => {
+      const expected = sessions.get(leafId);
+      const pty = expected?.pty;
+      if (!pty) return false;
+      const { writeAtShellPrompt } = await import("../lib/promptInjection");
+      const session = sessions.get(leafId);
+      if (!session || session !== expected || session.pty !== pty) return false;
+      return writeAtShellPrompt(
+        session,
+        data,
+        () => !!session.pty && isAgentActivePty(session.pty.id),
+      );
+    },
+    [leafId],
+  );
   const focus = useCallback(() => focusGhosttySession(leafId), [leafId]);
   const getBuffer = useCallback(
     (maxLines = 200) => sessions.get(leafId)?.model?.readText(maxLines) ?? null,
@@ -258,17 +284,7 @@ export function useGhosttyTerminalSession({
   );
   const applyTheme = useCallback(() => {
     const session = sessions.get(leafId);
-    if (!session?.model || !session.surface) return;
-    const theme = readTerminalGpuTheme();
-    session.model.setColors(
-      rgbToInt(theme.foreground),
-      rgbToInt(theme.background),
-      rgbToInt(theme.cursor),
-      theme.palette.map(rgbToInt),
-    );
-    session.surface.setTheme(theme);
-    if (session.surfaceOptions)
-      session.surfaceOptions = { ...session.surfaceOptions, theme };
+    if (session) applyThemeToSession(session);
   }, [leafId]);
 
   const retry = useCallback(() => {
@@ -288,13 +304,39 @@ export function useGhosttyTerminalSession({
       model,
       retry,
       write,
+      writeAtPrompt,
       focus,
       getBuffer,
       getSelection,
       applyTheme,
     }),
-    [write, focus, getBuffer, getSelection, applyTheme, error, retry, model],
+    [
+      write,
+      writeAtPrompt,
+      focus,
+      getBuffer,
+      getSelection,
+      applyTheme,
+      error,
+      retry,
+      model,
+    ],
   );
+}
+
+function applyThemeToSession(session: GhosttySession): void {
+  if (!session.model || !session.surface) return;
+  const theme = readTerminalGpuTheme();
+  session.model.setColors(
+    rgbToInt(theme.foreground),
+    rgbToInt(theme.background),
+    rgbToInt(theme.cursor),
+    theme.palette.map(rgbToInt),
+  );
+  session.surface.setTheme(theme);
+  void session.pty?.setColors(theme).catch(() => {});
+  if (session.surfaceOptions)
+    session.surfaceOptions = { ...session.surfaceOptions, theme };
 }
 
 export function hasGhosttySession(leafId: number): boolean {
@@ -304,7 +346,7 @@ export function hasGhosttySession(leafId: number): boolean {
 export function writeToGhosttySession(leafId: number, data: string): boolean {
   const session = sessions.get(leafId);
   if (!session || session.shellExited || session.disposed) return false;
-  return session.writer.enqueue(textEncoder.encode(data));
+  return enqueueTerminalInput(session, textEncoder.encode(data));
 }
 
 export function submitToGhosttySession(leafId: number, text: string): boolean {
@@ -314,7 +356,7 @@ export function submitToGhosttySession(leafId: number, text: string): boolean {
     text,
     session.model?.modes().bracketedPaste ?? false,
   );
-  const accepted = session.writer.enqueue(textEncoder.encode(data));
+  const accepted = enqueueTerminalInput(session, textEncoder.encode(data));
   if (accepted) {
     const blocks = ghosttyBlocks(leafId);
     if (blocks) {
@@ -451,6 +493,9 @@ async function respawnGhosttySession(
   await session.pty?.close();
   session.pty = null;
   session.shellExited = false;
+  session.promptIntegrated = false;
+  session.commandRunning = false;
+  session.commandTracked = false;
   session.lastCwd = null;
   session.initialCwd = cwd ?? session.initialCwd;
   session.startupError = null;
@@ -508,6 +553,9 @@ function ensureSession(
     startupError: null,
     rendererError: null,
     shellExited: false,
+    promptIntegrated: false,
+    commandRunning: false,
+    commandTracked: false,
     disposed: false,
     generation: 0,
     initializing: null,
@@ -608,7 +656,13 @@ async function initializeSessionGeneration(
         `[terax] Ghostty semantic event queue dropped ${dropped} event(s)`,
       );
     },
+    onPromptEnd: (reportsCommandStart) => {
+      session.commandTracked = reportsCommandStart;
+    },
     onCommandState: (running) => {
+      session.promptIntegrated = true;
+      session.commandRunning = running;
+      session.commandTracked = false;
       if (!running) mark("firstPromptMs");
     },
   });
@@ -669,8 +723,28 @@ async function initializeSessionGeneration(
     onFirstFrame: () => mark("firstFrameMs"),
     onFrame: () => ghosttyBlocks(session.leafId)?.present(),
     onRequestFocus: () => focusGhosttySession(session.leafId),
-    onOpenLink: (uri: string) => {
-      void openExternalUrl(uri, () => focusGhosttySession(session.leafId));
+    // Opening, confirming and resolving links is only needed on a click.
+    onOpenLink: (link) => {
+      const workspace = { ...currentWorkspaceEnv() };
+      const space = useSpaces.getState().activeId;
+      const isCurrent = () =>
+        !session.disposed &&
+        session.visible &&
+        sessions.get(session.leafId) === session &&
+        useSpaces.getState().activeId === space &&
+        workspaceScopeKey(currentWorkspaceEnv()) ===
+          workspaceScopeKey(workspace);
+      const context = {
+        cwd: session.lastCwd ?? session.initialCwd ?? null,
+        workspace,
+        isCurrent,
+        focus: () => {
+          if (isCurrent()) focusGhosttySession(session.leafId);
+        },
+      };
+      void import("@/modules/terminal/lib/terminalLinks")
+        .then(({ activateTerminalLink }) => activateTerminalLink(link, context))
+        .catch(context.focus);
     },
   };
   session.surfaceOptions = surfaceBaseOptions;
@@ -775,6 +849,7 @@ async function initializeSessionGeneration(
     !!ghosttyBlocks(session.leafId),
     preferences.terminalShell || undefined,
     session.leafId,
+    theme,
   );
   if (session.disposed || generation !== session.generation) {
     await pty.close();
@@ -789,6 +864,11 @@ async function initializeSessionGeneration(
   session.writer.attach(pty);
   if (model.cols !== startCols || model.rows !== startRows) {
     session.ptyResize.send(model.cols, model.rows);
+  }
+  // The theme can change while fonts, WASM and the renderer load; a change
+  // before the PTY was attached found no PTY to tell, so look again.
+  if (JSON.stringify(readTerminalGpuTheme()) !== JSON.stringify(theme)) {
+    applyThemeToSession(session);
   }
 }
 
@@ -818,7 +898,7 @@ function createGhosttyInput(
         !(bytes.length === 1 && bytes[0] === 3)
       )
         return;
-      session.writer.enqueue(bytes);
+      enqueueTerminalInput(session, bytes);
     },
     onKeyDown: (event) => {
       const blocks = ghosttyBlocks(session.leafId);

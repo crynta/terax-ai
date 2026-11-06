@@ -120,6 +120,45 @@ describe("git api argument shapes", () => {
     });
   });
 
+  it("maps task commands and defaults archive to non-forced", async () => {
+    await git.projectConfig("/r");
+    expect(mocks.invoke).toHaveBeenLastCalledWith("task_project_config", {
+      repoRoot: "/r",
+      workspace,
+    });
+    await git.taskCreate("/r", { name: "fix" });
+    expect(mocks.invoke).toHaveBeenLastCalledWith("task_worktree_create", {
+      repoRoot: "/r",
+      request: { name: "fix", base: null },
+      workspace,
+    });
+    await git.taskPrepareArchive("/r", "id");
+    expect(mocks.invoke).toHaveBeenLastCalledWith(
+      "task_worktree_prepare_archive",
+      { repoRoot: "/r", taskId: "id", workspace },
+    );
+    await git.taskArchive("/r", "id");
+    expect(mocks.invoke).toHaveBeenLastCalledWith("task_worktree_archive", {
+      repoRoot: "/r",
+      taskId: "id",
+      force: false,
+      workspace,
+    });
+    await git.taskRestore("/r", "id");
+    expect(mocks.invoke).toHaveBeenLastCalledWith("task_worktree_restore", {
+      repoRoot: "/r",
+      taskId: "id",
+      reference: null,
+      workspace,
+    });
+    await git.taskDiskUsage("/r", "id");
+    expect(mocks.invoke).toHaveBeenLastCalledWith("task_worktree_disk_usage", {
+      repoRoot: "/r",
+      taskId: "id",
+      workspace,
+    });
+  });
+
   it("maps checkpoint calls onto the backend argument names", async () => {
     await git.checkpointCreate("/wt", "task-1", 3);
     expect(mocks.invoke).toHaveBeenLastCalledWith("git_checkpoint_create", {

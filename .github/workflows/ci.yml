@@ -86,6 +86,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             fish \
+            zsh \
             libwebkit2gtk-4.1-dev \
             libgtk-3-dev \
             librsvg2-dev \
@@ -122,6 +123,12 @@ jobs:
 
       - name: fish shell integration
         run: fish --no-config src-tauri/src/modules/pty/scripts/init.test.fish
+
+      - name: bash shell integration
+        run: bash src-tauri/src/modules/pty/scripts/bashrc.test.bash
+
+      - name: zsh shell integration
+        run: python3 src-tauri/src/modules/pty/scripts/zshrc.test.py
 
   rust-platforms:
     name: rust-test (${{ matrix.os }})

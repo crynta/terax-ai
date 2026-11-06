@@ -1,5 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
 import { currentWorkspaceEnv } from "@/modules/workspace";
+import { invoke } from "@tauri-apps/api/core";
 import type {
   ApplyHunksRequest,
   ApplyOutcome,
@@ -21,7 +21,13 @@ import type {
   GitRepoInfo,
   GitStatusSnapshot,
   GitWatchInfo,
+  ProjectConfig,
   RestoreReport,
+  TaskArchive,
+  TaskCreated,
+  TaskCreateRequest,
+  TaskDiskUsage,
+  TaskWorktree,
   UpstreamInfo,
   WorktreeAdded,
   WorktreeAddRequest,
@@ -189,6 +195,55 @@ export const git = {
     invoke<ApplyOutcome>("git_apply_hunks", {
       repoRoot,
       request: { ...request, oldPath: request.oldPath ?? null },
+      workspace: currentWorkspaceEnv(),
+    }),
+
+  projectConfig: (repoRoot: string) =>
+    invoke<ProjectConfig>("task_project_config", {
+      repoRoot,
+      workspace: currentWorkspaceEnv(),
+    }),
+  taskList: (repoRoot: string) =>
+    invoke<TaskWorktree[]>("task_worktree_list", {
+      repoRoot,
+      workspace: currentWorkspaceEnv(),
+    }),
+  taskCreate: (repoRoot: string, request: TaskCreateRequest) =>
+    invoke<TaskCreated>("task_worktree_create", {
+      repoRoot,
+      request: { ...request, base: request.base ?? null },
+      workspace: currentWorkspaceEnv(),
+    }),
+  /** Snapshot and inspect first; run archiveScript in the task terminal before taskArchive. */
+  taskPrepareArchive: (repoRoot: string, taskId: string) =>
+    invoke<TaskArchive>("task_worktree_prepare_archive", {
+      repoRoot,
+      taskId,
+      workspace: currentWorkspaceEnv(),
+    }),
+  /** Rechecks and snapshots again before removal; force requires the caller's confirmation. */
+  taskArchive: (repoRoot: string, taskId: string, force = false) =>
+    invoke<TaskArchive>("task_worktree_archive", {
+      repoRoot,
+      taskId,
+      force,
+      workspace: currentWorkspaceEnv(),
+    }),
+  taskRestore: (
+    repoRoot: string,
+    taskId: string,
+    reference: string | null = null,
+  ) =>
+    invoke<TaskCreated>("task_worktree_restore", {
+      repoRoot,
+      taskId,
+      reference,
+      workspace: currentWorkspaceEnv(),
+    }),
+  taskDiskUsage: (repoRoot: string, taskId: string) =>
+    invoke<TaskDiskUsage>("task_worktree_disk_usage", {
+      repoRoot,
+      taskId,
       workspace: currentWorkspaceEnv(),
     }),
 

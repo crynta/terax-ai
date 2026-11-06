@@ -185,9 +185,9 @@ describe.each([
         terminal.write(new TextEncoder().encode("line\r\n".repeat(10_000)));
         expect(terminal.semanticMarkerLine(first.marker)).toBeNull();
         terminal.write(
-          new TextEncoder().encode("\x1b]133;C;x\x07".repeat(3000)),
+          new TextEncoder().encode("\x1b]133;C;x\x07".repeat(5000)),
         );
-        expect(terminal.semanticMarkerCount()).toBe(2048);
+        expect(terminal.semanticMarkerCount()).toBe(4096);
         terminal.enableSemanticMarkers(false);
         expect(terminal.semanticMarkerCount()).toBe(0);
         terminal.enableSemanticMarkers(true);
