@@ -31,6 +31,8 @@ pub struct TaskRecord {
     pub archive_script: String,
     pub include: Vec<String>,
     pub shared: Vec<String>,
+    #[serde(default)]
+    pub shared_links: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

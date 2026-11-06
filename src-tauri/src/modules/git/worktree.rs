@@ -1098,7 +1098,7 @@ pub fn remove_with_limits(
     workspace: &WorkspaceEnv,
     limits: RemoveLimits,
 ) -> Result<WorktreeRemoveReport> {
-    remove_inner(registry, repo_root, path, force, workspace, limits, false)
+    remove_inner(registry, repo_root, path, force, workspace, limits, None)
 }
 
 pub(crate) fn inspect_removal(
@@ -1106,6 +1106,7 @@ pub(crate) fn inspect_removal(
     repo_root: &str,
     path: &str,
     workspace: &WorkspaceEnv,
+    excluded: &[String],
 ) -> Result<WorktreeRemoveReport> {
     remove_inner(
         registry,
@@ -1114,8 +1115,23 @@ pub(crate) fn inspect_removal(
         false,
         workspace,
         RemoveLimits::default(),
-        true,
+        Some(excluded),
     )
+}
+
+fn exclude_pathspecs(
+    mut args: Vec<std::ffi::OsString>,
+    excluded: Option<&[String]>,
+) -> Vec<std::ffi::OsString> {
+    if let Some(paths) = excluded.filter(|p| !p.is_empty()) {
+        args.extend(os_args(["--", "."]));
+        args.extend(
+            paths
+                .iter()
+                .map(|p| format!(":(exclude,literal){p}").into()),
+        );
+    }
+    args
 }
 
 fn remove_inner(
@@ -1125,7 +1141,7 @@ fn remove_inner(
     force: bool,
     workspace: &WorkspaceEnv,
     limits: RemoveLimits,
-    inspect: bool,
+    inspect: Option<&[String]>,
 ) -> Result<WorktreeRemoveReport> {
     if workspace.is_wsl() {
         return Err(GitError::Unsupported(WSL_WORKTREES_UNSUPPORTED));
@@ -1187,7 +1203,10 @@ fn remove_inner(
         }
         let status = run_ok(
             &worktree,
-            os_args(["status", "--porcelain=v1", "-z", "--untracked-files=normal"]),
+            exclude_pathspecs(
+                os_args(["status", "--porcelain=v1", "-z", "--untracked-files=normal"]),
+                inspect,
+            ),
             "git status failed",
         )?;
         let (changed, untracked) = parse_status_v1(&status.stdout);
@@ -1203,14 +1222,17 @@ fn remove_inner(
         let ignored = run_git_capped(
             &worktree.workspace,
             Some(&worktree.git_path),
-            os_args([
-                "ls-files",
-                "--others",
-                "--ignored",
-                "--exclude-standard",
-                "--directory",
-                "-z",
-            ]),
+            exclude_pathspecs(
+                os_args([
+                    "ls-files",
+                    "--others",
+                    "--ignored",
+                    "--exclude-standard",
+                    "--directory",
+                    "-z",
+                ]),
+                inspect,
+            ),
             DEFAULT_TIMEOUT_SECS,
             limits.ignored_listing_bytes,
         )?;
@@ -1252,7 +1274,7 @@ fn remove_inner(
         report.blockers.push(RemoveBlocker::Inconclusive);
     }
 
-    if inspect || (!force && !report.blockers.is_empty()) {
+    if inspect.is_some() || (!force && !report.blockers.is_empty()) {
         return Ok(report);
     }
 

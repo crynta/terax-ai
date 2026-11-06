@@ -338,12 +338,14 @@ fn add_everything(
     temp: &TempIndex,
     warnings: &mut Vec<String>,
     unstable: &mut Vec<String>,
+    excluded: &[String],
 ) -> Result<()> {
     for attempt in 1..=(ADD_ATTEMPTS + MAX_UNSTABLE_FILES as u32) {
         let mut args = os_args(["add", "-A", "--ignore-errors", "--", "."]);
         args.extend(
             unstable
                 .iter()
+                .chain(excluded)
                 .map(|path| OsString::from(format!(":(exclude,literal){path}"))),
         );
         let output = run_indexed(repo, temp, args, None)?;
@@ -396,18 +398,23 @@ fn write_tree(repo: &ResolvedGitDirectory, temp: &TempIndex) -> Result<String> {
 pub fn snapshot_tree(repo: &ResolvedGitDirectory, verify: bool) -> Result<Snapshot> {
     ensure_supported(repo)?;
     let temp = TempIndex::seeded(repo)?;
-    snapshot_index(repo, verify, &temp)
+    snapshot_index(repo, verify, &temp, &[])
 }
 
-fn snapshot_index(repo: &ResolvedGitDirectory, verify: bool, temp: &TempIndex) -> Result<Snapshot> {
+fn snapshot_index(
+    repo: &ResolvedGitDirectory,
+    verify: bool,
+    temp: &TempIndex,
+    excluded: &[String],
+) -> Result<Snapshot> {
     let mut warnings = Vec::new();
     let mut unstable = Vec::new();
-    add_everything(repo, temp, &mut warnings, &mut unstable)?;
+    add_everything(repo, temp, &mut warnings, &mut unstable, excluded)?;
     let mut tree = write_tree(repo, temp)?;
     let mut passes = 1;
     let mut consistent = false;
     while verify && passes < MAX_PASSES {
-        add_everything(repo, temp, &mut warnings, &mut unstable)?;
+        add_everything(repo, temp, &mut warnings, &mut unstable, excluded)?;
         let again = write_tree(repo, temp)?;
         passes += 1;
         if again == tree {
@@ -583,10 +590,33 @@ fn prepare_archive_index(repo: &ResolvedGitDirectory, temp: &TempIndex) -> Resul
 pub(crate) fn task_snapshot(
     repo: &ResolvedGitDirectory,
     id: &str,
+    excluded: &[String],
 ) -> Result<super::task_state::TaskSnapshot> {
     let temp = TempIndex::seeded(repo)?;
     prepare_archive_index(repo, &temp)?;
-    let snapshot = snapshot_index(repo, true, &temp)?;
+    let mut excluded = excluded.to_vec();
+    if !excluded.is_empty() {
+        let input = excluded
+            .iter()
+            .flat_map(|p| p.bytes().chain(std::iter::once(0)))
+            .collect();
+        let ignored = run_indexed(
+            repo,
+            &temp,
+            os_args(["check-ignore", "--stdin", "-z"]),
+            Some(input),
+        )?;
+        if ignored.timed_out || ignored.truncated || !matches!(ignored.exit_code, Some(0 | 1)) {
+            return Err(GitError::command(
+                "task archive",
+                "shared-link ignore check failed",
+            ));
+        }
+        // An exclusion below an ignored directory makes git add treat that directory as explicit.
+        excluded.retain(|p| !ignored.stdout.split(|b| *b == 0).any(|b| b == p.as_bytes()));
+    }
+    let snapshot = snapshot_index(repo, true, &temp, &excluded)?;
+    prepare_archive_index(repo, &temp)?;
     if !snapshot.consistent || !snapshot.unstable_paths.is_empty() || !snapshot.warnings.is_empty()
     {
         return Err(GitError::command(

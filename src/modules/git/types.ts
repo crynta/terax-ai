@@ -466,6 +466,7 @@ export type TaskWorktree = {
   archiveScript: string;
   include: string[];
   shared: string[];
+  sharedLinks: Record<string, string>;
 };
 
 export type TaskCreated = {

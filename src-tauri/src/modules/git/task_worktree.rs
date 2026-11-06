@@ -184,18 +184,28 @@ pub fn create(
         archive_script: config.scripts.archive,
         include: config.worktree.include,
         shared: config.worktree.shared,
+        shared_links: BTreeMap::new(),
     };
     if let Err(e) = store.put(task.clone()) {
         let _ = std::fs::remove_dir(&path);
         return Err(e);
     }
     drop(store);
+    let add = WorktreeAddRequest {
+        path: None,
+        task_slug: None,
+        branch: WorktreeBranch::NewBranch {
+            name: task.branch.clone(),
+        },
+        base: Some(base),
+        include: vec![],
+    };
     materialize(
         registry,
         &repo,
         home,
         task,
-        &base,
+        add,
         None,
         &config.scripts.setup,
     )
@@ -206,19 +216,10 @@ fn materialize(
     repo: &ResolvedGitDirectory,
     home: &Path,
     mut task: TaskRecord,
-    base: &str,
+    request: WorktreeAddRequest,
     snapshot: Option<&TaskSnapshot>,
     setup: &str,
 ) -> Result<TaskCreated> {
-    let request = WorktreeAddRequest {
-        path: None,
-        task_slug: None,
-        branch: WorktreeBranch::NewBranch {
-            name: task.branch.clone(),
-        },
-        base: Some(base.into()),
-        include: vec![],
-    };
     if let Err(err) = worktree::add_claimed(
         registry,
         &task.root,
@@ -258,6 +259,14 @@ fn materialize(
         let copy = worktree::copy_ignored_included(repo, &target, &task.include)?;
         let (shared, mut skipped) = share(&repo.local_path, &target, &task.shared)?;
         skipped.extend(copy.skipped);
+        task.shared_links = shared
+            .iter()
+            .map(|entry| {
+                let relative = entry.trim_end_matches('/').to_string();
+                std::fs::read_link(target.join(&relative))
+                    .map(|target| (relative, to_canon(target)))
+            })
+            .collect::<std::io::Result<_>>()?;
         task.status = TaskStatus::Active;
         Store::open(home)?.put(task.clone())?;
         Ok(TaskCreated {
@@ -290,6 +299,22 @@ pub(crate) fn link_privilege_missing(error: &std::io::Error, windows: bool) -> b
     windows && error.raw_os_error() == Some(1314)
 }
 
+fn symlink(source: &Path, destination: &Path, directory: bool) -> std::io::Result<()> {
+    #[cfg(windows)]
+    {
+        if directory {
+            std::os::windows::fs::symlink_dir(source, destination)
+        } else {
+            std::os::windows::fs::symlink_file(source, destination)
+        }
+    }
+    #[cfg(unix)]
+    {
+        let _ = directory;
+        std::os::unix::fs::symlink(source, destination)
+    }
+}
+
 fn share(root: &Path, target: &Path, entries: &[String]) -> Result<(Vec<String>, Vec<Skipped>)> {
     let mut shared = Vec::new();
     let mut skipped = Vec::new();
@@ -315,14 +340,7 @@ fn share(root: &Path, target: &Path, entries: &[String]) -> Result<(Vec<String>,
         }
         worktree::create_dirs_confined(target, relative)
             .map_err(|e| GitError::InvalidPath(e.into()))?;
-        #[cfg(unix)]
-        let linked = std::os::unix::fs::symlink(&canonical, &dst);
-        #[cfg(windows)]
-        let linked = if canonical.is_dir() {
-            std::os::windows::fs::symlink_dir(&canonical, &dst)
-        } else {
-            std::os::windows::fs::symlink_file(&canonical, &dst)
-        };
+        let linked = symlink(&canonical, &dst, canonical.is_dir());
         if let Err(error) = linked {
             if link_privilege_missing(&error, cfg!(windows)) {
                 skipped.push(Skipped {
@@ -364,14 +382,107 @@ fn active_repo(
     Ok(active)
 }
 
+fn managed_links(repo: &ResolvedGitDirectory, task: &TaskRecord) -> Result<Vec<String>> {
+    let mut links: Vec<String> = task
+        .shared_links
+        .iter()
+        .filter_map(|(relative, target)| {
+            let mut parent = repo.local_path.clone();
+            let parts: Vec<_> = Path::new(relative).components().collect();
+            for part in parts.iter().take(parts.len().saturating_sub(1)) {
+                parent.push(part);
+                if !std::fs::symlink_metadata(&parent)
+                    .is_ok_and(|m| m.is_dir() && !m.file_type().is_symlink())
+                {
+                    return None;
+                }
+            }
+            let path = repo.local_path.join(relative);
+            (std::fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_symlink())
+                && std::fs::read_link(&path).is_ok_and(|p| to_canon(p) == *target))
+            .then(|| relative.clone())
+        })
+        .collect();
+    if !links.is_empty() {
+        let mut args = os_args(["--literal-pathspecs", "ls-files", "-z", "--"]);
+        args.extend(links.iter().map(Into::into));
+        let output = run_ok(repo, args, "task shared links index check failed")?;
+        if output.truncated {
+            return Err(GitError::command(
+                "task shared links",
+                "index check was truncated",
+            ));
+        }
+        links.retain(|p| !output.stdout.split(|b| *b == 0).any(|b| b == p.as_bytes()));
+    }
+    Ok(links)
+}
+
+fn remove_with_shared(
+    registry: &WorkspaceRegistry,
+    task: &TaskRecord,
+    links: &[String],
+    force: bool,
+    workspace: &WorkspaceEnv,
+) -> Result<WorktreeRemoveReport> {
+    let mut detached = Vec::new();
+    let result = (|| {
+        for relative in links {
+            let path = Path::new(&task.path).join(relative);
+            if !std::fs::read_link(&path)
+                .is_ok_and(|p| task.shared_links.get(relative) == Some(&to_canon(p)))
+            {
+                return Err(GitError::command(
+                    "task archive",
+                    "a shared link changed; retry",
+                ));
+            }
+            #[cfg(windows)]
+            let directory = {
+                use std::os::windows::fs::FileTypeExt;
+                std::fs::symlink_metadata(&path)?
+                    .file_type()
+                    .is_symlink_dir()
+            };
+            #[cfg(not(windows))]
+            let directory = false;
+            if directory {
+                std::fs::remove_dir(&path)?;
+            } else {
+                std::fs::remove_file(&path)?;
+            }
+            detached.push((relative.clone(), directory));
+        }
+        worktree::remove(registry, &task.root, &task.path, force, workspace)
+    })();
+    if !result.as_ref().is_ok_and(|r| r.removed) {
+        // Restore only links removed by this attempt, never replace a user-created path.
+        for (relative, directory) in detached {
+            let path = Path::new(&task.path).join(&relative);
+            if std::fs::symlink_metadata(&path)
+                .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+            {
+                symlink(Path::new(&task.shared_links[&relative]), &path, directory)?;
+            }
+        }
+    }
+    result
+}
+
 fn inspect_archive(
     registry: &WorkspaceRegistry,
     active: &ResolvedGitDirectory,
     task: &TaskRecord,
     snapshot: &TaskSnapshot,
+    excluded: &[String],
 ) -> Result<WorktreeRemoveReport> {
-    let mut report =
-        worktree::inspect_removal(registry, &task.root, &task.path, &active.workspace)?;
+    let mut report = worktree::inspect_removal(
+        registry,
+        &task.root,
+        &task.path,
+        &active.workspace,
+        excluded,
+    )?;
     if !report.blockers.contains(&worktree::RemoveBlocker::Dirty) {
         let output = run_ok(
             active,
@@ -428,10 +539,11 @@ pub fn prepare_archive(
     let active = active_repo(registry, &repo, &task)?;
     let lock = lock_for_repo(&active);
     let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
-    let snapshot = checkpoint::task_snapshot(&active, id)?;
+    let links = managed_links(&active, &task)?;
+    let snapshot = checkpoint::task_snapshot(&active, id, &links)?;
     task.snapshot = Some(snapshot.clone());
     Store::open(home)?.put(task.clone())?;
-    let removal = inspect_archive(registry, &active, &task, &snapshot)?;
+    let removal = inspect_archive(registry, &active, &task, &snapshot, &links)?;
     Ok(TaskArchive {
         archive_script: task.archive_script.clone(),
         task,
@@ -457,10 +569,11 @@ pub fn archive(
     let active = active_repo(registry, &repo, &task)?;
     let lock = lock_for_repo(&active);
     let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
-    let snapshot = checkpoint::task_snapshot(&active, id)?;
+    let links = managed_links(&active, &task)?;
+    let snapshot = checkpoint::task_snapshot(&active, id, &links)?;
     task.snapshot = Some(snapshot.clone());
     if !force {
-        let removal = inspect_archive(registry, &active, &task, &snapshot)?;
+        let removal = inspect_archive(registry, &active, &task, &snapshot, &links)?;
         if !removal.blockers.is_empty() {
             task.status = TaskStatus::Active;
             Store::open(home)?.put(task.clone())?;
@@ -474,7 +587,7 @@ pub fn archive(
     }
     task.status = TaskStatus::Archiving;
     Store::open(home)?.put(task.clone())?;
-    let removal = worktree::remove(registry, &task.root, &task.path, force, workspace)?;
+    let removal = remove_with_shared(registry, &task, &links, force, workspace)?;
     task.status = if removal.removed {
         TaskStatus::Archived
     } else {
@@ -571,7 +684,23 @@ pub fn restore(
         task.snapshot = Some(snapshot.clone());
     }
     let config = project_config::read(registry, root, workspace)?;
-    task.branch = choose_branch(&repo, &task.branch)?;
+    let reusable =
+        super::plumbing::resolve_commit_opt(&repo, &format!("refs/heads/{}", task.branch))?
+            .as_deref()
+            == Some(snapshot.parent.as_str())
+            && !worktree::list(registry, root, workspace)?
+                .iter()
+                .any(|e| e.branch.as_deref() == Some(task.branch.as_str()));
+    let branch = if reusable {
+        WorktreeBranch::ExistingBranch {
+            name: task.branch.clone(),
+        }
+    } else {
+        task.branch = choose_branch(&repo, &task.branch)?;
+        WorktreeBranch::NewBranch {
+            name: task.branch.clone(),
+        }
+    };
     let target = project_config::location(&config.worktree, &repo.local_path, home, &task.name)?;
     let mut store = Store::open(home)?;
     task.port = store.allocate(
@@ -588,12 +717,19 @@ pub fn restore(
         return Err(error);
     }
     drop(store);
+    let add = WorktreeAddRequest {
+        path: None,
+        task_slug: None,
+        branch,
+        base: Some(snapshot.parent.clone()),
+        include: vec![],
+    };
     materialize(
         registry,
         &repo,
         home,
         task,
-        &snapshot.parent,
+        add,
         Some(&snapshot),
         &config.scripts.setup,
     )

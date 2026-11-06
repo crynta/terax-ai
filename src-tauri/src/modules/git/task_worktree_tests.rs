@@ -745,3 +745,194 @@ fn includes_beyond_symlinks_are_skipped_without_losing_other_files() {
         .any(|s| s.path == "linked/.env" && s.reason == "symlink"));
     assert!(!Path::new(&task.task.path).join("linked").exists());
 }
+
+#[test]
+fn clean_shared_directory_links_do_not_require_force_and_are_recreated() {
+    let repo = TestRepo::new();
+    let (_home, home) = scratch();
+    repo.write(".gitignore", "node_modules/\n");
+    repo.write(
+        ".terax/project.toml",
+        "[worktree]\nshared = ['node_modules']\n",
+    );
+    repo.commit_all("shared dependencies");
+    repo.write("node_modules/cache", "keep source\n");
+    let task = create(&repo, &home, "clean shared");
+    assert!(task.task.shared_links.contains_key("node_modules"));
+    let prepared =
+        tasks::prepare_archive(&repo.registry, &repo.path(), &task.task.id, &repo.ws, &home)
+            .unwrap();
+    assert!(prepared.removal.blockers.is_empty());
+    assert!(!repo
+        .git(&["ls-tree", "--name-only", &prepared.snapshot.reference])
+        .lines()
+        .any(|line| line == "node_modules"));
+    repo.git(&["worktree", "lock", &task.task.path]);
+    let locked = tasks::archive(
+        &repo.registry,
+        &repo.path(),
+        &task.task.id,
+        true,
+        &repo.ws,
+        &home,
+    )
+    .unwrap();
+    assert!(!locked.removal.removed);
+    assert!(
+        std::fs::symlink_metadata(Path::new(&task.task.path).join("node_modules"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    repo.git(&["worktree", "unlock", &task.task.path]);
+    let archived = tasks::archive(
+        &repo.registry,
+        &repo.path(),
+        &task.task.id,
+        false,
+        &repo.ws,
+        &home,
+    )
+    .unwrap();
+    assert!(archived.removal.removed);
+    assert_eq!(repo.read("node_modules/cache"), "keep source\n");
+    let restored = tasks::restore(
+        &repo.registry,
+        &repo.path(),
+        &task.task.id,
+        None,
+        &repo.ws,
+        &home,
+    )
+    .unwrap();
+    assert_eq!(restored.task.branch, task.task.branch);
+    assert_eq!(restored.shared, ["node_modules"]);
+    assert!(restored.skipped.is_empty());
+    assert!(
+        tasks::archive(
+            &repo.registry,
+            &repo.path(),
+            &task.task.id,
+            false,
+            &repo.ws,
+            &home
+        )
+        .unwrap()
+        .removal
+        .removed
+    );
+}
+
+#[test]
+fn skipped_user_files_remain_unmanaged_across_restore() {
+    let repo = TestRepo::new();
+    let (_home, home) = scratch();
+    repo.write("shared.txt", "tracked content\n");
+    repo.write(
+        ".terax/project.toml",
+        "[worktree]\nshared = ['shared.txt']\n",
+    );
+    repo.commit_all("tracked shared path");
+    let task = create(&repo, &home, "user file");
+    assert!(task.task.shared_links.is_empty());
+    std::fs::write(Path::new(&task.task.path).join("shared.txt"), "user edit\n").unwrap();
+    assert!(
+        !tasks::archive(
+            &repo.registry,
+            &repo.path(),
+            &task.task.id,
+            false,
+            &repo.ws,
+            &home
+        )
+        .unwrap()
+        .removal
+        .removed
+    );
+    tasks::archive(
+        &repo.registry,
+        &repo.path(),
+        &task.task.id,
+        true,
+        &repo.ws,
+        &home,
+    )
+    .unwrap();
+    let restored = tasks::restore(
+        &repo.registry,
+        &repo.path(),
+        &task.task.id,
+        None,
+        &repo.ws,
+        &home,
+    )
+    .unwrap();
+    assert!(restored.task.shared_links.is_empty());
+    assert_eq!(
+        std::fs::read_to_string(Path::new(&restored.task.path).join("shared.txt")).unwrap(),
+        "user edit\n"
+    );
+}
+
+#[test]
+fn changed_task_branches_are_preserved_when_restoring() {
+    let repo = TestRepo::new();
+    let (_home, home) = scratch();
+    let task = create(&repo, &home, "branch preservation");
+    tasks::archive(
+        &repo.registry,
+        &repo.path(),
+        &task.task.id,
+        false,
+        &repo.ws,
+        &home,
+    )
+    .unwrap();
+    repo.write("later", "another commit\n");
+    let later = repo.commit_all("later");
+    repo.git(&[
+        "update-ref",
+        &format!("refs/heads/{}", task.task.branch),
+        &later,
+    ]);
+    let restored = tasks::restore(
+        &repo.registry,
+        &repo.path(),
+        &task.task.id,
+        None,
+        &repo.ws,
+        &home,
+    )
+    .unwrap();
+    assert_ne!(restored.task.branch, task.task.branch);
+    assert_eq!(repo.git(&["rev-parse", &task.task.branch]).trim(), later);
+    assert!(!Path::new(&restored.task.path).join("later").exists());
+}
+
+#[test]
+fn nested_untracked_repositories_refuse_forced_archive() {
+    let repo = TestRepo::new();
+    let (_home, home) = scratch();
+    let task = create(&repo, &home, "nested repo");
+    let nested = Path::new(&task.task.path).join("nested");
+    std::fs::create_dir(&nested).unwrap();
+    git_in(&nested, &["init", "-q"]);
+    std::fs::write(nested.join("private"), "private history\n").unwrap();
+    git_in(&nested, &["add", "."]);
+    git_in(&nested, &["commit", "-qm", "nested commit"]);
+    let error = tasks::archive(
+        &repo.registry,
+        &repo.path(),
+        &task.task.id,
+        true,
+        &repo.ws,
+        &home,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("submodule nested"));
+    assert_eq!(
+        std::fs::read_to_string(nested.join("private")).unwrap(),
+        "private history\n"
+    );
+    assert!(nested.join(".git").is_dir());
+}
