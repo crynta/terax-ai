@@ -141,13 +141,17 @@ fn choose_branch(repo: &ResolvedGitDirectory, wanted: &str) -> Result<String> {
     Err(GitError::command("task branch", "no free branch name"))
 }
 
-fn claim(path: &Path) -> Result<PathBuf> {
-    worktree::claim_directory(
+fn claim(path: &Path, repo: &Path, home: &Path) -> Result<PathBuf> {
+    let claimed = worktree::claim_directory(
         path.parent()
             .ok_or_else(|| GitError::InvalidPath(to_canon(path)))?,
         &path.file_name().unwrap_or_default().to_string_lossy(),
-    )
-    .map_err(Into::into)
+    )?;
+    if let Err(error) = project_config::validate_location(&claimed, repo, home) {
+        let _ = std::fs::remove_dir(&claimed);
+        return Err(error);
+    }
+    Ok(claimed)
 }
 
 pub fn create(
@@ -171,7 +175,7 @@ pub fn create(
     let mut store = Store::open(home)?;
     let port = store.allocate(&config.ports, None)?;
     let target = project_config::location(&config.worktree, &repo.local_path, home, &name)?;
-    let path = claim(&target)?;
+    let path = claim(&target, &repo.local_path, home)?;
     let task = TaskRecord {
         id,
         name,
@@ -755,7 +759,7 @@ pub fn restore(
         },
         Some(task.port),
     )?;
-    task.path = to_canon(claim(&target)?);
+    task.path = to_canon(claim(&target, &repo.local_path, home)?);
     task.status = TaskStatus::Creating;
     if let Err(error) = store.put(task.clone()) {
         let _ = std::fs::remove_dir(&task.path);

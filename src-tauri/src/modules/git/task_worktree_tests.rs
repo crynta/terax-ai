@@ -54,6 +54,337 @@ fn assert_shared_outcome(created: &tasks::TaskCreated, entry: &str) -> bool {
     }
 }
 
+fn location_repo() -> TestRepo {
+    let mut repo = TestRepo::new();
+    repo.root = repo.root.join("projects/repo");
+    std::fs::create_dir_all(&repo.root).unwrap();
+    git_in(&repo.root, &["init", "-q", "-b", "main"]);
+    repo.git(&["config", "core.autocrlf", "false"]);
+    repo.write("README.md", "location fixture\n");
+    repo.commit_all("initial");
+    repo
+}
+
+fn set_task_dir(repo: &TestRepo, template: &str) {
+    repo.write(
+        ".terax/project.toml",
+        &format!("[worktree]\ndir = '{}'\n", template.replace('\\', "/")),
+    );
+    repo.commit_all("task location");
+}
+
+#[test]
+fn task_locations_reject_absolute_and_home_paths_outside_trusted_roots() {
+    let repo = location_repo();
+    let (_home, home) = scratch();
+    let (_outside, outside) = scratch();
+    for (template, destination) in [
+        (
+            format!("{}/startup/{{task}}", outside.display()),
+            outside.join("startup/task"),
+        ),
+        ("~/.ssh/{task}".into(), home.join(".ssh/task")),
+        (
+            "~/.terax/worktrees-other/{task}".into(),
+            home.join(".terax/worktrees-other/task"),
+        ),
+    ] {
+        set_task_dir(&repo, &template);
+        let error = tasks::create(
+            &repo.registry,
+            &repo.path(),
+            &TaskCreateRequest {
+                name: "task".into(),
+                base: None,
+            },
+            &repo.ws,
+            &home,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.contains(&super::plumbing::forward_slashes(
+                &destination.to_string_lossy()
+            )),
+            "{error}"
+        );
+        assert!(error.contains("must be under"), "{error}");
+        assert!(!destination.parent().unwrap().exists());
+        assert!(!super::testutil::authorized(&repo.registry, &destination));
+        assert_eq!(
+            repo.git(&["worktree", "list", "--porcelain"])
+                .matches("worktree ")
+                .count(),
+            1
+        );
+        assert!(tasks::list(&repo.registry, &repo.path(), &repo.ws, &home)
+            .unwrap()
+            .is_empty());
+    }
+}
+
+#[test]
+fn task_locations_allow_default_and_sibling_worktrees() {
+    let repo = location_repo();
+    let (_home, home) = scratch();
+    let default = create(&repo, &home, "default");
+    assert!(Path::new(&default.task.path).starts_with(home.join(".terax/worktrees")));
+    let sibling = repo.root.parent().unwrap().join("repo-worktrees");
+    set_task_dir(&repo, &format!("{}/{{task}}", sibling.display()));
+    let task = create(&repo, &home, "sibling");
+    assert_eq!(Path::new(&task.task.path), sibling.join("sibling"));
+    assert!(super::testutil::authorized(
+        &repo.registry,
+        Path::new(&task.task.path)
+    ));
+    assert_eq!(
+        std::fs::read_to_string(Path::new(&task.task.path).join("README.md")).unwrap(),
+        "location fixture\n"
+    );
+    assert!(
+        tasks::archive(
+            &repo.registry,
+            &repo.path(),
+            &task.task.id,
+            false,
+            &repo.ws,
+            &home
+        )
+        .unwrap()
+        .removal
+        .removed
+    );
+    set_task_dir(&repo, "~/.ssh/{task}");
+    let error = tasks::restore(
+        &repo.registry,
+        &repo.path(),
+        &task.task.id,
+        None,
+        &repo.ws,
+        &home,
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("must be under"), "{error}");
+    assert!(!home.join(".ssh").exists());
+    assert_eq!(
+        tasks::list(&repo.registry, &repo.path(), &repo.ws, &home)
+            .unwrap()
+            .iter()
+            .find(|t| t.id == task.task.id)
+            .unwrap()
+            .status,
+        TaskStatus::Archived
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn task_locations_resolve_symlinks_before_trusting_destinations() {
+    let repo = location_repo();
+    let (_home, home) = scratch();
+    let (_outside, outside) = scratch();
+    let link = repo.root.parent().unwrap().join("repo-worktrees");
+    std::os::unix::fs::symlink(&outside, &link).unwrap();
+    set_task_dir(&repo, &format!("{}/nested/{{task}}", link.display()));
+    let error = tasks::create(
+        &repo.registry,
+        &repo.path(),
+        &TaskCreateRequest {
+            name: "escape".into(),
+            base: None,
+        },
+        &repo.ws,
+        &home,
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(
+        error.contains(&outside.join("nested/escape").to_string_lossy().to_string()),
+        "{error}"
+    );
+    assert!(!outside.join("nested").exists());
+    assert!(!super::testutil::authorized(&repo.registry, &outside));
+    std::fs::remove_file(&link).unwrap();
+    std::fs::create_dir(&link).unwrap();
+    std::os::unix::fs::symlink(&outside, link.join("escape")).unwrap();
+    set_task_dir(&repo, &format!("{}/{{task}}", link.display()));
+    let error = tasks::create(
+        &repo.registry,
+        &repo.path(),
+        &TaskCreateRequest {
+            name: "escape".into(),
+            base: None,
+        },
+        &repo.ws,
+        &home,
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(
+        error.contains(&outside.to_string_lossy().to_string()),
+        "{error}"
+    );
+    std::fs::create_dir_all(home.join(".terax")).unwrap();
+    std::os::unix::fs::symlink(&outside, home.join(".terax/worktrees")).unwrap();
+    set_task_dir(&repo, "~/.terax/worktrees/{project}/{task}");
+    assert!(tasks::create(
+        &repo.registry,
+        &repo.path(),
+        &TaskCreateRequest {
+            name: "escape".into(),
+            base: None,
+        },
+        &repo.ws,
+        &home
+    )
+    .unwrap_err()
+    .to_string()
+    .contains("must be under"));
+    assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 0);
+}
+
+fn working_files(root: &Path) -> std::collections::BTreeMap<String, (Vec<u8>, u32)> {
+    let mut files = std::collections::BTreeMap::new();
+    let mut directories = vec![root.to_path_buf()];
+    while let Some(directory) = directories.pop() {
+        for entry in std::fs::read_dir(directory).unwrap() {
+            let entry = entry.unwrap();
+            if entry.path() == root.join(".git") {
+                continue;
+            }
+            let metadata = entry.metadata().unwrap();
+            if metadata.is_dir() {
+                directories.push(entry.path());
+                continue;
+            }
+            #[cfg(unix)]
+            let executable = {
+                use std::os::unix::fs::PermissionsExt;
+                metadata.permissions().mode() & 0o111
+            };
+            #[cfg(not(unix))]
+            let executable = 0;
+            files.insert(
+                super::plumbing::forward_slashes(
+                    &entry.path().strip_prefix(root).unwrap().to_string_lossy(),
+                ),
+                (std::fs::read(entry.path()).unwrap(), executable),
+            );
+        }
+    }
+    files
+}
+
+#[test]
+fn archive_restore_preserves_complete_working_tree_and_committed_history() {
+    let repo = TestRepo::new();
+    let (_home, home) = scratch();
+    for path in [
+        "deleted.txt",
+        "staged-delete.txt",
+        "renamed.txt",
+        "staged-rename.txt",
+        "modified.txt",
+        "committed.sh",
+        "enable.sh",
+        "disable.sh",
+    ] {
+        repo.write(path, &format!("original {path}\n"));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        repo.git(&["config", "core.filemode", "true"]);
+        for path in ["committed.sh", "disable.sh"] {
+            std::fs::set_permissions(repo.root.join(path), std::fs::Permissions::from_mode(0o755))
+                .unwrap();
+        }
+    }
+    repo.commit_all("baseline files");
+    let task = create(&repo, &home, "fidelity");
+    let path = Path::new(&task.task.path);
+    std::fs::write(path.join("README.md"), "committed task change\n").unwrap();
+    std::fs::write(path.join("committed.txt"), "new committed file\n").unwrap();
+    git_in(path, &["add", "-A"]);
+    git_in(path, &["commit", "-q", "-m", "task commit"]);
+    let head = git_in(path, &["rev-parse", "HEAD"]);
+    std::fs::write(path.join("README.md"), "uncommitted task change\n").unwrap();
+    std::fs::write(path.join("modified.txt"), "staged version\n").unwrap();
+    git_in(path, &["add", "modified.txt"]);
+    std::fs::write(
+        path.join("modified.txt"),
+        "unstaged version after staging\n",
+    )
+    .unwrap();
+    std::fs::remove_file(path.join("deleted.txt")).unwrap();
+    git_in(path, &["rm", "staged-delete.txt"]);
+    std::fs::rename(path.join("renamed.txt"), path.join("renamed-new.txt")).unwrap();
+    git_in(path, &["mv", "staged-rename.txt", "staged-renamed-new.txt"]);
+    std::fs::create_dir(path.join("new-directory")).unwrap();
+    std::fs::write(path.join("new-directory/untracked.bin"), [0, 255, 128, 0]).unwrap();
+    std::fs::write(path.join("new.sh"), "#!/bin/sh\nexit 0\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        for (name, mode) in [
+            ("enable.sh", 0o755),
+            ("disable.sh", 0o644),
+            ("new.sh", 0o755),
+        ] {
+            std::fs::set_permissions(path.join(name), std::fs::Permissions::from_mode(mode))
+                .unwrap();
+        }
+    }
+    let expected = working_files(path);
+    let index = git_in(path, &["ls-files", "--stage"]);
+    tasks::prepare_archive(&repo.registry, &repo.path(), &task.task.id, &repo.ws, &home).unwrap();
+    assert_eq!(git_in(path, &["ls-files", "--stage"]), index);
+    let archived = tasks::archive(
+        &repo.registry,
+        &repo.path(),
+        &task.task.id,
+        true,
+        &repo.ws,
+        &home,
+    )
+    .unwrap();
+    assert!(archived.removal.removed);
+    assert!(!path.exists());
+    let restored = tasks::restore(
+        &repo.registry,
+        &repo.path(),
+        &task.task.id,
+        None,
+        &repo.ws,
+        &home,
+    )
+    .unwrap();
+    let path = Path::new(&restored.task.path);
+    assert_eq!(working_files(path), expected);
+    assert_eq!(git_in(path, &["rev-parse", "HEAD"]), head);
+    assert_eq!(
+        git_in(path, &["show", "HEAD:README.md"]),
+        "committed task change\n"
+    );
+    for absent in [
+        "deleted.txt",
+        "staged-delete.txt",
+        "renamed.txt",
+        "staged-rename.txt",
+    ] {
+        assert!(!path.join(absent).exists(), "resurrected {absent}");
+    }
+    assert_eq!(
+        std::fs::read(path.join("new-directory/untracked.bin")).unwrap(),
+        [0, 255, 128, 0]
+    );
+    #[cfg(unix)]
+    for executable in ["committed.sh", "enable.sh", "new.sh"] {
+        assert_eq!(expected[executable].1, 0o111);
+    }
+}
+
 #[test]
 fn config_defaults_unknown_keys_types_and_lines() {
     let config =

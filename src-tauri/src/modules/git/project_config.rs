@@ -300,6 +300,7 @@ pub(crate) fn location(
             .replace("{project}", &project)
             .replace("{task}", task),
     );
+    validate_location(&expanded, repo, home)?;
     // Resolve the static root first; placeholder directories may not redirect it.
     let mut root = PathBuf::new();
     for component in template.components() {
@@ -321,10 +322,66 @@ pub(crate) fn location(
             .file_name()
             .ok_or_else(|| GitError::InvalidPath(config.dir.clone()))?,
     );
-    if target.starts_with(repo) || repo.starts_with(&target) {
-        return Err(GitError::InvalidPath(
-            "task directory overlaps the repository".into(),
-        ));
-    }
+    validate_location(&target, repo, home)?;
     Ok(target)
+}
+
+fn resolved_destination(path: &Path) -> std::io::Result<PathBuf> {
+    let mut tail = Vec::new();
+    let mut cursor = path;
+    loop {
+        match std::fs::symlink_metadata(cursor) {
+            Ok(_) => {
+                let mut resolved = std::fs::canonicalize(cursor)?;
+                for name in tail.iter().rev() {
+                    resolved.push(name);
+                }
+                return Ok(resolved);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                tail.push(cursor.file_name().ok_or(error)?);
+                cursor = cursor.parent().ok_or_else(|| {
+                    std::io::Error::new(std::io::ErrorKind::InvalidInput, "no parent directory")
+                })?;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+pub(crate) fn validate_location(path: &Path, repo: &Path, home: &Path) -> Result<()> {
+    let target = resolved_destination(path)?;
+    let repo = std::fs::canonicalize(repo)?;
+    let default_root = std::fs::canonicalize(home)?.join(".terax/worktrees");
+    let siblings = repo
+        .parent()
+        .ok_or_else(|| GitError::InvalidPath("repository has no parent".into()))?;
+    let key = |path: &Path| {
+        let plain = crate::modules::fs::to_canon(path);
+        PathBuf::from(if cfg!(windows) {
+            plain.to_lowercase()
+        } else {
+            plain
+        })
+    };
+    let target_key = key(&target);
+    if ![&default_root, siblings].iter().any(|root| {
+        let root = key(root);
+        target_key != root && target_key.starts_with(root)
+    }) {
+        return Err(GitError::InvalidPath(format!(
+            "project.toml worktree dir resolves to {}; it must be under {} or {}",
+            crate::modules::fs::to_canon(&target),
+            crate::modules::fs::to_canon(&default_root),
+            crate::modules::fs::to_canon(siblings),
+        )));
+    }
+    let repo_key = key(&repo);
+    if target_key.starts_with(&repo_key) || repo_key.starts_with(&target_key) {
+        return Err(GitError::InvalidPath(format!(
+            "task directory {} overlaps the repository",
+            crate::modules::fs::to_canon(&target)
+        )));
+    }
+    Ok(())
 }
