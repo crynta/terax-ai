@@ -6,7 +6,7 @@ import {
 
 const PARSE_STALL_MS = 5_000;
 const MAX_PARSE_SLICE_BYTES = 32 * 1024;
-const PARSE_BUDGET_MS = 4;
+export const PARSE_BUDGET_MS = 4;
 
 export type PtyOutputStatus = "running" | "retrying" | "stalled" | "failed";
 export type PtyTransportStatus = "ok" | "retrying" | "stalled";
@@ -60,7 +60,7 @@ export class PtyOutputReceiver {
     this.reportProgress();
   }
 
-  receive(bytes: Uint8Array): void {
+  receive(bytes: Uint8Array, deadline?: number): void {
     if (this.disposed || this.failed) return;
     if (
       bytes.length === 0 ||
@@ -75,7 +75,7 @@ export class PtyOutputReceiver {
     }
     this.received += bytes.length;
     this.queue.push({ bytes, end: this.received, offset: 0 });
-    this.drain();
+    this.drain(deadline);
   }
 
   /** The hub's view of the transport: `ok`, retrying with backoff, or stalled. */

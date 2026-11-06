@@ -61,13 +61,16 @@ export function useAiBootstrap(): {
   const [keysLoaded, setKeysLoaded] = useState(false);
   useEffect(() => {
     let alive = true;
-    const reload = () => {
+    const loadProviderKeys = () => {
       void getAllKeys().then((keys) => {
         if (!alive) return;
         setApiKeys(keys);
         setKeysLoaded(true);
       });
-      if (!prefsHydrated) return;
+    };
+    const reload = () => {
+      loadProviderKeys();
+      if (!usePreferencesStore.getState().hydrated) return;
       void getAllCustomEndpointKeys(
         usePreferencesStore.getState().customEndpoints,
       ).then((epKeys) => {
@@ -75,13 +78,26 @@ export function useAiBootstrap(): {
         setCustomEndpointKeys(epKeys);
       });
     };
-    reload();
+    loadProviderKeys();
     const unlistenP = onKeysChanged(reload);
     return () => {
       alive = false;
       void unlistenP.then((fn) => fn());
     };
-  }, [setApiKeys, setCustomEndpointKeys, prefsHydrated]);
+  }, [setApiKeys, setCustomEndpointKeys]);
+
+  useEffect(() => {
+    if (!prefsHydrated) return;
+    let alive = true;
+    void getAllCustomEndpointKeys(
+      usePreferencesStore.getState().customEndpoints,
+    ).then((epKeys) => {
+      if (alive) setCustomEndpointKeys(epKeys);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [setCustomEndpointKeys, prefsHydrated]);
 
   // Hydrate the cross-window preference store and mirror the default model
   // into chatStore so the dropdown reflects what the user picked in Settings.

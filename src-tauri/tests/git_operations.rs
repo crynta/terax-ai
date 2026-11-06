@@ -638,3 +638,63 @@ fn list_branches_keeps_current_branch_local_and_surfaces_worktrees() {
     assert!(!feature[0].is_head);
     assert!(feature[0].worktree_path.is_some());
 }
+
+#[test]
+fn passive_inspection_never_runs_repository_helpers() {
+    if skip_if_no_git() {
+        return;
+    }
+    let fx = GitRepoFixture::new();
+    fx.write_file("note.txt", "before\n");
+    fx.write_file(".gitattributes", "*.txt diff=hostile\n");
+    fx.run_git(&["add", "."]);
+    fx.run_git(&["commit", "-qm", "seed"]);
+    fx.write_file("note.txt", "staged\n");
+    fx.run_git(&["add", "note.txt"]);
+    fx.write_file("note.txt", "after\n");
+    let sha = std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(&fx.repo_path)
+        .output()
+        .unwrap();
+    let sha = String::from_utf8(sha.stdout).unwrap();
+    fx.run_git(&[
+        "config",
+        "core.fsmonitor",
+        "echo invoked > fsmonitor-marker; exit 0 #",
+    ]);
+    fx.run_git(&[
+        "config",
+        "diff.hostile.textconv",
+        "echo invoked > textconv-marker; cat",
+    ]);
+    fx.run_git(&[
+        "config",
+        "diff.external",
+        "echo invoked > extdiff-marker; exit 0 #",
+    ]);
+    operations::status(&fx.registry, &fx.repo_str(), &fx.workspace).unwrap();
+    assert!(
+        !fx.repo_path.join("fsmonitor-marker").exists(),
+        "status ran fsmonitor"
+    );
+    for staged in [false, true] {
+        operations::diff(&fx.registry, &fx.repo_str(), None, staged, &fx.workspace).unwrap();
+    }
+    operations::show_commit_diff(&fx.registry, &fx.repo_str(), sha.trim(), &fx.workspace).unwrap();
+    operations::commit_file_diff(
+        &fx.registry,
+        &fx.repo_str(),
+        sha.trim(),
+        "note.txt",
+        None,
+        &fx.workspace,
+    )
+    .unwrap();
+    for name in ["fsmonitor-marker", "textconv-marker", "extdiff-marker"] {
+        assert!(
+            !fx.repo_path.join(name).exists(),
+            "passive inspection ran {name}"
+        );
+    }
+}

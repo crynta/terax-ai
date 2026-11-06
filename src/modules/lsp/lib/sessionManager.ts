@@ -29,6 +29,7 @@ type Managed = {
   refs: Map<string, number>;
   idleTimer: ReturnType<typeof setTimeout> | null;
   closing: boolean;
+  closePromise?: Promise<void>;
   bornAt: number;
 };
 
@@ -38,7 +39,13 @@ export type LspDocHandle = {
 };
 
 const sessions = new Map<string, Managed>();
-const creating = new Map<string, Promise<Managed | null>>();
+type Starting = {
+  presetId: string;
+  cancelled: boolean;
+  promise: Promise<Managed | null>;
+};
+const creating = new Map<string, Starting>();
+const stopping = new Map<string, Promise<void>>();
 const crashTimes = new Map<string, number[]>();
 
 function basename(path: string): string {
@@ -84,11 +91,23 @@ export async function acquireDocExtension(
   }).catch(() => null);
   if (!root) return null;
   const key = `${preset.id}\u0000${root}`;
-  if (crashedOut(key)) return null;
+  if (
+    crashedOut(key) ||
+    stopping.has(preset.id) ||
+    usePreferencesStore.getState().lspActivation[preset.id] !== "enabled"
+  )
+    return null;
   if (
     !sessions.has(key) &&
-    [...sessions.values()].filter((m) => m.preset.id === preset.id).length >=
-      MAX_SESSIONS_PER_PRESET
+    !creating.has(key) &&
+    new Set([
+      ...[...sessions.values()]
+        .filter((m) => m.preset.id === preset.id)
+        .map((m) => m.key),
+      ...[...creating.entries()]
+        .filter(([, start]) => start.presetId === preset.id)
+        .map(([key]) => key),
+    ]).size >= MAX_SESSIONS_PER_PRESET
   ) {
     console.warn(
       `[lsp] session cap reached for ${preset.id}, skipping ${root}`,
@@ -107,18 +126,19 @@ export async function acquireDocExtension(
         !m.closing &&
         now - m.bornAt > EVICTION_MIN_AGE_MS
       ) {
-        void closeSession(m);
+        void closeSession(m).catch(reportStopFailure);
       }
     }
   }
 
   const managed =
     sessions.get(key) ?? (await getOrCreateSession(key, preset, root));
-  if (!managed) return null;
+  if (!managed || managed.closing) return null;
 
   const uri = pathToFileUri(path);
   const languageId = preset.languages[langId] ?? langId;
   const mod = await import("./client");
+  if (managed.closing) return null;
   const extension: Extension = [
     mod.lspInteractions({
       client: managed.client,
@@ -160,20 +180,26 @@ function getOrCreateSession(
   preset: LspPreset,
   root: string,
 ): Promise<Managed | null> {
-  let inflight = creating.get(key);
-  if (!inflight) {
-    inflight = createSession(key, preset, root).finally(() =>
+  let start = creating.get(key);
+  if (!start) {
+    start = {
+      presetId: preset.id,
+      cancelled: false,
+      promise: Promise.resolve(null),
+    };
+    creating.set(key, start);
+    start.promise = createSession(key, preset, root, start).finally(() =>
       creating.delete(key),
     );
-    creating.set(key, inflight);
   }
-  return inflight;
+  return start.promise;
 }
 
 async function createSession(
   key: string,
   preset: LspPreset,
   root: string,
+  start: Starting,
 ): Promise<Managed | null> {
   const existing = sessions.get(key);
   if (existing) return existing;
@@ -192,6 +218,10 @@ async function createSession(
     );
   }
 
+  if (start.cancelled) {
+    store.removeSessionQuiet(key);
+    return null;
+  }
   const transport = new TauriLspTransport();
   try {
     await transport.start({
@@ -218,7 +248,7 @@ async function createSession(
     documentUri: rootUri,
     languageId: "",
     initializationOptions: preset.initializationOptions,
-    onClose: () => handleServerExit(key),
+    onClose: () => handleServerExit(key, transport),
     onError: (e) => console.error(`[lsp:${preset.id}]`, e),
   });
 
@@ -234,10 +264,14 @@ async function createSession(
     bornAt: Date.now(),
   };
   sessions.set(key, managed);
+  if (start.cancelled) {
+    await closeSession(managed);
+    return null;
+  }
   // Exit can beat the map insert when the binary dies instantly (e.g. a
   // rustup proxy for an uninstalled component); reap it here.
   if (transport.exitInfo) {
-    handleServerExit(key);
+    handleServerExit(key, transport);
     return null;
   }
 
@@ -257,9 +291,15 @@ async function createSession(
   return managed;
 }
 
-function handleServerExit(key: string): void {
+function handleServerExit(key: string, transport: TauriLspTransport): void {
   const managed = sessions.get(key);
-  if (!managed || managed.closing) return;
+  if (!managed || managed.transport !== transport) return;
+  if (managed.closing) {
+    sessions.delete(key);
+    managed.client.close();
+    useLspRuntimeStore.getState().removeSession(key, managed.preset.id);
+    return;
+  }
   managed.closing = true;
   if (managed.idleTimer) clearTimeout(managed.idleTimer);
   recordCrash(key);
@@ -328,22 +368,37 @@ function releaseRef(managed: Managed, uri: string): void {
   if (!managed.closing) managed.client.textDocumentDidClose(uri);
   if (managed.refs.size === 0 && !managed.closing) {
     managed.idleTimer = setTimeout(() => {
-      void closeSession(managed);
+      void closeSession(managed).catch(reportStopFailure);
     }, IDLE_SHUTDOWN_MS);
   }
 }
 
-async function closeSession(managed: Managed): Promise<void> {
-  if (managed.closing) return;
+function reportStopFailure(error: unknown): void {
+  console.error("[lsp] shutdown failed", error);
+  toast.error("Language server failed to stop", { description: String(error) });
+}
+
+function closeSession(managed: Managed): Promise<void> {
+  if (managed.closePromise) return managed.closePromise;
   managed.closing = true;
   if (managed.idleTimer) {
     clearTimeout(managed.idleTimer);
     managed.idleTimer = null;
   }
-  sessions.delete(managed.key);
-  useLspRuntimeStore.getState().removeSession(managed.key, managed.preset.id);
-  await managed.client.shutdownGracefully(SHUTDOWN_TIMEOUT_MS);
-  managed.transport.close();
+  managed.closePromise = (async () => {
+    await managed.client.shutdownGracefully(SHUTDOWN_TIMEOUT_MS);
+    await managed.transport.stop();
+    if (sessions.get(managed.key) === managed) {
+      sessions.delete(managed.key);
+      useLspRuntimeStore
+        .getState()
+        .removeSession(managed.key, managed.preset.id);
+    }
+  })().catch((error) => {
+    managed.closePromise = undefined;
+    throw error;
+  });
+  return managed.closePromise;
 }
 
 export function notifyDocumentSaved(path: string): void {
@@ -355,14 +410,27 @@ export function notifyDocumentSaved(path: string): void {
   }
 }
 
-async function stopPresetSessions(presetId: string): Promise<void> {
-  const targets = [...sessions.values()].filter(
-    (m) => m.preset.id === presetId,
-  );
-  await Promise.all(targets.map((m) => closeSession(m)));
-  for (const key of crashTimes.keys()) {
-    if (key.startsWith(`${presetId}\u0000`)) crashTimes.delete(key);
-  }
+function stopPresetSessions(presetId: string): Promise<void> {
+  const existing = stopping.get(presetId);
+  if (existing) return existing;
+  const starts = [...creating.values()].filter((s) => s.presetId === presetId);
+  for (const start of starts) start.cancelled = true;
+  const stopped = Promise.resolve()
+    .then(async () => {
+      const targets = [...sessions.values()].filter(
+        (m) => m.preset.id === presetId,
+      );
+      await Promise.all([
+        ...targets.map((m) => closeSession(m)),
+        ...starts.map((s) => s.promise),
+      ]);
+      for (const key of crashTimes.keys()) {
+        if (key.startsWith(`${presetId}\u0000`)) crashTimes.delete(key);
+      }
+    })
+    .finally(() => stopping.delete(presetId));
+  stopping.set(presetId, stopped);
+  return stopped;
 }
 
 export async function lspFormatDocument(
@@ -386,9 +454,17 @@ export async function restartPresetSessions(presetId: string): Promise<void> {
 // the mirrored preference change instead of a direct call.
 usePreferencesStore.subscribe((state, prev) => {
   if (state.lspActivation === prev.lspActivation) return;
-  for (const managed of sessions.values()) {
-    if (state.lspActivation[managed.preset.id] !== "enabled") {
-      void stopPresetSessions(managed.preset.id);
+  for (const presetId of Object.keys(prev.lspActivation)) {
+    if (state.lspActivation[presetId] !== "enabled") {
+      void stopPresetSessions(presetId)
+        .then(() => {
+          if (
+            usePreferencesStore.getState().lspActivation[presetId] === "enabled"
+          ) {
+            useLspRuntimeStore.getState().bumpGeneration(presetId);
+          }
+        })
+        .catch(reportStopFailure);
     }
   }
 });
