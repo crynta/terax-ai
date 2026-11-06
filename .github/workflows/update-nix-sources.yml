@@ -53,14 +53,20 @@ jobs:
         env:
           VERSION: ${{ steps.tag.outputs.version }}
         run: |
+          set -euo pipefail
           hash_sri() {
+            test -s "$1" || return 1
             openssl dgst -sha256 -binary "$1" | base64 | tr -d '\n'
           }
+          LINUX_HASH=$(hash_sri "Terax_${VERSION}_amd64.deb")
+          ARM_LINUX_HASH=$(hash_sri "Terax_${VERSION}_arm64.deb")
+          X64_DARWIN_HASH=$(hash_sri "Terax_x64.app.tar.gz")
+          ARM_DARWIN_HASH=$(hash_sri "Terax_aarch64.app.tar.gz")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "linux=sha256-$(hash_sri "Terax_${VERSION}_amd64.deb")" >> "$GITHUB_OUTPUT"
-          echo "aarch64-linux=sha256-$(hash_sri "Terax_${VERSION}_arm64.deb")" >> "$GITHUB_OUTPUT"
-          echo "x64-darwin=sha256-$(hash_sri "Terax_x64.app.tar.gz")" >> "$GITHUB_OUTPUT"
-          echo "aarch64-darwin=sha256-$(hash_sri "Terax_aarch64.app.tar.gz")" >> "$GITHUB_OUTPUT"
+          echo "linux=sha256-$LINUX_HASH" >> "$GITHUB_OUTPUT"
+          echo "aarch64-linux=sha256-$ARM_LINUX_HASH" >> "$GITHUB_OUTPUT"
+          echo "x64-darwin=sha256-$X64_DARWIN_HASH" >> "$GITHUB_OUTPUT"
+          echo "aarch64-darwin=sha256-$ARM_DARWIN_HASH" >> "$GITHUB_OUTPUT"
 
       - name: Update nix/sources.json
         run: |
