@@ -1,3 +1,5 @@
+import { IS_WINDOWS } from "@/lib/platform";
+import { currentWorkspaceEnv } from "@/modules/workspace";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useEffect } from "react";
 import { useTerminalDropStore } from "./dropStore";
@@ -14,6 +16,7 @@ type TerminalPathDropDeps = {
   leafIdAtPoint: (clientX: number, clientY: number) => number | null;
   paste: (leafId: number, text: string) => boolean;
   setTarget: (leafId: number | null) => void;
+  windowsShell?: () => boolean;
 };
 
 // Tauri reports the drop point in physical pixels on some platforms and logical
@@ -37,6 +40,7 @@ export function createTerminalPathDropTarget({
   leafIdAtPoint,
   paste,
   setTarget,
+  windowsShell = () => IS_WINDOWS && currentWorkspaceEnv().kind === "local",
 }: TerminalPathDropDeps): TerminalPathDropTarget {
   return {
     updateTarget(clientX, clientY) {
@@ -48,7 +52,7 @@ export function createTerminalPathDropTarget({
       setTarget(null);
       const leafId = leafIdAtPoint(clientX, clientY);
       if (leafId === null) return false;
-      paste(leafId, formatDroppedPaths(paths));
+      paste(leafId, formatDroppedPaths(paths, windowsShell()));
       return true;
     },
     clearTarget() {
@@ -86,10 +90,7 @@ export function useTerminalFileDrop(): TerminalPathDropTarget {
         if (p.type === "drop") {
           setTarget(null);
           if (!p.paths.length) return;
-          const leafId = leafIdAt(p.position.x, p.position.y);
-          if (leafId !== null) {
-            pasteIntoSession(leafId, formatDroppedPaths(p.paths));
-          }
+          terminalPathDropTarget.dropPath(p.paths, p.position.x, p.position.y);
         }
       })
       .then((fn) => {

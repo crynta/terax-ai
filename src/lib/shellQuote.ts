@@ -5,9 +5,20 @@ const POSIX_SHELL_SPECIAL = /([\\\s"'$`!&;|<>()[\]{}*?#~=])/g;
 /** Literal characters in PowerShell argument mode. */
 const WINDOWS_UNQUOTED_SAFE = /^[A-Za-z0-9_.:\\/+-]+$/;
 
-export function quoteShellArg(value: string, windows = IS_WINDOWS): string {
+const POSIX_UNQUOTED_SAFE = /^[A-Za-z0-9_@%+:,./-]+$/;
+
+export function quoteShellArg(
+  value: string,
+  windows = IS_WINDOWS,
+  unquotedWhenSafe = false,
+): string {
+  if (
+    unquotedWhenSafe &&
+    (windows ? WINDOWS_UNQUOTED_SAFE : POSIX_UNQUOTED_SAFE).test(value)
+  )
+    return value;
   if (windows) {
-    return `'${value.replace(/'/g, "''")}'`;
+    return `'${value.replace(/['‘’]/g, "$&$&")}'`;
   }
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
@@ -15,9 +26,7 @@ export function quoteShellArg(value: string, windows = IS_WINDOWS): string {
 export function escapeForShell(path: string, windows = IS_WINDOWS): string {
   if (!path) return path;
   if (windows) {
-    return WINDOWS_UNQUOTED_SAFE.test(path)
-      ? path
-      : `'${path.replace(/['‘’]/g, "$&$&")}'`;
+    return WINDOWS_UNQUOTED_SAFE.test(path) ? path : quoteShellArg(path, true);
   }
   // Backslash-newline is a line continuation, not a literal newline.
   if (path.includes("\n")) return quoteShellArg(path, false);

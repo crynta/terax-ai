@@ -1,15 +1,13 @@
 import { IS_WINDOWS } from "@/lib/platform";
+import { quoteShellArg } from "@/lib/shellQuote";
 
-// Quote only when needed, so a clean path stays verbatim for bracketed paste
-// (Claude resolves an image path to "[Image #N]"); spaced/special paths quote.
-const SAFE_PATH = /^[A-Za-z0-9_@%+=:,./\\-]+$/;
-
-export function quoteShellPath(p: string): string {
-  if (SAFE_PATH.test(p)) return p;
-  if (IS_WINDOWS) return `"${p.replace(/"/g, '""')}"`;
-  return `'${p.replace(/'/g, `'\\''`)}'`;
+export function quoteShellPath(path: string, windows = IS_WINDOWS): string {
+  return quoteShellArg(path, windows, true);
 }
 
-export function formatDroppedPaths(paths: string[]): string {
-  return `${paths.map(quoteShellPath).join(" ")} `;
+export function formatDroppedPaths(
+  paths: string[],
+  windows = IS_WINDOWS,
+): string {
+  return `${paths.map((path) => quoteShellPath(path, windows)).join(" ")} `;
 }

@@ -42,13 +42,10 @@ describe("createTerminalPathDropTarget", () => {
       setTarget,
     });
 
-    expect(
-      target.dropPath(["/repo/a.ts", "/repo/b file.ts"], 40, 50),
-    ).toBe(true);
-    expect(paste).toHaveBeenCalledWith(
-      11,
-      "/repo/a.ts '/repo/b file.ts' ",
+    expect(target.dropPath(["/repo/a.ts", "/repo/b file.ts"], 40, 50)).toBe(
+      true,
     );
+    expect(paste).toHaveBeenCalledWith(11, "/repo/a.ts '/repo/b file.ts' ");
   });
 
   it("clears stale state when a drop misses every terminal", () => {
@@ -65,3 +62,23 @@ describe("createTerminalPathDropTarget", () => {
     expect(paste).not.toHaveBeenCalled();
   });
 });
+
+it.each([true, false])(
+  "uses the destination shell dialect (Windows=%s)",
+  (windows) => {
+    const paste = vi.fn(() => true);
+    const target = createTerminalPathDropTarget({
+      leafIdAtPoint: () => 3,
+      paste,
+      setTarget: vi.fn(),
+      windowsShell: () => windows,
+    });
+    target.dropPath(["/mnt/c/it's $(Get-Date).txt"], 1, 2);
+    expect(paste).toHaveBeenCalledWith(
+      3,
+      windows
+        ? "'/mnt/c/it''s $(Get-Date).txt' "
+        : "'/mnt/c/it'\\''s $(Get-Date).txt' ",
+    );
+  },
+);
