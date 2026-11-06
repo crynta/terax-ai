@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   prefs: { lspActivation: { test: "enabled" }, lspCustomServers: [] },
   subscribe: vi.fn(),
   hostPid: vi.fn(),
+  exits: [] as (() => void)[],
 }));
 vi.mock("@/modules/settings/preferences", () => ({
   usePreferencesStore: {
@@ -45,6 +46,10 @@ vi.mock("./transport", () => ({
 vi.mock("./client", () => ({
   TeraxLspClient: class {
     static hostPid = 1;
+    constructor(config: { onClose: () => void }) {
+      mocks.exits.push(config.onClose);
+    }
+    close = vi.fn();
     initializePromise = Promise.resolve();
     shutdownGracefully = mocks.shutdown;
     textDocumentDidClose = vi.fn();
@@ -75,6 +80,7 @@ describe("LSP session capacity", () => {
   beforeEach(async () => {
     vi.resetModules();
     vi.clearAllMocks();
+    mocks.exits = [];
     mocks.prefs.lspActivation = { test: "enabled" };
     mocks.hostPid.mockResolvedValue(1);
     (await import("./client")).TeraxLspClient.hostPid = 1;
@@ -125,6 +131,21 @@ describe("LSP session capacity", () => {
       before,
     );
     expect(await acquireDocExtension("/root/file.ts", "ts")).not.toBeNull();
+  });
+
+  it("releases a failed shutdown reservation when exit is later confirmed", async () => {
+    const { acquireDocExtension, restartPresetSessions } = await import(
+      "./sessionManager"
+    );
+    await acquireDocExtension("/root/file.ts", "ts");
+    mocks.close.mockRejectedValueOnce(new Error("kill failed"));
+    await expect(restartPresetSessions("test")).rejects.toThrow("kill failed");
+    expect(await acquireDocExtension("/root/file.ts", "ts")).toBeNull();
+    mocks.exits[0]();
+    expect(await acquireDocExtension("/root/file.ts", "ts")).not.toBeNull();
+    mocks.exits[0]();
+    expect(await acquireDocExtension("/root/file2.ts", "ts")).not.toBeNull();
+    expect(mocks.start).toHaveBeenCalledTimes(2);
   });
 
   it("frees a failed startup reservation", async () => {

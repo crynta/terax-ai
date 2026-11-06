@@ -248,7 +248,7 @@ async function createSession(
     documentUri: rootUri,
     languageId: "",
     initializationOptions: preset.initializationOptions,
-    onClose: () => handleServerExit(key),
+    onClose: () => handleServerExit(key, transport),
     onError: (e) => console.error(`[lsp:${preset.id}]`, e),
   });
 
@@ -271,7 +271,7 @@ async function createSession(
   // Exit can beat the map insert when the binary dies instantly (e.g. a
   // rustup proxy for an uninstalled component); reap it here.
   if (transport.exitInfo) {
-    handleServerExit(key);
+    handleServerExit(key, transport);
     return null;
   }
 
@@ -291,9 +291,15 @@ async function createSession(
   return managed;
 }
 
-function handleServerExit(key: string): void {
+function handleServerExit(key: string, transport: TauriLspTransport): void {
   const managed = sessions.get(key);
-  if (!managed || managed.closing) return;
+  if (!managed || managed.transport !== transport) return;
+  if (managed.closing) {
+    sessions.delete(key);
+    managed.client.close();
+    useLspRuntimeStore.getState().removeSession(key, managed.preset.id);
+    return;
+  }
   managed.closing = true;
   if (managed.idleTimer) clearTimeout(managed.idleTimer);
   recordCrash(key);
@@ -382,8 +388,12 @@ function closeSession(managed: Managed): Promise<void> {
   managed.closePromise = (async () => {
     await managed.client.shutdownGracefully(SHUTDOWN_TIMEOUT_MS);
     await managed.transport.stop();
-    sessions.delete(managed.key);
-    useLspRuntimeStore.getState().removeSession(managed.key, managed.preset.id);
+    if (sessions.get(managed.key) === managed) {
+      sessions.delete(managed.key);
+      useLspRuntimeStore
+        .getState()
+        .removeSession(managed.key, managed.preset.id);
+    }
   })().catch((error) => {
     managed.closePromise = undefined;
     throw error;
