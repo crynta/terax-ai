@@ -1,4 +1,4 @@
-import { native } from "@/modules/ai/lib/native";
+import { git } from "@/modules/git";
 import { useEffect, useState } from "react";
 
 // `nonce` forces a re-resolve (e.g. on command finish) so `git checkout` shows.
@@ -12,8 +12,8 @@ export function useGitBranch(cwd: string | null, nonce = 0): string | null {
       return;
     }
     let alive = true;
-    native
-      .gitResolveRepo(cwd)
+    git
+      .resolveRepo(cwd)
       .then((repo) => {
         if (alive) setBranch(repo?.branch || null);
       })

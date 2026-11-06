@@ -15,7 +15,7 @@
 // Lane colors are stable per slot index. This keeps the rail readable when
 // you load more pages, since lane indices don't shift retroactively.
 
-import type { GitLogEntry } from "@/modules/ai/lib/native";
+import type { GitLogEntry } from "@/modules/git";
 
 export type LaneColor = string;
 
