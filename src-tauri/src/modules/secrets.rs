@@ -21,22 +21,22 @@ use std::sync::Mutex;
 
 use tauri::{AppHandle, Manager};
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", test))]
 use std::collections::HashMap;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", test))]
 use std::fs;
 #[cfg(target_os = "linux")]
 use std::path::PathBuf;
 
 #[derive(Default)]
 pub struct SecretsState {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", test))]
     cache: Mutex<Option<HashMap<String, String>>>,
     #[cfg(not(target_os = "linux"))]
     _phantom: Mutex<()>,
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", test))]
 pub(crate) fn key(service: &str, account: &str) -> String {
     format!("{}::{}", service, account)
 }
@@ -53,7 +53,7 @@ fn read_store(app: &AppHandle) -> Result<HashMap<String, String>, String> {
     read_store_at(&store_path(app)?)
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", test))]
 pub(crate) fn read_store_at(path: &std::path::Path) -> Result<HashMap<String, String>, String> {
     if !path.exists() {
         return Ok(HashMap::new());
@@ -62,33 +62,36 @@ pub(crate) fn read_store_at(path: &std::path::Path) -> Result<HashMap<String, St
     serde_json::from_slice::<HashMap<String, String>>(&bytes).map_err(|e| e.to_string())
 }
 
-#[cfg(target_os = "linux")]
-fn write_store(app: &AppHandle, map: &HashMap<String, String>) -> Result<(), String> {
-    write_store_at(&store_path(app)?, map)
-}
-
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", test))]
 pub(crate) fn write_store_at(
     path: &std::path::Path,
     map: &HashMap<String, String>,
 ) -> Result<(), String> {
     use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
-
-    let tmp = path.with_extension("json.tmp");
+    let parent = path.parent().ok_or("secret store has no parent")?;
     let bytes = serde_json::to_vec(map).map_err(|e| e.to_string())?;
+    // NamedTempFile uses exclusive creation and mode 0600 on Unix.
+    let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
+    file.write_all(&bytes).map_err(|e| e.to_string())?;
+    file.as_file().sync_all().map_err(|e| e.to_string())?;
+    file.persist(path).map_err(|e| e.to_string())?;
+    Ok(())
+}
 
-    // 0600: only the owning user can read or write the secrets file.
-    let mut f = fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(&tmp)
-        .map_err(|e| e.to_string())?;
-    f.write_all(&bytes).map_err(|e| e.to_string())?;
-    f.sync_all().map_err(|e| e.to_string())?;
-    fs::rename(&tmp, path).map_err(|e| e.to_string())?;
+#[cfg(any(target_os = "linux", test))]
+fn update_store_at(
+    path: &std::path::Path,
+    state: &SecretsState,
+    update: impl FnOnce(&mut HashMap<String, String>),
+) -> Result<(), String> {
+    let mut guard = state.cache.lock().map_err(|e| e.to_string())?;
+    let mut next = match guard.as_ref() {
+        Some(map) => map.clone(),
+        None => read_store_at(path)?,
+    };
+    update(&mut next);
+    write_store_at(path, &next)?;
+    *guard = Some(next);
     Ok(())
 }
 
@@ -180,14 +183,9 @@ fn set_secret(
     #[cfg(target_os = "linux")]
     {
         let key = key(service, account);
-        with_store(app, state, |m| {
+        update_store_at(&store_path(app)?, state, |m| {
             m.insert(key, password);
-        })?;
-        let snapshot = {
-            let guard = state.cache.lock().map_err(|e| e.to_string())?;
-            guard.as_ref().cloned().unwrap_or_default()
-        };
-        write_store(app, &snapshot)
+        })
     }
     #[cfg(not(target_os = "linux"))]
     {
@@ -218,14 +216,9 @@ fn delete_secret(
     #[cfg(target_os = "linux")]
     {
         let key = key(service, account);
-        with_store(app, state, |m| {
+        update_store_at(&store_path(app)?, state, |m| {
             m.remove(&key);
-        })?;
-        let snapshot = {
-            let guard = state.cache.lock().map_err(|e| e.to_string())?;
-            guard.as_ref().cloned().unwrap_or_default()
-        };
-        write_store(app, &snapshot)
+        })
     }
     #[cfg(not(target_os = "linux"))]
     {
@@ -238,11 +231,98 @@ fn delete_secret(
     }
 }
 
-#[cfg(all(test, target_os = "linux"))]
+#[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::os::unix::fs::MetadataExt;
     use tempfile::TempDir;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_preexisting_temporary_symlink_cannot_overwrite_another_file() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("secrets.json");
+        let marker = tmp.path().join("marker.txt");
+        fs::write(&marker, b"unchanged").unwrap();
+        std::os::unix::fs::symlink(&marker, path.with_extension("json.tmp")).unwrap();
+        write_store_at(&path, &HashMap::from([("key".into(), "synthetic".into())])).unwrap();
+        assert_eq!(fs::read(&marker).unwrap(), b"unchanged");
+        assert_eq!(
+            read_store_at(&path).unwrap().get("key").unwrap(),
+            "synthetic"
+        );
+    }
+
+    #[test]
+    fn failed_persistence_keeps_the_previous_cache_and_disk() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("secrets.json");
+        let state = SecretsState::default();
+        update_store_at(&path, &state, |map| {
+            map.insert("keep".into(), "old".into());
+        })
+        .unwrap();
+        let before = read_store_at(&path).unwrap();
+        let impossible = tmp.path().join("missing").join("secrets.json");
+        assert!(update_store_at(&impossible, &state, |map| {
+            map.remove("keep");
+        })
+        .is_err());
+        assert_eq!(state.cache.lock().unwrap().as_ref(), Some(&before));
+        assert_eq!(read_store_at(&path).unwrap(), before);
+    }
+
+    #[test]
+    fn concurrent_set_and_delete_are_serialized_through_persistence() {
+        use std::sync::{mpsc, Arc};
+        let tmp = TempDir::new().unwrap();
+        let path = Arc::new(tmp.path().join("secrets.json"));
+        let state = Arc::new(SecretsState::default());
+        update_store_at(&path, &state, |map| {
+            map.insert("delete".into(), "old".into());
+            map.insert("keep".into(), "unrelated".into());
+        })
+        .unwrap();
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let setter = {
+            let (path, state) = (path.clone(), state.clone());
+            std::thread::spawn(move || {
+                update_store_at(&path, &state, |map| {
+                    map.insert("new".into(), "saved".into());
+                    entered_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                })
+                .unwrap()
+            })
+        };
+        entered_rx.recv().unwrap();
+        assert!(
+            state.cache.try_lock().is_err(),
+            "transaction must retain the lock"
+        );
+        let (started_tx, started_rx) = mpsc::channel();
+        let deleter = {
+            let (path, state) = (path.clone(), state.clone());
+            std::thread::spawn(move || {
+                started_tx.send(()).unwrap();
+                update_store_at(&path, &state, |map| {
+                    map.remove("delete");
+                })
+                .unwrap();
+            })
+        };
+        started_rx.recv().unwrap();
+        release_tx.send(()).unwrap();
+        setter.join().unwrap();
+        deleter.join().unwrap();
+        let disk = read_store_at(&path).unwrap();
+        assert!(!disk.contains_key("delete"));
+        assert_eq!(disk.get("keep").unwrap(), "unrelated");
+        assert_eq!(disk.get("new").unwrap(), "saved");
+        assert_eq!(state.cache.lock().unwrap().as_ref(), Some(&disk));
+    }
 
     #[test]
     fn key_format_is_service_double_colon_account() {
@@ -271,6 +351,7 @@ mod tests {
         assert_eq!(loaded, m);
     }
 
+    #[cfg(unix)]
     #[test]
     fn write_uses_mode_0600() {
         let tmp = TempDir::new().unwrap();
