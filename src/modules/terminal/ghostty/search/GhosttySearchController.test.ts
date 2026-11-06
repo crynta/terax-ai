@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { replaceSessionSurface } from "../replaceSessionSurface";
 import type {
   GhosttySearchStatus,
   GhosttyTerminalModelApi,
@@ -70,6 +71,85 @@ describe("GhosttySearchController (loads its engine on first use)", () => {
     await vi.waitFor(() => expect(onChange).toHaveBeenCalled());
     expect(stub.setSearchQuery).toHaveBeenCalledOnce();
     expect(stub.setSearchQuery).toHaveBeenCalledWith("second");
+    search.dispose();
+  });
+
+  it.each(["findNext", "findPrevious"] as const)(
+    "preserves an unstarted %s through repeated surface replacements",
+    async (find) => {
+      const stub = model({
+        stepSearch: vi.fn(() => ({ ...status, totalMatches: 2 })),
+      });
+      const create = () => {
+        const search = new GhosttySearchController(stub, vi.fn());
+        return {
+          searchController: () => search,
+          dispose: () => search.dispose(),
+        };
+      };
+      const state = { surface: create(), input: { dispose: vi.fn() } };
+      state.surface.searchController()[find]("agent");
+      for (let replacement = 0; replacement < 2; replacement++) {
+        replaceSessionSurface(state, create, vi.fn(), () => ({
+          dispose: vi.fn(),
+        }));
+        expect(state.surface.searchController().snapshot().query).toBe("agent");
+      }
+      expect(stub.setSearchQuery).not.toHaveBeenCalled();
+      await vi.dynamicImportSettled();
+      expect(stub.setSearchQuery).toHaveBeenCalledExactlyOnceWith("agent");
+      expect(stub.selectSearchMatch).toHaveBeenCalledExactlyOnceWith(
+        find === "findNext" ? "next" : "previous",
+      );
+      state.surface.dispose();
+    },
+  );
+
+  it.each(["find", "restore"] as const)(
+    "keeps a queued %s across block overlay refreshes",
+    async (request) => {
+      const stub = model({
+        blockSearchActive: () => true,
+        stepSearch: vi.fn(() => ({ ...status, totalMatches: 2 })),
+      });
+      const search = new GhosttySearchController(stub, vi.fn());
+      if (request === "find") search.findPrevious("agent");
+      else search.restore({ query: "agent", pendingDirection: "previous" });
+      for (let frame = 0; frame < 3; frame++) search.refreshOverlay();
+      expect(search.snapshot().query).toBe("agent");
+      await vi.dynamicImportSettled();
+      expect(stub.setSearchQuery).toHaveBeenCalledTimes(request === "find" ? 1 : 0);
+      expect(stub.selectSearchMatch).toHaveBeenCalledExactlyOnceWith("previous");
+      expect(search.snapshot()).toEqual({ query: "agent", pendingDirection: null });
+      search.dispose();
+    },
+  );
+
+  it("cancels a queued request when an idle snapshot is restored", async () => {
+    const stub = model();
+    const search = new GhosttySearchController(stub, vi.fn());
+    search.findNext("agent");
+    search.restore({ query: "", pendingDirection: null });
+    await vi.dynamicImportSettled();
+    expect(search.snapshot()).toEqual({ query: "", pendingDirection: null });
+    expect(stub.setSearchQuery).not.toHaveBeenCalled();
+    expect(stub.stepSearch).not.toHaveBeenCalled();
+    search.dispose();
+  });
+
+  it("defers navigation until resume when suspended during the import", async () => {
+    const stub = model({
+      stepSearch: vi.fn(() => ({ ...status, totalMatches: 2 })),
+    });
+    const search = new GhosttySearchController(stub, vi.fn());
+    search.findPrevious("agent");
+    search.suspend();
+    await vi.dynamicImportSettled();
+    expect(stub.stepSearch).not.toHaveBeenCalled();
+    expect(stub.selectSearchMatch).not.toHaveBeenCalled();
+    search.resume();
+    expect(stub.setSearchQuery).toHaveBeenCalledExactlyOnceWith("agent");
+    expect(stub.selectSearchMatch).toHaveBeenCalledExactlyOnceWith("previous");
     search.dispose();
   });
 

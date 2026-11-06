@@ -7,8 +7,6 @@ import type {
 
 export type { GhosttySearchSnapshot };
 
-type Task = (search: GhosttySearchEngine) => void;
-
 const IDLE: GhosttySearchSnapshot = { query: "", pendingDirection: null };
 
 /**
@@ -20,7 +18,7 @@ const IDLE: GhosttySearchSnapshot = { query: "", pendingDirection: null };
  */
 export class GhosttySearchController implements TerminalSearchController {
   private search: GhosttySearchEngine | null = null;
-  private queued: Task | null = null;
+  private queued: GhosttySearchSnapshot | null = null;
   private loading = false;
   private suspended = false;
   private disposed = false;
@@ -32,25 +30,29 @@ export class GhosttySearchController implements TerminalSearchController {
 
   findNext(query: string): boolean {
     if (this.search) return this.search.findNext(query);
-    return this.defer(query !== "" && !this.suspended, (s) =>
-      s.findNext(query),
-    );
+    return this.defer(query !== "" && !this.suspended, {
+      query,
+      pendingDirection: "next",
+      unstarted: true,
+    });
   }
 
   findPrevious(query: string): boolean {
     if (this.search) return this.search.findPrevious(query);
-    return this.defer(query !== "" && !this.suspended, (s) =>
-      s.findPrevious(query),
-    );
+    return this.defer(query !== "" && !this.suspended, {
+      query,
+      pendingDirection: "previous",
+      unstarted: true,
+    });
   }
 
   snapshot(): GhosttySearchSnapshot {
-    return this.search?.snapshot() ?? IDLE;
+    return this.search?.snapshot() ?? this.queued ?? IDLE;
   }
 
   restore(snapshot: GhosttySearchSnapshot): void {
     if (this.search) this.search.restore(snapshot);
-    else this.defer(snapshot.query !== "", (s) => s.restore(snapshot));
+    else this.defer(true, snapshot);
   }
 
   suspend(): void {
@@ -75,7 +77,9 @@ export class GhosttySearchController implements TerminalSearchController {
 
   refreshOverlay(): void {
     if (this.search) this.search.refreshOverlay();
-    else this.defer(!!this.model.blockSearchActive?.(), () => {});
+    else if (!this.disposed && !this.loading && this.model.blockSearchActive?.()) {
+      this.load();
+    }
   }
 
   get maskRevision(): number {
@@ -100,11 +104,10 @@ export class GhosttySearchController implements TerminalSearchController {
     this.search?.dispose();
   }
 
-  /** Queues `task` for the real controller and loads it; returns false. */
-  private defer(wanted: boolean, task: Task): false {
+  private defer(wanted: boolean, snapshot: GhosttySearchSnapshot): false {
     if (wanted && !this.disposed) {
-      this.queued = task;
-      if (!this.loading) this.load();
+      this.queued = snapshot;
+      if (snapshot.query && !this.loading) this.load();
     }
     return false;
   }
@@ -116,10 +119,10 @@ export class GhosttySearchController implements TerminalSearchController {
         if (this.disposed) return;
         const search = new GhosttySearchEngine(this.model, this.onChange);
         this.search = search;
-        // In the order the calls were made: a find, then a suspension.
-        this.queued?.(search);
+        const queued = this.queued;
         this.queued = null;
         if (this.suspended) search.suspend();
+        if (queued) search.restore(queued);
         search.refreshOverlay();
         this.onChange();
       },

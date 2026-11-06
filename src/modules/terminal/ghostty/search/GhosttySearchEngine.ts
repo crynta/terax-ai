@@ -11,6 +11,8 @@ type Direction = "next" | "previous";
 export type GhosttySearchSnapshot = {
   readonly query: string;
   readonly pendingDirection: Direction | null;
+  /** The lazy controller has not submitted this query to the native model yet. */
+  readonly unstarted?: boolean;
 };
 
 type Scheduler = {
@@ -53,6 +55,9 @@ export class GhosttySearchEngine implements TerminalSearchController {
     this.cancelStep();
     this.query = snapshot.query;
     this.pendingDirection = snapshot.pendingDirection;
+    if (snapshot.unstarted && this.query) {
+      this.status = this.model.setSearchQuery(this.query);
+    }
     this.refresh();
   }
 
