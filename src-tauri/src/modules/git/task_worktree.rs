@@ -285,7 +285,8 @@ fn share(root: &Path, target: &Path, entries: &[String]) -> Result<(Vec<String>,
     let mut skipped = Vec::new();
     for entry in entries {
         worktree::validate_include_pattern(entry).map_err(GitError::InvalidPath)?;
-        let src = root.join(entry);
+        let relative = entry.trim_end_matches('/');
+        let src = root.join(relative);
         let canonical = match std::fs::canonicalize(&src) {
             Ok(path) => path,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
@@ -294,7 +295,7 @@ fn share(root: &Path, target: &Path, entries: &[String]) -> Result<(Vec<String>,
         if !canonical.starts_with(root) || canonical.starts_with(root.join(".git")) {
             return Err(GitError::PathOutsideWorkspace(canonical));
         }
-        let dst = target.join(entry);
+        let dst = target.join(relative);
         if std::fs::symlink_metadata(&dst).is_ok() {
             skipped.push(Skipped {
                 path: entry.clone(),
@@ -302,7 +303,7 @@ fn share(root: &Path, target: &Path, entries: &[String]) -> Result<(Vec<String>,
             });
             continue;
         }
-        worktree::create_dirs_confined(target, entry)
+        worktree::create_dirs_confined(target, relative)
             .map_err(|e| GitError::InvalidPath(e.into()))?;
         #[cfg(unix)]
         std::os::unix::fs::symlink(&canonical, &dst)?;

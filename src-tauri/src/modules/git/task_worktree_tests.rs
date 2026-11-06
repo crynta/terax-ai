@@ -82,7 +82,7 @@ fn lifecycle_preserves_dirty_work_and_reallocates_ports() {
         ".gitignore",
         ".env\n.env.local\nlocal.json\nnode_modules/\n",
     );
-    repo.write(".terax/project.toml", "[worktree]\ninclude = ['.env', 'README.md', 'scratch.txt']\n[scripts]\nsetup = 'echo setup'\narchive = 'echo archive'\n");
+    repo.write(".terax/project.toml", "[worktree]\ninclude = ['.env', 'README.md', 'scratch.txt']\nshared = ['node_modules/.cache/']\n[scripts]\nsetup = 'echo setup'\narchive = 'echo archive'\n");
     repo.write(".worktreeinclude", "local.json\n");
     repo.commit_all("configuration");
     repo.write(".env", "SECRET=value\n");
