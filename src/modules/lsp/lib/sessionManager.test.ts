@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   shutdown: vi.fn(),
   prefs: { lspActivation: { test: "enabled" }, lspCustomServers: [] },
   subscribe: vi.fn(),
+  hostPid: vi.fn(),
 }));
 vi.mock("@/modules/settings/preferences", () => ({
   usePreferencesStore: {
@@ -18,7 +19,9 @@ vi.mock("@/modules/workspace", () => ({
 }));
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: async (command: string, args: { path: string }) =>
-    command === "lsp_resolve_root" ? args.path.split("/file")[0] : 1,
+    command === "lsp_resolve_root"
+      ? args.path.split("/file")[0]
+      : mocks.hostPid(),
 }));
 vi.mock("./detect", () => ({ detectBinary: async () => "/bin/test" }));
 vi.mock("./presets", () => ({
@@ -73,6 +76,8 @@ describe("LSP session capacity", () => {
     vi.resetModules();
     vi.clearAllMocks();
     mocks.prefs.lspActivation = { test: "enabled" };
+    mocks.hostPid.mockResolvedValue(1);
+    (await import("./client")).TeraxLspClient.hostPid = 1;
     mocks.start.mockResolvedValue(undefined);
     mocks.close.mockResolvedValue(undefined);
     mocks.shutdown.mockResolvedValue(undefined);
@@ -95,6 +100,31 @@ describe("LSP session capacity", () => {
     expect((await Promise.all(requests)).filter(Boolean)).toHaveLength(4);
     expect(await same).not.toBeNull();
     expect(mocks.start).toHaveBeenCalledTimes(4);
+  });
+
+  it("reacquires after disable and re-enable during host lookup", async () => {
+    const host = deferred();
+    (await import("./client")).TeraxLspClient.hostPid = null;
+    mocks.hostPid.mockReturnValue(host.promise);
+    const { acquireDocExtension } = await import("./sessionManager");
+    const { useLspRuntimeStore } = await import("./runtimeStore");
+    const request = acquireDocExtension("/root/file.ts", "ts");
+    await settle();
+    const prev = { ...mocks.prefs };
+    mocks.prefs.lspActivation = { test: "dismissed" };
+    mocks.subscribe.mock.calls[0][0](mocks.prefs, prev);
+    const disabled = { ...mocks.prefs };
+    mocks.prefs.lspActivation = { test: "enabled" };
+    mocks.subscribe.mock.calls[0][0](mocks.prefs, disabled);
+    expect(await acquireDocExtension("/root/file.ts", "ts")).toBeNull();
+    const before = useLspRuntimeStore.getState().generations.test ?? 0;
+    host.resolve();
+    expect(await request).toBeNull();
+    await settle();
+    expect(useLspRuntimeStore.getState().generations.test).toBeGreaterThan(
+      before,
+    );
+    expect(await acquireDocExtension("/root/file.ts", "ts")).not.toBeNull();
   });
 
   it("frees a failed startup reservation", async () => {

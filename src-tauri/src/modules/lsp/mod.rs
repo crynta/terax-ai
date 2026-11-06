@@ -156,11 +156,16 @@ pub async fn lsp_send(
 }
 
 #[tauri::command]
-pub fn lsp_kill(state: tauri::State<'_, LspState>, id: u32) {
-    if let Some(session) = state.take(id) {
-        session.kill();
+pub async fn lsp_kill(state: tauri::State<'_, LspState>, id: u32) -> Result<(), String> {
+    let session = state.sessions.read().unwrap().get(&id).cloned();
+    if let Some(session) = session {
+        tauri::async_runtime::spawn_blocking(move || session.kill_and_wait())
+            .await
+            .map_err(|e| e.to_string())??;
+        state.take(id);
         log::info!("lsp killed id={id}");
     }
+    Ok(())
 }
 
 #[cfg(all(test, unix))]

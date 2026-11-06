@@ -446,7 +446,15 @@ usePreferencesStore.subscribe((state, prev) => {
   if (state.lspActivation === prev.lspActivation) return;
   for (const presetId of Object.keys(prev.lspActivation)) {
     if (state.lspActivation[presetId] !== "enabled") {
-      void stopPresetSessions(presetId).catch(reportStopFailure);
+      void stopPresetSessions(presetId)
+        .then(() => {
+          if (
+            usePreferencesStore.getState().lspActivation[presetId] === "enabled"
+          ) {
+            useLspRuntimeStore.getState().bumpGeneration(presetId);
+          }
+        })
+        .catch(reportStopFailure);
     }
   }
 });
