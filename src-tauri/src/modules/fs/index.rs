@@ -289,10 +289,9 @@ impl FileIndexState {
                     if cancelled() {
                         return None;
                     }
-                    if let Some(result) = result.as_ref() {
-                        if let Some(index) = result {
-                            return Some(index.clone());
-                        }
+                    if result.is_some() {
+                        // A completed walk may have been invalidated; only the
+                        // cache can supply a still-current shared result.
                         break;
                     }
                     result = active
@@ -565,6 +564,65 @@ mod tests {
             release_tx.send(()).unwrap();
             assert!(first.join().unwrap().is_none());
             assert!(!second.join().unwrap().unwrap().entries.is_empty());
+        });
+        assert_eq!(state.slot_count(), 1);
+    }
+
+    #[test]
+    fn a_waiter_rebuilds_when_the_shared_walk_was_invalidated() {
+        let state = FileIndexState::default();
+        let dir = tree();
+        let k = key(dir.path());
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let (joined_tx, joined_rx) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            let state = &state;
+            let k = &k;
+            let owner = scope.spawn(move || {
+                state.get_or_build_with(k, Instant::now(), || {
+                    let old = build_index(k);
+                    entered_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                    old
+                })
+            });
+            entered_rx.recv().unwrap();
+            std::fs::write(k.root.join("late.rs"), "").unwrap();
+            state.note_change(&to_canon(
+                std::fs::canonicalize(k.root.join("late.rs")).unwrap(),
+            ));
+            let waiter = scope.spawn(move || {
+                let checks = std::cell::Cell::new(0);
+                state
+                    .get_or_build_cancellable_with(
+                        k,
+                        Instant::now(),
+                        &|| {
+                            checks.set(checks.get() + 1);
+                            if checks.get() == 2 {
+                                joined_tx.send(()).unwrap();
+                            }
+                            false
+                        },
+                        |_| Some(build_index(k)),
+                    )
+                    .unwrap()
+            });
+            joined_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+            release_tx.send(()).unwrap();
+            assert!(owner
+                .join()
+                .unwrap()
+                .entries
+                .iter()
+                .all(|(rel, _)| rel != "late.rs"));
+            assert!(waiter
+                .join()
+                .unwrap()
+                .entries
+                .iter()
+                .any(|(rel, _)| rel == "late.rs"));
         });
         assert_eq!(state.slot_count(), 1);
     }
