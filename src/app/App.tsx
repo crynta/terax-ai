@@ -59,7 +59,9 @@ import { setShowHidden } from "@/modules/settings/store";
 import {
   type ShortcutHandlers,
   type ShortcutId,
+  shouldDisableAskSelection,
   shouldDisablePaneSwapShortcut,
+  tabDigit,
   useGlobalShortcuts,
 } from "@/modules/shortcuts";
 import {
@@ -918,7 +920,7 @@ export default function App() {
       "tab.prev": () => stepSwitcher(-1),
       "tab.selectByIndex": (e) =>
         selectByIndex(
-          parseInt(e.key, 10) - 1,
+          (tabDigit(e, e.shiftKey) ?? 1) - 1,
           activeSpaceId ?? DEFAULT_SPACE_ID,
         ),
       "space.next": () => cycleSpace(1),
@@ -1025,10 +1027,11 @@ export default function App() {
       if (id === "ai.askSelection") {
         const target =
           (e.target as HTMLElement | null) ?? document.activeElement;
-        const inTerminal = isTerminalSurfaceTarget(target);
-        if (!inTerminal) return false;
-        const sel = captureActiveSelection();
-        return !sel?.trim();
+        return shouldDisableAskSelection(
+          e,
+          () => isTerminalSurfaceTarget(target),
+          () => !!captureActiveSelection()?.trim(),
+        );
       }
       if (id === "terminal.clear") {
         // Only intercept ⌘K while a terminal is focused; elsewhere let the key

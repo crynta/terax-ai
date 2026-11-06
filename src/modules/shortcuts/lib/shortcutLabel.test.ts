@@ -11,7 +11,7 @@ vi.mock("@/modules/settings/preferences", () => ({
   },
 }));
 
-import { shortcutLabel } from "./shortcutLabel";
+import { labelToHint, shortcutLabel } from "./shortcutLabel";
 
 beforeEach(() => {
   prefsMock.shortcuts = {};
@@ -19,9 +19,9 @@ beforeEach(() => {
 
 describe("shortcutLabel", () => {
   it("formats the default binding when there is no user override", () => {
-    // commandPalette.files defaults to Ctrl+P, commandPalette.open to Ctrl+Shift+P.
-    expect(shortcutLabel("commandPalette.files")).toBe("Ctrl P");
+    // Windows and Linux (the test environment): palette on Ctrl+Shift+P, Go to file on Ctrl+Shift+O.
     expect(shortcutLabel("commandPalette.open")).toBe("Ctrl Shift P");
+    expect(shortcutLabel("commandPalette.files")).toBe("Ctrl Shift O");
   });
 
   it("prefers a user override over the default binding", () => {
@@ -29,5 +29,23 @@ describe("shortcutLabel", () => {
       "commandPalette.open": [{ ctrl: true, shift: true, key: "k" }],
     };
     expect(shortcutLabel("commandPalette.open")).toBe("Ctrl Shift K");
+  });
+});
+
+describe("labelToHint", () => {
+  it("spells the binding that fires, inline", () => {
+    const hint = (id: Parameters<typeof shortcutLabel>[0]) =>
+      labelToHint(shortcutLabel(id));
+    expect(hint("tab.new")).toBe("Ctrl+Shift+T");
+    expect(hint("tab.newPreview")).toBe("Ctrl+Shift+`");
+    expect(hint("terminal.toggleInput")).toBe("Ctrl+Shift+Y");
+    expect(hint("tab.selectByIndex")).toBe("Ctrl+Shift+1");
+  });
+
+  it("follows a user override", () => {
+    prefsMock.shortcuts = {
+      "tab.new": [{ ctrl: true, alt: true, key: "PageDown" }],
+    };
+    expect(labelToHint(shortcutLabel("tab.new"))).toBe("Ctrl+Alt+PageDown");
   });
 });

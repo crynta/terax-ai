@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
+import { IS_MAC } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import {
   type OsNotificationResult,
@@ -31,6 +32,8 @@ import {
   setTerminalFontWeight,
   setTerminalLetterSpacing,
   setTerminalScrollback,
+  setTerminalMacOptionAsAlt,
+  setTerminalScrollSpeed,
   setTerminalShell,
   coerceTerminalRenderer,
   setTerminalRenderer,
@@ -39,6 +42,7 @@ import {
   TERMINAL_FONT_SIZES,
   TERMINAL_SCROLLBACK_PRESETS,
 } from "@/modules/settings/store";
+import { coerceMacOptionAsAlt } from "@/modules/terminal/ghostty/input/macOptionAsAlt";
 import { useTheme } from "@/modules/theme";
 import {
   ComputerIcon,
@@ -74,6 +78,13 @@ const TERMINAL_CURSOR_STYLES = [
   { value: "underline", label: "Underline" },
 ] as const;
 const LETTER_SPACINGS = [-4, -3, -2, -1, 0, 1, 2, 3, 4] as const;
+const OPTION_AS_ALT_CHOICES = [
+  ["off", "Off"],
+  ["left", "Left Option"],
+  ["right", "Right Option"],
+  ["both", "Both"],
+] as const;
+const SCROLL_SPEEDS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4] as const;
 
 type ShellInfo = { name: string; path: string; integrated: boolean };
 const SHELL_AUTO = "auto";
@@ -114,6 +125,10 @@ export function GeneralSection() {
   );
   const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
   const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
+  const terminalScrollSpeed = usePreferencesStore((s) => s.terminalScrollSpeed);
+  const terminalMacOptionAsAlt = usePreferencesStore(
+    (s) => s.terminalMacOptionAsAlt,
+  );
   const confirmCloseRunningTerminal = usePreferencesStore(
     (s) => s.confirmCloseRunningTerminal,
   );
@@ -481,6 +496,53 @@ export function GeneralSection() {
                   className="text-[12px]"
                 >
                   {lines.toLocaleString()} lines
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingRow>
+        {IS_MAC && (
+          <SettingRow
+            title="Option as Alt"
+            description="Send Option as Alt (Meta) so readline and editor shortcuts like Option+B and Option+F work. Off types the characters Option produces. Keys are matched by their position on a US keyboard, so layouts that type other letters on those keys are not followed."
+          >
+            <Select
+              value={terminalMacOptionAsAlt}
+              onValueChange={(v) =>
+                void setTerminalMacOptionAsAlt(coerceMacOptionAsAlt(v))
+              }
+            >
+              <SelectTrigger size="sm" className="h-8 w-36 text-[12px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {OPTION_AS_ALT_CHOICES.map(([value, label]) => (
+                  <SelectItem key={value} value={value} className="text-[12px]">
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SettingRow>
+        )}
+        <SettingRow
+          title="Scroll speed"
+          description="Lines per wheel or trackpad movement, for history and for programs that read the mouse wheel."
+        >
+          <Select
+            value={String(terminalScrollSpeed)}
+            onValueChange={(v) => void setTerminalScrollSpeed(Number(v))}
+          >
+            <SelectTrigger size="sm" className="h-8 w-28 text-[12px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(SCROLL_SPEEDS.some((v) => v === terminalScrollSpeed)
+                ? SCROLL_SPEEDS
+                : [...SCROLL_SPEEDS, terminalScrollSpeed].sort((a, b) => a - b)
+              ).map((v) => (
+                <SelectItem key={v} value={String(v)} className="text-[12px]">
+                  {v}x
                 </SelectItem>
               ))}
             </SelectContent>

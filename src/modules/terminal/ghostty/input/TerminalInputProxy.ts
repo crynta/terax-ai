@@ -42,23 +42,25 @@ export class TerminalInputProxy {
     options: TerminalInputProxyOptions = { placeholder: true },
   ) {
     this.placeholder = options.placeholder;
-    input.addEventListener("compositionstart", this.compositionStart);
-    input.addEventListener("compositionend", this.compositionEnd);
-    input.addEventListener("input", this.settle);
-    input.addEventListener("keyup", this.settle);
-    input.addEventListener("focus", this.settle);
-    input.addEventListener("blur", this.blur);
+    for (const [type, listener] of this.listeners())
+      input.addEventListener(type, listener);
     this.arm();
   }
 
   dispose(): void {
-    const { input } = this;
-    input.removeEventListener("compositionstart", this.compositionStart);
-    input.removeEventListener("compositionend", this.compositionEnd);
-    input.removeEventListener("input", this.settle);
-    input.removeEventListener("keyup", this.settle);
-    input.removeEventListener("focus", this.settle);
-    input.removeEventListener("blur", this.blur);
+    for (const [type, listener] of this.listeners())
+      this.input.removeEventListener(type, listener);
+  }
+
+  private listeners(): [string, EventListener][] {
+    return [
+      ["compositionstart", this.compositionStart],
+      ["compositionend", this.compositionEnd],
+      ["input", this.settle],
+      ["keyup", this.settle],
+      ["focus", this.settle],
+      ["blur", this.blur],
+    ];
   }
 
   /** Restores the placeholder and its selection unless the field is in use. */

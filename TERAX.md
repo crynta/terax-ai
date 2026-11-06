@@ -199,8 +199,14 @@ The block prompt retains an enabled terminal input proxy for native menus and
 routes editing keys, composed text and paste back to its command editor.
 Character drags retain a native selection pin from pointerdown, including before
 the first pointermove. Unmoved clicks and lost captures discard provisional pins.
-Key encoding supplies the base character required by Kitty keyboard mode; plain
-keys and key releases also use Ghostty encoding when the application requests it.
+Clipboard shortcuts match the letter the layout types (the physical key only for layouts without Latin letters), AltGr is read from `getModifierState("AltGraph")`, and the macOS Option-as-Alt setting (`off`, `left`, `right`, `both`) tracks which Option key is held. Key encoding supplies the base character only where Kitty keyboard mode escape-codes
+text (a held Ctrl, Alt or Super, or report-all-keys); Shift-only and plain text stay text, Ctrl+Shift+letter is the control byte outside the protocol, Windows/Linux Ctrl+Backspace is Ctrl+W outside it,
+lock modifiers are reported only at the report-all-keys level, and key releases follow
+the presses that were escape-coded. The wheel accumulates whole lines scaled by the
+`terminalScrollSpeed` preference (history and cursor keys move a line at a time, a mouse
+report stands for three lines, at most ten per event) and becomes cursor keys on the
+alternate screen under DEC 1007; the input element is moved onto the cursor cell only for the length of an IME
+composition (`ImeAnchor`).
 Terminal text uses the configured font, an installed Nerd Font when detected,
 or bundled JetBrains Mono. Per codepoint the chain is that font, JetBrains Mono, an
 installed Symbols Nerd Font, then two bundled private-use-only faces: the BMP area
@@ -397,7 +403,7 @@ Each module is self-contained, exports a thin barrel via `index.ts`, and owns it
 - **tabs/** - `useTabs` is the source of truth for tab list + active id. `useWorkspaceCwd` derives explorer root + inherited cwd for new tabs from active tab. `basename` splits on both `/` and `\`.
 - **header/** - top bar + inline search (`SearchInline` adapts to terminal vs editor via `SearchTarget`). `WindowControls` rendered when `USE_CUSTOM_WINDOW_CONTROLS` is true (Linux + Windows; macOS uses native traffic lights).
 - **statusbar/** - bottom bar, `CwdBreadcrumb` (handles Unix paths, Windows drive letters, and home `~` segments via `pathUtils.segmentsFromCwd`), AI tools indicator.
-- **shortcuts/** - keymap registry (`shortcuts.ts`) + `useGlobalShortcuts`. Handlers live in `App.tsx` and are passed in by id (`tab.new`, `ai.toggle`, …). `metaKey || ctrlKey` for cross-platform Cmd/Ctrl.
+- **shortcuts/** - keymap registry (`shortcuts.ts`) + `useGlobalShortcuts`. Handlers live in `App.tsx` and are passed in by id (`tab.new`, `ai.toggle`, …). Defaults live in `shortcutDefaults.ts`, one table per platform family, and mean the same thing wherever focus is. macOS uses Command. On Windows/Linux no default is a plain Ctrl chord that is a control byte (Ctrl+P/R/E/W/D/F/G/[/]/- belong to the shell), an Alt chord (Meta bindings), a function key or Ctrl+Alt+character (AltGr); app commands use Ctrl+Shift+<key> (Jump to tab is Ctrl+Shift+1 to 9, matched by physical key), Ctrl+, and Ctrl+=. Editor shortcuts keep plain Ctrl chords because the host only runs them in editor tabs. `shortcutDefaults.test.ts` audits both tables (unique chords, no terminal-program, OS or CodeMirror-keymap chord); every on-screen hint comes from `useShortcutHint`, never a literal.
 - **settings/** - settings store (`store.ts` via `tauri-plugin-store`), preferences hook, settings window opener. The Settings window is closed (not hidden, so its WebContent process is released) when it hands a theme edit to the main window; `open_settings_window` rebuilds it on demand.
 - **sidebar/** - activity bar + collapsible side panels (explorer, source control, git history).
 - **source-control/** - git status / stage / commit panel and diff workflow. `useSourceControl` takes a `live` flag (`statusConsumers.ts`): `git status` runs on window focus and context changes only while the Source Control panel, a git tab or the explorer's git decorations are on screen. Otherwise nothing runs, a snapshot for another repository is dropped (never a wrong badge), and the next consumer to appear refreshes it. The rail badge alone is not a consumer; it refreshes lazily.

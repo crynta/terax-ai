@@ -85,6 +85,7 @@ type GhosttySession = {
   surface: GhosttySurface | null;
   surfaceOptions: GhosttySurfaceBaseOptions | null;
   input: GhosttyInputController | null;
+  cancelFocusRetry: (() => void) | null;
   pty: PtySession | null;
   ptyResize: PtyResizeDelivery;
   writer: BoundedPtyWriter;
@@ -200,6 +201,7 @@ export function useGhosttyTerminalSession({
     void initializeSession(session);
     return () => {
       if (session.container === node) {
+        session.cancelFocusRetry?.();
         session.surface?.detach();
         session.container = null;
         session.callbacks = {};
@@ -217,6 +219,7 @@ export function useGhosttyTerminalSession({
     const session = ensureSession(leafId, backend, initialCwdRef.current);
     session.visible = visible;
     session.focused = focused;
+    if (!visible || !focused) session.cancelFocusRetry?.();
     setLeafPresentation(leafId, visible, focused);
     ghosttyBlocks(leafId)?.setVisible(visible);
     const surface = session.surface;
@@ -455,6 +458,7 @@ export function disposeGhosttySession(leafId: number): boolean {
   if (!session) return false;
   session.disposed = true;
   session.generation += 1;
+  session.cancelFocusRetry?.();
   session.input?.dispose();
   session.surface?.dispose();
   disposeGhosttyBlocks(leafId);
@@ -474,6 +478,7 @@ async function respawnGhosttySession(
   const session = sessions.get(leafId);
   if (!session || session.disposed) return false;
   session.generation += 1;
+  session.cancelFocusRetry?.();
   session.input?.dispose();
   session.input = null;
   session.surface?.dispose();
@@ -537,6 +542,7 @@ function ensureSession(
     surface: null,
     surfaceOptions: null,
     input: null,
+    cancelFocusRetry: null,
     pty: null,
     ptyResize,
     writer: new BoundedPtyWriter((error) => {
@@ -575,6 +581,7 @@ function initializeSession(session: GhosttySession): Promise<void> {
     session,
     (generation) => initializeSessionGeneration(session, generation),
     (error) => {
+      session.cancelFocusRetry?.();
       session.shellExited = session.pty === null;
       if (!session.pty) {
         session.input?.dispose();
@@ -836,6 +843,7 @@ async function initializeSessionGeneration(
       onExit: (code) => {
         if (session.disposed || generation !== session.generation) return;
         session.shellExited = true;
+        session.cancelFocusRetry?.();
         session.writer.detach();
         session.pty = null;
         session.callbacks.onExit?.(code);
@@ -888,6 +896,8 @@ function createGhosttyInput(
       height: surface.cellSize().height,
     }),
     gridShiftY: () => surface.gridShiftY(),
+    scrollSpeed: () => usePreferencesStore.getState().terminalScrollSpeed,
+    macOptionAsAlt: () => usePreferencesStore.getState().terminalMacOptionAsAlt,
     onData: (bytes) => {
       if (
         ghosttyBlocks(session.leafId)?.getMode() === "prompt" &&
@@ -924,8 +934,43 @@ function focusSessionSurface(
   surface: GhosttySurface | null,
 ): void {
   const blocks = ghosttyBlocks(session.leafId);
-  if (blocks?.getMode() === "prompt" && blocks.focus) blocks.focus();
-  else surface?.focus();
+  session.cancelFocusRetry?.();
+  session.cancelFocusRetry = null;
+  if (blocks?.getMode() === "prompt" && blocks.focus) {
+    blocks.focus();
+    return;
+  }
+  if (!surface) return;
+  surface.focus();
+  const input = surface.inputElement();
+  if (document.activeElement === input) return;
+  // A refused focus (a hidden layer, an activating window) is retried, from a
+  // chunk that only loads when it happens.
+  let cancel: (() => void) | undefined;
+  let cancelled = false;
+  const generation = session.generation;
+  session.cancelFocusRetry = () => {
+    cancelled = true;
+    cancel?.();
+  };
+  void import("./input/focusRetry").then(({ focusUntilActive }) => {
+    if (!cancelled)
+      cancel = focusUntilActive(
+        input,
+        () => surface.focus(),
+        () =>
+          !cancelled &&
+          session.focused &&
+          session.visible &&
+          !session.disposed &&
+          !session.shellExited &&
+          !session.rendererError &&
+          session.container !== null &&
+          session.generation === generation &&
+          session.surface === surface &&
+          sessions.get(session.leafId) === session,
+      );
+  });
 }
 
 function applyBlockInputMode(
@@ -1048,6 +1093,7 @@ async function replaceGhosttySurface(
   generation: number,
   options: GhosttySurfaceBaseOptions,
 ): Promise<GhosttySurface | null> {
+  session.cancelFocusRetry?.();
   return loadSessionRenderer(
     session,
     generation,
@@ -1079,6 +1125,7 @@ async function replaceGhosttySurface(
 
 function reportRendererFailure(session: GhosttySession, error: Error): void {
   if (session.disposed) return;
+  session.cancelFocusRetry?.();
   logSurfaceError(session.surface?.backend ?? session.backend, error);
   session.rendererError = error.message;
   session.surface?.setVisible(false);
