@@ -95,8 +95,8 @@ describe("AI search tools path safety", () => {
     ]);
   });
 
-  it("preserves native line clipping and its omitted-character count", async () => {
-    const text = `${"界".repeat(160)}…[+999840]`;
+  it.each(["界", "\r", "\u2028"])("preserves native line clipping with %s and its omitted-character count", async (character) => {
+    const text = `${character.repeat(160)}…[+999840]`;
     nativeMock.grep.mockResolvedValue({
       hits: [{ path: "/workspace/code.ts", rel: "code.ts", line: 1, text }],
       truncated: false,

@@ -29,7 +29,7 @@ const MAX_LINE_LEN = 160;
 
 function clipLine(s: string): string {
   // Native search clips before IPC; preserve its original omitted count.
-  if (/^.{160}…\[\+\d+\]$/u.test(s)) return s;
+  if (/^[\s\S]{160}…\[\+\d+\]$/u.test(s)) return s;
   if (s.length <= MAX_LINE_LEN) return s;
   return `${s.slice(0, MAX_LINE_LEN)}…[+${s.length - MAX_LINE_LEN}]`;
 }
