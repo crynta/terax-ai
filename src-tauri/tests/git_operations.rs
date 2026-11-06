@@ -752,7 +752,14 @@ fn discovery_does_not_expand_an_authorized_subdirectory() {
     std::fs::create_dir(&nested).unwrap();
     let registry = WorkspaceRegistry::default();
     registry.authorize(&nested).unwrap();
-    assert!(operations::resolve_repo(&registry, &to_canon(&nested), &fx.workspace).is_err());
-    assert!(operations::panel_snapshot(&registry, &to_canon(&nested), &fx.workspace).is_err());
+    let root = std::fs::canonicalize(&fx.repo_path).unwrap();
+    assert!(matches!(
+        operations::resolve_repo(&registry, &to_canon(&nested), &fx.workspace),
+        Err(GitError::PathOutsideWorkspace(path)) if path == root
+    ));
+    assert!(matches!(
+        operations::panel_snapshot(&registry, &to_canon(&nested), &fx.workspace),
+        Err(GitError::PathOutsideWorkspace(path)) if path == root
+    ));
     assert!(!registry.is_authorized(&fx.repo_path));
 }
