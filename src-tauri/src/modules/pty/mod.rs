@@ -194,6 +194,8 @@ pub async fn pty_open(
         pane_id.and_then(|pane_id| control.shell_env(pane_id))
     };
     let id = state.next_id.fetch_add(1, Ordering::Relaxed);
+    let credential = control_env.clone();
+    let control_app = app.clone();
     let owner: Arc<str> = Arc::from(webview.label());
     let hub = state.hub.clone();
     let class = presentation.unwrap_or_default();
@@ -232,6 +234,13 @@ pub async fn pty_open(
         e
     })?;
     state.sessions.write().unwrap().insert(id, session);
+    if let Some(env) = credential {
+        control.activate_shell(
+            &env,
+            id,
+            &crate::modules::agent_events::TauriAgentHost(&control_app),
+        );
+    }
     // The shell can exit before this insert (instant failure, `exit` in an rc
     // file); the waiter's reap then ran with the id absent. Re-check and reap
     // so the pseudoconsole isn't stranded.
