@@ -54,6 +54,7 @@ export function watchSourceControl(
     .catch(() => {});
 
   return () => {
+    if (disposed) return;
     disposed = true;
     pending = false;
     if (timer !== undefined) clearTimeout(timer);

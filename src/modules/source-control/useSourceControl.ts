@@ -4,7 +4,14 @@ import {
   type GitStatusSnapshot,
 } from "@/modules/git";
 import { useWorkspaceEnvStore, workspaceScopeKey } from "@/modules/workspace";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { watchSourceControl } from "./watchSourceControl";
 
@@ -572,33 +579,32 @@ export function useSourceControl(
     };
   }, [refresh, contextPath, enabled, live]);
 
-  const watchedRoot = state.repo?.repoRoot;
+  const refreshWatched = useEffectEvent(() => refresh({ remote: "never" }));
+  const currentRefresh = useEffectEvent(() =>
+    inflightRef.current?.contextKey === contextKey
+      ? inflightRef.current.promise
+      : undefined,
+  );
+  const watchedRoot = repositoryContainsContext(
+    state.repo?.repoRoot ?? null,
+    contextPath,
+  )
+    ? state.repo?.repoRoot
+    : undefined;
   useEffect(() => {
     if (
       !enabled ||
       !live ||
       workspaceEnv.kind !== "local" ||
-      !watchedRoot ||
-      !repositoryContainsContext(watchedRoot, contextPath)
+      !watchedRoot
     )
       return;
     return watchSourceControl(
       watchedRoot,
-      () => refresh({ remote: "never" }),
-      () =>
-        inflightRef.current?.contextKey === contextKey
-          ? inflightRef.current.promise
-          : undefined,
+      () => refreshWatched(),
+      () => currentRefresh(),
     );
-  }, [
-    enabled,
-    live,
-    workspaceEnv.kind,
-    watchedRoot,
-    contextPath,
-    contextKey,
-    refresh,
-  ]);
+  }, [enabled, live, workspaceEnv.kind, watchedRoot]);
 
   useEffect(() => {
     if (!enabled || !live) return;

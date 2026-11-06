@@ -84,6 +84,7 @@ describe("source control watch refresh", () => {
     stop = watchSourceControl("/repo", refresh, () => undefined);
     await vi.advanceTimersByTimeAsync(0);
     stop();
+    stop();
     changed();
     await vi.advanceTimersByTimeAsync(1000);
     expect(refresh).not.toHaveBeenCalled();
