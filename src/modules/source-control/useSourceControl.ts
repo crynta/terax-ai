@@ -131,6 +131,18 @@ export function repositoryContainsContext(
   return context === root || context.startsWith(prefix);
 }
 
+export function repositoryForContext(
+  repoRoot: string | null,
+  loadedContextPath: string | null,
+  contextPath: string | null,
+): string | null {
+  if (!contextPath) return null;
+  return loadedContextPath === contextPath ||
+    repositoryContainsContext(repoRoot, contextPath)
+    ? repoRoot
+    : null;
+}
+
 type ContextRefreshPlan =
   /** Disabled: drop everything. */
   | "reset"
@@ -321,10 +333,12 @@ export function useSourceControl(
         return;
       }
 
-      const activeRoot = stateRef.current.repo?.repoRoot ?? null;
-      const reusableRoot = repositoryContainsContext(activeRoot, contextPath)
-        ? activeRoot
-        : null;
+      const current = stateRef.current;
+      const reusableRoot = repositoryForContext(
+        current.repo?.repoRoot ?? null,
+        current.contextPath,
+        contextPath,
+      );
 
       setState((current) =>
         beginSourceControlRefresh(current, contextPath, !!reusableRoot),
@@ -585,12 +599,11 @@ export function useSourceControl(
       ? inflightRef.current.promise
       : undefined,
   );
-  const watchedRoot = repositoryContainsContext(
+  const watchedRoot = repositoryForContext(
     state.repo?.repoRoot ?? null,
+    state.contextPath,
     contextPath,
-  )
-    ? state.repo?.repoRoot
-    : undefined;
+  );
   useEffect(() => {
     if (
       !enabled ||

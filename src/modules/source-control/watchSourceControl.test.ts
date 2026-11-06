@@ -119,4 +119,26 @@ describe("source control watch refresh", () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(refresh).not.toHaveBeenCalled();
   });
+
+  it("allows a later event to retry after refresh fails", async () => {
+    refresh.mockRejectedValueOnce(new Error("status failed"));
+    stop = watchSourceControl("/repo", refresh, () => undefined);
+    await vi.advanceTimersByTimeAsync(200);
+    changed();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it("allows a later event after an older request rejects", async () => {
+    const current = vi
+      .fn<() => Promise<void> | undefined>()
+      .mockRejectedValueOnce(new Error("old request failed"))
+      .mockReturnValue(undefined);
+    stop = watchSourceControl("/repo", refresh, current);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(refresh).not.toHaveBeenCalled();
+    changed();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
 });
