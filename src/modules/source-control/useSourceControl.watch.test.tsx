@@ -168,6 +168,9 @@ it("retains a watch across same-repository cd and releases it for another reposi
   await settle({ path: "/real/repo/b" });
   expect(harness.watch).toHaveBeenCalledTimes(1);
   expect(harness.release).not.toHaveBeenCalled();
+  const refresh = harness.watch.mock.calls[0][1] as () => Promise<void>;
+  await refresh();
+  expect(harness.status).toHaveBeenCalledExactlyOnceWith("/real/repo");
   harness.snapshot.mockResolvedValue({
     repo: { ...repo, repoRoot: "/other" },
     status,
@@ -179,6 +182,9 @@ it("retains a watch across same-repository cd and releases it for another reposi
     "/real/repo",
     "/other",
   ]);
+  for (const cleanup of harness.cleanups) cleanup();
+  harness.cleanups.clear();
+  expect(harness.release).toHaveBeenCalledTimes(2);
 });
 
 it("holds no watch without a live enabled consumer and releases on hide", async () => {
