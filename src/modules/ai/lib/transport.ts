@@ -4,31 +4,19 @@ import { runAgentStream, type AgentUsageDelta } from "./agent";
 import type { ProviderKeys, CustomEndpointKeys } from "./keyring";
 import { formatAiError } from "./errors";
 import { native } from "./native";
+import { checkReadable } from "./security";
 import type { ToolContext } from "../tools/tools";
 
-const TERAX_MD_MAX_BYTES = 32 * 1024;
-type MemoryCacheEntry = { content: string | null; mtime: number };
-const projectMemoryCache = new Map<string, MemoryCacheEntry>();
-
-async function readTeraxMd(workspaceRoot: string | null): Promise<string | null> {
+async function readTeraxMd(
+  workspaceRoot: string | null,
+): Promise<string | null> {
   if (!workspaceRoot) return null;
   const path = `${workspaceRoot.replace(/\/$/, "")}/TERAX.md`;
-  const cached = projectMemoryCache.get(workspaceRoot);
-  if (cached && Date.now() - cached.mtime < 30_000) return cached.content;
   try {
-    const r = await native.readFile(path);
-    if (r.kind !== "text") {
-      projectMemoryCache.set(workspaceRoot, { content: null, mtime: Date.now() });
-      return null;
-    }
-    const content =
-      r.content.length > TERAX_MD_MAX_BYTES
-        ? r.content.slice(0, TERAX_MD_MAX_BYTES)
-        : r.content;
-    projectMemoryCache.set(workspaceRoot, { content, mtime: Date.now() });
-    return content;
+    const canonical = await native.canonicalize(path);
+    if (!checkReadable(canonical).ok || !checkReadable(path).ok) return null;
+    return await native.readProjectMemory(workspaceRoot, canonical);
   } catch {
-    projectMemoryCache.set(workspaceRoot, { content: null, mtime: Date.now() });
     return null;
   }
 }

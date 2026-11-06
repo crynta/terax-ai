@@ -45,6 +45,12 @@ export const native = {
       path,
       workspace: currentWorkspaceEnv(),
     }),
+  readProjectMemory: (root: string, checkedPath: string) =>
+    invoke<string | null>("fs_read_project_memory", {
+      root,
+      checkedPath,
+      workspace: currentWorkspaceEnv(),
+    }),
   readFile: (path: string) =>
     invoke<ReadResult>("fs_read_file", {
       path,
