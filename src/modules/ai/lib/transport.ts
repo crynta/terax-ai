@@ -3,6 +3,7 @@ import type { CustomEndpoint } from "../config";
 import { runAgentStream, type AgentUsageDelta } from "./agent";
 import type { ProviderKeys, CustomEndpointKeys } from "./keyring";
 import { formatAiError } from "./errors";
+import { currentWorkspaceEnv } from "@/modules/workspace";
 import { native } from "./native";
 import { checkReadable } from "./security";
 import type { ToolContext } from "../tools/tools";
@@ -11,11 +12,12 @@ async function readTeraxMd(
   workspaceRoot: string | null,
 ): Promise<string | null> {
   if (!workspaceRoot) return null;
+  const workspace = { ...currentWorkspaceEnv() };
   const path = `${workspaceRoot.replace(/\/$/, "")}/TERAX.md`;
   try {
-    const canonical = await native.canonicalize(path);
+    const canonical = await native.canonicalize(path, workspace);
     if (!checkReadable(canonical).ok || !checkReadable(path).ok) return null;
-    return await native.readProjectMemory(workspaceRoot, canonical);
+    return await native.readProjectMemory(workspaceRoot, canonical, workspace);
   } catch {
     return null;
   }

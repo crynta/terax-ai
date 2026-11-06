@@ -67,10 +67,7 @@ fn read_memory(root: &Path, checked_path: &Path) -> Result<Option<String>, Strin
 }
 
 fn comparison_path(path: &Path) -> String {
-    let path = super::to_canon(path);
-    #[cfg(windows)]
-    let path = path.to_lowercase();
-    path
+    super::to_canon(path)
 }
 
 fn opened_path(file: &File) -> Result<PathBuf, String> {
@@ -102,6 +99,19 @@ fn opened_path(file: &File) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn case_distinct_roots_never_compare_equal() {
+        let root = comparison_path(Path::new("//wsl.localhost/Ubuntu/home/me/repo"));
+        let sibling = comparison_path(Path::new(
+            "//wsl.localhost/Ubuntu/home/me/Repo/instructions.md",
+        ));
+        assert!(!Path::new(&sibling).starts_with(&root));
+        assert_ne!(
+            comparison_path(Path::new("C:/Repo/memory.md")),
+            comparison_path(Path::new("C:/repo/memory.md"))
+        );
+    }
 
     #[test]
     fn ordinary_memory_is_bounded_utf8() {
