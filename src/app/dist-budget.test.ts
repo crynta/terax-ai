@@ -235,6 +235,9 @@ describe("built startup graph", () => {
       "streamdown",
       "codemirror",
       "iconEngine",
+      // Terminal code the primary chunk (size-limit) must not carry.
+      "legacyComputing",
+      "GhosttySearchEngine",
     ]) {
       const file = chunks.find((f) => chunkName(f) === stem);
       expect(file, `${stem} chunk should be emitted`).toBeDefined();
