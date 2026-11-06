@@ -13,6 +13,7 @@ mod macos;
 #[cfg(not(target_os = "macos"))]
 mod portable;
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex, RwLock};
@@ -79,6 +80,7 @@ struct Shared {
 struct Running {
     shared: Arc<Shared>,
     backend: Box<dyn Backend>,
+    tx: mpsc::Sender<Batch>,
 }
 
 /// Receives the watched directories a burst touched, before the explorer's
@@ -108,7 +110,7 @@ fn start(app: &AppHandle, taps: Taps) -> Result<Running, String> {
     });
     let index = app.state::<FileIndexState>().inner().clone();
     let sink = Sink {
-        tx,
+        tx: tx.clone(),
         dirs: shared.dirs.clone(),
         index: index.clone(),
     };
@@ -121,7 +123,11 @@ fn start(app: &AppHandle, taps: Taps) -> Result<Running, String> {
         .stack_size(256 * 1024)
         .spawn(move || drain_loop(rx, drain_shared, app, index, taps))
         .map_err(|e| e.to_string())?;
-    Ok(Running { shared, backend })
+    Ok(Running {
+        shared,
+        backend,
+        tx,
+    })
 }
 
 fn drain_loop(
@@ -319,18 +325,7 @@ impl FsWatchState {
             .map(|dir| ListingSnapshot::read(dir, &plan::listing_signature))
             .collect();
         self.with_running(app, true, |running| {
-            running.apply(|set| {
-                let mut moved = false;
-                for (dir, signature) in dirs.into_iter().zip(baselines) {
-                    let key = to_canon(&dir);
-                    if set.add_dir(key.clone(), dir) {
-                        set.record_listing(&key, signature.signature);
-                        set.record_listing_stamp(&key, signature.stamp);
-                        moved = true;
-                    }
-                }
-                moved
-            });
+            running.add(dirs.into_iter().zip(baselines), []);
         })?;
         Ok(())
     }
@@ -352,6 +347,47 @@ impl FsWatchState {
 }
 
 impl Running {
+    fn add(
+        &mut self,
+        dirs: impl IntoIterator<Item = (PathBuf, ListingSnapshot)>,
+        files: impl IntoIterator<Item = (String, String, Option<FileStamp>)>,
+    ) {
+        let mut recheck = HashSet::new();
+        let mut file_recheck = HashSet::new();
+        self.apply(|set| {
+            let mut moved = false;
+            for (dir, baseline) in dirs {
+                let key = to_canon(&dir);
+                if set.add_dir(key.clone(), dir) {
+                    set.record_listing(&key, baseline.signature);
+                    set.record_listing_stamp(&key, baseline.stamp);
+                    recheck.insert(key);
+                    moved = true;
+                }
+            }
+            for (dir, key, stamp) in files {
+                if set.add_file(dir.clone(), key, stamp) && !recheck.contains(&dir) {
+                    file_recheck.insert(dir);
+                }
+            }
+            moved
+        });
+        // Changes between baseline capture and OS registration have no callback.
+        // Reconcile after sync, through the same queue as subsequent native events.
+        for (dirs, forced) in [(recheck, true), (file_recheck, false)] {
+            if !dirs.is_empty() {
+                let _ = self.tx.send(Batch {
+                    dirs: dirs.into_iter().collect(),
+                    listing: plan::ListingChange {
+                        forced,
+                        content_only: !forced,
+                    },
+                    ..Batch::default()
+                });
+            }
+        }
+    }
+
     /// `change` reports whether the set of watched directories moved; file
     /// bookkeeping alone never touches the OS watches.
     fn apply(&mut self, change: impl FnOnce(&mut WatchSet) -> bool) {
@@ -393,21 +429,7 @@ pub async fn fs_watch_add(
             .collect();
         app.state::<FsWatchState>()
             .with_running(&app, true, |running| {
-                running.apply(|set| {
-                    let mut moved = false;
-                    for (dir, signature) in dirs.into_iter().zip(baselines) {
-                        let key = to_canon(&dir);
-                        if set.add_dir(key.clone(), dir) {
-                            set.record_listing(&key, signature.signature);
-                            set.record_listing_stamp(&key, signature.stamp);
-                            moved = true;
-                        }
-                    }
-                    for (dir, key, stamp) in files {
-                        set.add_file(dir, key, stamp);
-                    }
-                    moved
-                });
+                running.add(dirs.into_iter().zip(baselines), files);
             })?;
         Ok(())
     })
@@ -459,6 +481,167 @@ pub async fn fs_watch_remove(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct RegistrationBackend(Box<dyn FnMut() + Send>);
+
+    impl Backend for RegistrationBackend {
+        fn sync(&mut self, _: &WatchSet) {
+            (self.0)();
+        }
+    }
+
+    fn registration(on_sync: impl FnMut() + Send + 'static) -> (Running, mpsc::Receiver<Batch>) {
+        let (tx, rx) = mpsc::channel();
+        (
+            Running {
+                shared: Arc::new(Shared {
+                    set: Mutex::new(WatchSet::default()),
+                    dirs: Arc::new(RwLock::new(Arc::new(DirSet::new()))),
+                }),
+                backend: Box::new(RegistrationBackend(Box::new(on_sync))),
+                tx,
+            },
+            rx,
+        )
+    }
+
+    #[test]
+    fn registration_reconciles_changes_without_a_backend_event() {
+        for operation in ["create", "delete", "rename", "edit"] {
+            let dir = tempfile::tempdir().unwrap();
+            let file = dir.path().join("before.txt");
+            std::fs::write(&file, "before").unwrap();
+            let baseline = ListingSnapshot::read(dir.path(), &plan::listing_signature);
+            let file_stamp = FileStamp::of(&file);
+            let root = dir.path().to_path_buf();
+            let (mut running, rx) = registration(move || {
+                match operation {
+                    "create" => std::fs::write(root.join("after.txt"), "new").unwrap(),
+                    "delete" => std::fs::remove_file(root.join("before.txt")).unwrap(),
+                    "rename" => {
+                        std::fs::rename(root.join("before.txt"), root.join("after.txt")).unwrap()
+                    }
+                    "edit" => {
+                        std::fs::write(root.join("before.txt"), "changed during registration")
+                            .unwrap()
+                    }
+                    _ => unreachable!(),
+                }
+                // The OS watch is installed only after this change; no callback is emitted.
+            });
+            running.add(
+                [(dir.path().to_path_buf(), baseline)],
+                [(to_canon(dir.path()), to_canon(&file), file_stamp)],
+            );
+            let mut pending = Pending::default();
+            pending.merge(
+                rx.try_recv()
+                    .expect("registration must queue a reconciliation"),
+            );
+            let changes = resolve_changes(pending, &running.shared);
+            let expected = if operation == "edit" {
+                to_canon(&file)
+            } else {
+                to_canon(dir.path())
+            };
+            assert!(
+                changes.report.contains(&expected),
+                "{operation}: {:?}",
+                changes.report
+            );
+            assert_eq!(changes.touched, vec![to_canon(dir.path())]);
+        }
+    }
+
+    #[test]
+    fn registration_without_changes_is_quiet_and_duplicates_do_not_rescan() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("file.txt");
+        std::fs::write(&file, "unchanged").unwrap();
+        let syncs = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let count = syncs.clone();
+        let (mut running, rx) = registration(move || {
+            count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        });
+        for index in 0..2 {
+            running.add(
+                [(
+                    dir.path().to_path_buf(),
+                    ListingSnapshot::read(dir.path(), &plan::listing_signature),
+                )],
+                [(to_canon(dir.path()), to_canon(&file), FileStamp::of(&file))],
+            );
+            if index == 0 {
+                let mut pending = Pending::default();
+                let batch = rx.try_recv().unwrap();
+                assert_eq!(
+                    batch.dirs.len(),
+                    1,
+                    "the file and directory share one check"
+                );
+                assert!(batch.listing.forced);
+                pending.merge(batch);
+                assert!(resolve_changes(pending, &running.shared).report.is_empty());
+            }
+            assert!(
+                rx.try_recv().is_err(),
+                "existing subscriptions need no new reconciliation"
+            );
+        }
+        assert_eq!(syncs.load(std::sync::atomic::Ordering::SeqCst), 1);
+        let mut set = running.shared.set.lock().unwrap();
+        assert!(!set.remove_dir(&to_canon(dir.path())));
+        set.remove_file(&to_canon(dir.path()), &to_canon(&file));
+        std::fs::write(&file, "still watched after one unsubscribe").unwrap();
+        assert_eq!(
+            set.changed_files_in(&to_canon(dir.path()), &|path| FileStamp::of(
+                std::path::Path::new(path)
+            )),
+            vec![to_canon(&file)]
+        );
+        assert!(set.remove_dir(&to_canon(dir.path())));
+        set.remove_file(&to_canon(dir.path()), &to_canon(&file));
+        assert!(set.is_empty());
+    }
+
+    #[test]
+    fn a_new_file_in_an_existing_directory_is_reconciled() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("file.txt");
+        std::fs::write(&file, "before").unwrap();
+        let syncs = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let count = syncs.clone();
+        let (mut running, rx) = registration(move || {
+            count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        });
+        running.add(
+            [(
+                dir.path().to_path_buf(),
+                ListingSnapshot::read(dir.path(), &plan::listing_signature),
+            )],
+            [],
+        );
+        let mut initial = Pending::default();
+        initial.merge(rx.try_recv().unwrap());
+        assert!(resolve_changes(initial, &running.shared).report.is_empty());
+        let before = FileStamp::of(&file);
+        // An existing watch may already have delivered this write before add_file.
+        std::fs::write(&file, "changed before file registration").unwrap();
+        running.add([], [(to_canon(dir.path()), to_canon(&file), before)]);
+        let mut pending = Pending::default();
+        pending.merge(
+            rx.try_recv()
+                .expect("new files need reconciliation even without a backend sync"),
+        );
+        assert_eq!(
+            resolve_changes_with(pending, &running.shared, &|_| {
+                panic!("a file-only registration must not enumerate its directory")
+            })
+            .report,
+            vec![to_canon(&file)]
+        );
+        assert_eq!(syncs.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
 
     fn shared_watching(dir: &std::path::Path) -> Shared {
         let key = to_canon(dir);

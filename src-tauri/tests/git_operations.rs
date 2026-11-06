@@ -698,3 +698,68 @@ fn passive_inspection_never_runs_repository_helpers() {
         );
     }
 }
+
+#[test]
+fn discovery_preserves_derived_worktree_revocation() {
+    if skip_if_no_git() {
+        return;
+    }
+    for prune in [false, true] {
+        let fx = GitRepoFixture::new();
+        fx.write_file("seed.txt", "seed\n");
+        fx.run_git(&["add", "."]);
+        fx.run_git(&["commit", "-qm", "seed"]);
+        let outside = TempDir::new().unwrap();
+        let linked = outside.path().join("linked");
+        let linked_display = to_canon(&linked);
+        fx.run_git(&["worktree", "add", "--detach", &linked_display]);
+        let linked_canonical = std::fs::canonicalize(&linked).unwrap();
+        terax_lib::modules::git::worktree::list(&fx.registry, &fx.repo_str(), &fx.workspace)
+            .unwrap();
+        assert!(fx.registry.is_authorized(&linked_canonical));
+        operations::resolve_repo(&fx.registry, &linked_display, &fx.workspace).unwrap();
+        operations::panel_snapshot(&fx.registry, &linked_display, &fx.workspace).unwrap();
+        if prune {
+            std::fs::remove_dir_all(&linked).unwrap();
+            terax_lib::modules::git::worktree::prune(&fx.registry, &fx.repo_str(), &fx.workspace)
+                .unwrap();
+        } else {
+            terax_lib::modules::git::worktree::remove(
+                &fx.registry,
+                &fx.repo_str(),
+                &linked_display,
+                false,
+                &fx.workspace,
+            )
+            .unwrap();
+        }
+        std::fs::create_dir(&linked).unwrap();
+        assert!(
+            !fx.registry
+                .is_authorized(&std::fs::canonicalize(&linked).unwrap()),
+            "discovery promoted the linked worktree"
+        );
+    }
+}
+
+#[test]
+fn discovery_does_not_expand_an_authorized_subdirectory() {
+    if skip_if_no_git() {
+        return;
+    }
+    let fx = GitRepoFixture::new();
+    let nested = fx.repo_path.join("nested");
+    std::fs::create_dir(&nested).unwrap();
+    let registry = WorkspaceRegistry::default();
+    registry.authorize(&nested).unwrap();
+    let root = std::fs::canonicalize(&fx.repo_path).unwrap();
+    assert!(matches!(
+        operations::resolve_repo(&registry, &to_canon(&nested), &fx.workspace),
+        Err(GitError::PathOutsideWorkspace(path)) if path == root
+    ));
+    assert!(matches!(
+        operations::panel_snapshot(&registry, &to_canon(&nested), &fx.workspace),
+        Err(GitError::PathOutsideWorkspace(path)) if path == root
+    ));
+    assert!(!registry.is_authorized(&fx.repo_path));
+}

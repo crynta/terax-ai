@@ -44,7 +44,9 @@ fn resolve_repo_in_authorized(
         return Ok(None);
     };
     let canonical_root = canonical_dir(registry, &root_line, &cwd.workspace)?;
-    let _ = registry.authorize(&canonical_root.local_path);
+    if !registry.is_authorized(&canonical_root.local_path) {
+        return Err(GitError::PathOutsideWorkspace(canonical_root.local_path));
+    }
 
     let head = match git_stdout_lines(
         &canonical_root.workspace,
@@ -102,7 +104,9 @@ pub fn panel_snapshot(
         });
     };
     let canonical_root = canonical_dir(registry, &root_line, &cwd.workspace)?;
-    let _ = registry.authorize(&canonical_root.local_path);
+    if !registry.is_authorized(&canonical_root.local_path) {
+        return Err(GitError::PathOutsideWorkspace(canonical_root.local_path));
+    }
 
     let status = status_inner(&canonical_root)?;
     let repo = GitRepoInfo {
