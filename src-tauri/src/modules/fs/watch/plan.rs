@@ -138,17 +138,98 @@ pub struct FileStamp {
 impl FileStamp {
     pub fn of(path: &Path) -> Option<Self> {
         let meta = std::fs::metadata(path).ok()?;
+        Some(Self::from_metadata(&meta))
+    }
+
+    fn from_metadata(meta: &std::fs::Metadata) -> Self {
         #[cfg(unix)]
         let inode = {
             use std::os::unix::fs::MetadataExt;
             meta.ino()
         };
-        Some(Self {
+        Self {
             len: meta.len(),
             modified: meta.modified().ok(),
             #[cfg(unix)]
             inode,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct ListingStamp {
+    directory: FileStamp,
+    change_time: Option<(i64, i64)>,
+    ignores: [Option<FileStamp>; 2],
+}
+
+impl ListingStamp {
+    pub fn of(dir: &Path) -> Option<Self> {
+        let meta = std::fs::metadata(dir).ok()?;
+        if !meta.is_dir() {
+            return None;
+        }
+        let directory = FileStamp::from_metadata(&meta);
+        #[cfg(unix)]
+        let change_time = {
+            use std::os::unix::fs::MetadataExt;
+            Some((meta.ctime(), meta.ctime_nsec()))
+        };
+        #[cfg(not(unix))]
+        let change_time = None;
+        let mut ignores = [None; 2];
+        for (slot, name) in ignores.iter_mut().zip([".gitignore", ".ignore"]) {
+            *slot = match std::fs::metadata(dir.join(name)) {
+                Ok(meta) => {
+                    meta.modified().ok()?;
+                    Some(FileStamp::from_metadata(&meta))
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+                Err(_) => return None,
+            };
+        }
+        Some(Self {
+            directory,
+            change_time,
+            ignores,
         })
+    }
+    pub fn can_skip(&self, previous: &Self, content_only: bool) -> bool {
+        if self.ignores != previous.ignores {
+            return false;
+        }
+        if content_only {
+            return true;
+        }
+        // Restored mtimes, coarse clocks and missing change indicators cannot
+        // safely rule out a name change from a directory-level event.
+        // Only FSEvents needs metadata inference. Portable backends provide
+        // explicit content/name kinds; do not infer names from their clocks.
+        cfg!(target_os = "macos")
+            && self == previous
+            && self.change_time.is_some()
+            && self
+                .directory
+                .modified
+                .and_then(|time| time.duration_since(SystemTime::UNIX_EPOCH).ok())
+                .is_some_and(|time| time.subsec_nanos() != 0)
+    }
+}
+
+pub struct ListingSnapshot {
+    pub signature: Option<u64>,
+    pub stamp: Option<ListingStamp>,
+}
+
+impl ListingSnapshot {
+    pub fn read(dir: &Path, scan: &dyn Fn(&Path) -> Option<u64>) -> Self {
+        let before = ListingStamp::of(dir);
+        let signature = scan(dir);
+        let after = ListingStamp::of(dir);
+        Self {
+            signature,
+            stamp: if before == after { after } else { None },
+        }
     }
 }
 
@@ -238,6 +319,7 @@ struct DirWatch {
     /// Fingerprint of the listing the frontend was last told about (or could have read when the
     /// directory was registered); `None` until known.
     listing: Option<u64>,
+    listing_stamp: Option<ListingStamp>,
 }
 
 /// Refcounted directories (explorer expansion and open editors can ask for the
@@ -263,6 +345,7 @@ impl WatchSet {
                         refs: 1,
                         path,
                         listing: None,
+                        listing_stamp: None,
                     },
                 );
                 true
@@ -290,6 +373,16 @@ impl WatchSet {
     pub fn record_listing(&mut self, key: &str, signature: Option<u64>) {
         if let Some(watch) = self.dirs.get_mut(key) {
             watch.listing = signature;
+        }
+    }
+
+    pub fn listing_stamp(&self, key: &str) -> Option<ListingStamp> {
+        self.dirs.get(key).and_then(|watch| watch.listing_stamp)
+    }
+
+    pub fn record_listing_stamp(&mut self, key: &str, stamp: Option<ListingStamp>) {
+        if let Some(watch) = self.dirs.get_mut(key) {
+            watch.listing_stamp = stamp;
         }
     }
 
@@ -440,12 +533,19 @@ pub fn exclusion_paths(
     out
 }
 
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub struct ListingChange {
+    pub content_only: bool,
+    pub forced: bool,
+}
+
 /// What a backend reported for one batch, already reduced to watched
 /// directories.
 #[derive(Default, Debug, PartialEq, Eq)]
 pub struct Batch {
     /// Watched directories where something changed.
     pub dirs: Vec<String>,
+    pub listing: ListingChange,
     /// Subtrees that must be treated as entirely changed (dropped events,
     /// moved roots): every watched directory at or below each is reported.
     pub subtrees: Vec<String>,
@@ -550,13 +650,21 @@ pub fn owning_dir(entry: &str, dirs: &DirSet) -> Option<String> {
 /// A burst, merged until the debounce window closes.
 #[derive(Default)]
 pub struct Pending {
-    dirs: HashSet<String>,
+    dirs: HashMap<String, ListingChange>,
     subtrees: Vec<String>,
 }
 
 impl Pending {
     pub fn merge(&mut self, batch: Batch) {
-        self.dirs.extend(batch.dirs);
+        for dir in batch.dirs {
+            self.dirs
+                .entry(dir)
+                .and_modify(|change| {
+                    change.content_only &= batch.listing.content_only;
+                    change.forced |= batch.listing.forced;
+                })
+                .or_insert(batch.listing);
+        }
         for subtree in batch.subtrees {
             if !self.subtrees.contains(&subtree) {
                 self.subtrees.push(subtree);
@@ -564,9 +672,19 @@ impl Pending {
         }
     }
 
+    pub fn listing_change(&self, dir: &str) -> ListingChange {
+        if self.subtrees.iter().any(|root| is_within(dir, root)) {
+            return ListingChange {
+                forced: true,
+                content_only: false,
+            };
+        }
+        self.dirs.get(dir).copied().unwrap_or_default()
+    }
+
     /// The watched directories to report, sorted for stable payloads.
-    pub fn resolve<'a>(self, watched: impl Iterator<Item = &'a str>) -> Vec<String> {
-        let mut out = self.dirs;
+    pub fn resolve<'a>(&self, watched: impl Iterator<Item = &'a str>) -> Vec<String> {
+        let mut out: HashSet<String> = self.dirs.keys().cloned().collect();
         if !self.subtrees.is_empty() {
             for dir in watched {
                 if self.subtrees.iter().any(|root| is_within(dir, root)) {
@@ -770,15 +888,72 @@ mod tests {
     }
 
     #[test]
+    fn mixed_batches_never_hide_a_possible_listing_change() {
+        let content = || Batch {
+            dirs: vec!["/root".into()],
+            listing: ListingChange {
+                content_only: true,
+                forced: false,
+            },
+            ..Batch::default()
+        };
+        for first_content in [false, true] {
+            let mut pending = Pending::default();
+            let listing = Batch {
+                dirs: vec!["/root".into()],
+                listing: ListingChange {
+                    content_only: false,
+                    forced: true,
+                },
+                ..Batch::default()
+            };
+            if first_content {
+                pending.merge(content());
+                pending.merge(listing);
+            } else {
+                pending.merge(listing);
+                pending.merge(content());
+            }
+            let check = pending.listing_change("/root");
+            assert!(check.forced);
+            assert!(!check.content_only);
+        }
+    }
+
+    #[test]
+    fn coarse_metadata_forces_listing_scans_but_can_validate_content_events() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut stamp = ListingStamp::of(dir.path()).unwrap();
+        stamp.directory.modified = Some(SystemTime::UNIX_EPOCH);
+        assert!(!stamp.can_skip(&stamp, false));
+        assert!(stamp.can_skip(&stamp, true));
+        stamp.change_time = None;
+        assert!(!stamp.can_skip(&stamp, false));
+    }
+
+    #[test]
+    fn an_ignore_file_created_during_fingerprinting_has_no_reusable_stamp() {
+        let dir = tempfile::tempdir().unwrap();
+        let snapshot = ListingSnapshot::read(dir.path(), &|path| {
+            let before = listing_signature(path);
+            std::fs::write(path.join(".gitignore"), "ignored.txt").unwrap();
+            before
+        });
+        assert!(snapshot.stamp.is_none());
+    }
+
+    #[test]
     fn a_burst_collapses_and_rescans_expand_to_watched_directories() {
         let mut pending = Pending::default();
         pending.merge(Batch {
             dirs: vec!["/w/a".into()],
             subtrees: vec![],
+            ..Batch::default()
         });
         pending.merge(Batch {
             dirs: vec!["/w/a".into(), "/w/b".into()],
             subtrees: vec!["/w/c".into()],
+            ..Batch::default()
         });
         let watched = ["/w/a", "/w/b", "/w/c", "/w/c/sub", "/w/cx", "/other"];
         let out = pending.resolve(watched.iter().copied());
