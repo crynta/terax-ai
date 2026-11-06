@@ -7,6 +7,68 @@ the real Ghostty model, and reads the presented canvas back as exact RGBA.
 Use it to compare renderer changes pixel for pixel and to check geometry at
 display ratios the machine does not have.
 
+## Compositor scaling regression
+
+```sh
+pnpm exec playwright install chromium --no-shell
+pnpm test:terminal-scaling
+```
+
+This runs full headless Chromium at native display scale **and** Playwright
+`deviceScaleFactor` 1, 1.25, 1.5 and 2. DPR emulation alone leaves Chromium's
+native `devicePixelContentBoxSize` at scale 1 and introduces screenshot scaling
+artifacts; the gate checks that the native device box equals the backing store.
+`CHROME_PATH` can select an existing executable, or `CHROME_CHANNEL=chrome` an
+installed Chrome. The macOS terminal CI job caches the full Chromium build pinned
+by Playwright and sets `TERAX_VISUAL_SOFTWARE=1` to use SwiftShader for both
+renderers without requiring a hardware GPU.
+
+The same fixed glyph/stem pattern goes through WebGL and WebGPU. Each screenshot
+is compared against its renderer's raw texture, and the two raw textures are
+compared against each other. The gate allows at most 1/255 per RGB channel and
+zero pixels above that tolerance. It tests an odd CSS origin (11, 21) and a
+fractional origin (10.25, 20.25), including movement without a backing resize.
+Raw readbacks alone cannot detect a compositor blur. Captures and `scaling.json`
+are written to `TERAX_VISUAL_OUT` or a temporary directory printed by the runner.
+`TERAX_VISUAL_SOURCE_ROOT` runs this gate against an older source tree too.
+
+The #1357 reproduction at origin (11, 21), 1001 × 641 CSS px, on macOS Chromium:
+
+| DPR | Compared pixels | WebGPU differing pixels before → after | WebGL before → after |
+| --- | ---: | ---: | ---: |
+| 1 | 570,000 | 0 → 0 | 0 → 0 |
+| 1.25 | 891,000 | 70,765 → 0 | 0 → 0 |
+| 1.5 | 1,282,500 | 89,530 → 0 | 0 → 0 |
+| 2 | 2,280,000 | 0 → 0 | 0 → 0 |
+
+The backing already had CSS size `backing / DPR`, both renderers' raw glyph pixels
+matched, and glyphs/cells/viewports were integer device pixels with unfiltered
+atlas loads. The shared WebGPU canvas alone used a fractional CSS `translate()`
+to snap its origin. Chromium resampled its already snapped canvas layer during
+that transform. Applying the same offset with layout `left`/`top` avoids the
+second sampling. The allocation policy and WebKit's existing CSS-size fallback
+remain unchanged.
+
+On Windows, select WebGPU and open a terminal at 125% and 150% display scaling.
+In a packaged build, first run
+`localStorage.setItem("terax:terminal-diagnostics", "1")` in DevTools and reload
+the window to install the diagnostics. Then call `window.__teraxTerm().renderer`
+twice, allowing a frame between calls. The
+first call schedules a one-shot native box measurement; after a resize or display
+change, call twice again. Check:
+
+- `devicePixelRatio`: `1.25` or `1.5` at 100% webview zoom.
+- `canvases[0].backingSize`, `cssDeviceSize`, and `devicePixelContentBoxSize`:
+  identical integer width/height pairs. `cssDeviceSize` is `cssSize × DPR` rounded
+  to native pixels (CSS layout can quantize the fractional CSS size slightly).
+- `backingMatchesCss` and `backingMatchesDevicePixelBox`: both `true`.
+- `devicePixelContentBoxStatus`: `"available"`; `transform`: `"none"`.
+
+Compare text with WebGL, resize, split panes, and move the window between displays.
+WebKit reports `"unsupported"` and `null` for its missing native box; its CSS/backing
+match must still be `true`. Diagnostics live in the lazy diagnostics graph and
+do no work until requested.
+
 ```sh
 TERAX_VISUAL_OUT=/tmp/visual TERAX_VISUAL_PORT=5199 \
   node_modules/.bin/vite --config scripts/terminal-visual/vite.config.ts

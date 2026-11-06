@@ -14,6 +14,7 @@ import {
 import { ptyTransportDiagnostics } from "@/modules/terminal/lib/pty-bridge";
 import { terminalResizeInteractionActive } from "@/modules/terminal/lib/terminalResizeInteraction";
 import { windowPresentationDiagnostics } from "@/modules/terminal/ghostty/windowPresentation";
+import { terminalCanvasDiagnostics } from "./canvasDiagnostics";
 
 export function terminalDebugStats() {
   return {
@@ -21,9 +22,13 @@ export function terminalDebugStats() {
     timestamp: Date.now(),
     presentation: windowPresentationDiagnostics(),
     wasmVariant: supportsWasmSimd() ? "simd" : "scalar",
-    renderer: terminalRendererReport(
-      usePreferencesStore.getState().terminalRenderer,
-    ),
+    renderer: {
+      ...terminalRendererReport(
+        usePreferencesStore.getState().terminalRenderer,
+      ),
+      devicePixelRatio: window.devicePixelRatio,
+      canvases: terminalCanvasDiagnostics(),
+    },
     ptyTransport: ptyTransportDiagnostics(),
     ghosttyCore: ghosttyCoreRuntimeDiagnostics(),
     ghosttyWebGpu: webGpuTerminalRuntimeDiagnostics(),
