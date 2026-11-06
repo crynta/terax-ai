@@ -10,7 +10,7 @@ import { webGlTerminalRuntimeDiagnostics } from "@/modules/terminal/ghostty/webg
 import {
   ghosttySessionDiagnostics,
   ghosttySessionResourceTotals,
-} from "@/modules/terminal/ghostty/useGhosttyTerminalSession";
+} from "@/modules/terminal/ghostty/sessionDiagnostics";
 import { ptyTransportDiagnostics } from "@/modules/terminal/lib/pty-bridge";
 import { terminalResizeInteractionActive } from "@/modules/terminal/lib/terminalResizeInteraction";
 import { windowPresentationDiagnostics } from "@/modules/terminal/ghostty/windowPresentation";
