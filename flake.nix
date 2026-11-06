@@ -4,7 +4,8 @@
   inputs.nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
 
   outputs = { self, nixpkgs }: let
-    forAllSystems = nixpkgs.lib.genAttrs [ "x86_64-linux" "x86_64-darwin" "aarch64-darwin" ];
+    sources = builtins.fromJSON (builtins.readFile ./nix/sources.json);
+    forAllSystems = nixpkgs.lib.genAttrs (builtins.attrNames sources.hashes);
   in {
     packages = forAllSystems (system: let
       pkgs = nixpkgs.legacyPackages.${system};
