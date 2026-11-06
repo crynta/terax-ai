@@ -5,6 +5,7 @@ import type { FileHit } from "../lib/quickOpen";
 
 const LIMIT = 100;
 const REQUEST_KEY = "palette-files";
+const WARM_REQUEST_KEY = "palette-files-warm";
 
 type SearchResponse = {
   hits: FileHit[];
@@ -70,20 +71,40 @@ export function useFileSearch(
     requestIdRef.current += 1;
     if (!enabled || !root || !query) {
       setState(IDLE);
+      if (enabled && root) {
+        void invoke("fs_search", {
+          root,
+          query: "",
+          requestKey: REQUEST_KEY,
+        }).catch(() => {});
+      }
       return;
     }
     execute(query);
+    return () => {
+      requestIdRef.current += 1;
+    };
   }, [enabled, root, query, execute]);
 
   // Building the index is the slow part of the first search in a project; do
   // it while the user is still typing the first character.
   useEffect(() => {
     if (!enabled || !root) return;
-    void invoke("fs_warm_index", {
+    const args = {
       root,
       showHidden,
       workspace: currentWorkspaceEnv(),
-    }).catch(() => {});
+      requestKey: WARM_REQUEST_KEY,
+    };
+    void invoke("fs_warm_index", args).catch(() => {});
+    return () => {
+      void invoke("fs_search", {
+        root,
+        query: "",
+        requestKey: REQUEST_KEY,
+      }).catch(() => {});
+      void invoke("fs_warm_index", { ...args, cancel: true }).catch(() => {});
+    };
   }, [enabled, root, showHidden]);
 
   const retry = useCallback(() => {
