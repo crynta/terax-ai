@@ -217,9 +217,9 @@ fn resolve(id: &str) -> Result<PathBuf, String> {
 }
 
 /// The newest transcript in `cwd`'s project folder modified at or after
-/// `since_ms` (Unix epoch milliseconds); for sessions whose hooks never
-/// reported an id.
-fn find_latest_in(root: &Path, cwd: &str, since_ms: u64) -> Option<String> {
+/// `since_ms` (Unix epoch milliseconds), skipping `exclude` (sessions other
+/// panes already own); for sessions whose hooks never reported an id.
+fn find_latest_in(root: &Path, cwd: &str, since_ms: u64, exclude: &[String]) -> Option<String> {
     let dir = root.join(encode_project_dir(cwd));
     let mut best: Option<(std::time::SystemTime, String)> = None;
     for entry in std::fs::read_dir(dir).ok()?.flatten() {
@@ -230,7 +230,7 @@ fn find_latest_in(root: &Path, cwd: &str, since_ms: u64) -> Option<String> {
         let Some(id) = path.file_stem().and_then(|s| s.to_str()) else {
             continue;
         };
-        if !is_session_id(id) {
+        if !is_session_id(id) || exclude.iter().any(|e| e == id) {
             continue;
         }
         let Ok(meta) = std::fs::symlink_metadata(&path) else {
@@ -655,8 +655,13 @@ pub async fn agent_transcript_read(
 }
 
 #[tauri::command]
-pub async fn agent_transcript_find(cwd: String, since_ms: u64) -> Result<Option<String>, String> {
-    super::fs::blocking(move || Ok(find_latest_in(&projects_root()?, &cwd, since_ms))).await
+pub async fn agent_transcript_find(
+    cwd: String,
+    since_ms: u64,
+    exclude: Option<Vec<String>>,
+) -> Result<Option<String>, String> {
+    let exclude = exclude.unwrap_or_default();
+    super::fs::blocking(move || Ok(find_latest_in(&projects_root()?, &cwd, since_ms, &exclude))).await
 }
 
 /// Longest transcript line an image is read from (pasted screenshots are
@@ -1815,9 +1820,18 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(20));
         std::fs::write(dir.join(format!("{ID}.jsonl")), "").unwrap();
         std::fs::write(dir.join("notes.jsonl"), "").unwrap();
-        assert_eq!(find_latest_in(&root, "/r/app", 0).as_deref(), Some(ID));
-        assert_eq!(find_latest_in(&root, "/r/app", u64::MAX), None);
-        assert_eq!(find_latest_in(&root, "/r/missing", 0), None);
+        assert_eq!(find_latest_in(&root, "/r/app", 0, &[]).as_deref(), Some(ID));
+        assert_eq!(find_latest_in(&root, "/r/app", u64::MAX, &[]), None);
+        assert_eq!(find_latest_in(&root, "/r/missing", 0, &[]), None);
+        // A session another pane already owns is never guessed for this one.
+        assert_eq!(
+            find_latest_in(&root, "/r/app", 0, &[ID.to_string()]).as_deref(),
+            Some(other)
+        );
+        assert_eq!(
+            find_latest_in(&root, "/r/app", 0, &[ID.to_string(), other.to_string()]),
+            None
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 

@@ -66,15 +66,16 @@ export function turnCalls(turn: ReaderTurn): ToolCall[] {
 
 const SUMMARY_MAX = 80;
 
+/** How a turn's command reads: `/compact`, or `!git status` for a shell command. */
+export function commandLabel(command: string): string {
+  return /^[/!]/.test(command) ? command : `/${command}`;
+}
+
 /** One line naming a turn in the outline: its prompt, command, or a fallback. */
 export function turnSummary(turn: ReaderTurn): string {
   const source = turn.prompt?.trim() || "";
   const line = source.split("\n").find((l) => l.trim()) ?? "";
-  const command = turn.command
-    ? turn.command.startsWith("/")
-      ? turn.command
-      : `/${turn.command}`
-    : "";
+  const command = turn.command ? commandLabel(turn.command) : "";
   const text = [command, line.trim()].filter(Boolean).join(" ");
   if (!text) return turn.images.length > 0 ? "Image" : "Earlier work";
   return text.length > SUMMARY_MAX

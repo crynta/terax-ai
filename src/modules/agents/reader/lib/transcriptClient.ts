@@ -20,14 +20,20 @@ export function readTranscript(
 
 /**
  * The newest session transcript for `cwd` modified at or after `sinceMs`, for
- * sessions whose hooks never reported an id. Only safe when a single unlinked
- * Claude session runs in that cwd; the caller decides.
+ * sessions whose hooks never reported an id, skipping `exclude` (sessions
+ * other panes already own). Only safe when a single unlinked Claude session
+ * runs in that cwd; the caller decides.
  */
 export function findTranscript(
   cwd: string,
   sinceMs: number,
+  exclude: readonly string[] = [],
 ): Promise<string | null> {
-  return invoke<string | null>("agent_transcript_find", { cwd, sinceMs });
+  return invoke<string | null>("agent_transcript_find", {
+    cwd,
+    sinceMs,
+    exclude,
+  });
 }
 
 /** Image types the composer can attach; the backend checks the bytes too. */

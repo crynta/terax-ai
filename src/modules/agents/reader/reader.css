@@ -61,6 +61,41 @@
   }
 }
 
+/* While a chat is first drawn or restored, cards appear in place; only cards
+   that arrive afterwards (live) get the entrance animation. */
+[data-reader-settling] .terax-reader-in {
+  animation: none;
+}
+
+/* Loading skeleton: a soft light sweep across placeholder cards. Stepped
+   (like the app's other repeating animations) so it never redraws every frame. */
+.terax-reader-skeleton {
+  background: linear-gradient(
+      100deg,
+      transparent 20%,
+      color-mix(in oklab, var(--foreground) 7%, transparent) 50%,
+      transparent 80%
+    ),
+    color-mix(in oklab, var(--foreground) 5%, transparent);
+  background-size:
+    200% 100%,
+    100% 100%;
+  background-repeat: no-repeat;
+  animation: terax-reader-skeleton 1.4s steps(24, end) infinite;
+}
+@keyframes terax-reader-skeleton {
+  from {
+    background-position:
+      150% 0,
+      0 0;
+  }
+  to {
+    background-position:
+      -50% 0,
+      0 0;
+  }
+}
+
 .terax-reader-shimmer {
   background: linear-gradient(
     90deg,
@@ -134,6 +169,7 @@
   }
   .terax-reader-in,
   .terax-reader-shimmer,
+  .terax-reader-skeleton,
   .terax-reader-activity-dot,
   .terax-reader-activity-fade,
   .terax-reader-spin,
@@ -542,4 +578,29 @@
   .terax-ask-pill {
     animation: none;
   }
+}
+
+/* File review: Keep / Undo on each change (CodeMirror merge controls; scoped
+   past the merge view's own `.cm-deletedChunk button` rule). */
+.cm-editor .cm-deletedChunk button.terax-review-chunk-button {
+  font: 500 11px/1 "Inter Variable", Inter, ui-sans-serif, system-ui, sans-serif;
+  margin: 0;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  cursor: pointer;
+  box-shadow: 0 2px 8px -4px rgba(0, 0, 0, 0.5);
+}
+.cm-editor .cm-deletedChunk button.terax-review-chunk-button.is-keep {
+  border-color: color-mix(in oklab, var(--reader-green) 55%, transparent);
+  background: color-mix(in oklab, var(--reader-green) 18%, var(--card));
+}
+.cm-editor .cm-deletedChunk button.terax-review-chunk-button.is-keep:hover {
+  background: color-mix(in oklab, var(--reader-green) 30%, var(--card));
+}
+.cm-editor .cm-deletedChunk button.terax-review-chunk-button.is-undo:hover {
+  border-color: color-mix(in oklab, var(--reader-red) 60%, transparent);
+  color: var(--reader-red);
 }

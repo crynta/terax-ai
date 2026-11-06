@@ -17,7 +17,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { DiffView, FileChip, type ReaderContext } from "./ReaderBlocks";
+import { parseClaudeActivity, sameActivity } from "./lib/claudeActivity";
 import {
   type ClaudeDialog,
   DIALOG_TITLES,
@@ -28,16 +28,19 @@ import {
   parseClaudeDialog,
   sameDialog,
 } from "./lib/claudeDialog";
-import { parseClaudeActivity, sameActivity } from "./lib/claudeActivity";
 import { parseClaudeFooter, sameFooter } from "./lib/claudeFooter";
+import { parseClaudePanel, samePanel } from "./lib/claudePanel";
 import { pendingDetails } from "./lib/pendingTool";
 import { useScreenStore } from "./lib/screenStore";
 import type { ToolCall } from "./lib/transcript";
+import { DiffView, FileChip, type ReaderContext } from "./ReaderBlocks";
 
 /** How often the screen is read while Claude may be showing a dialog. */
 const DIALOG_POLL_MS = 400;
 /** How often the screen is read otherwise, for the footer (mode, status line, agents). */
 const FOOTER_POLL_MS = 1_000;
+/** How often the screen is read while one of Claude's panels is open, so keys feel live. */
+const PANEL_POLL_MS = 150;
 /** Keep reading this long after any phase change, to catch a dialog the hook hasn't flagged. */
 const EDGE_MS = 6_000;
 /** How long the card shows "Sent" before its buttons come back. */
@@ -87,6 +90,7 @@ export function useReaderScreen(
   }, [edgeUntil]);
 
   const dialogs = enabled && (phase === "attention" || edgeUntil > 0);
+  const [panelOpen, setPanelOpen] = useState(false);
 
   useEffect(() => {
     if (!dialogs) setDialog(null);
@@ -107,14 +111,22 @@ export function useReaderScreen(
       if (!sameActivity(now.activities[leafId] ?? null, activity)) {
         store.setActivity(leafId, activity);
       }
+      const panel = text ? parseClaudePanel(text) : null;
+      if (!samePanel(now.panels[leafId] ?? null, panel)) {
+        store.setPanel(leafId, panel);
+      }
+      setPanelOpen(panel !== null);
       if (!dialogs) return;
       const next = text ? parseClaudeDialog(text) : null;
       setDialog((current) => (sameDialog(current, next) ? current : next));
     };
     read();
-    const timer = setInterval(read, dialogs ? DIALOG_POLL_MS : FOOTER_POLL_MS);
+    const timer = setInterval(
+      read,
+      panelOpen ? PANEL_POLL_MS : dialogs ? DIALOG_POLL_MS : FOOTER_POLL_MS,
+    );
     return () => clearInterval(timer);
-  }, [enabled, dialogs, leafId]);
+  }, [enabled, dialogs, panelOpen, leafId]);
 
   // Shared so the document's Plan card answers the same dialog.
   useEffect(() => {
@@ -128,6 +140,7 @@ export function useReaderScreen(
       store.setFooter(leafId, null);
       store.setActivity(leafId, null);
       store.setDialog(leafId, null);
+      store.setPanel(leafId, null);
     };
   }, [enabled, leafId]);
 

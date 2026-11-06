@@ -55,9 +55,29 @@ export function modelLabel(id: string): string {
   return extended ? `${label} (1M)` : label;
 }
 
-/** The model's context window: 1M for `[1m]` variants, 200k otherwise. */
+const FAMILY_VERSION =
+  /claude-(fable|mythos|opus|sonnet|haiku)-(\d{1,2})(?:-(\d{1,2}))?(?!\d)/i;
+
+/**
+ * Whether the model's standard context window is 1M tokens: Fable and
+ * Mythos, Opus and Sonnet 4.6 and later, Haiku 5 and later. Older models
+ * (Haiku 4.5, Sonnet 4.5, Opus 4.5…) have 200k. A date suffix is not a version.
+ */
+function millionFamily(id: string): boolean {
+  const m = FAMILY_VERSION.exec(id);
+  if (!m) return false;
+  const family = m[1].toLowerCase();
+  const major = Number(m[2]);
+  const minor = m[3] === undefined ? 0 : Number(m[3]);
+  if (family === "fable" || family === "mythos") return true;
+  if (family === "haiku") return major >= 5;
+  return major > 4 || (major === 4 && minor >= 6);
+}
+
+/** The model's context window: 1M for `[1m]` variants and current families, 200k otherwise. */
 export function contextWindowFor(id: string | null): number {
-  return id && /\[1m\]|-1m\b/i.test(id)
+  if (!id) return DEFAULT_CONTEXT_WINDOW;
+  return /\[1m\]|-1m\b/i.test(id) || millionFamily(id)
     ? EXTENDED_CONTEXT_WINDOW
     : DEFAULT_CONTEXT_WINDOW;
 }
@@ -119,7 +139,14 @@ export function sessionInfo(
     }
   }
   const contextUsed = last ? contextOf(last) : null;
-  const contextWindow = last ? contextWindowFor(modelId) : null;
+  // A session holding more than a 200k window can is on the 1M one.
+  const contextWindow =
+    last && contextUsed !== null
+      ? Math.max(
+          contextWindowFor(modelId),
+          contextUsed > DEFAULT_CONTEXT_WINDOW ? EXTENDED_CONTEXT_WINDOW : 0,
+        )
+      : null;
   return {
     model: modelId ? modelLabel(modelId) : null,
     modelId,

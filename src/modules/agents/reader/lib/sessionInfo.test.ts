@@ -25,9 +25,31 @@ describe("modelLabel", () => {
     expect(modelLabel("gpt-5.4-mini")).toBe("gpt-5.4-mini");
   });
 
-  it("gives 1M-context variants a 1M window and the rest 200k", () => {
-    expect(contextWindowFor("claude-opus-5-5[1m]")).toBe(1_000_000);
-    expect(contextWindowFor("claude-opus-5-5")).toBe(200_000);
+  it("gives current families and [1m] variants a 1M window, older models 200k", () => {
+    for (const id of [
+      "claude-opus-5-5",
+      "claude-opus-5",
+      "claude-opus-4-8",
+      "claude-opus-4-6",
+      "claude-fable-5-1",
+      "claude-mythos-5-1",
+      "claude-sonnet-5-5",
+      "claude-sonnet-4-6",
+      "claude-haiku-5-5",
+      "anthropic.claude-opus-5-5",
+      "claude-sonnet-4-5-20250929[1m]",
+    ]) {
+      expect(contextWindowFor(id), id).toBe(1_000_000);
+    }
+    for (const id of [
+      "claude-haiku-4-5",
+      "claude-sonnet-4-5-20250929",
+      "claude-opus-4-5-20251101",
+      "claude-opus-4-20250514",
+      "claude-3-5-sonnet-20241022",
+    ]) {
+      expect(contextWindowFor(id), id).toBe(200_000);
+    }
     expect(contextWindowFor(null)).toBe(200_000);
   });
 });
@@ -96,13 +118,35 @@ describe("sessionInfo", () => {
     },
   ];
 
+  it("treats more context than a 200k window holds as the 1M window", () => {
+    const big: TranscriptEntry[] = [
+      {
+        kind: "assistant",
+        uuid: "a1",
+        timestamp: "2026-11-04T10:00:00Z",
+        model: "claude-haiku-4-5",
+        usage: {
+          inputTokens: 10,
+          outputTokens: 5,
+          cacheReadInputTokens: 300_000,
+          cacheCreationInputTokens: 0,
+        },
+        blocks: [{ type: "text", text: "hi" }],
+      },
+    ];
+    const info = sessionInfo(big, buildDocument(big).turns);
+    expect(info.contextWindow).toBe(1_000_000);
+    expect(info.contextPercent).toBe(30);
+  });
+
   it("reports model, context, tokens, times and diff lines", () => {
     const doc = buildDocument(entries);
     const info = sessionInfo(entries, doc.turns);
     expect(info.model).toBe("Opus 5.5");
     expect(info.contextUsed).toBe(60_020);
-    expect(info.contextWindow).toBe(200_000);
-    expect(info.contextPercent).toBe(30);
+    // Opus 5.5 has a 1M window: 60k is 6%, not the 30% a 200k guess gives.
+    expect(info.contextWindow).toBe(1_000_000);
+    expect(info.contextPercent).toBe(6);
     expect(info.outputTokens).toBe(500);
     expect(info.startedAt).toBe(Date.parse("2026-11-04T10:00:00Z"));
     expect(info.lastAt).toBe(Date.parse("2026-11-04T10:01:00Z"));

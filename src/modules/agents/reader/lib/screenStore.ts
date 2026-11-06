@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { ClaudeActivity } from "./claudeActivity";
 import type { ClaudeDialog } from "./claudeDialog";
 import type { ClaudeFooter, PermissionMode } from "./claudeFooter";
+import type { ClaudePanel } from "./claudePanel";
 
 type ScreenState = {
   /** Claude Code's footer per pane leaf, as last read off its screen. */
@@ -10,6 +11,9 @@ type ScreenState = {
   activities: Record<number, ClaudeActivity | null>;
   /** The dialog Claude Code shows per pane leaf (permission, choice, plan). */
   dialogs: Record<number, ClaudeDialog | null>;
+  /** The interactive panel (`/usage`, `/mcp`, `/config`…) open per pane leaf. */
+  panels: Record<number, ClaudePanel | null>;
+  setPanel: (leafId: number, panel: ClaudePanel | null) => void;
   setFooter: (leafId: number, footer: ClaudeFooter | null) => void;
   setActivity: (leafId: number, activity: ClaudeActivity | null) => void;
   setDialog: (leafId: number, dialog: ClaudeDialog | null) => void;
@@ -20,6 +24,13 @@ export const useScreenStore = create<ScreenState>((set) => ({
   footers: {},
   activities: {},
   dialogs: {},
+  panels: {},
+  setPanel: (leafId, panel) =>
+    set((s) =>
+      (s.panels[leafId] ?? null) === panel
+        ? s
+        : { panels: { ...s.panels, [leafId]: panel } },
+    ),
   setDialog: (leafId, dialog) =>
     set((s) =>
       (s.dialogs[leafId] ?? null) === dialog
@@ -53,6 +64,11 @@ export function useClaudeActivity(leafId: number): ClaudeActivity | null {
 /** The dialog on the pane's screen, or null; the one the composer's Action card answers. */
 export function useClaudeDialog(leafId: number): ClaudeDialog | null {
   return useScreenStore((s) => s.dialogs[leafId] ?? null);
+}
+
+/** The interactive panel on the pane's screen, or null when the prompt shows. */
+export function useClaudePanel(leafId: number): ClaudePanel | null {
+  return useScreenStore((s) => s.panels[leafId] ?? null);
 }
 
 /** The pane's Claude Code permission mode, or null when the footer isn't visible. */

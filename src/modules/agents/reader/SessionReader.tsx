@@ -12,6 +12,7 @@ import {
   type AgentPhase,
   useAgentActivityStore,
 } from "@/modules/terminal/lib/agentActivity";
+import { openTerminalLink } from "@/modules/terminal/lib/terminalFileLinks";
 import {
   leafCwd,
   ptyIdForLeaf,
@@ -25,11 +26,11 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { homeDir } from "@tauri-apps/api/path";
-import { openTerminalLink } from "@/modules/terminal/lib/terminalFileLinks";
 import {
   type ReactNode,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -44,6 +45,7 @@ import { leafScreenText } from "@/modules/terminal/lib/terminalSessionApi";
 import { currentWorkspaceEnv } from "@/modules/workspace";
 import { invoke } from "@tauri-apps/api/core";
 import { downloadDir, join } from "@tauri-apps/api/path";
+import { selectionToQuote } from "./lib/askSelection";
 import { type ChangedFile, changedFiles, reviewPrompt } from "./lib/changes";
 import { compactBanner, compactCommand } from "./lib/contextBanner";
 import { resumeChat } from "./lib/conversation";
@@ -51,8 +53,15 @@ import { documentMarkdown, exportFileName } from "./lib/exportMarkdown";
 import { inFlightCall, turnSteps } from "./lib/liveStream";
 import { pendingToolCall } from "./lib/pendingTool";
 import {
+  bufferFor,
+  cachedBuffer,
+  savedScroll,
+  saveScroll,
+} from "./lib/readerCache";
+import {
   ALL_FILTERS,
   buildOutline,
+  commandLabel,
   filterBlocks,
   type ReaderFilters,
   sessionStats,
@@ -92,6 +101,7 @@ import {
   type TranscriptFollower,
 } from "./lib/transcriptClient";
 import { compactItems, readViewMode, writeViewMode } from "./lib/viewMode";
+import { AskSelectionPill } from "./ReaderAskSelection";
 import {
   CopyButton,
   ImageStrip,
@@ -107,8 +117,6 @@ import {
   useCurrentTurn,
   useReaderSearch,
 } from "./ReaderChrome";
-import { selectionToQuote } from "./lib/askSelection";
-import { AskSelectionPill } from "./ReaderAskSelection";
 import { type ComposerHandle, ReaderComposer } from "./ReaderComposer";
 import {
   CompactBannerView,
@@ -122,6 +130,12 @@ import {
   type RewindStatus,
   RewindStatusBar,
 } from "./ReaderConversation";
+import {
+  type FileDiffApi,
+  FileDiffDialog,
+  FileDiffProvider,
+  fileDiffLookup,
+} from "./ReaderFileDiff";
 import { HistoryPanel } from "./ReaderHistory";
 import {
   ChangesButton,
@@ -132,12 +146,6 @@ import {
   ViewModeToggle,
   WorkPanel,
 } from "./ReaderPanels";
-import {
-  type FileDiffApi,
-  FileDiffDialog,
-  FileDiffProvider,
-  fileDiffLookup,
-} from "./ReaderFileDiff";
 import {
   ActivityRow,
   SessionCards,
@@ -206,8 +214,9 @@ export default function SessionReader({
       .catch(() => {});
   }, []);
 
+  // A session shown recently is still loaded: render it at once, no reload.
   const [state, setState] = useState<LoadState>({
-    kind: activeId ? "loading" : "unlinked",
+    kind: !activeId ? "unlinked" : cachedBuffer(activeId) ? "ready" : "loading",
   });
   const [version, setVersion] = useState(0);
   const follower = useRef<TranscriptFollower | null>(null);
@@ -218,24 +227,33 @@ export default function SessionReader({
       return;
     }
     let cancelled = false;
-    setState({ kind: "loading" });
-    void openTranscript(activeId)
-      .then(() => {
-        if (cancelled) return;
-        follower.current = followTranscript(activeId, {
-          onChange: () => {
-            setState({ kind: "ready" });
-            setVersion((v) => v + 1);
-          },
-          onError: (error) =>
-            setState({ kind: "error", message: String(error) }),
-        });
-        // An empty but valid transcript still counts as loaded.
-        setState((s) => (s.kind === "loading" ? { kind: "ready" } : s));
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setState({ kind: "error", message: String(error) });
+    const follow = () => {
+      follower.current = followTranscript(activeId, {
+        // Resumes from where a previous Reader of this session left off.
+        buffer: bufferFor(activeId),
+        onChange: () => {
+          setState({ kind: "ready" });
+          setVersion((v) => v + 1);
+        },
+        onError: (error) => setState({ kind: "error", message: String(error) }),
       });
+    };
+    if (cachedBuffer(activeId)) {
+      setState({ kind: "ready" });
+      follow();
+    } else {
+      setState({ kind: "loading" });
+      void openTranscript(activeId)
+        .then(() => {
+          if (cancelled) return;
+          follow();
+          // An empty but valid transcript still counts as loaded.
+          setState((s) => (s.kind === "loading" ? { kind: "ready" } : s));
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) setState({ kind: "error", message: String(error) });
+        });
+    }
     return () => {
       cancelled = true;
       follower.current?.stop();
@@ -258,7 +276,10 @@ export default function SessionReader({
     );
   }, [phase, followerReady]);
 
-  const buffer = follower.current?.buffer;
+  const buffer =
+    follower.current?.buffer ??
+    (activeId ? cachedBuffer(activeId) : null) ??
+    undefined;
   // biome-ignore lint/correctness/useExhaustiveDependencies: version bumps when the buffer mutates
   const doc = useMemo(
     () => buildDocument(buffer?.entries ?? []),
@@ -365,7 +386,37 @@ export default function SessionReader({
       document.removeEventListener("focusin", onFocusIn);
     };
   }, [focused, leafId, focusComposer]);
-  const [following, setFollowing] = useState(true);
+  const restored = activeId ? savedScroll(leafId, activeId) : null;
+  const [following, setFollowing] = useState(restored?.following ?? true);
+  // Put a restored Reader back where it was read, before it paints.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: once per opened session
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!el || !activeId || state.kind !== "ready") return;
+    const saved = savedScroll(leafId, activeId);
+    if (saved && !saved.following) el.scrollTop = saved.top;
+  }, [activeId, state.kind === "ready"]);
+  // Remember the position when the tab is switched away (the Reader unmounts).
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el || !activeId) return;
+    return () => {
+      saveScroll(leafId, activeId, {
+        top: el.scrollTop,
+        following:
+          el.scrollHeight - el.scrollTop - el.clientHeight <
+          FOLLOW_THRESHOLD_PX,
+      });
+    };
+  }, [leafId, activeId]);
+  // Cards animate in only once the first render has settled, so opening or
+  // returning to a chat doesn't replay every card's entrance at once.
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    if (state.kind !== "ready") return;
+    const timer = setTimeout(() => setSettled(true), 600);
+    return () => clearTimeout(timer);
+  }, [state.kind]);
   const onScroll = useCallback(() => {
     const el = scroller.current;
     if (!el) return;
@@ -373,8 +424,9 @@ export default function SessionReader({
       el.scrollHeight - el.scrollTop - el.clientHeight < FOLLOW_THRESHOLD_PX,
     );
   }, []);
+  // Before paint, so a restored or growing chat never flashes at the wrong spot.
   // biome-ignore lint/correctness/useExhaustiveDependencies: follow new content when pinned to the bottom
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = scroller.current;
     if (el && following) el.scrollTop = el.scrollHeight;
   }, [version, state.kind, full]);
@@ -1095,6 +1147,7 @@ export default function SessionReader({
   const diffDialog = (
     <FileDiffDialog
       path={diffPath}
+      sessionId={activeId}
       cwd={cwd}
       home={home}
       doc={doc}
@@ -1110,6 +1163,7 @@ export default function SessionReader({
           aria-label="Session Reader, full view"
           onKeyDown={onKeyDown}
           data-terax-reader=""
+          data-reader-settling={settled ? undefined : ""}
           className="terax-reader-full fixed inset-0 z-[900] flex flex-col bg-background"
         >
           {diffDialog}
@@ -1200,6 +1254,7 @@ export default function SessionReader({
         }}
         onKeyDown={onKeyDown}
         data-terax-reader=""
+        data-reader-settling={settled ? undefined : ""}
         className="absolute inset-0 z-[6] flex flex-col bg-background"
       >
         {diffDialog}
@@ -1232,7 +1287,9 @@ function phaseLabel(phase: AgentPhase | undefined): string | null {
 
 /**
  * Sessions whose hooks never reported an id: the newest transcript in the
- * pane's folder, but only when no other unlinked agent session shares it.
+ * pane's folder, but only when no other unlinked agent session shares it,
+ * and never one another pane already owns (tabs often share a folder, and
+ * the newest file there is usually another tab's live chat).
  */
 function useFallbackSession(
   sessionId: string | null,
@@ -1249,16 +1306,30 @@ function useFallbackSession(
     }
     return count;
   });
+  // A string so the selectors stay stable between renders.
+  const ownPty = ptyIdForLeaf(leafId);
+  const ownedByStore = useAgentStore((s) =>
+    Object.values(s.sessions)
+      .filter((o) => o.leafId !== leafId && o.claudeSessionId)
+      .map((o) => o.claudeSessionId)
+      .join(","),
+  );
+  const ownedByPty = useAgentActivityStore((s) =>
+    Object.entries(s.sessionIds)
+      .filter(([pty]) => Number(pty) !== ownPty)
+      .map(([, id]) => id)
+      .join(","),
+  );
+  const owned = [ownedByStore, ownedByPty].filter(Boolean).join(",");
   useEffect(() => {
-    if (sessionId || !cwd || startedAt === null || others > 0) {
-      setFound(null);
-      return;
-    }
+    setFound(null);
+    if (sessionId || !cwd || startedAt === null || others > 0) return;
     let cancelled = false;
+    const exclude = owned ? [...new Set(owned.split(","))] : [];
     const look = () =>
-      findTranscript(cwd, startedAt - 60_000)
+      findTranscript(cwd, startedAt - 60_000, exclude)
         .then((id) => {
-          if (!cancelled && id) setFound(id);
+          if (!cancelled) setFound(id);
         })
         .catch(() => {});
     void look();
@@ -1267,7 +1338,7 @@ function useFallbackSession(
       cancelled = true;
       clearInterval(timer);
     };
-  }, [sessionId, cwd, startedAt, others]);
+  }, [sessionId, cwd, startedAt, others, owned]);
   return sessionId ? null : found;
 }
 
@@ -1589,7 +1660,7 @@ function PromptCard({
       </div>
       {turn.command && (
         <span className="terax-reader-mono inline-flex w-fit rounded-md border border-primary/40 bg-background/50 px-1.5 py-0.5 text-[12px] text-foreground">
-          {turn.command.startsWith("/") ? turn.command : `/${turn.command}`}
+          {commandLabel(turn.command)}
         </span>
       )}
       {text && (
@@ -1675,9 +1746,9 @@ function LoadingState() {
     >
       {[0, 1, 2].map((i) => (
         <div key={i} className="flex flex-col gap-2.5 pl-8">
-          <div className="h-14 animate-pulse rounded-xl bg-primary/[0.07]" />
-          <div className="h-28 animate-pulse rounded-xl bg-muted/40" />
-          <div className="h-9 w-2/3 animate-pulse rounded-lg bg-muted/30" />
+          <div className="terax-reader-skeleton h-14 rounded-xl" />
+          <div className="terax-reader-skeleton h-28 rounded-xl" />
+          <div className="terax-reader-skeleton h-9 w-2/3 rounded-lg" />
         </div>
       ))}
     </div>

@@ -97,7 +97,7 @@ export type ReaderTurn = {
   id: string;
   /** The user's prompt; null for a turn whose prompt is before the loaded window. */
   prompt: string | null;
-  /** A slash command, shown instead of the raw prompt markup. */
+  /** A slash command, or a `!` shell command, shown instead of the raw prompt markup. */
   command: string | null;
   promptAt: string | null;
   /** Images pasted with the prompt. */
@@ -115,6 +115,56 @@ const COMMAND_NAME = /<command-name>([\s\S]*?)<\/command-name>/;
 const COMMAND_ARGS = /<command-args>([\s\S]*?)<\/command-args>/;
 const COMMAND_STDOUT =
   /<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/;
+const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/gu;
+
+/** A slash command's output without the terminal colours Claude wraps it in. */
+export function stripAnsi(text: string): string {
+  return text.replace(ANSI, "");
+}
+
+const TASK_NOTIFICATION = /^<task-notification>([\s\S]*?)<\/task-notification>/;
+const TASK_SUMMARY = /<summary>([\s\S]*?)<\/summary>/;
+const TASK_STATUS = /<status>([\s\S]*?)<\/status>/;
+
+/**
+ * A background task's completion notice (Claude injects it as a user message),
+ * as one readable line, or null when `raw` isn't one.
+ */
+export function taskNotice(raw: string): string | null {
+  const m = TASK_NOTIFICATION.exec(raw.trim());
+  if (!m) return null;
+  const summary = TASK_SUMMARY.exec(m[1])?.[1].trim();
+  const status = TASK_STATUS.exec(m[1])?.[1].trim();
+  return summary || `Background task ${status ?? "finished"}`;
+}
+
+const BASH_INPUT = /^<bash-input>([\s\S]*?)<\/bash-input>$/;
+const BASH_OUTPUT = /<bash-(stdout|stderr)>([\s\S]*?)<\/bash-\1>/g;
+const ENTITIES: Record<string, string> = {
+  "&amp;": "&",
+  "&lt;": "<",
+  "&gt;": ">",
+  "&quot;": '"',
+  "&#39;": "'",
+};
+
+/**
+ * The output of a `!` shell command run in Claude (`<bash-stdout>` and
+ * `<bash-stderr>`, HTML-escaped by Claude), or null when `raw` isn't one.
+ */
+export function shellOutput(raw: string): string | null {
+  if (!raw.startsWith("<bash-stdout>") && !raw.startsWith("<bash-stderr>")) {
+    return null;
+  }
+  const parts: string[] = [];
+  for (const m of raw.matchAll(BASH_OUTPUT)) {
+    const text = stripAnsi(m[2])
+      .replace(/&(?:amp|lt|gt|quot|#39);/g, (e) => ENTITIES[e] ?? e)
+      .trim();
+    if (text) parts.push(text);
+  }
+  return parts.join("\n");
+}
 
 /** Groups transcript entries (oldest first) into turns. */
 export function buildDocument(
@@ -186,12 +236,46 @@ export function buildDocument(
       if (!text && images.length === 0) continue;
       const stdout = COMMAND_STDOUT.exec(raw);
       if (stdout) {
-        const output = stdout[1].trim();
+        const output = stripAnsi(stdout[1]).trim();
         if (output)
           turn().blocks.push({ kind: "notice", id: nextId("n"), text: output });
         continue;
       }
       if (raw.startsWith("<local-command-caveat>")) continue;
+      // A background task finishing: Claude answers it like a prompt.
+      const task = taskNotice(raw);
+      if (task !== null) {
+        current = {
+          id: entry.uuid ?? nextId("t"),
+          prompt: null,
+          command: null,
+          promptAt: entry.timestamp ?? null,
+          images: [],
+          blocks: [{ kind: "notice", id: nextId("n"), text: task }],
+        };
+        turns.push(current);
+        continue;
+      }
+      // `! command` in Claude: the command opens a turn, its output follows.
+      const shell = shellOutput(raw);
+      if (shell !== null) {
+        if (shell)
+          turn().blocks.push({ kind: "notice", id: nextId("n"), text: shell });
+        continue;
+      }
+      const bash = BASH_INPUT.exec(raw);
+      if (bash) {
+        current = {
+          id: entry.uuid ?? nextId("t"),
+          prompt: null,
+          command: `!${bash[1].trim()}`,
+          promptAt: entry.timestamp ?? null,
+          images,
+          blocks: [],
+        };
+        turns.push(current);
+        continue;
+      }
       const name = COMMAND_NAME.exec(raw);
       current = {
         id: entry.uuid ?? nextId("t"),

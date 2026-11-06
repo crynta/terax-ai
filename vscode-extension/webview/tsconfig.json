@@ -1,0 +1,38 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noFallthroughCasesInSwitch": true,
+    "types": ["node"],
+    "typeRoots": ["../../node_modules/@types"],
+    "paths": {
+      "@tauri-apps/api/core": ["./shims/tauri-core.ts"],
+      "@tauri-apps/api/webview": ["./shims/tauri-webview.ts"],
+      "@tauri-apps/api/path": ["./shims/tauri-misc.ts"],
+      "@tauri-apps/api/event": ["./shims/tauri-misc.ts"],
+      "@tauri-apps/plugin-log": ["./shims/tauri-misc.ts"],
+      "@tauri-apps/plugin-opener": ["./shims/tauri-misc.ts"],
+      "@tauri-apps/plugin-store": ["./shims/tauri-misc.ts"],
+      "@/modules/terminal/lib/terminalSessionApi": ["./shims/terminalSessionApi.ts"],
+      "@/modules/terminal/lib/agentActivity": ["./shims/stores.ts"],
+      "@/modules/agents/store/agentStore": ["./shims/stores.ts"],
+      "@/modules/settings/preferences": ["./shims/stores.ts"],
+      "@/modules/workspace": ["./shims/stores.ts"],
+      "@/modules/workspace/env": ["./shims/stores.ts"],
+      "@/modules/ai/store/chatStore": ["./shims/stores.ts"],
+      "@/app/components/useGitBranch": ["./shims/useGitBranch.ts"],
+      "@/*": ["../../src/*"]
+    }
+  },
+  "include": ["main.tsx", "bridge.ts", "shims", "../../src/vite-env.d.ts"]
+}

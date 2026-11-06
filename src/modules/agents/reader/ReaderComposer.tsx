@@ -39,6 +39,8 @@ import {
 import { MicButton, useVoiceInput } from "./ComposerVoice";
 import { appendBlock } from "./lib/askSelection";
 import { type PermissionMode, parseClaudeFooter } from "./lib/claudeFooter";
+import { parseClaudePanel } from "./lib/claudePanel";
+import { modelCommand, nextCycleStep, SHIFT_TAB } from "./lib/composerControls";
 import {
   dropMentionRef,
   needsMultiline,
@@ -46,7 +48,6 @@ import {
   routeDroppedPaths,
   toLogicalPoint,
 } from "./lib/composerDrop";
-import { modelCommand, nextCycleStep, SHIFT_TAB } from "./lib/composerControls";
 import { gatherContext, specialSources } from "./lib/contextClient";
 import {
   addMention,
@@ -87,7 +88,11 @@ import {
 import { useQueueStore } from "./lib/queueStore";
 import { promptWrites } from "./lib/readerDoc";
 import { displayPath } from "./lib/readerView";
-import { useClaudeActivity, useClaudeFooter } from "./lib/screenStore";
+import {
+  useClaudeActivity,
+  useClaudeFooter,
+  useClaudePanel,
+} from "./lib/screenStore";
 import type { SessionFacts } from "./lib/sessionFacts";
 import {
   applySuggestion,
@@ -120,6 +125,7 @@ import {
 } from "./lib/transcriptClient";
 import { ActionCard, answerDialog, useReaderScreen } from "./ReaderAction";
 import type { ReaderContext } from "./ReaderBlocks";
+import { ClaudePanelCard } from "./ReaderClaudePanel";
 import { StopButton, useStopTicker } from "./ReaderStop";
 
 /** Gap between typing a prompt and the Enter that submits it, as the AI tool uses. */
@@ -178,6 +184,26 @@ type Attachment = {
 };
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Closes one of Claude's panels (`/usage`, `/config`…) before a prompt is
+ * typed, so the text lands in the prompt box instead of the panel's filter:
+ * Esc, and Esc again when the first one only cleared a filter.
+ */
+async function closeClaudePanel(leafId: number): Promise<void> {
+  const open = () => {
+    const screen = leafScreenText(leafId);
+    return screen !== null && parseClaudePanel(screen) !== null;
+  };
+  for (let press = 0; press < 3 && open(); press++) {
+    if (!writeToSession(leafId, "\x1b")) return;
+    const until = Date.now() + 700;
+    while (Date.now() < until) {
+      await delay(60);
+      if (!open()) return;
+    }
+  }
+}
 
 let measureCanvas: CanvasRenderingContext2D | null = null;
 /** Width in px of the widest line of `text` in the textarea's font. */
@@ -332,8 +358,10 @@ export const ReaderComposer = forwardRef<
   dialogRef.current = dialog;
   const activity = useClaudeActivity(leafId);
   const footerVisible = useClaudeFooter(leafId) !== null;
+  const panel = useClaudePanel(leafId);
   const activityWorking = Boolean(activity && !activity.done);
-  const working = liveWorking(phase, activity, footerVisible);
+  // An open panel hides the footer but means Claude is idle, waiting on you.
+  const working = liveWorking(phase, activity, footerVisible || panel !== null);
 
   const [text, setText] = useState(() => drafts.get(leafId) ?? "");
   const [caret, setCaret] = useState(() => (drafts.get(leafId) ?? "").length);
@@ -667,6 +695,7 @@ export const ReaderComposer = forwardRef<
       setBusy(null);
       const prompt = serializePrompt(item.text, item.mentions, contexts);
       if (!prompt && item.images.length === 0) return false;
+      await closeClaudePanel(leafId);
       if (!sendPrompt(leafId, prompt, item.images)) {
         setError("The terminal isn't ready. Open it and try again.");
         return false;
@@ -901,6 +930,14 @@ export const ReaderComposer = forwardRef<
             ctx={ctx}
             onOpenTerminal={onOpenTerminal}
             onAnswered={() => focusArea()}
+          />
+        )}
+        {!dialog && panel && (
+          <ClaudePanelCard
+            leafId={leafId}
+            panel={panel}
+            onOpenTerminal={onOpenTerminal}
+            onClosed={focusArea}
           />
         )}
         {/* biome-ignore lint/a11y/noStaticElementInteractions: drop target for images; the textarea and buttons stay the controls */}
@@ -1145,11 +1182,13 @@ export const ReaderComposer = forwardRef<
                   ? "Add a message, or send the images…"
                   : dialog
                     ? "Type a message; it waits until you answer Claude above…"
-                    : working
-                      ? "Queue a follow-up, or ⌘Enter to steer now…"
-                      : phase === "attention"
-                        ? "Claude is waiting for your message…"
-                        : "Message Claude…"
+                    : panel
+                      ? "Use Claude's panel above, or send a message to close it…"
+                      : working
+                        ? "Queue a follow-up, or ⌘Enter to steer now…"
+                        : phase === "attention"
+                          ? "Claude is waiting for your message…"
+                          : "Message Claude…"
               }
               aria-label="Message Claude"
               className={cn(

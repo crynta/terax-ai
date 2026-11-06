@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   buildDocument,
   lineDiff,
+  shellOutput,
+  stripAnsi,
   TranscriptBuffer,
   type TranscriptEntry,
   type TranscriptPage,
+  taskNotice,
 } from "./transcript";
 
 const prompt = (uuid: string, text: string): TranscriptEntry => ({
@@ -279,5 +282,80 @@ describe("TranscriptBuffer", () => {
     buffer.append(page([prompt("z", "z")], 0, 5, true));
     expect(buffer.entries.map((e) => e.uuid)).toEqual(["z"]);
     expect(buffer.truncated).toBe(false);
+  });
+});
+
+describe("stripAnsi", () => {
+  it("drops the colours Claude puts in slash command output", () => {
+    expect(stripAnsi("Set model to \u001b[1mFable 5\u001b[22m and saved")).toBe(
+      "Set model to Fable 5 and saved",
+    );
+    expect(
+      stripAnsi("\u001b[2mCompacted (ctrl+o to see full summary)\u001b[22m"),
+    ).toBe("Compacted (ctrl+o to see full summary)");
+    expect(stripAnsi("\u001b]8;;https://x.y\u0007link\u001b]8;;\u0007")).toBe(
+      "link",
+    );
+  });
+});
+
+describe("shell commands run with !", () => {
+  const user = (uuid: string, content: string): TranscriptEntry => ({
+    kind: "user",
+    uuid,
+    timestamp: "2026-11-05T10:00:00Z",
+    blocks: [{ type: "text", text: content }],
+  });
+
+  it("shows the command as the prompt and its output under it, no raw tags", () => {
+    const doc = buildDocument([
+      user("u1", "<bash-input> gcloud auth login</bash-input>"),
+      user(
+        "u2",
+        "<bash-stdout>Your browser has been opened to visit:\n\n    https://x.y/?a=1&amp;b=2</bash-stdout><bash-stderr>\u001b[33mwarning\u001b[0m</bash-stderr>",
+      ),
+    ]);
+    expect(doc.turns).toHaveLength(1);
+    expect(doc.turns[0].command).toBe("!gcloud auth login");
+    expect(doc.turns[0].prompt).toBeNull();
+    expect(doc.turns[0].blocks).toEqual([
+      {
+        kind: "notice",
+        id: expect.any(String),
+        text: "Your browser has been opened to visit:\n\n    https://x.y/?a=1&b=2\nwarning",
+      },
+    ]);
+  });
+
+  it("drops empty output", () => {
+    const doc = buildDocument([
+      user("u1", "<bash-input>true</bash-input>"),
+      user("u2", "<bash-stdout></bash-stdout><bash-stderr></bash-stderr>"),
+    ]);
+    expect(doc.turns[0].blocks).toEqual([]);
+    expect(shellOutput("plain text")).toBeNull();
+  });
+});
+
+describe("background task notifications", () => {
+  it("become a one-line notice, not a raw prompt", () => {
+    const doc = buildDocument([
+      {
+        kind: "user",
+        uuid: "n1",
+        blocks: [
+          {
+            type: "text",
+            text: '<task-notification>\n<task-id>b6</task-id>\n<status>completed</status>\n<summary>Background command "Probe search model" completed (exit code 0)</summary>\n</task-notification>',
+          },
+        ],
+      },
+    ]);
+    expect(doc.turns[0].prompt).toBeNull();
+    expect(doc.turns[0].blocks[0]).toMatchObject({
+      kind: "notice",
+      text: 'Background command "Probe search model" completed (exit code 0)',
+    });
+    expect(taskNotice("hello")).toBeNull();
   });
 });

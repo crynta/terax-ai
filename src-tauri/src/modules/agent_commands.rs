@@ -151,7 +151,8 @@ fn add_skills(dir: &Path, namespace: Option<&str>, out: &mut Vec<CommandInfo>) {
     let mut entries: Vec<_> = entries.flatten().collect();
     entries.sort_by_key(|e| e.file_name());
     for entry in entries {
-        if !entry.file_type().is_ok_and(|t| t.is_dir()) {
+        // `Path::is_dir` follows symlinks: skills are often linked in from a repo.
+        if entry.file_name().to_string_lossy().starts_with('.') || !entry.path().is_dir() {
             continue;
         }
         let skill = entry.path().join("SKILL.md");
@@ -252,6 +253,16 @@ fn list_in(claude_home: &Path, cwd: &Path) -> Vec<CommandInfo> {
     }
     add_commands(&claude_home.join("commands"), None, "user", &mut out);
     add_skills(&claude_home.join("skills"), None, &mut out);
+    // Skills synced from claude.ai: skills/synced/<source>/<skill>/SKILL.md
+    if let Ok(sources) = std::fs::read_dir(claude_home.join("skills").join("synced")) {
+        let mut sources: Vec<_> = sources.flatten().collect();
+        sources.sort_by_key(|e| e.file_name());
+        for source in sources {
+            if source.path().is_dir() {
+                add_skills(&source.path(), None, &mut out);
+            }
+        }
+    }
     let plugins_root = claude_home.join("plugins");
     let mut plugins = installed_plugins(&plugins_root, cwd);
     plugins.extend(synced_plugins(&plugins_root));
@@ -350,6 +361,32 @@ mod tests {
         );
         assert!(list.iter().all(|c| !c.name.starts_with("escape:")));
         assert_eq!(find("m-skills:pr").unwrap().description, "Raise a PR");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn finds_symlinked_and_synced_skills() {
+        let root = temp_root("links");
+        let home = root.join("home/.claude");
+        write(
+            &root.join("repo-skills/okiro/SKILL.md"),
+            "---\nname: okiro\ndescription: Write a runbook\n---\n",
+        );
+        std::fs::create_dir_all(home.join("skills")).unwrap();
+        std::os::unix::fs::symlink(root.join("repo-skills/okiro"), home.join("skills/okiro"))
+            .unwrap();
+        write(
+            &home.join("skills/synced/src-1/morning/SKILL.md"),
+            "---\nname: morning\ndescription: Morning brief\n---\n",
+        );
+        write(&home.join("skills/.trash/old/SKILL.md"), "---\nname: old\n---\n");
+
+        let list = list_in(&home, &root);
+        let find = |name: &str| list.iter().find(|c| c.name == name);
+        assert_eq!(find("okiro").unwrap().description, "Write a runbook");
+        assert_eq!(find("morning").unwrap().source, "skill");
+        assert!(find("old").is_none(), "dot folders are skipped");
         std::fs::remove_dir_all(root).unwrap();
     }
 

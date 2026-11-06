@@ -1,0 +1,109 @@
+/*
+ * The Reader in VS Code's colours: Terax's theme slots read the --vscode-*
+ * variables VS Code sets on every webview, so the Reader follows the active
+ * color theme (and its light / dark / high-contrast kind) live. Surfaces are
+ * mixed from the editor's own foreground and background so cards stay
+ * visible in any theme, including ones that leave widget colours unset.
+ */
+:root[data-reader-theme="vscode"] {
+  --rt-bg: var(--vscode-editor-background);
+  --rt-fg: var(--vscode-editor-foreground);
+
+  --background: var(--rt-bg);
+  --foreground: var(--rt-fg);
+  --card: color-mix(in srgb, var(--rt-fg) 4%, var(--rt-bg));
+  --card-foreground: var(--rt-fg);
+  --popover: var(--vscode-editorWidget-background, color-mix(in srgb, var(--rt-fg) 6%, var(--rt-bg)));
+  --popover-foreground: var(--vscode-editorWidget-foreground, var(--rt-fg));
+  --primary: var(--vscode-button-background, var(--vscode-focusBorder));
+  --primary-foreground: var(--vscode-button-foreground, var(--rt-bg));
+  --secondary: color-mix(in srgb, var(--rt-fg) 8%, var(--rt-bg));
+  --secondary-foreground: var(--rt-fg);
+  --muted: color-mix(in srgb, var(--rt-fg) 7%, var(--rt-bg));
+  --muted-foreground: var(--vscode-descriptionForeground, color-mix(in srgb, var(--rt-fg) 70%, var(--rt-bg)));
+  --accent: var(--vscode-list-hoverBackground, color-mix(in srgb, var(--rt-fg) 10%, var(--rt-bg)));
+  --accent-foreground: var(--rt-fg);
+  --destructive: var(--vscode-errorForeground);
+  --border: color-mix(in srgb, var(--rt-fg) 13%, transparent);
+  --input: color-mix(in srgb, var(--rt-fg) 17%, transparent);
+  --ring: var(--vscode-focusBorder, var(--primary));
+
+  --sidebar: var(--card);
+  --sidebar-foreground: var(--rt-fg);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--rt-fg);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+
+  --terminal-background: var(--vscode-terminal-background, var(--rt-bg));
+  --terminal-foreground: var(--vscode-terminal-foreground, var(--rt-fg));
+  --terminal-ansi-black: var(--vscode-terminal-ansiBlack);
+  --terminal-ansi-red: var(--vscode-terminal-ansiRed);
+  --terminal-ansi-green: var(--vscode-terminal-ansiGreen);
+  --terminal-ansi-yellow: var(--vscode-terminal-ansiYellow);
+  --terminal-ansi-blue: var(--vscode-terminal-ansiBlue);
+  --terminal-ansi-magenta: var(--vscode-terminal-ansiMagenta);
+  --terminal-ansi-cyan: var(--vscode-terminal-ansiCyan);
+  --terminal-ansi-white: var(--vscode-terminal-ansiWhite);
+  --terminal-ansi-bright-black: var(--vscode-terminal-ansiBrightBlack);
+  --terminal-ansi-bright-red: var(--vscode-terminal-ansiBrightRed);
+  --terminal-ansi-bright-green: var(--vscode-terminal-ansiBrightGreen);
+  --terminal-ansi-bright-yellow: var(--vscode-terminal-ansiBrightYellow);
+  --terminal-ansi-bright-blue: var(--vscode-terminal-ansiBrightBlue);
+  --terminal-ansi-bright-magenta: var(--vscode-terminal-ansiBrightMagenta);
+  --terminal-ansi-bright-cyan: var(--vscode-terminal-ansiBrightCyan);
+  --terminal-ansi-bright-white: var(--vscode-terminal-ansiBrightWhite);
+}
+
+/* Code and diff wells follow VS Code's code-block colour when the theme has one. */
+:root[data-reader-theme="vscode"],
+:root[data-reader-theme="vscode"] .terax-reader {
+  --reader-code-bg: var(
+    --vscode-textCodeBlock-background,
+    color-mix(in srgb, var(--rt-fg) 6%, var(--rt-bg))
+  );
+}
+
+:root[data-reader-theme="vscode"] ::selection {
+  background: var(--vscode-editor-selectionBackground);
+}
+
+/* Code blocks use the VS Code editor font size (set by fontSize.ts). */
+:root .terax-reader-prose pre {
+  font-size: var(--reader-code-size, 12px);
+}
+
+/*
+ * Neutral accent (default): Terax tints prompts, focus rings, selections and
+ * quote bars with its accent. VS Code's accent is usually a saturated button
+ * blue, which casts navy over a black theme, so the accent becomes a light
+ * grey from the theme's own text colour instead. `teraxReader.accent: theme`
+ * keeps the theme's button colour.
+ */
+:root[data-reader-theme="vscode"][data-reader-accent="neutral"] {
+  --primary: color-mix(in srgb, var(--rt-fg) 86%, var(--rt-bg));
+  --primary-foreground: var(--rt-bg);
+  --ring: color-mix(in srgb, var(--rt-fg) 40%, transparent);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-ring: var(--ring);
+}
+:root[data-reader-theme="vscode"][data-reader-accent="neutral"] .terax-reader-prose {
+  --reader-accent: color-mix(in srgb, var(--rt-fg) 55%, var(--rt-bg));
+}
+
+/* Status colours from VS Code's own semantics rather than raw terminal ANSI,
+   which is harsh in many themes (Dark Modern's yellow is #e5e510). */
+:root[data-reader-theme="vscode"] {
+  --agent-attention: var(--vscode-editorWarning-foreground, var(--terminal-ansi-yellow));
+  --agent-done: var(--vscode-testing-iconPassed, var(--terminal-ansi-green));
+}
+
+/* The file review's CodeMirror editor is taken out of the body zoom: under CSS
+   zoom, Chromium's caret hit-testing (which CodeMirror uses for clicks) is off,
+   so a click lands on a line above the pointer. Sized by --reader-review-size. */
+.terax-review-host {
+  zoom: calc(1 / var(--reader-zoom, 1));
+}
