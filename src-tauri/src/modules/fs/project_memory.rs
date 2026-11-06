@@ -43,6 +43,7 @@ fn read_memory(root: &Path, checked_path: &Path) -> Result<Option<String>, Strin
     // Validate the opened object before reading, so a link swapped after the
     // frontend secret-policy check cannot substitute a different target.
     let opened = opened_path(&file)?;
+    super::read_policy::readable(&opened)?;
     if !lossless_paths(&[opened.as_path(), root, checked_path]) {
         return Err("project memory path cannot be represented losslessly".into());
     }
@@ -159,6 +160,22 @@ mod tests {
         );
         std::fs::write(&path, "€".repeat(MAX_BYTES as usize)).unwrap();
         assert_eq!(read_memory(&root, &path).unwrap().unwrap().len(), 32766);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn native_memory_reads_refuse_protected_targets_even_when_the_checked_path_matches() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        for name in [".env", ".cache/terax/control.json"] {
+            let target = root.join(name);
+            std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+            std::fs::write(&target, "SYNTHETIC_CREDENTIAL").unwrap();
+            let memory = root.join("TERAX.md");
+            std::os::unix::fs::symlink(&target, &memory).unwrap();
+            assert!(read_memory(&root, &target).is_err(), "{name}");
+            std::fs::remove_file(&memory).unwrap();
+        }
     }
 
     #[cfg(unix)]
