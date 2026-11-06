@@ -40,6 +40,11 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Terminal compositor pixel parity (DPR 1, 1.25, 1.5, 2)
+        env:
+          CHROME_CHANNEL: chrome
+        run: pnpm test:terminal-scaling
+
       - name: React Compiler healthcheck (advisory)
         run: pnpm exec react-compiler-healthcheck
         continue-on-error: true
