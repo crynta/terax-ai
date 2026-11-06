@@ -522,15 +522,15 @@ mod tests {
     #[cfg(windows)]
     use super::build_git_command;
     use super::{
-        classify_auth_error, decode_text, parse_git_version, prune_expired_availability_entries,
-        version_meets_minimum, Availability, AvailabilityCache, AVAILABILITY_TTL,
+        classify_auth_error, decode_text, harden_inspection, parse_git_version,
+        prune_expired_availability_entries, version_meets_minimum, Availability, AvailabilityCache,
+        AVAILABILITY_TTL,
     };
     use crate::modules::git::errors::GitError;
     use crate::modules::git::types::TextSource;
     #[cfg(windows)]
     use crate::modules::workspace::WorkspaceEnv;
     use std::collections::HashMap;
-    #[cfg(windows)]
     use std::ffi::OsString;
     use std::time::{Duration, Instant};
 
