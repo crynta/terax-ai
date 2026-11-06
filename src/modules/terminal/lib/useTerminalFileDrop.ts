@@ -1,4 +1,3 @@
-import { IS_WINDOWS } from "@/lib/platform";
 import { shellDialect, type ShellDialect } from "@/lib/shellQuote";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
@@ -43,7 +42,6 @@ function leafIdAt(x: number, y: number): number | null {
 function dialectForLeaf(
   leafId: number,
 ): ShellDialect | null | Promise<ShellDialect | null> {
-  if (!IS_WINDOWS) return "posix";
   const id = ptyIdForLeaf(leafId);
   if (id === null) return null;
   return invoke<string>("pty_session_shell", { id }).then((program) => {
