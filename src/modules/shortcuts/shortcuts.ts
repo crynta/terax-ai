@@ -408,6 +408,7 @@ export function matchBinding(
   e: KeyboardEvent,
   binding: KeyBinding,
   id?: ShortcutId,
+  recorded = false,
 ): boolean {
   const eventKey = e.key.toLowerCase();
   const bindingKey = binding.key.toLowerCase();
@@ -415,6 +416,9 @@ export function matchBinding(
   // Special case for Jump to Tab 1-9
   if (id === "tab.selectByIndex") {
     if (tabDigit(e, !!binding.shift) === null) return false;
+  } else if (recorded) {
+    // The recorder stores KeyboardEvent.key verbatim, including layout symbols.
+    if (eventKey !== bindingKey) return false;
   } else if (binding.shift && !binding.alt && UNSHIFTED_PUNCTUATION[eventKey]) {
     // Recognized shifted punctuation names its logical key, even on Dvorak.
     if (

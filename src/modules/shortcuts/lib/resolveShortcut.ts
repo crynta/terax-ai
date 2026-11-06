@@ -14,7 +14,7 @@ export type ResolveShortcutOptions = {
 };
 
 /**
- * The shortcut an event runs, walking the registry in order. A disabled match
+ * Recorded characters take priority over defaults, in registry order. A disabled match
  * is skipped, not final: a later shortcut may share the binding (Command+K
  * clears a focused terminal and opens the palette elsewhere). An enabled match
  * without a handler ends the search.
@@ -23,12 +23,15 @@ export function resolveShortcut(
   e: KeyboardEvent,
   { shortcuts, user, isDisabled, hasHandler }: ResolveShortcutOptions,
 ): ShortcutId | null {
-  for (const s of shortcuts) {
-    if (e.repeat && !s.allowRepeat) continue;
-    const bindings = user[s.id] || s.defaultBindings;
-    if (!bindings.some((b) => matchBinding(e, b, s.id))) continue;
-    if (isDisabled?.(s.id, e)) continue;
-    return hasHandler(s.id) ? s.id : null;
+  for (const recorded of [true, false]) {
+    for (const s of shortcuts) {
+      if ((user[s.id] !== undefined) !== recorded) continue;
+      if (e.repeat && !s.allowRepeat) continue;
+      const bindings = user[s.id] ?? s.defaultBindings;
+      if (!bindings.some((b) => matchBinding(e, b, s.id, recorded))) continue;
+      if (isDisabled?.(s.id, e)) continue;
+      return hasHandler(s.id) ? s.id : null;
+    }
   }
   return null;
 }

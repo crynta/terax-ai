@@ -114,6 +114,48 @@ describe("resolveShortcut on Windows and Linux", () => {
 });
 
 describe("resolveShortcut", () => {
+  it.each([
+    ["AZERTY slash", "/", "Period"],
+    ["AZERTY period", ".", "Semicolon"],
+    ["German semicolon", ";", "Comma"],
+    ["German slash", "/", "Digit7"],
+    ["Dvorak comma", "<", "KeyW"],
+  ])("replays a recorded %s before any default fallback", (_, key, code) => {
+    const event = press(key, "CS", { code });
+    const user = {
+      "view.zenMode": [
+        {
+          key: event.key,
+          ctrl: event.ctrlKey,
+          shift: event.shiftKey,
+          alt: event.altKey,
+          meta: event.metaKey,
+        },
+      ],
+    };
+    expect(run(other, event, { user })).toBe("view.zenMode");
+    expect(run(other, { ...event, shiftKey: false }, { user })).not.toBe(
+      "view.zenMode",
+    );
+  });
+
+  it("does not reinterpret a recorded symbol as a default base key", () => {
+    const user = { "view.zenMode": [{ key: "/", ctrl: true, shift: true }] };
+    expect(run(other, press("?", "CS", { code: "Slash" }), { user })).toBe(
+      "explorer.search",
+    );
+  });
+
+  it("continues to defaults when a recorded match is disabled", () => {
+    const user = { "view.zenMode": [{ key: "/", ctrl: true, shift: true }] };
+    expect(
+      run(other, press("/", "CS", { code: "Period" }), {
+        user,
+        disabled: ["view.zenMode"],
+      }),
+    ).toBe("explorer.toggleHidden");
+  });
+
   it("honours a user binding over the default", () => {
     const user = { "commandPalette.open": [{ ctrl: true, key: "k" }] };
     expect(run(other, press("k", "C"), { user })).toBe("commandPalette.open");
