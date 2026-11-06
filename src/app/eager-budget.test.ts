@@ -77,4 +77,30 @@ describe("startup bundle budget", () => {
   it("settings window does not eagerly pull editor/AI/markdown stacks", () => {
     expect(heavyEagerHits("src/settings/main.tsx")).toEqual([]);
   });
+
+  it("keeps rarely used terminal code out of the session import graph", () => {
+    // The primary terminal chunk (size-limit) is what every window loads. These load
+    // on first use: procedural legacy-computing glyphs, the search engine (the
+    // surfaces own a thin controller that imports it on the first find) and the
+    // release diagnostics.
+    const { files } = traceEager(
+      "src/modules/terminal/ghostty/useGhosttyTerminalSession.ts",
+    );
+    const eager = [...files].map((file) => file.replace(/\\/g, "/"));
+    for (const lazy of [
+      "ghostty/gpu/builtin/legacyComputing.ts",
+      "ghostty/search/GhosttySearchEngine.ts",
+      "ghostty/sessionDiagnostics.ts",
+      "ghostty/GhosttyBlocks.ts",
+    ]) {
+      expect(
+        eager.filter((file) => file.endsWith(lazy)),
+        `${lazy} must stay behind a dynamic import`,
+      ).toEqual([]);
+    }
+    // The lazy glyph code is reached only through its loader, and the loader is eager.
+    expect(
+      eager.some((file) => file.endsWith("ghostty/gpu/builtin/lazyGlyphs.ts")),
+    ).toBe(true);
+  });
 });
