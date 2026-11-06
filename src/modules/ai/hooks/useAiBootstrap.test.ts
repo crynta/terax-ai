@@ -172,3 +172,17 @@ it("ignores in-flight results after unmount and releases the listener", async ()
   expect(harness.setEndpointKeys).not.toHaveBeenCalled();
   expect(harness.unlisten).toHaveBeenCalledTimes(1);
 });
+
+it("loads and refreshes provider keys even when preference initialization fails", async () => {
+  const failed = Promise.reject(new Error("preference storage unavailable"));
+  await failed.catch(() => {});
+  harness.initPrefs.mockReturnValue(failed);
+  render();
+  await Promise.resolve();
+  expect(render().keysLoaded).toBe(true);
+  expect(harness.setApiKeys).toHaveBeenCalledWith({ provider: "key" });
+  expect(harness.getEndpointKeys).not.toHaveBeenCalled();
+  harness.onKeysChanged.mock.calls[0][0]();
+  await Promise.resolve();
+  expect(harness.getAllKeys).toHaveBeenCalledTimes(2);
+});
