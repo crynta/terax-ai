@@ -319,10 +319,11 @@ where
             "environment overrides are not supported in WSL workspaces",
         ));
     }
-    let args: Vec<OsString> = args
+    let mut args: Vec<OsString> = args
         .into_iter()
         .map(|arg| arg.as_ref().to_os_string())
         .collect();
+    harden_inspection(&mut args);
     let mut cmd = build_git_command(workspace, cwd, &args)?;
     cmd.env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_ASKPASS", "")
@@ -373,6 +374,36 @@ where
         timed_out: captured.timed_out,
         truncated: captured.stdout_truncated,
     })
+}
+
+// Fsmonitor is an executable repository setting, even for status. User-requested
+// write hooks remain enabled; no passive diff surface needs external converters.
+fn harden_inspection(args: &mut Vec<OsString>) {
+    let mut command = 0;
+    while command < args.len() {
+        if args[command] == "-c" || args[command] == "-C" {
+            command += 2;
+        } else if args[command].to_string_lossy().starts_with('-') {
+            command += 1;
+        } else {
+            break;
+        }
+    }
+    if command < args.len() {
+        if matches!(
+            args[command].to_str(),
+            Some("diff" | "show" | "log" | "diff-tree" | "diff-index" | "diff-files")
+        ) {
+            args.splice(
+                command + 1..command + 1,
+                ["--no-ext-diff".into(), "--no-textconv".into()],
+            );
+        }
+        args.splice(
+            command..command,
+            ["-c".into(), "core.fsmonitor=false".into()],
+        );
+    }
 }
 
 /// Variables that redirect git to another repository, object store, namespace
