@@ -3,6 +3,8 @@ pub mod copy;
 pub mod file;
 pub mod grep;
 pub mod index;
+#[cfg(windows)]
+mod local_file;
 pub mod mutate;
 pub mod search;
 pub mod supersede;

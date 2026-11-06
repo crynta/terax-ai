@@ -1,6 +1,9 @@
 use std::path::Path;
 use std::time::UNIX_EPOCH;
-use std::{fs, io::Write};
+use std::{
+    fs,
+    io::{Read, Write},
+};
 
 use serde::Serialize;
 use tauri::Emitter;
@@ -71,10 +74,26 @@ pub async fn fs_read_file(
 }
 
 fn read_file_sync(p: &Path, force: bool) -> Result<ReadResult, String> {
-    let meta = std::fs::metadata(p).map_err(|e| {
+    let before = std::fs::metadata(p).map_err(|e| {
         log::debug!("fs_read_file stat({}) failed: {e}", p.display());
         e.to_string()
     })?;
+    if !before.is_file() {
+        return Err("only regular files can be opened in the editor".into());
+    }
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    // A FIFO swapped in after the metadata check must not block open().
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NONBLOCK);
+    }
+    let file = options.open(p).map_err(|e| e.to_string())?;
+    let meta = file.metadata().map_err(|e| e.to_string())?;
+    if !meta.is_file() {
+        return Err("only regular files can be opened in the editor".into());
+    }
 
     let size = meta.len();
     let limit = if force {
@@ -86,10 +105,14 @@ fn read_file_sync(p: &Path, force: bool) -> Result<ReadResult, String> {
         return Ok(ReadResult::TooLarge { size, limit });
     }
 
-    let bytes = std::fs::read(p).map_err(|e| {
+    let bytes = read_bounded(file, limit).map_err(|e| {
         log::debug!("fs_read_file read({}) failed: {e}", p.display());
         e.to_string()
     })?;
+    let size = bytes.len() as u64;
+    if size > limit {
+        return Ok(ReadResult::TooLarge { size, limit });
+    }
 
     // Null-byte sniff on the first chunk. Not perfect (misses UTF-16 BOM
     // cases) but catches the common "this is a PNG" mistake cheaply.
@@ -106,6 +129,12 @@ fn read_file_sync(p: &Path, force: bool) -> Result<ReadResult, String> {
         }),
         Err(_) => Ok(ReadResult::Binary { size }),
     }
+}
+
+fn read_bounded(reader: impl Read, limit: u64) -> std::io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    reader.take(limit + 1).read_to_end(&mut bytes)?;
+    Ok(bytes)
 }
 
 #[derive(Serialize, Clone)]
@@ -168,25 +197,109 @@ pub async fn fs_write_file(
 pub async fn fs_canonicalize(
     path: String,
     workspace: Option<WorkspaceEnv>,
+    local_only: Option<bool>,
 ) -> Result<String, String> {
+    validate_link_path(&path, local_only)?;
     blocking(move || {
         let workspace = WorkspaceEnv::from_option(workspace);
+        #[cfg(windows)]
+        if local_only == Some(true) {
+            let canon =
+                super::local_file::canonicalize(&super::local_file::open(&path, &workspace)?)?;
+            return match &workspace {
+                WorkspaceEnv::Wsl { distro } => canonical_wsl_path(&canon, distro),
+                WorkspaceEnv::Local => Ok(canon),
+            };
+        }
         let p = resolve_path(&path, &workspace);
         let canon = std::fs::canonicalize(&p).map_err(|e| e.to_string())?;
-        Ok(super::to_canon(&canon))
+        let canon = super::to_canon(&canon);
+        #[cfg(windows)]
+        if let WorkspaceEnv::Wsl { distro } = &workspace {
+            return canonical_wsl_path(&canon, distro);
+        }
+        Ok(canon)
     })
     .await
 }
 
 #[tauri::command]
-pub async fn fs_stat(path: String, workspace: Option<WorkspaceEnv>) -> Result<FileStat, String> {
-    blocking(move || stat_path(path, workspace)).await
+pub async fn fs_stat(
+    path: String,
+    workspace: Option<WorkspaceEnv>,
+    local_only: Option<bool>,
+) -> Result<FileStat, String> {
+    validate_link_path(&path, local_only)?;
+    blocking(move || {
+        #[cfg(windows)]
+        if local_only == Some(true) {
+            let file = super::local_file::open(&path, &WorkspaceEnv::from_option(workspace))?;
+            let meta = file.metadata().map_err(|e| e.to_string())?;
+            if !meta.is_file() && !meta.is_dir() {
+                return Err("only regular files and directories can be opened".into());
+            }
+            return Ok(FileStat {
+                size: meta.len(),
+                mtime: mtime_millis(&meta),
+                kind: if meta.is_dir() {
+                    StatKind::Dir
+                } else {
+                    StatKind::File
+                },
+            });
+        }
+        stat_path(path, workspace)
+    })
+    .await
+}
+
+#[cfg(any(windows, test))]
+fn canonical_wsl_path(path: &str, distro: &str) -> Result<String, String> {
+    for host in ["wsl.localhost", "wsl$"] {
+        let prefix = format!("//{host}/{distro}");
+        if path
+            .get(..prefix.len())
+            .is_some_and(|p| p.eq_ignore_ascii_case(&prefix))
+        {
+            let tail = &path[prefix.len()..];
+            if tail.is_empty() {
+                return Ok("/".into());
+            }
+            if tail.starts_with('/') {
+                return Ok(tail.into());
+            }
+        }
+    }
+    let bytes = path.as_bytes();
+    if bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && &bytes[1..3] == b":/" {
+        return Ok(format!(
+            "/mnt/{}/{}",
+            (bytes[0] as char).to_ascii_lowercase(),
+            &path[3..]
+        ));
+    }
+    Err("canonical path is outside the workspace's WSL namespace".into())
+}
+
+fn validate_link_path(path: &str, local_only: Option<bool>) -> Result<(), String> {
+    if local_only == Some(true)
+        && path
+            .as_bytes()
+            .get(..2)
+            .is_some_and(|prefix| prefix.iter().all(|byte| matches!(byte, b'/' | b'\\')))
+    {
+        return Err("network and device paths are not local file links".into());
+    }
+    Ok(())
 }
 
 fn stat_path(path: String, workspace: Option<WorkspaceEnv>) -> Result<FileStat, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
     let p = resolve_path(&path, &workspace);
     let meta = std::fs::metadata(&p).map_err(|e| e.to_string())?;
+    if !meta.is_file() && !meta.is_dir() {
+        return Err("only regular files and directories can be opened".into());
+    }
     // fs::metadata follows symlinks, so the link check needs symlink_metadata.
     let kind = if std::fs::symlink_metadata(&p)
         .map(|m| m.file_type().is_symlink())
@@ -208,6 +321,156 @@ fn stat_path(path: String, workspace: Option<WorkspaceEnv>) -> Result<FileStat, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn file_reads_stop_at_one_byte_over_the_limit() {
+        // Even a source whose metadata understated its size cannot grow the
+        // read past the sentinel byte used to report TooLarge.
+        let bytes = read_bounded(std::io::repeat(b'x').take(1000), 32).unwrap();
+        assert_eq!(bytes.len(), 33);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn devices_and_fifos_never_reach_editor_reads() {
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = dir.path().join("pipe");
+        let name = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+        let linked_device = dir.path().join("zero-link");
+        std::os::unix::fs::symlink("/dev/zero", &linked_device).unwrap();
+        for path in [
+            Path::new("/dev/zero"),
+            Path::new("/dev/null"),
+            &fifo,
+            &linked_device,
+        ] {
+            assert!(read_file_sync(path, false)
+                .err()
+                .unwrap()
+                .contains("regular"));
+            assert!(read_file_sync(path, true)
+                .err()
+                .unwrap()
+                .contains("regular"));
+            assert!(fs_stat(path.to_string_lossy().into_owned(), None, None)
+                .await
+                .err()
+                .unwrap()
+                .contains("regular"));
+        }
+    }
+
+    #[test]
+    fn canonical_wsl_paths_keep_the_distro_namespace() {
+        assert_eq!(
+            canonical_wsl_path("//wsl.localhost/Ubuntu/home/me/target", "Ubuntu").unwrap(),
+            "/home/me/target"
+        );
+        assert_eq!(
+            canonical_wsl_path("//wsl$/Ubuntu/home/Target", "Ubuntu").unwrap(),
+            "/home/Target"
+        );
+        assert_eq!(
+            canonical_wsl_path("C:/work/target", "Ubuntu").unwrap(),
+            "/mnt/c/work/target"
+        );
+        assert_eq!(
+            canonical_wsl_path("//wsl.localhost/Ubuntu", "Ubuntu").unwrap(),
+            "/"
+        );
+        assert!(canonical_wsl_path("//wsl.localhost/Ubuntu-other/file", "Ubuntu").is_err());
+        assert!(canonical_wsl_path("//remote/share/file", "Ubuntu").is_err());
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn local_file_links_reject_leaf_and_parent_reparse_points() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        std::fs::create_dir(&target).unwrap();
+        std::fs::write(target.join("file"), "safe").unwrap();
+        let local = dir.path().join("local-link");
+        std::os::windows::fs::symlink_dir(&target, &local).unwrap();
+        let remote = dir.path().join("remote-link");
+        std::os::windows::fs::symlink_dir(r"\\terax-unreachable.invalid\share", &remote).unwrap();
+        for path in [&local, &local.join("file"), &remote, &remote.join("file")] {
+            let path = super::super::to_canon(path);
+            assert!(fs_stat(path.clone(), None, Some(true))
+                .await
+                .err()
+                .unwrap()
+                .contains("reparse"));
+            assert!(fs_canonicalize(path, None, Some(true))
+                .await
+                .err()
+                .unwrap()
+                .contains("reparse"));
+        }
+        let plain = super::super::to_canon(target.join("file"));
+        assert_eq!(
+            fs_stat(plain.clone(), None, Some(true)).await.unwrap().size,
+            4
+        );
+        assert_eq!(
+            fs_canonicalize(plain.clone(), None, Some(true))
+                .await
+                .unwrap(),
+            super::super::to_canon(std::fs::canonicalize(&plain).unwrap())
+        );
+    }
+
+    #[tokio::test]
+    async fn local_file_links_reject_network_paths_before_filesystem_access() {
+        for path in [
+            r"\\server\share\file",
+            "//server/share/file",
+            r"/\server/share/file",
+            r"\/server\share\file",
+            r"\\?\C:\file",
+            r"\\.\pipe\name",
+            r"/\?\UNC\server\share",
+            r"\/.\pipe\name",
+        ] {
+            let expected = "network and device paths are not local file links";
+            assert_eq!(
+                fs_stat(path.into(), None, Some(true)).await.err().unwrap(),
+                expected
+            );
+            assert_eq!(
+                fs_canonicalize(path.into(), None, Some(true))
+                    .await
+                    .unwrap_err(),
+                expected
+            );
+            assert!(validate_link_path(path, None).is_ok());
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn link_parent_segments_resolve_after_symlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join("workspace");
+        let external = dir.path().join("external");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(external.join("build")).unwrap();
+        std::fs::write(external.join("main.ts"), "outside").unwrap();
+        std::fs::write(workspace.join("main.ts"), "inside").unwrap();
+        std::os::unix::fs::symlink(external.join("build"), workspace.join("build")).unwrap();
+        let path = workspace
+            .join("build/../main.ts")
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(
+            fs_stat(path.clone(), None, Some(true)).await.unwrap().size,
+            7
+        );
+        assert_eq!(
+            fs_canonicalize(path, None, Some(true)).await.unwrap(),
+            super::super::to_canon(std::fs::canonicalize(external.join("main.ts")).unwrap())
+        );
+    }
 
     #[test]
     fn read_file_classifies_utf8_as_text() {

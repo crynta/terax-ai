@@ -496,7 +496,7 @@ export type GhosttyTerminalEvent =
       readonly title: string;
       readonly body: string;
     }
-  | { readonly type: "prompt-start" }
+  | { readonly type: "prompt-start"; readonly marker?: number }
   | { readonly type: "prompt-continuation" }
   | { readonly type: "prompt-end"; readonly blockInput?: boolean }
   | { readonly type: "end-of-input"; readonly marker?: number; readonly command?: string }
@@ -506,6 +506,7 @@ export type GhosttyTerminalEvent =
       readonly marker?: number;
     }
   | { readonly type: "screen-cleared" }
+  | { readonly type: "synchronized-output-reset" }
   | { readonly type: "overflow"; readonly dropped: number };
 
 /**

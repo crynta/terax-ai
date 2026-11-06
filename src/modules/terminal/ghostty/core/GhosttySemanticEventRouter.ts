@@ -5,6 +5,8 @@ export type GhosttySemanticEventCallbacks = {
   readonly onBell?: () => void;
   readonly onClipboard?: (text: string) => void;
   readonly onCommandState?: (running: boolean) => void;
+  /** A prompt ended; false when its shell cannot report that a command started. */
+  readonly onPromptEnd?: (reportsCommandStart: boolean) => void;
   readonly onCwd?: (cwd: string) => void;
   readonly onNotification?: (title: string, body: string) => void;
   readonly onOverflow?: (dropped: number) => void;
@@ -52,6 +54,7 @@ export class GhosttySemanticEventRouter {
         break;
       case "prompt-end":
         this.inCommand = true;
+        this.callbacks.onPromptEnd?.(event.blockInput !== false);
         break;
       case "end-of-input":
         this.inCommand = true;
