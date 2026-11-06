@@ -106,7 +106,7 @@ jobs:
       # the host copy, which every GTK-capable system has. They are on the
       # AppImage excludelist for this exact reason. The re-signed AppImage and
       # its .sig are re-uploaded here; the updater manifest is patched in the
-      # patch-appimage-updater job after all matrix legs finish, so a parallel
+      # patch-updater-manifest job after all matrix legs finish, so a parallel
       # macOS/Windows upload cannot clobber the combined latest.json.
       - name: Fix AppImage wayland libs and re-sign
         if: runner.os == 'Linux'
@@ -149,6 +149,7 @@ jobs:
           fi
           test -x squashfs-root/usr/bin/terax \
             || { echo "terax binary missing from repacked AppImage"; exit 1; }
+          squashfs-root/usr/bin/terax-cli --help
           popd >/dev/null
 
           cp "$WORK/$BASENAME" "$APPIMAGE"
@@ -275,8 +276,8 @@ jobs:
   # Patch the re-signed AppImage and SignPath-signed Windows signatures into the
   # combined updater manifest. Runs once, after every matrix leg has finished
   # merging its platform into latest.json, so it operates on the full manifest
-  # and cannot be clobbered by a parallel upload. Both keys for each Linux architecture point at its
-  # AppImage; the three windows keys are patched from the minisign signatures
+  # and cannot be clobbered by a parallel upload. Each Linux architecture points
+  # at its AppImage; the three windows keys are patched from the minisign signatures
   # regenerated over the Authenticode-signed installers.
   patch-updater-manifest:
     needs: publish-tauri
