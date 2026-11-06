@@ -1,11 +1,10 @@
-import { useSpaces } from "@/modules/spaces/lib/useSpaces";
-import { workspaceScopeKey } from "@/modules/workspace";
-import { toast } from "sonner";
 import { isMarkdownPath } from "@/lib/utils";
 import {
   type AgentInstanceCount,
   createAgentPanePlan,
 } from "@/modules/agents/lib/launcher";
+import { canMoveBetweenProjects } from "@/modules/spaces/lib/activeSpace";
+import { useSpaces } from "@/modules/spaces/lib/useSpaces";
 import {
   type AiDiffInput,
   type AiDiffStatus,
@@ -20,6 +19,7 @@ import {
   type TerminalTab,
   titleFromUrl,
 } from "@/modules/tabs/lib/tabs";
+import { toast } from "sonner";
 import { type DropZone, zoneSplit } from "./model/dropZone";
 import { type Direction, findCard, type SplitDir } from "./model/layout";
 import * as wb from "./model/workbench";
@@ -623,11 +623,13 @@ export function placeTask(
 function canTransferTask(taskId: number, projectId: string): boolean {
   const task = wb.taskById(snapshot(), taskId);
   if (!task) return false;
-  if (task.projectId === projectId) return true;
-  const spaces = useSpaces.getState().spaces;
-  const from = spaces.find((p) => p.id === task.projectId)?.env;
-  const to = spaces.find((p) => p.id === projectId)?.env;
-  if (from && to && workspaceScopeKey(from) === workspaceScopeKey(to))
+  if (
+    canMoveBetweenProjects(
+      useSpaces.getState().spaces,
+      task.projectId,
+      projectId,
+    )
+  )
     return true;
   toast.error(
     "Tasks can only move between projects using the same environment.",

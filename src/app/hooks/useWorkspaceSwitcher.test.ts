@@ -1,7 +1,7 @@
+import type { Tab } from "@/modules/tabs/lib/tabs";
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { Tab } from "@/modules/tabs/lib/tabs";
 
 const data = vi.hoisted(() => ({
   project: "a",
@@ -15,6 +15,8 @@ const data = vi.hoisted(() => ({
   reset: vi.fn(),
   alert: vi.fn(),
   confirm: vi.fn(() => false),
+  toast: vi.fn(),
+  dismiss: vi.fn(),
 }));
 vi.mock("react", async (original) => ({
   ...(await original<typeof import("react")>()),
@@ -28,6 +30,9 @@ vi.mock("react", async (original) => ({
       },
     ];
   },
+}));
+vi.mock("sonner", () => ({
+  toast: { error: data.toast, dismiss: data.dismiss },
 }));
 vi.mock("@tauri-apps/api/path", () => ({ homeDir: data.home }));
 vi.mock("@/modules/ai/lib/native", () => ({
@@ -50,6 +55,7 @@ vi.mock("@/modules/spaces/lib/useSpaces", () => ({
 vi.mock("@/modules/workbench/store", () => ({
   snapshot: () => ({ activeProjectId: data.project, tabs: data.tabs }),
 }));
+
 import { useWorkspaceSwitcher } from "./useWorkspaceSwitcher";
 
 function render() {
@@ -161,4 +167,28 @@ it("clears the previous environment's directory fallbacks when home resolution f
   const latest = render();
   expect(latest.home).toBeNull();
   expect(latest.launchCwd).toBeNull();
+});
+
+it("offers a guarded retry after home resolution fails", async () => {
+  data.home.mockRejectedValueOnce(new Error("offline"));
+  const hook = render();
+  expect(await hook.adoptWorkspaceEnv(env, "a")).toBeNull();
+  expect(data.toast).toHaveBeenCalledWith(
+    expect.any(String),
+    expect.objectContaining({ duration: Number.POSITIVE_INFINITY }),
+  );
+  const retry = data.toast.mock.calls[0][1].action.onClick;
+  retry();
+  await vi.waitFor(() => expect(data.values[0]).toBe("/home/user"));
+  expect(data.home).toHaveBeenCalledTimes(2);
+  expect(data.dismiss).toHaveBeenCalledWith("workspace-home");
+});
+
+it("does not retry an obsolete project's home from its old notification", async () => {
+  data.home.mockRejectedValueOnce(new Error("offline"));
+  await render().adoptWorkspaceEnv(env, "a");
+  const retry = data.toast.mock.calls[0][1].action.onClick;
+  data.project = "b";
+  retry();
+  expect(data.home).toHaveBeenCalledOnce();
 });

@@ -19,6 +19,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { InlineRename } from "./components/InlineRename";
+import { canMoveBetweenProjects } from "./lib/activeSpace";
 import { accentFor } from "./lib/spaceColor";
 import type { SpaceMeta } from "./lib/store";
 import { useSpaces } from "./lib/useSpaces";
@@ -219,6 +220,21 @@ export function SpaceSwitcher({
     } else if (kind === "space") {
       const spaceId = hit.getAttribute("data-space-id");
       if (spaceId) next = { kind: "into-space", spaceId };
+    }
+    if (st.kind === "tab" && next) {
+      const target = next;
+      const source = tabs.find((t) => t.id === st.id);
+      const targetProject =
+        target.kind === "tab"
+          ? tabs.find((t) => t.id === target.tabId)?.spaceId
+          : target.spaceId;
+      if (
+        !source ||
+        source.main ||
+        !targetProject ||
+        !canMoveBetweenProjects(spaces, source.spaceId, targetProject)
+      )
+        next = null;
     }
     dropRef.current = next;
     setDrop(next);

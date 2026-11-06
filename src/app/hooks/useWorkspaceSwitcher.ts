@@ -1,10 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { homeDir } from "@tauri-apps/api/path";
 import { native } from "@/modules/ai/lib/native";
-import { useSpaces } from "@/modules/spaces/lib/useSpaces";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import { useSpaces } from "@/modules/spaces/lib/useSpaces";
 import { leafHasForegroundProcess } from "@/modules/terminal";
-import { evaluateCloseHazards } from "./tabCloseGuards";
 import { snapshot } from "@/modules/workbench/store";
 import {
   currentWorkspaceEnv,
@@ -12,6 +9,10 @@ import {
   LOCAL_WORKSPACE,
   type WorkspaceEnv,
 } from "@/modules/workspace";
+import { homeDir } from "@tauri-apps/api/path";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import { evaluateCloseHazards } from "./tabCloseGuards";
 
 async function resolveEnvHome(env: WorkspaceEnv): Promise<string> {
   return env.kind === "wsl"
@@ -144,19 +145,35 @@ export function useWorkspaceSwitcher({
   );
 
   const adoptWorkspaceEnv = useCallback(
-    async (env: WorkspaceEnv, projectId?: string): Promise<string | null> => {
+    async function adopt(
+      env: WorkspaceEnv,
+      projectId?: string,
+    ): Promise<string | null> {
       const token = ++operation.current;
       const current = () =>
         operation.current === token &&
         (!projectId || useSpaces.getState().activeId === projectId);
       if (!current()) return null;
+      toast.dismiss("workspace-home");
       setWorkspaceEnv(env.kind === "local" ? LOCAL_WORKSPACE : env);
       setHome(null);
       setLaunchCwd(null);
       let nextHome: string;
       try {
         nextHome = await resolveEnvHome(env);
-      } catch {
+      } catch (error) {
+        if (current())
+          toast.error("Could not resolve the project home directory.", {
+            id: "workspace-home",
+            description: String(error),
+            duration: Number.POSITIVE_INFINITY,
+            action: {
+              label: "Retry",
+              onClick: () => {
+                if (current()) void adopt(env, projectId);
+              },
+            },
+          });
         return null;
       }
       if (!current()) return null;
