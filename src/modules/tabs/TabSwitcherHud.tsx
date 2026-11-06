@@ -1,8 +1,8 @@
 import { cn } from "@/lib/utils";
 import { useMemo } from "react";
 import { labelFor } from "./lib/tabLabel";
+import type { Tab } from "./lib/tabs";
 import type { TabSwitcherState } from "./lib/useTabSwitcher";
-import type { Tab } from "./lib/useTabs";
 import { TabIcon } from "./TabBar";
 
 function subtitleFor(tab: Tab): string | null {

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { currentWorkspaceEnv } from "@/modules/workspace";
+import { currentWorkspaceEnv, type WorkspaceEnv } from "@/modules/workspace";
 
 export type ReadResult =
   | { kind: "text"; content: string; size: number }
@@ -40,10 +40,13 @@ export type GlobResponse = { hits: GlobHit[]; truncated: boolean };
 
 export const native = {
   workspaceCurrentDir: () => invoke<string>("workspace_current_dir"),
-  workspaceAuthorize: (path: string) =>
+  workspaceAuthorize: (
+    path: string,
+    workspace: WorkspaceEnv = currentWorkspaceEnv(),
+  ) =>
     invoke<string>("workspace_authorize", {
       path,
-      workspace: currentWorkspaceEnv(),
+      workspace,
     }),
   readFile: (path: string) =>
     invoke<ReadResult>("fs_read_file", {

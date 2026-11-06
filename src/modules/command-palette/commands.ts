@@ -1,6 +1,5 @@
 import type { SearchTarget } from "@/modules/header";
-import { MAX_PANES_PER_TAB, type Tab } from "@/modules/tabs";
-import { leafIds } from "@/modules/terminal";
+import type { Tab } from "@/modules/tabs";
 import {
   Cancel01Icon,
   DashboardSquare01Icon,
@@ -24,9 +23,10 @@ import type { PaletteItem } from "./types";
 
 export const COMMAND_GROUPS = [
   "General",
-  "Spaces",
+  "Projects",
+  "Tasks",
   "Tabs",
-  "Panes",
+  "Cards",
   "Git",
   "Search",
   "View",
@@ -34,8 +34,10 @@ export const COMMAND_GROUPS = [
 ] as const;
 
 export type CommandPaletteActionContext = {
-  tabs: Tab[];
-  activeId: number;
+  tabs: readonly Tab[];
+  activeId: number | null;
+  /** Whether the focused tab may close (a project's last main tab can't). */
+  canCloseActive: boolean;
   searchTarget: SearchTarget;
   explorerRoot: string | null;
   home: string | null;
@@ -61,6 +63,8 @@ export type CommandPaletteActionContext = {
   activeSpaceId: string | null;
   openSpacesOverview: () => void;
   newSpace: () => void;
+  newTask: () => void;
+  toggleMaximizeCard: () => void;
   switchSpace: (id: string) => void;
 };
 
@@ -69,20 +73,9 @@ const noop = () => {};
 export function createCommandItems(
   ctx: CommandPaletteActionContext,
 ): PaletteItem[] {
-  const activeTab = ctx.tabs.find((tab) => tab.id === ctx.activeId);
-  const activeTerminalTab = activeTab?.kind === "terminal" ? activeTab : null;
-  const activePaneCount = activeTerminalTab
-    ? leafIds(activeTerminalTab.paneTree).length
-    : 0;
-  const onlyOneTab = ctx.tabs.length < 2;
   const noWorkspaceRoot = !ctx.explorerRoot && !ctx.home;
-  const splitDisabled = !activeTerminalTab
-    ? "No terminal tab"
-    : activePaneCount >= MAX_PANES_PER_TAB
-      ? "Pane limit"
-      : undefined;
-  const closeDisabled =
-    onlyOneTab && activePaneCount < 2 ? "Last tab" : undefined;
+  const splitDisabled = ctx.activeId === null ? "No card" : undefined;
+  const closeDisabled = ctx.canCloseActive ? undefined : "Last tab";
 
   return [
     {
@@ -112,30 +105,56 @@ export function createCommandItems(
     },
     {
       id: "spaces.overview",
-      title: "Spaces: Overview",
-      group: "Spaces",
-      keywords: ["spaces", "sessions", "overview", "organize", "manage", "move"],
+      title: "Projects: Overview",
+      group: "Projects",
+      keywords: [
+        "projects",
+        "spaces",
+        "tasks",
+        "overview",
+        "organize",
+        "manage",
+        "move",
+      ],
       icon: DashboardSquare01Icon,
       run: ctx.openSpacesOverview,
     },
     {
       id: "spaces.new",
-      title: "New Space",
-      group: "Spaces",
-      keywords: ["space", "session", "workspace", "group", "create"],
+      title: "New Project",
+      group: "Projects",
+      keywords: ["project", "space", "workspace", "group", "create"],
       icon: DashboardSquare01Icon,
       run: ctx.newSpace,
     },
     ...ctx.spaces.map((sp) => ({
       id: `spaces.switch.${sp.id}`,
       title: `Switch to ${sp.name}`,
-      group: "Spaces" as const,
-      keywords: ["space", "switch", "session", sp.name],
+      group: "Projects" as const,
+      keywords: ["project", "space", "switch", sp.name],
       icon: DashboardSquare01Icon,
       disabledReason:
-        sp.id === ctx.activeSpaceId ? "Current space" : undefined,
+        sp.id === ctx.activeSpaceId ? "Current project" : undefined,
       run: () => ctx.switchSpace(sp.id),
     })),
+    {
+      id: "task.new",
+      title: "New task",
+      group: "Tasks",
+      keywords: ["task", "workspace", "terminal", "create"],
+      icon: DashboardSquare01Icon,
+      shortcutId: "task.new",
+      run: ctx.newTask,
+    },
+    {
+      id: "pane.maximize",
+      title: "Maximize or restore card",
+      group: "Cards",
+      keywords: ["card", "zoom", "maximize", "restore", "fullscreen"],
+      icon: DashboardSquare01Icon,
+      shortcutId: "pane.maximize",
+      run: ctx.toggleMaximizeCard,
+    },
     {
       id: "tab.new",
       title: "New terminal",
@@ -183,7 +202,7 @@ export function createCommandItems(
     },
     {
       id: "tab.close",
-      title: "Close tab or pane",
+      title: "Close tab",
       group: "Tabs",
       keywords: ["close", "remove", "pane"],
       icon: Cancel01Icon,
@@ -193,8 +212,8 @@ export function createCommandItems(
     },
     {
       id: "pane.splitRight",
-      title: "Split pane right",
-      group: "Panes",
+      title: "Split card right",
+      group: "Cards",
       keywords: ["terminal", "pane", "split", "right", "column"],
       icon: LayoutTwoColumnIcon,
       shortcutId: "pane.splitRight",
@@ -203,8 +222,8 @@ export function createCommandItems(
     },
     {
       id: "pane.splitDown",
-      title: "Split pane down",
-      group: "Panes",
+      title: "Split card down",
+      group: "Cards",
       keywords: ["terminal", "pane", "split", "down", "row"],
       icon: LayoutTwoRowIcon,
       shortcutId: "pane.splitDown",

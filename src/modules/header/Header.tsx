@@ -2,9 +2,6 @@ import { Button } from "@/components/ui/button";
 import { WindowControls } from "@/components/WindowControls";
 import { IS_MAC, USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
 import { NotificationBell } from "@/modules/agents";
-import type { AgentLaunchRequest } from "@/modules/agents/lib/launcher";
-import type { Tab } from "@/modules/tabs";
-import { TabBar } from "@/modules/tabs";
 import {
   CommandIcon,
   Settings01Icon,
@@ -25,28 +22,8 @@ import {
 } from "./SearchInline";
 
 type Props = {
-  tabs: Tab[];
-  activeId: number;
-  onSelect: (id: number) => void;
-  onNew: () => void;
-  onNewBlock: () => void;
-  onNewPrivate: () => void;
-  onNewPreview: () => void;
-  onNewEditor: () => void;
-  onNewGitGraph: () => void;
-  onLaunchAgents: (request: AgentLaunchRequest) => void;
-  onClose: (id: number) => void;
-  /** Chrome-style: close every tab to the right of the given tab. */
-  onCloseTabsToRight: (id: number) => void;
-  /** Chrome-style: close every tab except the given tab. */
-  onCloseOtherTabs: (id: number) => void;
-  /** Promote a preview (transient) tab to persistent. */
-  onPin: (id: number) => void;
-  /** Set a terminal tab's custom label; empty string resets to default. */
-  onRename: (id: number, title: string) => void;
-  /** Move a dragged tab to a new position (insertion gap index). */
-  onReorder: (fromId: number, toGapIndex: number) => void;
-  onOverrideLanguage?: (id: number, lang: string | null) => void;
+  /** The active project's task strip. */
+  taskStrip: ReactNode;
   onToggleSidebar: () => void;
   onOpenCommandPalette: () => void;
   onActivateAgent: (tabId: number, leafId: number) => void;
@@ -60,23 +37,7 @@ type Props = {
 const COMPACT_WIDTH = 720;
 
 export function Header({
-  tabs,
-  activeId,
-  onSelect,
-  onNew,
-  onNewBlock,
-  onNewPrivate,
-  onNewPreview,
-  onNewEditor,
-  onNewGitGraph,
-  onLaunchAgents,
-  onClose,
-  onCloseTabsToRight,
-  onCloseOtherTabs,
-  onPin,
-  onRename,
-  onReorder,
-  onOverrideLanguage,
+  taskStrip,
   onToggleSidebar,
   onOpenCommandPalette,
   onActivateAgent,
@@ -115,6 +76,7 @@ export function Header({
   return (
     <div
       ref={rootRef}
+      data-app-header=""
       data-tauri-drag-region
       className={`flex h-10 shrink-0 items-center gap-2 select-none ${
         IS_MAC ? "pr-2 pl-20" : "pr-0 pl-2"
@@ -168,26 +130,7 @@ export function Header({
         }}
       >
         {spaceSwitcher}
-        <TabBar
-          tabs={tabs}
-          activeId={activeId}
-          onSelect={onSelect}
-          onNew={onNew}
-          onNewBlock={onNewBlock}
-          onNewPrivate={onNewPrivate}
-          onNewPreview={onNewPreview}
-          onNewEditor={onNewEditor}
-          onNewGitGraph={onNewGitGraph}
-          onLaunchAgents={onLaunchAgents}
-          onClose={onClose}
-          onCloseTabsToRight={onCloseTabsToRight}
-          onCloseOtherTabs={onCloseOtherTabs}
-          onPin={onPin}
-          onRename={onRename}
-          onReorder={onReorder}
-          onOverrideLanguage={onOverrideLanguage}
-          compact={compact}
-        />
+        {taskStrip}
         <div data-tauri-drag-region className="h-full min-w-2 flex-1" />
       </div>
 
