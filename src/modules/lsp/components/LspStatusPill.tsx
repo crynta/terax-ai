@@ -15,10 +15,17 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useState } from "react";
+import { toast } from "sonner";
 import { redetectBinary } from "../lib/detect";
 import type { LspPreset } from "../lib/presets";
 import { restartPresetSessions } from "../lib/sessionManager";
 import { useLspHint } from "../lib/useLspHint";
+
+function reportRestartFailure(error: unknown): void {
+  toast.error("Could not restart language server", {
+    description: String(error),
+  });
+}
 
 type Props = {
   filePath: string | null;
@@ -99,7 +106,9 @@ function ErrorPill({ preset, reason }: { preset: LspPreset; reason: string }) {
           <button
             type="button"
             className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
-            onClick={() => void restartPresetSessions(preset.id)}
+            onClick={() =>
+              void restartPresetSessions(preset.id).catch(reportRestartFailure)
+            }
           >
             <HugeiconsIcon icon={RefreshIcon} size={11} strokeWidth={1.9} />
             Restart
@@ -263,7 +272,9 @@ function ActivePill({
           <button
             type="button"
             className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
-            onClick={() => void restartPresetSessions(preset.id)}
+            onClick={() =>
+              void restartPresetSessions(preset.id).catch(reportRestartFailure)
+            }
           >
             <HugeiconsIcon icon={RefreshIcon} size={11} strokeWidth={1.9} />
             Restart

@@ -125,7 +125,11 @@ pub fn run_search(
         return Ok(SearchResult::cancelled());
     }
 
-    let file_index = index.get_or_build(&search_key(&root_path, show_hidden));
+    let Some(file_index) =
+        index.get_or_build_cancelled(&search_key(&root_path, show_hidden), cancelled)
+    else {
+        return Ok(SearchResult::cancelled());
+    };
     let Some(ranked) = rank_fuzzy(&file_index.entries, q, cap, options.files_only, cancelled)
     else {
         return Ok(SearchResult::cancelled());
@@ -179,12 +183,24 @@ fn search_key(root_path: &Path, show_hidden: Option<bool>) -> IndexKey {
 #[tauri::command]
 pub async fn fs_warm_index(
     index: State<'_, FileIndexState>,
+    supersede: State<'_, Supersede>,
     root: String,
     workspace: Option<WorkspaceEnv>,
     show_hidden: Option<bool>,
+    request_key: Option<String>,
+    cancel: Option<bool>,
 ) -> Result<(), String> {
+    let ticket = request_key.as_deref().map(|key| supersede.begin(key));
+    if cancel.unwrap_or(false) {
+        return Ok(());
+    }
     let index = index.inner().clone();
-    blocking(move || run_warm_index(&index, root, workspace, show_hidden)).await
+    blocking(move || {
+        run_warm_index(&index, root, workspace, show_hidden, &|| {
+            ticket.as_ref().is_some_and(|t| t.is_superseded())
+        })
+    })
+    .await
 }
 
 pub fn run_warm_index(
@@ -192,10 +208,11 @@ pub fn run_warm_index(
     root: String,
     workspace: Option<WorkspaceEnv>,
     show_hidden: Option<bool>,
+    cancelled: &dyn Fn() -> bool,
 ) -> Result<(), String> {
     let workspace = WorkspaceEnv::from_option(workspace);
     let root_path = search_root(&root, &workspace)?;
-    index.get_or_build(&search_key(&root_path, show_hidden));
+    index.get_or_build_cancelled(&search_key(&root_path, show_hidden), cancelled);
     Ok(())
 }
 
@@ -471,7 +488,7 @@ mod tests {
         std::fs::write(dir.path().join("alpha.rs"), "").unwrap();
         let root = dir.path().to_string_lossy().into_owned();
         let state = FileIndexState::default();
-        run_warm_index(&state, root.clone(), None, None).unwrap();
+        run_warm_index(&state, root.clone(), None, None, &|| false).unwrap();
 
         // A file added after the warm-up is invisible: the search reused the cache.
         std::fs::write(dir.path().join("alphabet.rs"), "").unwrap();
@@ -496,8 +513,16 @@ mod tests {
         let file = dir.path().join("f.txt");
         std::fs::write(&file, "").unwrap();
         let state = FileIndexState::default();
-        let err = run_warm_index(&state, file.to_string_lossy().into_owned(), None, None);
+        let err = run_warm_index(
+            &state,
+            file.to_string_lossy().into_owned(),
+            None,
+            None,
+            &|| false,
+        );
         assert!(err.unwrap_err().starts_with("not a directory"));
-        assert!(run_warm_index(&state, "/definitely/not/here".into(), None, None).is_err());
+        assert!(
+            run_warm_index(&state, "/definitely/not/here".into(), None, None, &|| false).is_err()
+        );
     }
 }

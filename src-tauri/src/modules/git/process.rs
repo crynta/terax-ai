@@ -319,10 +319,11 @@ where
             "environment overrides are not supported in WSL workspaces",
         ));
     }
-    let args: Vec<OsString> = args
+    let mut args: Vec<OsString> = args
         .into_iter()
         .map(|arg| arg.as_ref().to_os_string())
         .collect();
+    harden_inspection(&mut args);
     let mut cmd = build_git_command(workspace, cwd, &args)?;
     cmd.env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_ASKPASS", "")
@@ -373,6 +374,37 @@ where
         timed_out: captured.timed_out,
         truncated: captured.stdout_truncated,
     })
+}
+
+// Fsmonitor is an executable repository setting, even for status. User-requested
+// write hooks remain enabled; no passive diff surface needs external converters.
+fn harden_inspection(args: &mut Vec<OsString>) {
+    let mut command = 0;
+    while command < args.len() {
+        if args[command] == "-c" || args[command] == "-C" {
+            command += 2;
+        } else if args[command].to_string_lossy().starts_with('-') {
+            command += 1;
+        } else {
+            break;
+        }
+    }
+    if command < args.len() {
+        if matches!(
+            args[command].to_str(),
+            Some("diff" | "show" | "log" | "diff-tree" | "diff-index" | "diff-files")
+        ) {
+            args.splice(
+                command + 1..command + 1,
+                ["--no-ext-diff".into(), "--no-textconv".into()],
+            );
+        }
+        args.splice(
+            command..command,
+            // Git 2.23 treats "false" as a hook filename; an empty path disables it.
+            ["-c".into(), "core.fsmonitor=".into()],
+        );
+    }
 }
 
 /// Variables that redirect git to another repository, object store, namespace
@@ -490,17 +522,38 @@ mod tests {
     #[cfg(windows)]
     use super::build_git_command;
     use super::{
-        classify_auth_error, decode_text, parse_git_version, prune_expired_availability_entries,
-        version_meets_minimum, Availability, AvailabilityCache, AVAILABILITY_TTL,
+        classify_auth_error, decode_text, harden_inspection, parse_git_version,
+        prune_expired_availability_entries, version_meets_minimum, Availability, AvailabilityCache,
+        AVAILABILITY_TTL,
     };
     use crate::modules::git::errors::GitError;
     use crate::modules::git::types::TextSource;
     #[cfg(windows)]
     use crate::modules::workspace::WorkspaceEnv;
     use std::collections::HashMap;
-    #[cfg(windows)]
     use std::ffi::OsString;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn inspection_disables_fsmonitor_as_an_empty_hook_path_for_git_2_23() {
+        let mut args: Vec<OsString> = ["-c", "core.fsmonitor=false", "status", "--porcelain"]
+            .into_iter()
+            .map(OsString::from)
+            .collect();
+        harden_inspection(&mut args);
+        assert_eq!(
+            args,
+            [
+                "-c",
+                "core.fsmonitor=false",
+                "-c",
+                "core.fsmonitor=",
+                "status",
+                "--porcelain"
+            ]
+            .map(OsString::from)
+        );
+    }
 
     #[test]
     fn inherited_redirects_are_all_stripped_but_unrelated_config_is_kept() {
