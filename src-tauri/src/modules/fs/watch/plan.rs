@@ -320,8 +320,11 @@ impl WatchSet {
         };
         match (watch.listing, current) {
             (Some(before), Some(now)) => before != now,
-            // Unreadable or too large to fingerprint: never a change on its own, or an unreadable
-            // directory would report every tick. A deletion is caught by its parent's poll.
+            // Readable again after an unknown baseline: a change, so `resolve_changes` records a
+            // real fingerprint. Otherwise the directory would never be polled again.
+            (None, Some(_)) => true,
+            // Unreadable or too large to fingerprint now: never a change on its own, or an
+            // unreadable directory would report every tick. A deletion is caught by its parent's poll.
             _ => false,
         }
     }
@@ -1069,10 +1072,11 @@ mod tests {
     }
 
     #[test]
-    fn polling_compares_without_remembering_and_ignores_unknown_listings() {
+    fn polling_compares_without_remembering_and_sees_a_listing_after_an_unknown_one() {
         let mut set = set_of(&["/w/a"]);
-        // Nothing recorded yet: not a change, or the first tick after registration would fire.
-        assert!(!set.listing_moved("/w/a", Some(1)));
+        // Nothing recorded (unreadable at registration): a readable listing is a change, so the
+        // report gives the directory a real baseline instead of leaving it unpolled for good.
+        assert!(set.listing_moved("/w/a", Some(1)));
         set.record_listing("/w/a", Some(1));
         assert!(!set.listing_moved("/w/a", Some(1)), "unchanged");
         assert!(set.listing_moved("/w/a", Some(2)), "moved");
@@ -1083,10 +1087,15 @@ mod tests {
             "the first report still goes out"
         );
         assert!(!set.listing_changed("/w/a", Some(2)));
-        // Unreadable now, or unreadable when registered: never a change on its own.
+        // Unreadable now: never a change on its own, or an unreadable directory would report every tick.
         assert!(!set.listing_moved("/w/a", None));
+        // Unreadable when registered, and still unreadable: no change until it can be read.
         set.record_listing("/w/a", None);
-        assert!(!set.listing_moved("/w/a", Some(3)));
+        assert!(!set.listing_moved("/w/a", None));
+        assert!(
+            set.listing_moved("/w/a", Some(3)),
+            "readable again after an unknown baseline"
+        );
         assert!(!set.listing_moved("/w/zzz", Some(3)));
     }
 

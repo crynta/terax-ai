@@ -126,6 +126,8 @@ export function useFileTree(rootPath: string | null, options?: Options) {
   const scopeKey = `${workspaceKey}\u0000${rootPath ?? ""}`;
   const scopeKeyRef = useRef(scopeKey);
   const scopeGenerationRef = useRef(0);
+  // Latest read started per path: an older reply for a path never overwrites a newer one.
+  const fetchSeqRef = useRef(new Map<string, number>());
   const conflictPromptsRef = useRef<Map<string | number, () => void>>(
     new Map(),
   );
@@ -184,7 +186,12 @@ export function useFileTree(rootPath: string | null, options?: Options) {
     async (path: string) => {
       if (scopeKeyRef.current !== scopeKey) return false;
       const generation = scopeGenerationRef.current;
-      const isCurrent = () => generation === scopeGenerationRef.current;
+      const seq = (fetchSeqRef.current.get(path) ?? 0) + 1;
+      fetchSeqRef.current.set(path, seq);
+      // A newer read of this path supersedes this one, whichever reply arrives first.
+      const isCurrent = () =>
+        generation === scopeGenerationRef.current &&
+        fetchSeqRef.current.get(path) === seq;
       if (nodesRef.current[path]?.status !== "loaded") {
         setNodes((s) => ({ ...s, [path]: { status: "loading" } }));
       }

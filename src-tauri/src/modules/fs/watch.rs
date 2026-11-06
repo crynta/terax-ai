@@ -129,13 +129,16 @@ fn start(app: &AppHandle, taps: Taps) -> Result<Running, String> {
         .map_err(|e| e.to_string())?;
 
     // Feeds the same channel as the backends, so polling reuses debounce, `resolve_changes`
-    // and the `fs:changed` emit instead of duplicating them.
-    let poll_shared = shared.clone();
-    std::thread::Builder::new()
-        .name("terax-fs-poll".into())
-        .stack_size(256 * 1024)
-        .spawn(move || poll_loop(poll_tx, poll_shared))
-        .map_err(|e| e.to_string())?;
+    // and the `fs:changed` emit instead of duplicating them. Only Windows reaches WSL shares,
+    // so elsewhere there is nothing to poll and no thread to start.
+    if cfg!(windows) {
+        let poll_shared = shared.clone();
+        std::thread::Builder::new()
+            .name("terax-fs-poll".into())
+            .stack_size(256 * 1024)
+            .spawn(move || poll_loop(poll_tx, poll_shared))
+            .map_err(|e| e.to_string())?;
+    }
     Ok(Running { shared, backend })
 }
 
@@ -376,7 +379,8 @@ impl FsWatchState {
                 let mut moved = false;
                 for (dir, signature) in dirs.into_iter().zip(baselines) {
                     let key = to_canon(&dir);
-                    if set.add_dir(key.clone(), dir) {
+                    let poll = plan::is_wsl_share(&key);
+                    if set.add_dir(key.clone(), dir, poll) {
                         set.record_listing(&key, signature);
                         moved = true;
                     }
