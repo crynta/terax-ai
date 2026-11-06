@@ -40,7 +40,12 @@ function deps(files: Record<string, "file" | "dir" | "symlink"> = {}) {
   return { api, calls };
 }
 
-const context = () => ({ cwd: "/work/app", focus: vi.fn() });
+const context = () => ({
+  cwd: "/work/app",
+  focus: vi.fn(),
+  workspace: { kind: "local" as const },
+  isCurrent: () => true,
+});
 const url = (uri: string, text = uri): TerminalLinkHit => ({
   kind: "osc8",
   uri,
@@ -57,6 +62,53 @@ const path = (raw: string, line?: number): TerminalLinkHit => ({
 });
 
 describe("activateTerminalLink", () => {
+  it.each(["file", "dir"] as const)(
+    "discards a %s click if its owner changes during stat",
+    async (kind) => {
+      const { api, calls } = deps();
+      let current = true;
+      api.stat = async () => {
+        current = false;
+        return kind;
+      };
+      await activateTerminalLink(
+        path("a.txt"),
+        { ...context(), isCurrent: () => current },
+        api,
+      );
+      expect(calls.openInEditor).not.toHaveBeenCalled();
+      expect(calls.reveal).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does no filesystem work for an activation superseded during lazy loading", async () => {
+    const { api } = deps();
+    api.stat = vi.fn();
+    await activateTerminalLink(
+      path("a.txt"),
+      { ...context(), isCurrent: () => false },
+      api,
+    );
+    expect(api.stat).not.toHaveBeenCalled();
+  });
+
+  it("uses the captured WSL distro throughout canonicalization and re-stat", async () => {
+    const ipc = vi.mocked(invoke);
+    ipc.mockReset();
+    ipc
+      .mockResolvedValueOnce({ kind: "symlink" })
+      .mockResolvedValueOnce("/home/me/target")
+      .mockResolvedValueOnce({ kind: "file" });
+    await activateTerminalLink(path("link"), {
+      ...context(),
+      cwd: "/home/me",
+      workspace: { kind: "wsl", distro: "Ubuntu" },
+    });
+    expect(ipc).toHaveBeenCalledTimes(3);
+    for (const [, args] of ipc.mock.calls)
+      expect(args).toMatchObject({ workspace: { kind: "wsl", distro: "Ubuntu" } });
+  });
+
   it("opens web links natively and restores terminal focus", async () => {
     const { api, calls } = deps();
     const ctx = context();

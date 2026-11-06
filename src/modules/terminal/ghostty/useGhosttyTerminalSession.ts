@@ -1,4 +1,6 @@
 import { loadSessionRenderer } from "@/modules/terminal/ghostty/loadSessionRenderer";
+import { currentWorkspaceEnv, workspaceScopeKey } from "@/modules/workspace";
+import { useSpaces } from "@/modules/spaces/lib/useSpaces";
 import {
   ensureGhosttyBlocks,
   ghosttyBlocks,
@@ -719,15 +721,26 @@ async function initializeSessionGeneration(
     onRequestFocus: () => focusGhosttySession(session.leafId),
     // Opening, confirming and resolving links is only needed on a click.
     onOpenLink: (link) => {
-      const focus = () => focusGhosttySession(session.leafId);
+      const workspace = { ...currentWorkspaceEnv() };
+      const space = useSpaces.getState().activeId;
+      const isCurrent = () =>
+        !session.disposed &&
+        session.visible &&
+        sessions.get(session.leafId) === session &&
+        useSpaces.getState().activeId === space &&
+        workspaceScopeKey(currentWorkspaceEnv()) ===
+          workspaceScopeKey(workspace);
+      const context = {
+        cwd: session.lastCwd ?? session.initialCwd ?? null,
+        workspace,
+        isCurrent,
+        focus: () => {
+          if (isCurrent()) focusGhosttySession(session.leafId);
+        },
+      };
       void import("@/modules/terminal/lib/terminalLinks")
-        .then(({ activateTerminalLink }) =>
-          activateTerminalLink(link, {
-            cwd: session.lastCwd ?? session.initialCwd ?? null,
-            focus,
-          }),
-        )
-        .catch(focus);
+        .then(({ activateTerminalLink }) => activateTerminalLink(link, context))
+        .catch(context.focus);
     },
   };
   session.surfaceOptions = surfaceBaseOptions;

@@ -1,6 +1,9 @@
 use std::path::Path;
 use std::time::UNIX_EPOCH;
-use std::{fs, io::Write};
+use std::{
+    fs,
+    io::{Read, Write},
+};
 
 use serde::Serialize;
 use tauri::Emitter;
@@ -71,10 +74,26 @@ pub async fn fs_read_file(
 }
 
 fn read_file_sync(p: &Path, force: bool) -> Result<ReadResult, String> {
-    let meta = std::fs::metadata(p).map_err(|e| {
+    let before = std::fs::metadata(p).map_err(|e| {
         log::debug!("fs_read_file stat({}) failed: {e}", p.display());
         e.to_string()
     })?;
+    if !before.is_file() {
+        return Err("only regular files can be opened in the editor".into());
+    }
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    // A FIFO swapped in after the metadata check must not block open().
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NONBLOCK);
+    }
+    let file = options.open(p).map_err(|e| e.to_string())?;
+    let meta = file.metadata().map_err(|e| e.to_string())?;
+    if !meta.is_file() {
+        return Err("only regular files can be opened in the editor".into());
+    }
 
     let size = meta.len();
     let limit = if force {
@@ -86,10 +105,14 @@ fn read_file_sync(p: &Path, force: bool) -> Result<ReadResult, String> {
         return Ok(ReadResult::TooLarge { size, limit });
     }
 
-    let bytes = std::fs::read(p).map_err(|e| {
+    let bytes = read_bounded(file, limit).map_err(|e| {
         log::debug!("fs_read_file read({}) failed: {e}", p.display());
         e.to_string()
     })?;
+    let size = bytes.len() as u64;
+    if size > limit {
+        return Ok(ReadResult::TooLarge { size, limit });
+    }
 
     // Null-byte sniff on the first chunk. Not perfect (misses UTF-16 BOM
     // cases) but catches the common "this is a PNG" mistake cheaply.
@@ -106,6 +129,12 @@ fn read_file_sync(p: &Path, force: bool) -> Result<ReadResult, String> {
         }),
         Err(_) => Ok(ReadResult::Binary { size }),
     }
+}
+
+fn read_bounded(reader: impl Read, limit: u64) -> std::io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    reader.take(limit + 1).read_to_end(&mut bytes)?;
+    Ok(bytes)
 }
 
 #[derive(Serialize, Clone)]
@@ -206,6 +235,9 @@ pub async fn fs_stat(
         if local_only == Some(true) {
             let file = super::local_file::open(&path, &WorkspaceEnv::from_option(workspace))?;
             let meta = file.metadata().map_err(|e| e.to_string())?;
+            if !meta.is_file() && !meta.is_dir() {
+                return Err("only regular files and directories can be opened".into());
+            }
             return Ok(FileStat {
                 size: meta.len(),
                 mtime: mtime_millis(&meta),
@@ -265,6 +297,9 @@ fn stat_path(path: String, workspace: Option<WorkspaceEnv>) -> Result<FileStat, 
     let workspace = WorkspaceEnv::from_option(workspace);
     let p = resolve_path(&path, &workspace);
     let meta = std::fs::metadata(&p).map_err(|e| e.to_string())?;
+    if !meta.is_file() && !meta.is_dir() {
+        return Err("only regular files and directories can be opened".into());
+    }
     // fs::metadata follows symlinks, so the link check needs symlink_metadata.
     let kind = if std::fs::symlink_metadata(&p)
         .map(|m| m.file_type().is_symlink())
@@ -286,6 +321,45 @@ fn stat_path(path: String, workspace: Option<WorkspaceEnv>) -> Result<FileStat, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn file_reads_stop_at_one_byte_over_the_limit() {
+        // Even a source whose metadata understated its size cannot grow the
+        // read past the sentinel byte used to report TooLarge.
+        let bytes = read_bounded(std::io::repeat(b'x').take(1000), 32).unwrap();
+        assert_eq!(bytes.len(), 33);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn devices_and_fifos_never_reach_editor_reads() {
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = dir.path().join("pipe");
+        let name = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+        let linked_device = dir.path().join("zero-link");
+        std::os::unix::fs::symlink("/dev/zero", &linked_device).unwrap();
+        for path in [
+            Path::new("/dev/zero"),
+            Path::new("/dev/null"),
+            &fifo,
+            &linked_device,
+        ] {
+            assert!(read_file_sync(path, false)
+                .err()
+                .unwrap()
+                .contains("regular"));
+            assert!(read_file_sync(path, true)
+                .err()
+                .unwrap()
+                .contains("regular"));
+            assert!(fs_stat(path.to_string_lossy().into_owned(), None, None)
+                .await
+                .err()
+                .unwrap()
+                .contains("regular"));
+        }
+    }
 
     #[test]
     fn canonical_wsl_paths_keep_the_distro_namespace() {
@@ -342,7 +416,7 @@ mod tests {
             fs_canonicalize(plain.clone(), None, Some(true))
                 .await
                 .unwrap(),
-            plain
+            super::super::to_canon(std::fs::canonicalize(&plain).unwrap())
         );
     }
 

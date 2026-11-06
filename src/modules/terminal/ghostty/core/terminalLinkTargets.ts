@@ -177,13 +177,19 @@ export function resolveLinkPath(
   }
   if (path.startsWith("~/")) {
     if (!context.home) return null;
-    path = `${context.home.replace(/\\/g, "/").replace(/\/+$/, "")}/${path.slice(2)}`;
+    path = `${pathBase(context.home)}/${path.slice(2)}`;
   } else if (!isAbsolutePath(path)) {
     if (!context.cwd) return null;
-    path = `${context.cwd.replace(/\\/g, "/").replace(/\/+$/, "")}/${path}`;
+    path = `${pathBase(context.cwd)}/${path}`;
   }
   // The filesystem must resolve .. after following any preceding symlink.
   return path;
+}
+
+function pathBase(base: string): string {
+  return (
+    /^(?:[A-Za-z]:|[\\/]{2})/.test(base) ? base.replace(/\\/g, "/") : base
+  ).replace(/\/+$/, "");
 }
 
 /** Candidates to try in order: git diff headers prefix paths with a/ and b/. */

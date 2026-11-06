@@ -53,7 +53,7 @@ if [ -z "${__TERAX_HOOKS_LOADED-}" ]; then
 
   # Reports the prompt for the command status in $1; forks nothing.
   _terax_report() {
-    local _terax_cwd="$PWD"
+    local _terax_cwd="$PWD" REPLY
     printf '\e]133;D;%s\e\\' "$1"
     case "$_terax_cwd" in
       *[!a-zA-Z0-9/._~-]*) _terax_urlencode "$_terax_cwd"; _terax_cwd="$REPLY" ;;

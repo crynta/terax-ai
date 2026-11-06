@@ -178,6 +178,7 @@ mkdir -p "$fork_cwd"
 export TERAX_FORK_LOG="$fork_log" TERAX_FORK_CWD="$fork_cwd"
 fork_probe='
   cd "$TERAX_FORK_CWD"
+  REPLY=user-value
   st() { return "$1"; }
   declare() { echo declare >> "$TERAX_FORK_LOG"; builtin declare "$@"; }
   uname() { echo uname >> "$TERAX_FORK_LOG"; command uname "$@"; }
@@ -188,10 +189,11 @@ fork_probe='
   PROMPT_COMMAND=(one two); st 5; _terax_ble_precmd
   PROMPT_COMMAND=; st 6; _terax_ble_precmd
   trap - DEBUG
-  printf "|%s" "${PROMPT_COMMAND[*]}"'
+  printf "|%s|reply=%s" "${PROMPT_COMMAND[*]}" "$REPLY"'
 forked="$(integration 1 "$fork_probe")"
 expect_contains "the ble.sh entry reports with an encoded cwd" "with%20space%20%26%20100%25" "$forked"
 expect_contains "the ble.sh entry reports each command status" "133;D;6" "$forked"
+expect_contains "the prompt preserves the user REPLY" "reply=user-value" "$forked"
 check "the ble.sh entry forks nothing per prompt" "" "$(cat "$fork_log")"
 unset TERAX_FORK_LOG TERAX_FORK_CWD
 

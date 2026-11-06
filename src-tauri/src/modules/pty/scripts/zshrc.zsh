@@ -161,6 +161,7 @@ _terax_zshrc_setup() {
 
   _terax_report_cwd() {
     emulate -L zsh
+    local REPLY
     if [[ "$PWD" == *[^a-zA-Z0-9/._~-]* ]]; then
       _terax_urlencode "$PWD"
     else

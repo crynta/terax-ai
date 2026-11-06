@@ -206,6 +206,18 @@ describe("link text and hosts", () => {
 });
 
 describe("path resolution", () => {
+  it("preserves literal backslashes in POSIX bases and paths", () => {
+    expect(resolveLinkPath("src/x.ts", { cwd: "/work/a\\b", home: null })).toBe(
+      "/work/a\\b/src/x.ts",
+    );
+    expect(resolveLinkPath("~/x.ts", { cwd: null, home: "/home/a\\b" })).toBe(
+      "/home/a\\b/x.ts",
+    );
+    expect(
+      resolveLinkPath("src\\x.ts", { cwd: "/work/a\\b", home: null }),
+    ).toBe("/work/a\\b/src\\x.ts");
+  });
+
   it("anchors relative paths without collapsing symlink-sensitive parent segments", () => {
     expect(
       resolveLinkPath("./src/../lib/a.ts", { cwd: "/work/app", home: null }),

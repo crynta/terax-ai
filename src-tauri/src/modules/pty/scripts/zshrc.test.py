@@ -205,6 +205,9 @@ check("every prompt starts with A and ends with B", marks.count("133:A") == mark
 check("prompt text sits between A and B", all("PROMPT> " in text for text in prompt_text_between_a_and_b(s)), prompt_text_between_a_and_b(s))
 s.run("cd /tmp")
 check("the new cwd is reported after cd", re.search(rb"\x1b\]7;file://[^/]*/(private/)?tmp\x1b", s.out) is not None)
+s.run("mkdir -p \"$HOME/with space\"; cd \"$HOME/with space\"; REPLY=user-value")
+s.run("printf 'RESULT:reply=%s:' \"$REPLY\"")
+check("prompt cwd encoding preserves the user REPLY", s.result("reply") == "user-value", s.result("reply"))
 s.close()
 
 # A prompt framework that rebuilds PS1 in a precmd running after ours, the way

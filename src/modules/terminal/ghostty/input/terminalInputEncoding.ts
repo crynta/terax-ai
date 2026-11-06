@@ -31,15 +31,15 @@ export function enqueueTerminalInput(
   bytes: Uint8Array,
 ): boolean {
   const accepted = session.writer.enqueue(bytes);
-  if (
-    accepted &&
-    (bytes.includes(13) ||
-      bytes.includes(10) ||
-      (bytes[0] === 27 &&
-        /\x1b\[(?:13(?:;[\d:]+)*u|27;\d+;13~)/.test(
-          new TextDecoder().decode(bytes),
-        )))
-  )
-    session.commandTracked = false;
+  if (!accepted) return false;
+  let submitted = bytes.includes(13) || bytes.includes(10);
+  if (!submitted && bytes[0] === 27) {
+    const sequence = new TextDecoder().decode(bytes);
+    const kitty =
+      /\x1b\[13(?::[\d:]*)?(?:;\d*(?::([123]))?)?(?:;[\d:]+)?u/.exec(sequence);
+    submitted =
+      (kitty !== null && kitty[1] !== "3") || /\x1b\[27;\d+;13~/.test(sequence);
+  }
+  if (submitted) session.commandTracked = false;
   return accepted;
 }

@@ -7,14 +7,29 @@ import {
 } from "./terminalInputEncoding";
 
 describe("terminal input encoding", () => {
-  it.each(["read -r value\r", "\n", "\x1b[13u", "\x1b[13;5u", "\x1b[27;5;13~"])(
-    "revokes prompt readiness on accepted submission %j",
+  it.each([
+    "read -r value\r",
+    "\n",
+    "\x1b[13u",
+    "\x1b[13;5u",
+    "\x1b[13;1:1u",
+    "\x1b[13;1:2u",
+    "\x1b[13::13;1:2;13u",
+    "\x1b[27;5;13~",
+  ])("revokes prompt readiness on accepted submission %j", (text) => {
+    const session = { commandTracked: true, writer: { enqueue: () => true } };
+    expect(enqueueTerminalInput(session, new TextEncoder().encode(text))).toBe(
+      true,
+    );
+    expect(session.commandTracked).toBe(false);
+  });
+
+  it.each(["\x1b[13;1:3u", "\x1b[13;5:3;13u", "\x1b[13::13;1:3u"])(
+    "preserves a new prompt on Enter release %j",
     (text) => {
       const session = { commandTracked: true, writer: { enqueue: () => true } };
-      expect(
-        enqueueTerminalInput(session, new TextEncoder().encode(text)),
-      ).toBe(true);
-      expect(session.commandTracked).toBe(false);
+      enqueueTerminalInput(session, new TextEncoder().encode(text));
+      expect(session.commandTracked).toBe(true);
     },
   );
 

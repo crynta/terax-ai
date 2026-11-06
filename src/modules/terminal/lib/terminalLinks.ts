@@ -15,12 +15,14 @@ import {
 } from "@/modules/terminal/ghostty/core/terminalLinkTargets";
 import type { TerminalLinkHit } from "@/modules/terminal/ghostty/core/terminalLinks";
 import { getLspNavigator } from "@/modules/lsp/lib/navigator";
-import { currentWorkspaceEnv, getWslHome } from "@/modules/workspace";
+import { getWslHome, type WorkspaceEnv } from "@/modules/workspace";
 
 export type LinkActivationContext = {
   /** The pane's last reported working directory, canonical form. */
   readonly cwd: string | null;
   readonly focus: () => void;
+  readonly workspace: WorkspaceEnv;
+  readonly isCurrent: () => boolean;
 };
 
 type StatKind = "file" | "dir" | "symlink";
@@ -52,8 +54,9 @@ const CONFIRM_REASONS: Record<LinkConfirmReason, string> = {
 export async function activateTerminalLink(
   hit: TerminalLinkHit,
   context: LinkActivationContext,
-  deps: LinkActivationDeps = defaultDeps,
+  deps: LinkActivationDeps = defaultDeps(context),
 ): Promise<void> {
+  if (!context.isCurrent()) return;
   const plan = planLinkActivation(hit);
   try {
     await runPlan(plan, context, deps);
@@ -76,7 +79,9 @@ async function runPlan(
       deps.confirm({
         title: `Open ${plan.destination}?`,
         description: `${CONFIRM_REASONS[plan.reason]} ${truncate(plan.url)}`,
-        onConfirm: () => void deps.openUrl(plan.url, context.focus),
+        onConfirm: () => {
+          if (context.isCurrent()) void deps.openUrl(plan.url, context.focus);
+        },
       });
       return;
     case "block":
@@ -94,7 +99,13 @@ async function runPlan(
         deps.inform("Remote file link ignored", plan.host);
         return;
       }
-      await openLocalPath([plan.path], undefined, deps, true);
+      await openLocalPath(
+        [plan.path],
+        undefined,
+        deps,
+        context.isCurrent,
+        true,
+      );
       return;
     }
     case "path": {
@@ -105,8 +116,14 @@ async function runPlan(
         )
         .filter((candidate): candidate is string => candidate !== null);
       if (candidates.length === 0) return;
-      const opened = await openLocalPath(candidates, plan.line, deps);
-      if (!opened) deps.inform("File not found", truncate(plan.path));
+      const opened = await openLocalPath(
+        candidates,
+        plan.line,
+        deps,
+        context.isCurrent,
+      );
+      if (!opened && context.isCurrent())
+        deps.inform("File not found", truncate(plan.path));
       return;
     }
   }
@@ -116,10 +133,13 @@ async function openLocalPath(
   candidates: readonly string[],
   line: number | undefined,
   deps: LinkActivationDeps,
+  isCurrent: () => boolean,
   localOnly = false,
 ): Promise<boolean> {
   for (const candidate of candidates) {
+    if (!isCurrent()) return false;
     const target = await existingTarget(candidate, deps, localOnly);
+    if (!isCurrent()) return false;
     if (!target) continue;
     if (target.kind === "dir") await deps.reveal(target.path);
     else deps.openInEditor(target.path, line ?? 1);
@@ -150,45 +170,48 @@ function truncate(text: string, max = 200): string {
   return text.length > max ? `${text.slice(0, max)}...` : text;
 }
 
-const defaultDeps: LinkActivationDeps = {
-  openUrl: (url, focus) => openExternalUrl(url, focus),
-  stat: async (path, localOnly) => {
-    const stat = await invoke<{ kind: StatKind }>("fs_stat", {
-      path,
-      localOnly,
-      workspace: currentWorkspaceEnv(),
-    }).catch(() => null);
-    return stat?.kind ?? null;
-  },
-  canonicalize: (path, localOnly) =>
-    invoke<string>("fs_canonicalize", {
-      path,
-      localOnly,
-      workspace: currentWorkspaceEnv(),
-    }).catch(() => null),
-  home: async () => {
-    const env = currentWorkspaceEnv();
-    try {
-      return env.kind === "wsl"
-        ? await getWslHome(env.distro)
-        : await homeDir();
-    } catch {
-      return null;
-    }
-  },
-  hostname: () => hostname().catch(() => null),
-  openInEditor: (path, line) => getLspNavigator()?.openFile(path, line),
-  reveal: async (path) => {
-    if (currentWorkspaceEnv().kind !== "local") return;
-    await revealItemInDir(
-      /^[A-Za-z]:/.test(path) ? path.replace(/\//g, "\\") : path,
-    );
-  },
-  inform: (title, description) => toast(title, { description }),
-  confirm: ({ title, description, onConfirm }) =>
-    toast(title, {
-      description,
-      duration: 15_000,
-      action: { label: "Open", onClick: onConfirm },
-    }),
-};
+function defaultDeps(context: LinkActivationContext): LinkActivationDeps {
+  const workspace = context.workspace;
+  const navigator = getLspNavigator();
+  return {
+    openUrl: (url, focus) => openExternalUrl(url, focus),
+    stat: async (path, localOnly) => {
+      const stat = await invoke<{ kind: StatKind }>("fs_stat", {
+        path,
+        localOnly,
+        workspace,
+      }).catch(() => null);
+      return stat?.kind ?? null;
+    },
+    canonicalize: (path, localOnly) =>
+      invoke<string>("fs_canonicalize", {
+        path,
+        localOnly,
+        workspace,
+      }).catch(() => null),
+    home: async () => {
+      try {
+        return workspace.kind === "wsl"
+          ? await getWslHome(workspace.distro)
+          : await homeDir();
+      } catch {
+        return null;
+      }
+    },
+    hostname: () => hostname().catch(() => null),
+    openInEditor: (path, line) => navigator?.openFile(path, line),
+    reveal: async (path) => {
+      if (workspace.kind !== "local") return;
+      await revealItemInDir(
+        /^[A-Za-z]:/.test(path) ? path.replace(/\//g, "\\") : path,
+      );
+    },
+    inform: (title, description) => toast(title, { description }),
+    confirm: ({ title, description, onConfirm }) =>
+      toast(title, {
+        description,
+        duration: 15_000,
+        action: { label: "Open", onClick: onConfirm },
+      }),
+  };
+}
