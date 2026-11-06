@@ -100,11 +100,18 @@ if [ -z "${__TERAX_HOOKS_LOADED-}" ]; then
       || { [ "${BASH_VERSINFO[0]:-0}" -eq 5 ] && [ "${BASH_VERSINFO[1]:-0}" -ge 1 ]; }
   }
 
-  # Whether PROMPT_COMMAND needs element-wise handling. Asking `declare -p`
-  # would fork on every prompt under ble.sh; an array of one element behaves
-  # like a string, so only a longer one does not.
+  # Bash versions that execute all entries also expose variable attributes
+  # without a fork. Testing index 1 misses empty, single and sparse arrays.
   _terax_pc_is_array() {
-    [ -n "${PROMPT_COMMAND[1]+set}" ]
+    if _terax_pc_runs_arrays; then
+      # Attribute expansion on an unset array trips nounset; restore options
+      # automatically when this function returns.
+      local -
+      set +u
+      [[ ${PROMPT_COMMAND@a} == *a* ]]
+    else
+      [ -n "${PROMPT_COMMAND[1]+set}" ]
+    fi
   }
 
   # Puts _terax_finish_prompt last in PROMPT_COMMAND, once. Called again by the

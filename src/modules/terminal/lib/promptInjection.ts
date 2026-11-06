@@ -16,18 +16,18 @@ export type ShellInputState = {
 /**
  * Whether text typed on the user's behalf (a breadcrumb `cd`) would reach the
  * shell. Anything else that owns the foreground, a TUI or an agent, would take
- * it as its own input. A shell without integration cannot say, so it is given
- * the benefit of the doubt unless the screen shows a full-screen program. A
- * shell that reports prompts but not command starts leaves a running command
- * invisible to the markers, so the operating system is asked instead.
+ * it as its own input. Without command-start markers the operating system is
+ * asked instead. Windows conservatively counts background children too because
+ * ConPTY has no foreground process group.
  */
 export async function shellAcceptsInjectedCommand(
   state: ShellInputState,
   hasForegroundJob: () => Promise<boolean>,
 ): Promise<boolean> {
   if (state.alternateScreen || state.agentActive) return false;
-  if (!state.integrated) return true;
-  if (!state.commandTracked) return !(await hasForegroundJob());
+  if (!state.integrated || !state.commandTracked) {
+    return !(await hasForegroundJob());
+  }
   return !state.commandRunning;
 }
 

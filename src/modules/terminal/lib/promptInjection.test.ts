@@ -54,13 +54,14 @@ describe("shellAcceptsInjectedCommand", () => {
     ).toBe(false);
   });
 
-  it("trusts a shell that never reported a prompt, like cmd.exe", async () => {
-    expect(
-      await shellAcceptsInjectedCommand(
-        { ...idle, integrated: false, commandRunning: true },
-        never,
-      ),
-    ).toBe(true);
+  it("checks unintegrated shells without trusting their command markers", async () => {
+    const state = { ...idle, integrated: false, commandRunning: true };
+    expect(await shellAcceptsInjectedCommand(state, async () => false)).toBe(
+      true,
+    );
+    expect(await shellAcceptsInjectedCommand(state, async () => true)).toBe(
+      false,
+    );
   });
 
   it("asks the operating system when the shell cannot report command starts", async () => {
@@ -118,6 +119,19 @@ describe("writeAtShellPrompt", () => {
     const { target, written } = session({ commandTracked: false });
     mocks.invoke.mockResolvedValueOnce(true);
     expect(await writeAtShellPrompt(target, "cd /tmp\r", false)).toBe(false);
+    expect(mocks.invoke).toHaveBeenCalledWith("pty_has_foreground_job", {
+      id: 7,
+    });
+    mocks.invoke.mockResolvedValueOnce(false);
+    expect(await writeAtShellPrompt(target, "cd /tmp\r", false)).toBe(true);
+    expect(written).toEqual(["cd /tmp\r"]);
+  });
+
+  it("checks for a running program before writing to an unintegrated shell", async () => {
+    const { target, written } = session({ promptIntegrated: false });
+    mocks.invoke.mockResolvedValueOnce(true);
+    expect(await writeAtShellPrompt(target, "cd /tmp\r", false)).toBe(false);
+    expect(written).toEqual([]);
     expect(mocks.invoke).toHaveBeenCalledWith("pty_has_foreground_job", {
       id: 7,
     });

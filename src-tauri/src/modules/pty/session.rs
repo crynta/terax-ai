@@ -814,21 +814,26 @@ mod tests {
         // Two background queries each followed by DA1, the way agent CLIs
         // probe; the theme changes between them (36 + 37 bytes of reply).
         let script = "stty raw -echo; \
-            printf '\\033]11;?\\007\\033[c'; sleep 0.8; printf '\\033]11;?\\033\\\\\\033[c'; \
-            dd bs=1 count=73 2>/dev/null | cat -v; exit 0";
+            printf '\\033]11;?\\007\\033[c'; \
+            dd bs=1 count=36 2>/dev/null | cat -v; \
+            dd bs=1 count=1 of=/dev/null 2>/dev/null; \
+            printf '\\033]11;?\\033\\\\\\033[c'; \
+            dd bs=1 count=37 2>/dev/null | cat -v; exit 0";
         let session = spawn_with(host, PtySize::default(), || Ok(sh(script))).unwrap();
-        let pusher = {
-            let session = session.clone();
-            thread::spawn(move || {
-                thread::sleep(Duration::from_millis(300));
-                session.set_colors(theme([0xff, 0xff, 0xff]));
-            })
-        };
+        let first = "^[]11;rgb:0909/0b0b/0c0c^G^[[?62;22;52c";
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while frontend.received.len() < first.len() && Instant::now() < deadline {
+            frontend.poll_once(1, vec![Ack { id: 1, bytes: 0 }]);
+        }
+        assert_eq!(String::from_utf8_lossy(&frontend.received), first);
+        session.set_colors(theme([0xff, 0xff, 0xff]));
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        runtime.block_on(session.write(vec![b'!'])).unwrap();
         frontend.run_until_exit(1, &session);
-        pusher.join().unwrap();
         let text = String::from_utf8_lossy(&frontend.received).to_string();
         assert!(!text.contains('\u{1b}'), "a query leaked as text: {text:?}");
-        let first = "^[]11;rgb:0909/0b0b/0c0c^G^[[?62;22;52c";
         let second = "^[]11;rgb:ffff/ffff/ffff^[\\^[[?62;22;52c";
         assert_eq!(text.trim(), format!("{first}{second}"));
         reaped.recv_timeout(Duration::from_secs(5)).unwrap();

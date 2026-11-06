@@ -12,7 +12,9 @@ const integration = readFileSync(
   "utf8",
 ).replace(/\r\n/g, "\n");
 
-it.skipIf(!existsSync(bash)).each(["scalar", "array", "empty", "registered"])(
+it
+  .skipIf(!existsSync(bash))
+  .each(["scalar", "array", "empty", "single", "sparse", "registered"])(
   "preserves Bash prompt hooks (%s)",
   (mode) => {
     const fixture = `
@@ -24,6 +26,8 @@ case "$1" in
   scalar) PROMPT_COMMAND='first;second' ;;
   array) PROMPT_COMMAND=('first' 'second') ;;
   empty) PROMPT_COMMAND=() ;;
+  single) PROMPT_COMMAND=('first') ;;
+  sparse) PROMPT_COMMAND=([0]='first' [3]='second') ;;
   registered) PROMPT_COMMAND=('first' '_terax_precmd' 'second') ;;
 esac
 `;
@@ -59,7 +63,7 @@ test "$(( \${#all} - \${#stripped} ))" = "$want" || exit 15
 case "$actual" in *']7;file://'*']133;A'*) ;; *) exit 16 ;; esac
 if [ "$1" != empty ]; then
   case "$actual" in *first*) ;; *) exit 17 ;; esac
-  if [ "$1" = scalar ] || [ -n "$elements" ]; then
+  if [ "$1" != single ] && { [ "$1" = scalar ] || [ -n "$elements" ]; }; then
     case "$actual" in *first*second) ;; *) exit 18 ;; esac
   fi
 fi
@@ -77,6 +81,7 @@ case "$PS1" in 'test> '*) ;; *) exit 19 ;; esac
     );
     expect(result.error).toBeUndefined();
     expect(result.stderr).toBe("");
+    expect(result.signal).toBeNull();
     expect(result.status).toBe(0);
   },
 );
