@@ -290,6 +290,33 @@ describe("checkWritable — layered refusals", () => {
       ok: true,
     });
   });
+
+  it("refuses writes to user persistence paths under the home root", () => {
+    for (const p of [
+      "/Users/me/Library/LaunchAgents/com.x.plist",
+      "/Users/me/.zshrc",
+      "/home/me/.bashrc",
+      "/home/me/.profile",
+      "/root/.bash_profile",
+      "/home/me/.config/fish/config.fish",
+      "/Users/me/.gitconfig",
+      "C:\\Users\\me\\.gitconfig",
+      "/Applications/Foo.app/Contents/MacOS/foo",
+    ]) {
+      expect(checkWritable(p)).toMatchObject({ ok: false });
+    }
+  });
+
+  it("allows the same names outside the home root", () => {
+    for (const p of [
+      "/home/me/code/dotfiles/.zshrc",
+      "/Users/me/code/dotfiles/.gitconfig",
+      "/Users/me/project/Library/LaunchAgents/x.plist",
+      "/home/me/.zshrc.d/aliases.zsh",
+    ]) {
+      expect(checkWritable(p)).toMatchObject({ ok: true });
+    }
+  });
 });
 
 describe("checkReadableCanonical — parent-directory fallback", () => {

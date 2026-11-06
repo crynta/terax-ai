@@ -109,6 +109,7 @@ const WRITE_DENY_PREFIXES = [
   "/library/keychains/",
   "/library/launchagents/",
   "/library/launchdaemons/",
+  "/applications/",
   "/private/etc/",
   "/private/var/db/",
   "/usr/bin/",
@@ -124,6 +125,25 @@ const WRITE_DENY_PREFIXES = [
   "/program files/",
   "/program files (x86)/",
   "/programdata/",
+];
+
+/**
+ * Write-only deny entries relative to the user's home root. These run code at
+ * login or on every shell / git invocation, so they are persistence points.
+ * Matched only directly under the home root: a dotfiles repo checked out in a
+ * workspace (`~/code/dotfiles/.zshrc`) stays writable.
+ */
+const HOME_ROOT_RE = /^\/(?:users\/[^/]+|home\/[^/]+|root)\//;
+const HOME_WRITE_DENY = [
+  "library/launchagents/",
+  ".zshrc",
+  ".zprofile",
+  ".zshenv",
+  ".bashrc",
+  ".bash_profile",
+  ".profile",
+  ".config/fish/config.fish",
+  ".gitconfig",
 ];
 
 export type SafetyResult = { ok: true } | { ok: false; reason: string };
@@ -242,6 +262,18 @@ export function checkWritable(path: string): SafetyResult {
         ok: false,
         reason: `Refused: writes under "${prefix.replace(/\/$/, "")}" are not allowed.`,
       };
+    }
+  }
+  const home = HOME_ROOT_RE.exec(cmpForPrefix);
+  if (home) {
+    const rel = cmpForPrefix.slice(home[0].length);
+    for (const entry of HOME_WRITE_DENY) {
+      if (entry.endsWith("/") ? `${rel}/`.startsWith(entry) : rel === entry) {
+        return {
+          ok: false,
+          reason: `Refused: writes to "~/${entry.replace(/\/$/, "")}" are not allowed.`,
+        };
+      }
     }
   }
   return { ok: true };
