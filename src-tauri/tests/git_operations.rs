@@ -649,6 +649,8 @@ fn passive_inspection_never_runs_repository_helpers() {
     fx.write_file(".gitattributes", "*.txt diff=hostile\n");
     fx.run_git(&["add", "."]);
     fx.run_git(&["commit", "-qm", "seed"]);
+    fx.write_file("note.txt", "staged\n");
+    fx.run_git(&["add", "note.txt"]);
     fx.write_file("note.txt", "after\n");
     let sha = std::process::Command::new("git")
         .args(["rev-parse", "HEAD"])
