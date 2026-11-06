@@ -46,7 +46,7 @@ export const native = {
       workspace: currentWorkspaceEnv(),
     }),
   readFile: (path: string) =>
-    invoke<ReadResult>("fs_read_file", {
+    invoke<ReadResult>("ai_read_file", {
       path,
       workspace: currentWorkspaceEnv(),
     }),
@@ -68,7 +68,7 @@ export const native = {
   // AI tooling never sees dot-prefixed entries regardless of the user's
   // explorer preference — keeps .git / .env / .ssh out of agent context.
   readDir: (path: string) =>
-    invoke<DirEntry[]>("fs_read_dir", {
+    invoke<DirEntry[]>("ai_read_dir", {
       path,
       showHidden: false,
       workspace: currentWorkspaceEnv(),
@@ -80,7 +80,7 @@ export const native = {
     caseInsensitive?: boolean;
     maxResults?: number;
   }) =>
-    invoke<GrepResponse>("fs_grep", {
+    invoke<GrepResponse>("ai_grep", {
       pattern: params.pattern,
       root: params.root,
       glob: params.glob ?? null,
@@ -89,7 +89,7 @@ export const native = {
       workspace: currentWorkspaceEnv(),
     }),
   glob: (params: { pattern: string; root: string; maxResults?: number }) =>
-    invoke<GlobResponse>("fs_glob", {
+    invoke<GlobResponse>("ai_glob", {
       pattern: params.pattern,
       root: params.root,
       maxResults: params.maxResults ?? null,
