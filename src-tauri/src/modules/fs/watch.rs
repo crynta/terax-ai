@@ -353,6 +353,7 @@ impl Running {
         files: impl IntoIterator<Item = (String, String, Option<FileStamp>)>,
     ) {
         let mut recheck = HashSet::new();
+        let mut file_recheck = HashSet::new();
         self.apply(|set| {
             let mut moved = false;
             for (dir, baseline) in dirs {
@@ -365,23 +366,25 @@ impl Running {
                 }
             }
             for (dir, key, stamp) in files {
-                if set.add_file(dir.clone(), key, stamp) {
-                    recheck.insert(dir);
+                if set.add_file(dir.clone(), key, stamp) && !recheck.contains(&dir) {
+                    file_recheck.insert(dir);
                 }
             }
             moved
         });
         // Changes between baseline capture and OS registration have no callback.
         // Reconcile after sync, through the same queue as subsequent native events.
-        if !recheck.is_empty() {
-            let _ = self.tx.send(Batch {
-                dirs: recheck.into_iter().collect(),
-                listing: plan::ListingChange {
-                    forced: true,
-                    content_only: false,
-                },
-                ..Batch::default()
-            });
+        for (dirs, forced) in [(recheck, true), (file_recheck, false)] {
+            if !dirs.is_empty() {
+                let _ = self.tx.send(Batch {
+                    dirs: dirs.into_iter().collect(),
+                    listing: plan::ListingChange {
+                        forced,
+                        content_only: !forced,
+                    },
+                    ..Batch::default()
+                });
+            }
         }
     }
 
@@ -631,7 +634,10 @@ mod tests {
                 .expect("new files need reconciliation even without a backend sync"),
         );
         assert_eq!(
-            resolve_changes(pending, &running.shared).report,
+            resolve_changes_with(pending, &running.shared, &|_| {
+                panic!("a file-only registration must not enumerate its directory")
+            })
+            .report,
             vec![to_canon(&file)]
         );
         assert_eq!(syncs.load(std::sync::atomic::Ordering::SeqCst), 1);
