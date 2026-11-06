@@ -216,8 +216,10 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         // One async scheme multiplexes every terminal's output; see pty/hub.rs.
         .register_asynchronous_uri_scheme_protocol("terax-pty", pty::stream_protocol)
+        .register_asynchronous_uri_scheme_protocol("asset", fs::assets::serve)
         .on_page_load(|webview, payload| {
             if matches!(payload.event(), tauri::webview::PageLoadEvent::Started) {
+                if let Some(grants) = webview.try_state::<fs::assets::AssetGrants>() { grants.revoke_owner(webview.label()); }
                 if let Some(state) = webview.try_state::<net::AiStreamState>() {
                     state.cancel_window(webview.window().label());
                 }
@@ -263,6 +265,7 @@ pub fn run() {
         .manage(shell::ShellState::default())
         .manage(secrets::SecretsState::default())
         .manage(fs::watch::FsWatchState::default())
+        .manage(fs::assets::AssetGrants::default())
         .manage(git::watch::GitWatchState::default())
         .manage(history::HistoryState::default())
         .manage(lsp::LspState::default())
@@ -296,6 +299,8 @@ pub fn run() {
             fs::tree::list_subdirs,
             fs::tree::fs_read_dir,
             fs::file::fs_read_file,
+            fs::assets::asset_grant,
+            fs::assets::asset_revoke,
             fs::project_memory::fs_read_project_memory,
             fs::file::fs_write_file,
             fs::file::fs_stat,
@@ -426,6 +431,7 @@ pub fn run() {
                     event: tauri::WindowEvent::Destroyed,
                     ..
                 } => {
+                    if let Some(grants) = app.try_state::<fs::assets::AssetGrants>() { grants.revoke_owner(&label); }
                     if let Some(state) = app.try_state::<net::AiStreamState>() {
                         state.cancel_window(&label);
                     }
