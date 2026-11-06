@@ -42,6 +42,8 @@ function setup(mouseTracking = false) {
     isModifier: (event) => event.metaKey || event.ctrlKey,
     model: {
       linkSource: source,
+      revision: () => 1,
+      viewportOriginLine: () => 0,
       cols: 40,
       rows: 4,
       modes: () => ({ mouseTracking }) as never,

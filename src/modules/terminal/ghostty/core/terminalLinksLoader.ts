@@ -1,5 +1,24 @@
 import type { LazyTerminalLinksOptions } from "./LazyTerminalLinks";
 
+/** A queued click only belongs to the content and geometry it was made on. */
+export function terminalLinkReplayStamp(
+  options: LazyTerminalLinksOptions,
+): string {
+  const rect = options.target.getBoundingClientRect();
+  const geometry = options.geometry();
+  return [
+    options.model.revision(),
+    options.model.viewportOriginLine(),
+    rect.left,
+    rect.top,
+    rect.width,
+    rect.height,
+    geometry.cellWidth,
+    geometry.cellHeight,
+    geometry.shiftY,
+  ].join(",");
+}
+
 export interface DeferredTerminalLinks {
   invalidate(): void;
   dispose(): void;
@@ -16,6 +35,7 @@ export function deferTerminalLinks(
   let links: DeferredTerminalLinks | null = null;
   let disposed = false;
   const events: Event[] = [];
+  let clickStamp: string | null = null;
   const types = [
     "pointermove",
     "pointerdown",
@@ -27,6 +47,8 @@ export function deferTerminalLinks(
     "blur",
   ];
   const capture = (event: Event) => {
+    if (event.type === "pointerdown" && clickStamp === null)
+      clickStamp = terminalLinkReplayStamp(options);
     if (
       event.type === "pointermove" &&
       events[events.length - 1]?.type === "pointermove"
@@ -50,7 +72,13 @@ export function deferTerminalLinks(
     const trigger = new LazyTerminalLinks(options);
     links = trigger;
     listen(false);
-    for (const event of events) trigger.ingest(event);
+    const stale =
+      clickStamp !== null && clickStamp !== terminalLinkReplayStamp(options);
+    for (const event of events) {
+      if (stale && (event.type === "pointerdown" || event.type === "pointerup"))
+        continue;
+      trigger.ingest(event);
+    }
     events.length = 0;
   });
   loaded.catch((error) => {

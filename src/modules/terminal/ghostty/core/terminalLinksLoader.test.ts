@@ -14,12 +14,29 @@ import { deferTerminalLinks } from "./terminalLinksLoader";
 afterEach(() => vi.clearAllMocks());
 
 const options = {
-  target: new EventTarget(),
+  target: Object.assign(new EventTarget(), {
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 640, height: 384 }),
+  }),
   keyTarget: new EventTarget(),
+  model: { revision: () => revision, viewportOriginLine: () => 0 },
+  geometry: () => ({ cellWidth: 8, cellHeight: 16, shiftY: 0 }),
 } as unknown as LazyTerminalLinksOptions;
+let revision = 1;
+afterEach(() => {
+  revision = 1;
+});
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("deferTerminalLinks", () => {
+  it("does not replay a click onto output replaced during the first import", async () => {
+    const links = deferTerminalLinks(options);
+    options.target.dispatchEvent(new Event("pointerdown"));
+    revision++;
+    options.target.dispatchEvent(new Event("pointerup"));
+    await tick();
+    expect(instance.ingest).not.toHaveBeenCalled();
+    links.dispose();
+  });
   it("builds the trigger once the module arrived and forwards to it", async () => {
     const links = deferTerminalLinks(options);
     links.invalidate();

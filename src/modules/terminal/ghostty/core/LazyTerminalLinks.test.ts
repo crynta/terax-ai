@@ -32,6 +32,9 @@ const key = (type: string, metaKey: boolean) =>
 
 /** An event target that knows how many listeners of each type it holds. */
 class CountingTarget extends EventTarget {
+  getBoundingClientRect() {
+    return { left: 0, top: 0, width: 640, height: 384 };
+  }
   private readonly held = new Map<string, Set<unknown>>();
 
   override addEventListener(
@@ -68,11 +71,19 @@ class CountingTarget extends EventTarget {
 function setup() {
   const target = new CountingTarget();
   const keys = new CountingTarget();
+  const model = {
+    linkSource: vi.fn(),
+    cols: 80,
+    rows: 24,
+    modes: vi.fn(),
+    revision: vi.fn(() => 1),
+    viewportOriginLine: vi.fn(() => 0),
+  };
   const links = new LazyTerminalLinks({
     target: target as unknown as HTMLElement,
     keyTarget: keys as unknown as Window,
     isModifier: (event) => event.metaKey || event.ctrlKey,
-    model: { linkSource: vi.fn(), cols: 80, rows: 24, modes: vi.fn() },
+    model,
     scrollbar: {} as Node,
     geometry: () => ({ cellWidth: 8, cellHeight: 16, shiftY: 0, color: "red" }),
     onActivate: vi.fn(),
@@ -82,10 +93,51 @@ function setup() {
     active.ingest.mock.calls.map(
       ([event]) => event as Event & { metaKey: boolean },
     );
-  return { target, keys, links, tick, ingested };
+  return { target, keys, links, tick, ingested, model };
 }
 
 describe("LazyTerminalLinks", () => {
+  it("discards a queued click if the pane moves before loading completes", async () => {
+    const { target, tick, ingested } = setup();
+    target.dispatchEvent(pointer("pointerdown", { metaKey: true }));
+    vi.spyOn(target, "getBoundingClientRect").mockReturnValue({
+      left: 8,
+      top: 0,
+      width: 640,
+      height: 384,
+    });
+    target.dispatchEvent(pointer("pointerup", { metaKey: true }));
+    await tick();
+    expect(ingested()).toEqual([]);
+  });
+
+  it.each(["revision", "viewportOriginLine"] as const)(
+    "discards queued clicks if %s changes during loading",
+    async (key) => {
+      const { target, model, tick, ingested } = setup();
+      target.dispatchEvent(pointer("pointerdown", { metaKey: true }));
+      model[key].mockReturnValue(2);
+      target.dispatchEvent(pointer("pointerup", { metaKey: true }));
+      await tick();
+      expect(
+        ingested().filter(
+          (event) => event.type === "pointerdown" || event.type === "pointerup",
+        ),
+      ).toEqual([]);
+    },
+  );
+
+  it("keeps queued clicks across selection-only damage", async () => {
+    const { target, links, tick, ingested } = setup();
+    target.dispatchEvent(pointer("pointerdown", { metaKey: true }));
+    links.invalidate();
+    target.dispatchEvent(pointer("pointerup", { metaKey: true }));
+    await tick();
+    expect(ingested().map((event) => event.type)).toEqual([
+      "pointerdown",
+      "pointerup",
+    ]);
+  });
   it("loads nothing while the modifier is never held", async () => {
     const { target, keys, tick } = setup();
     for (let i = 0; i < 5; i += 1) target.dispatchEvent(pointer("pointermove"));

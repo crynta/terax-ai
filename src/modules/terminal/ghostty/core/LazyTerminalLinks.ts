@@ -1,6 +1,7 @@
 import type { GhosttyTerminalModelApi } from "../GhosttyTerminalModel";
 import type { LinkUnderlineGeometry } from "./LinkUnderlineOverlay";
 import type { TerminalLinkHit } from "./terminalLinks";
+import { terminalLinkReplayStamp } from "./terminalLinksLoader";
 
 export type LazyTerminalLinksOptions = {
   readonly target: HTMLElement;
@@ -12,7 +13,7 @@ export type LazyTerminalLinksOptions = {
   }) => boolean;
   readonly model: Pick<
     GhosttyTerminalModelApi,
-    "linkSource" | "cols" | "rows" | "modes"
+    "linkSource" | "cols" | "rows" | "modes" | "revision" | "viewportOriginLine"
   >;
   /** The pane's scrollbar; the pointer over it belongs to the scrollbar. */
   readonly scrollbar: Node;
@@ -56,8 +57,11 @@ export class LazyTerminalLinks {
     let keysBound = false;
     let hearing = false;
     let disposed = false;
+    let clickStamp: string | null = null;
 
     const push = (event: Event): void => {
+      if (event.type === "pointerdown" && clickStamp === null)
+        clickStamp = terminalLinkReplayStamp(options);
       queue?.push(event);
       if (queue && queue.length > MAX_QUEUED_EVENTS) queue.shift();
     };
@@ -111,6 +115,7 @@ export class LazyTerminalLinks {
     const onLeave = (): void => {
       last = null;
       if (queue) queue.length = 0;
+      clickStamp = null;
       bindKeys(false);
     };
 
@@ -126,6 +131,8 @@ export class LazyTerminalLinks {
     const load = async (seed: Event[]): Promise<void> => {
       if (active || queue || disposed) return;
       queue = seed;
+      if (seed.some((event) => event.type === "pointerdown"))
+        clickStamp = terminalLinkReplayStamp(options);
       hear(true);
       try {
         const { createTerminalLinks } = await import("./terminalLinksRuntime");
@@ -135,11 +142,22 @@ export class LazyTerminalLinks {
         const pending = queue ?? [];
         detach();
         last = null;
-        for (const event of pending) links.ingest(event);
+        const stale =
+          clickStamp !== null &&
+          clickStamp !== terminalLinkReplayStamp(options);
+        for (const event of pending) {
+          if (
+            stale &&
+            (event.type === "pointerdown" || event.type === "pointerup")
+          )
+            continue;
+          links.ingest(event);
+        }
       } catch (error) {
         console.error("[terax] terminal link support failed to load:", error);
       } finally {
         queue = null;
+        clickStamp = null;
         if (!active) hear(false);
       }
     };
