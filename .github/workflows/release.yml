@@ -9,6 +9,8 @@ on:
 
 jobs:
   publish-tauri:
+    outputs:
+      app-version: ${{ steps.tauri.outputs.appVersion }}
     permissions:
       actions: read
       contents: write
@@ -289,6 +291,7 @@ jobs:
       - name: Patch latest.json with re-signed AppImage and Windows signatures
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APP_VERSION: ${{ needs.publish-tauri.outputs.app-version }}
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
@@ -330,8 +333,8 @@ jobs:
           for entry in x86_64:amd64 aarch64:aarch64; do
             ARCH=${entry%:*}
             SUFFIX=${entry#*:}
-            APP_SIG=$(cat ./*_"$SUFFIX".AppImage.sig)
-            APP_FILE=$(basename "$(ls ./*_"$SUFFIX".AppImage.sig)" .sig)
+            APP_FILE="Terax_${APP_VERSION}_${SUFFIX}.AppImage"
+            APP_SIG=$(cat "$APP_FILE.sig")
             jq --arg key "linux-$ARCH" --arg sig "$APP_SIG" --arg url "$DL/$APP_FILE" '
               .platforms[$key] += {signature: $sig, url: $url}
               | .platforms[$key + "-appimage"] += {signature: $sig, url: $url}
