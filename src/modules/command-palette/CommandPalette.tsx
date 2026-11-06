@@ -22,7 +22,6 @@ import {
   AlertCircleIcon,
   ArrowTurnBackwardIcon,
   CommandIcon,
-  Tick02Icon,
   TerminalIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -338,16 +337,9 @@ export function CommandPalette({
                     value={`theme:${t.id}`}
                     onSelect={() => commitTheme(t.id)}
                     className="text-[12.5px]"
+                    data-checked={t.id === themeId}
                   >
                     <span className="truncate">{t.name}</span>
-                    {t.id === themeId ? (
-                      <HugeiconsIcon
-                        icon={Tick02Icon}
-                        size={14}
-                        strokeWidth={2}
-                        className="ml-auto text-muted-foreground"
-                      />
-                    ) : null}
                   </CommandItem>
                 ))}
                 {themes.length === 0 ? <StatusItem label="No themes" /> : null}
