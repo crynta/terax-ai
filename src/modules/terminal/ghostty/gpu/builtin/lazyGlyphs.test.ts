@@ -66,5 +66,9 @@ describe("lazily loaded builtin glyphs", () => {
     expect(glyphs.builtinGlyphPending(0x1fb00)).toBe(false);
     expect(renderer.render(0x1fb00)).toBeNull();
     expect(fonts.symbolFontEpoch()).toBe(epoch + 1);
+    for (const codepoint of [0x25e2, 0x1fb00, 0x1fb70, 0x1cd00]) {
+      expect(glyphs.isBuiltinGlyph(codepoint)).toBe(false);
+    }
+    expect(glyphs.isBuiltinGlyph(0x2500)).toBe(true);
   });
 });

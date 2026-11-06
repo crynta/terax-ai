@@ -116,6 +116,10 @@ export function lazyBuiltinDraw(): Draw | null {
   return draw;
 }
 
+export function lazyBuiltinFailed(): boolean {
+  return failed;
+}
+
 /** True while the code is not usable yet; the first call starts loading it. */
 export function lazyBuiltinPending(): boolean {
   if (draw || failed) return false;

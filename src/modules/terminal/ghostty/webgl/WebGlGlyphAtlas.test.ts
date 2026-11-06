@@ -61,6 +61,40 @@ describe("WebGlGlyphAtlas uploads", () => {
 });
 
 describe("WebGlGlyphAtlas procedural glyphs", () => {
+  it("keeps font fallback styles separate after lazy glyph loading fails", async () => {
+    vi.resetModules();
+    vi.doMock("../gpu/builtin/legacyComputing", () => {
+      throw new Error("chunk missing");
+    });
+    try {
+      const { WebGlGlyphAtlas: FreshAtlas } = await import("./WebGlGlyphAtlas");
+      const { loadLazyBuiltin } = await import("../gpu/builtin/lazyGlyphs");
+      const fillText = vi.fn();
+      const gl = createWebGlHarness(vi.fn(), vi.fn(), fillText);
+      const atlas = new FreshAtlas(gl, METRICS, 1);
+      atlas.glyph(0x1fb00, null, 0);
+      expect(fillText).not.toHaveBeenCalled();
+      await loadLazyBuiltin();
+      const styles = [
+        0,
+        CellFlags.BOLD,
+        CellFlags.ITALIC,
+        CellFlags.BOLD | CellFlags.ITALIC,
+      ];
+      const entries = styles.map((style) => atlas.glyph(0x1fb00, null, style));
+      expect(new Set(entries).size).toBe(4);
+      expect(fillText).toHaveBeenCalledTimes(4);
+      for (const [index, style] of styles.entries()) {
+        expect(atlas.glyph(0x1fb00, null, style)).toBe(entries[index]);
+      }
+      expect(fillText).toHaveBeenCalledTimes(4);
+      atlas.dispose();
+    } finally {
+      vi.doUnmock("../gpu/builtin/legacyComputing");
+      vi.resetModules();
+    }
+  });
+
   it("draws box characters at the cell size with no bearing and ignores styles", () => {
     const fillText = vi.fn();
     const gl = createWebGlHarness(vi.fn(), vi.fn(), fillText);

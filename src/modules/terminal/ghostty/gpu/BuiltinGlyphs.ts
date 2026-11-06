@@ -22,6 +22,7 @@ import { drawBoxDrawing, isBoxDrawing } from "./builtin/boxDrawing";
 import {
   isLazyBuiltin,
   lazyBuiltinDraw,
+  lazyBuiltinFailed,
   lazyBuiltinPending,
 } from "./builtin/lazyGlyphs";
 import { drawPowerline, isPowerline } from "./builtin/powerline";
@@ -47,7 +48,7 @@ export function isBuiltinGlyph(codepoint: number): boolean {
     isBlockElement(codepoint) ||
     isBraille(codepoint) ||
     isPowerline(codepoint) ||
-    isLazyBuiltin(codepoint)
+    (isLazyBuiltin(codepoint) && !lazyBuiltinFailed())
   );
 }
 
