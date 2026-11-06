@@ -40,16 +40,6 @@ jobs:
       - name: Test
         run: pnpm test
 
-      - uses: actions/cache@v5
-        with:
-          path: ~/.cache/ms-playwright
-          key: chromium-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-
-      - name: Terminal compositor pixel parity (DPR 1, 1.25, 1.5, 2)
-        run: |
-          pnpm exec playwright install chromium --no-shell
-          pnpm test:terminal-scaling
-
       - name: React Compiler healthcheck (advisory)
         run: pnpm exec react-compiler-healthcheck
         continue-on-error: true
@@ -83,6 +73,20 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Terminal models, input, blocks, transport, and renderer lifecycle
         run: pnpm exec vitest run src/modules/terminal
+
+      - uses: actions/cache@v5
+        if: matrix.os == 'macos-latest'
+        with:
+          path: ~/Library/Caches/ms-playwright
+          key: chromium-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Terminal compositor pixel parity (DPR 1, 1.25, 1.5, 2)
+        if: matrix.os == 'macos-latest'
+        env:
+          TERAX_VISUAL_SOFTWARE: '1'
+        run: |
+          pnpm exec playwright install chromium --no-shell
+          pnpm test:terminal-scaling
 
   rust:
     runs-on: ubuntu-22.04

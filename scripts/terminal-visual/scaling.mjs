@@ -50,7 +50,7 @@ try {
     const browser = await chromium.launch({
       executablePath: process.env.CHROME_PATH,
       channel: process.env.CHROME_CHANNEL ?? "chromium",
-      args: ["--enable-unsafe-webgpu", "--enable-unsafe-swiftshader", "--force-color-profile=srgb", `--force-device-scale-factor=${dpr}`, ...(process.platform === "linux" ? ["--use-angle=swiftshader", "--use-webgpu-adapter=swiftshader"] : [])],
+      args: ["--enable-unsafe-webgpu", "--enable-unsafe-swiftshader", "--force-color-profile=srgb", `--force-device-scale-factor=${dpr}`, ...(process.platform === "linux" || process.env.TERAX_VISUAL_SOFTWARE === "1" ? ["--use-angle=swiftshader", "--use-webgpu-adapter=swiftshader"] : [])],
     });
     // Also bounds page.evaluate if device loss prevents the pending texture readback.
     const deadline = setTimeout(() => void browser.close(), 60_000);
