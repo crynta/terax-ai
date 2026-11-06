@@ -1,6 +1,7 @@
 import { extendedSymbolsPending } from "@/lib/fonts";
 import {
   BuiltinGlyphRenderer,
+  builtinGlyphPending,
   builtinGlyphSpec,
   isBuiltinGlyph,
 } from "./BuiltinGlyphs";
@@ -169,6 +170,8 @@ export class GlyphRasterizer {
     const codepoint = text.codePointAt(0) ?? 0;
     if (!isBuiltinGlyph(codepoint)) return null;
     if (text.length !== (codepoint > 0xffff ? 2 : 1)) return null;
+    // Blank until the drawing code has loaded; the atlas is rebuilt when it does.
+    if (builtinGlyphPending(codepoint)) return EMPTY_GLYPH;
     this.builtin ??= new BuiltinGlyphRenderer(builtinGlyphSpec(this.metrics));
     const pixels = this.builtin.render(codepoint);
     if (!pixels) return null;

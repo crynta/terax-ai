@@ -346,7 +346,18 @@ const selectSpec = params.get("select");
 const searchTerm = params.get("search");
 
 stage("settle");
+// A glob, because a revision without lazily loaded glyph code must still load.
+const lazyGlyphs = Object.values(
+  import.meta.glob("@/modules/terminal/ghostty/gpu/builtin/lazyGlyphs.ts"),
+)[0] as undefined | (() => Promise<{ loadLazyBuiltin(): Promise<void> }>);
+
 async function settle(): Promise<void> {
+  if (patternName === "sprites" && lazyGlyphs) {
+    // Sextants, octants and legacy computing shapes draw from code that loads on first
+    // use; its arrival rebuilds the atlas like the icon face's.
+    await (await lazyGlyphs()).loadLazyBuiltin();
+    await sleep(300);
+  }
   if (patternName === "icons") {
     // The Material Design icon face loads on first use; its arrival rebuilds the atlas.
     for (let attempt = 0; attempt < 100 && fonts.extendedSymbolsPending(); attempt += 1) await sleep(50);
@@ -370,7 +381,11 @@ function applySelection(spec: string): void {
 }
 
 if (selectSpec) applySelection(selectSpec);
-if (searchTerm) surface.searchController().findNext(searchTerm);
+if (searchTerm) {
+  surface.searchController().findNext(searchTerm);
+  // The search engine loads on the first find (a revision before that is synchronous).
+  await sleep(300);
+}
 await settle();
 
 type Capture = { width: number; height: number; rgba: Uint8Array };
