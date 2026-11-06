@@ -512,3 +512,236 @@ fn concurrent_creation_serializes_port_and_name_claims() {
     assert_ne!(a.task.branch, b.task.branch);
     assert_ne!(a.task.port, b.task.port);
 }
+
+#[test]
+fn assume_unchanged_edits_are_refused_then_captured_without_changing_the_index() {
+    let repo = TestRepo::new();
+    let (_home, home) = scratch();
+    let task = create(&repo, &home, "index flags");
+    let path = Path::new(&task.task.path);
+    git_in(path, &["update-index", "--assume-unchanged", "README.md"]);
+    std::fs::write(path.join("README.md"), "hidden edit that must survive\n").unwrap();
+    assert!(git_in(path, &["status", "--porcelain"]).is_empty());
+    let refused = tasks::archive(
+        &repo.registry,
+        &repo.path(),
+        &task.task.id,
+        false,
+        &repo.ws,
+        &home,
+    )
+    .unwrap();
+    assert!(!refused.removal.removed);
+    assert!(refused
+        .removal
+        .blockers
+        .contains(&super::worktree::RemoveBlocker::Dirty));
+    assert!(git_in(path, &["ls-files", "-v", "README.md"]).starts_with('h'));
+    let archive = tasks::archive(
+        &repo.registry,
+        &repo.path(),
+        &task.task.id,
+        true,
+        &repo.ws,
+        &home,
+    )
+    .unwrap();
+    assert_eq!(
+        repo.git(&["show", &format!("{}:README.md", archive.snapshot.reference)]),
+        "hidden edit that must survive\n"
+    );
+    let restored = tasks::restore(
+        &repo.registry,
+        &repo.path(),
+        &task.task.id,
+        None,
+        &repo.ws,
+        &home,
+    )
+    .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(Path::new(&restored.task.path).join("README.md")).unwrap(),
+        "hidden edit that must survive\n"
+    );
+}
+
+#[test]
+fn skip_worktree_entries_refuse_archive_even_with_force() {
+    let repo = TestRepo::new();
+    let (_home, home) = scratch();
+    let task = create(&repo, &home, "sparse");
+    let path = Path::new(&task.task.path);
+    git_in(path, &["update-index", "--skip-worktree", "README.md"]);
+    let error = tasks::archive(
+        &repo.registry,
+        &repo.path(),
+        &task.task.id,
+        true,
+        &repo.ws,
+        &home,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("skip-worktree"));
+    assert!(path.exists());
+    assert!(git_in(path, &["ls-files", "-v", "README.md"]).starts_with('S'));
+}
+
+#[test]
+fn initialized_submodules_refuse_archive_even_with_force() {
+    let repo = TestRepo::new();
+    let child = TestRepo::new();
+    let (_home, home) = scratch();
+    repo.git(&[
+        "-c",
+        "protocol.file.allow=always",
+        "submodule",
+        "add",
+        &child.path(),
+        "child",
+    ]);
+    repo.commit_all("submodule");
+    let task = create(&repo, &home, "submodule");
+    let path = Path::new(&task.task.path);
+    git_in(
+        path,
+        &[
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "update",
+            "--init",
+        ],
+    );
+    std::fs::write(path.join("child/scratch"), "uncaptured data").unwrap();
+    let error = tasks::archive(
+        &repo.registry,
+        &repo.path(),
+        &task.task.id,
+        true,
+        &repo.ws,
+        &home,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("submodule child"));
+    assert_eq!(
+        std::fs::read_to_string(path.join("child/scratch")).unwrap(),
+        "uncaptured data"
+    );
+}
+
+#[test]
+fn restore_recovers_an_archive_interrupted_after_removal() {
+    let repo = TestRepo::new();
+    let (_home, home) = scratch();
+    for status in [TaskStatus::Active, TaskStatus::Archiving] {
+        let task = create(&repo, &home, "interrupted");
+        std::fs::write(
+            Path::new(&task.task.path).join("README.md"),
+            "saved before removal\n",
+        )
+        .unwrap();
+        let prepared =
+            tasks::prepare_archive(&repo.registry, &repo.path(), &task.task.id, &repo.ws, &home)
+                .unwrap();
+        let mut record = prepared.task;
+        record.status = status;
+        Store::open(&home).unwrap().put(record).unwrap();
+        assert!(
+            super::worktree::remove(
+                &repo.registry,
+                &repo.path(),
+                &task.task.path,
+                true,
+                &repo.ws
+            )
+            .unwrap()
+            .removed
+        );
+        let restored = tasks::restore(
+            &repo.registry,
+            &repo.path(),
+            &task.task.id,
+            None,
+            &repo.ws,
+            &home,
+        )
+        .unwrap();
+        assert_eq!(restored.task.port, task.task.port);
+        assert_eq!(restored.task.status, TaskStatus::Active);
+        assert_eq!(
+            std::fs::read_to_string(Path::new(&restored.task.path).join("README.md")).unwrap(),
+            "saved before removal\n"
+        );
+    }
+}
+
+#[test]
+fn branch_slugs_accept_file_names_and_dot_runs() {
+    let repo = TestRepo::new();
+    let (_home, home) = scratch();
+    assert_eq!(
+        create(&repo, &home, "Update Cargo.lock").task.branch,
+        "terax/update-cargo-lock"
+    );
+    assert_eq!(
+        create(&repo, &home, "Fix foo..bar").task.branch,
+        "terax/fix-foo-bar"
+    );
+}
+
+#[test]
+fn operation_locks_do_not_block_metadata_or_other_repositories() {
+    let a = TestRepo::new();
+    let b = TestRepo::new();
+    let (_home, home) = scratch();
+    let first = create(&a, &home, "one");
+    let repo = super::plumbing::open_worktree(&a.registry, &a.path(), &a.ws).unwrap();
+    let _operation = super::task_state::lock_operation(&repo).unwrap();
+    assert_eq!(
+        tasks::list(&a.registry, &a.path(), &a.ws, &home)
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(
+        tasks::disk_usage(&a.registry, &a.path(), &first.task.id, &a.ws, &home)
+            .unwrap()
+            .bytes
+            > 0
+    );
+    assert_ne!(create(&b, &home, "two").task.port, first.task.port);
+}
+
+#[test]
+fn only_windows_link_privilege_errors_are_skippable() {
+    let denied = std::io::Error::from_raw_os_error(1314);
+    assert!(tasks::link_privilege_missing(&denied, true));
+    assert!(!tasks::link_privilege_missing(&denied, false));
+    assert!(!tasks::link_privilege_missing(
+        &std::io::Error::from_raw_os_error(5),
+        true
+    ));
+}
+
+#[cfg(unix)]
+#[test]
+fn includes_beyond_symlinks_are_skipped_without_losing_other_files() {
+    let repo = TestRepo::new();
+    let (_home, home) = scratch();
+    repo.write(".gitignore", ".env\nactual/\n");
+    repo.write(
+        ".terax/project.toml",
+        "[worktree]\ninclude = ['linked/.env', '.env']\nshared = []\n",
+    );
+    repo.commit_all("configuration");
+    repo.write(".env", "copy this\n");
+    repo.write("actual/.env", "do not follow\n");
+    std::os::unix::fs::symlink(repo.root.join("actual"), repo.root.join("linked")).unwrap();
+    let task = create(&repo, &home, "include links");
+    assert_eq!(task.copied, [".env"]);
+    assert!(task
+        .skipped
+        .iter()
+        .any(|s| s.path == "linked/.env" && s.reason == "symlink"));
+    assert!(!Path::new(&task.task.path).join("linked").exists());
+}

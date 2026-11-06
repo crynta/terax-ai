@@ -396,15 +396,19 @@ fn write_tree(repo: &ResolvedGitDirectory, temp: &TempIndex) -> Result<String> {
 pub fn snapshot_tree(repo: &ResolvedGitDirectory, verify: bool) -> Result<Snapshot> {
     ensure_supported(repo)?;
     let temp = TempIndex::seeded(repo)?;
+    snapshot_index(repo, verify, &temp)
+}
+
+fn snapshot_index(repo: &ResolvedGitDirectory, verify: bool, temp: &TempIndex) -> Result<Snapshot> {
     let mut warnings = Vec::new();
     let mut unstable = Vec::new();
-    add_everything(repo, &temp, &mut warnings, &mut unstable)?;
-    let mut tree = write_tree(repo, &temp)?;
+    add_everything(repo, temp, &mut warnings, &mut unstable)?;
+    let mut tree = write_tree(repo, temp)?;
     let mut passes = 1;
     let mut consistent = false;
     while verify && passes < MAX_PASSES {
-        add_everything(repo, &temp, &mut warnings, &mut unstable)?;
-        let again = write_tree(repo, &temp)?;
+        add_everything(repo, temp, &mut warnings, &mut unstable)?;
+        let again = write_tree(repo, temp)?;
         passes += 1;
         if again == tree {
             consistent = true;
@@ -525,11 +529,64 @@ fn write_commit(
     Ok(stdout_text(&output))
 }
 
+fn prepare_archive_index(repo: &ResolvedGitDirectory, temp: &TempIndex) -> Result<()> {
+    let listing = run_indexed(
+        repo,
+        temp,
+        os_args(["ls-files", "--stage", "-v", "-z"]),
+        None,
+    )?;
+    ensure_success(&listing, "task archive index scan failed")?;
+    if listing.truncated {
+        return Err(GitError::command(
+            "task archive",
+            "index scan was truncated",
+        ));
+    }
+    let mut assumed = Vec::new();
+    for record in listing.stdout.split(|b| *b == 0).filter(|p| !p.is_empty()) {
+        let path = record
+            .splitn(2, |b| *b == b'\t')
+            .nth(1)
+            .ok_or_else(|| GitError::command("task archive", "invalid index record"))?;
+        if matches!(record.first(), Some(b'S' | b's')) {
+            return Err(GitError::command(
+                "task archive",
+                "skip-worktree entries must be materialized before archiving",
+            ));
+        }
+        if record.get(2..8) == Some(b"160000") {
+            let relative = std::str::from_utf8(path)
+                .map_err(|_| GitError::command("task archive", "non-UTF-8 submodule path"))?;
+            let directory = super::utils::resolve_within_repo(&repo.local_path, relative)?;
+            if directory.is_dir() && std::fs::read_dir(&directory)?.next().is_some() {
+                return Err(GitError::command("task archive", format!("submodule {relative} contains data that the task snapshot cannot preserve; deinitialize it after saving its work")));
+            }
+        }
+        if record.first().is_some_and(u8::is_ascii_lowercase) {
+            assumed.extend_from_slice(path);
+            assumed.push(0);
+        }
+    }
+    if !assumed.is_empty() {
+        let output = run_indexed(
+            repo,
+            temp,
+            os_args(["update-index", "--no-assume-unchanged", "-z", "--stdin"]),
+            Some(assumed),
+        )?;
+        ensure_success(&output, "task archive index flags failed")?;
+    }
+    Ok(())
+}
+
 pub(crate) fn task_snapshot(
     repo: &ResolvedGitDirectory,
     id: &str,
 ) -> Result<super::task_state::TaskSnapshot> {
-    let snapshot = snapshot_tree(repo, true)?;
+    let temp = TempIndex::seeded(repo)?;
+    prepare_archive_index(repo, &temp)?;
+    let snapshot = snapshot_index(repo, true, &temp)?;
     if !snapshot.consistent || !snapshot.unstable_paths.is_empty() || !snapshot.warnings.is_empty()
     {
         return Err(GitError::command(

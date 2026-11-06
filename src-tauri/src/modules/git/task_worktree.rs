@@ -11,7 +11,7 @@ use super::plumbing::{
 };
 use super::process::{ensure_success, run_git};
 use super::project_config::{self, Ports};
-use super::task_state::Store;
+use super::task_state::{lock_operation, Store};
 pub use super::task_state::{TaskRecord, TaskSnapshot, TaskStatus};
 use super::utils::ResolvedGitDirectory;
 use super::worktree::{self, WorktreeAddRequest, WorktreeBranch, WorktreeRemoveReport};
@@ -157,14 +157,19 @@ pub fn create(
     home: &Path,
 ) -> Result<TaskCreated> {
     let repo = open(registry, root, workspace)?;
+    let _operation = lock_operation(&repo)?;
     let config = project_config::read(registry, root, workspace)?;
     let base = select_base(&repo, request.base.as_ref())?;
-    let mut store = Store::open(home)?;
     let name = super::refs::slugify(&request.name, 48);
-    let branch = choose_branch(&repo, &format!("{}{name}", config.worktree.branch_prefix))?;
+    let branch_slug = super::refs::slugify(&request.name.replace('.', "-"), 48);
+    let branch = choose_branch(
+        &repo,
+        &format!("{}{branch_slug}", config.worktree.branch_prefix),
+    )?;
+    let id = new_id()?;
+    let mut store = Store::open(home)?;
     let port = store.allocate(&config.ports, None)?;
     let target = project_config::location(&config.worktree, &repo.local_path, home, &name)?;
-    let id = new_id()?;
     let path = claim(&target)?;
     let task = TaskRecord {
         id,
@@ -184,10 +189,11 @@ pub fn create(
         let _ = std::fs::remove_dir(&path);
         return Err(e);
     }
+    drop(store);
     materialize(
         registry,
         &repo,
-        &mut store,
+        home,
         task,
         &base,
         None,
@@ -198,7 +204,7 @@ pub fn create(
 fn materialize(
     registry: &WorkspaceRegistry,
     repo: &ResolvedGitDirectory,
-    store: &mut Store,
+    home: &Path,
     mut task: TaskRecord,
     base: &str,
     snapshot: Option<&TaskSnapshot>,
@@ -225,9 +231,9 @@ fn materialize(
         if !Path::new(&task.path).join(".git").exists() {
             if snapshot.is_some() {
                 task.status = TaskStatus::Archived;
-                store.put(task)?;
+                Store::open(home)?.put(task)?;
             } else {
-                store.forget(&task.id)?;
+                Store::open(home)?.forget(&task.id)?;
             }
         }
         return Err(err);
@@ -253,7 +259,7 @@ fn materialize(
         let (shared, mut skipped) = share(&repo.local_path, &target, &task.shared)?;
         skipped.extend(copy.skipped);
         task.status = TaskStatus::Active;
-        store.put(task.clone())?;
+        Store::open(home)?.put(task.clone())?;
         Ok(TaskCreated {
             env: environment(&task),
             task: task.clone(),
@@ -271,13 +277,17 @@ fn materialize(
         {
             if snapshot.is_some() {
                 task.status = TaskStatus::Archived;
-                store.put(task)?;
+                Store::open(home)?.put(task)?;
             } else {
-                store.forget(&task.id)?;
+                Store::open(home)?.forget(&task.id)?;
             }
         }
     }
     result
+}
+
+pub(crate) fn link_privilege_missing(error: &std::io::Error, windows: bool) -> bool {
+    windows && error.raw_os_error() == Some(1314)
 }
 
 fn share(root: &Path, target: &Path, entries: &[String]) -> Result<(Vec<String>, Vec<Skipped>)> {
@@ -306,12 +316,22 @@ fn share(root: &Path, target: &Path, entries: &[String]) -> Result<(Vec<String>,
         worktree::create_dirs_confined(target, relative)
             .map_err(|e| GitError::InvalidPath(e.into()))?;
         #[cfg(unix)]
-        std::os::unix::fs::symlink(&canonical, &dst)?;
+        let linked = std::os::unix::fs::symlink(&canonical, &dst);
         #[cfg(windows)]
-        if canonical.is_dir() {
-            std::os::windows::fs::symlink_dir(&canonical, &dst)?;
+        let linked = if canonical.is_dir() {
+            std::os::windows::fs::symlink_dir(&canonical, &dst)
         } else {
-            std::os::windows::fs::symlink_file(&canonical, &dst)?;
+            std::os::windows::fs::symlink_file(&canonical, &dst)
+        };
+        if let Err(error) = linked {
+            if link_privilege_missing(&error, cfg!(windows)) {
+                skipped.push(Skipped {
+                    path: entry.clone(),
+                    reason: "symlink-privilege-required".into(),
+                });
+                continue;
+            }
+            return Err(error.into());
         }
         shared.push(entry.clone());
     }
@@ -344,6 +364,54 @@ fn active_repo(
     Ok(active)
 }
 
+fn inspect_archive(
+    registry: &WorkspaceRegistry,
+    active: &ResolvedGitDirectory,
+    task: &TaskRecord,
+    snapshot: &TaskSnapshot,
+) -> Result<WorktreeRemoveReport> {
+    let mut report =
+        worktree::inspect_removal(registry, &task.root, &task.path, &active.workspace)?;
+    if !report.blockers.contains(&worktree::RemoveBlocker::Dirty) {
+        let output = run_ok(
+            active,
+            os_args([
+                "diff",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--no-renames",
+                "--raw",
+                "--numstat",
+                "-z",
+                &snapshot.parent,
+                &snapshot.commit,
+                "--",
+            ]),
+            "task snapshot diff failed",
+        )?;
+        if output.truncated {
+            return Err(GitError::command(
+                "task archive",
+                "snapshot diff was truncated",
+            ));
+        }
+        let changed = super::diff::parse_raw_numstat_z(&output.stdout);
+        if !changed.is_empty() {
+            report.blockers.push(worktree::RemoveBlocker::Dirty);
+            report.dirty_total = changed.len() as u32;
+            report.dirty_files = changed
+                .into_iter()
+                .take(50)
+                .map(|file| checkpoint::ChangedPath {
+                    path: file.path,
+                    status: file.status,
+                })
+                .collect();
+        }
+    }
+    Ok(report)
+}
+
 pub fn prepare_archive(
     registry: &WorkspaceRegistry,
     root: &str,
@@ -352,8 +420,8 @@ pub fn prepare_archive(
     home: &Path,
 ) -> Result<TaskArchive> {
     let repo = open(registry, root, workspace)?;
-    let mut store = Store::open(home)?;
-    let mut task = store.task(&to_canon(&repo.local_path), id)?;
+    let _operation = lock_operation(&repo)?;
+    let mut task = Store::open(home)?.task(&to_canon(&repo.local_path), id)?;
     if task.status == TaskStatus::Archived {
         return Err(GitError::command("task archive", "already archived"));
     }
@@ -362,8 +430,8 @@ pub fn prepare_archive(
     let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
     let snapshot = checkpoint::task_snapshot(&active, id)?;
     task.snapshot = Some(snapshot.clone());
-    store.put(task.clone())?;
-    let removal = worktree::inspect_removal(registry, &task.root, &task.path, workspace)?;
+    Store::open(home)?.put(task.clone())?;
+    let removal = inspect_archive(registry, &active, &task, &snapshot)?;
     Ok(TaskArchive {
         archive_script: task.archive_script.clone(),
         task,
@@ -381,8 +449,8 @@ pub fn archive(
     home: &Path,
 ) -> Result<TaskArchive> {
     let repo = open(registry, root, workspace)?;
-    let mut store = Store::open(home)?;
-    let mut task = store.task(&to_canon(&repo.local_path), id)?;
+    let _operation = lock_operation(&repo)?;
+    let mut task = Store::open(home)?.task(&to_canon(&repo.local_path), id)?;
     if task.status == TaskStatus::Archived {
         return Err(GitError::command("task archive", "already archived"));
     }
@@ -391,18 +459,72 @@ pub fn archive(
     let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
     let snapshot = checkpoint::task_snapshot(&active, id)?;
     task.snapshot = Some(snapshot.clone());
-    store.put(task.clone())?;
-    let removal = worktree::remove(registry, &task.root, &task.path, force, workspace)?;
-    if removal.removed {
-        task.status = TaskStatus::Archived;
-        store.put(task.clone())?;
+    if !force {
+        let removal = inspect_archive(registry, &active, &task, &snapshot)?;
+        if !removal.blockers.is_empty() {
+            task.status = TaskStatus::Active;
+            Store::open(home)?.put(task.clone())?;
+            return Ok(TaskArchive {
+                archive_script: task.archive_script.clone(),
+                task,
+                snapshot,
+                removal,
+            });
+        }
     }
+    task.status = TaskStatus::Archiving;
+    Store::open(home)?.put(task.clone())?;
+    let removal = worktree::remove(registry, &task.root, &task.path, force, workspace)?;
+    task.status = if removal.removed {
+        TaskStatus::Archived
+    } else {
+        TaskStatus::Active
+    };
+    Store::open(home)?.put(task.clone())?;
     Ok(TaskArchive {
         archive_script: task.archive_script.clone(),
         task,
         snapshot,
         removal,
     })
+}
+
+fn recover_removed(
+    registry: &WorkspaceRegistry,
+    repo: &ResolvedGitDirectory,
+    task: &mut TaskRecord,
+    home: &Path,
+) -> Result<()> {
+    if task.status == TaskStatus::Archived || task.snapshot.is_none() {
+        return Ok(());
+    }
+    match std::fs::symlink_metadata(&task.path) {
+        Ok(_) => return Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e.into()),
+    }
+    let key = |path: &str| {
+        let path = super::plumbing::forward_slashes(&to_canon(Path::new(path)));
+        if cfg!(windows) {
+            path.to_lowercase()
+        } else {
+            path
+        }
+    };
+    if worktree::list(registry, &task.root, &repo.workspace)?
+        .iter()
+        .any(|e| !e.is_main && key(&e.path) == key(&task.path))
+    {
+        let removal = worktree::remove(registry, &task.root, &task.path, true, &repo.workspace)?;
+        if !removal.removed {
+            return Err(GitError::command(
+                "task recovery",
+                "missing worktree registration could not be removed",
+            ));
+        }
+    }
+    task.status = TaskStatus::Archived;
+    Store::open(home)?.put(task.clone())
 }
 
 pub fn restore(
@@ -414,8 +536,9 @@ pub fn restore(
     home: &Path,
 ) -> Result<TaskCreated> {
     let repo = open(registry, root, workspace)?;
-    let mut store = Store::open(home)?;
-    let mut task = store.task(&to_canon(&repo.local_path), id)?;
+    let _operation = lock_operation(&repo)?;
+    let mut task = Store::open(home)?.task(&to_canon(&repo.local_path), id)?;
+    recover_removed(registry, &repo, &mut task, home)?;
     if task.status != TaskStatus::Archived {
         return Err(GitError::command("task restore", "task is not archived"));
     }
@@ -448,6 +571,9 @@ pub fn restore(
         task.snapshot = Some(snapshot.clone());
     }
     let config = project_config::read(registry, root, workspace)?;
+    task.branch = choose_branch(&repo, &task.branch)?;
+    let target = project_config::location(&config.worktree, &repo.local_path, home, &task.name)?;
+    let mut store = Store::open(home)?;
     task.port = store.allocate(
         &Ports {
             base: config.ports.base,
@@ -455,18 +581,17 @@ pub fn restore(
         },
         Some(task.port),
     )?;
-    task.branch = choose_branch(&repo, &task.branch)?;
-    let target = project_config::location(&config.worktree, &repo.local_path, home, &task.name)?;
     task.path = to_canon(claim(&target)?);
     task.status = TaskStatus::Creating;
     if let Err(error) = store.put(task.clone()) {
         let _ = std::fs::remove_dir(&task.path);
         return Err(error);
     }
+    drop(store);
     materialize(
         registry,
         &repo,
-        &mut store,
+        home,
         task,
         &snapshot.parent,
         Some(&snapshot),

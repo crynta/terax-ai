@@ -459,7 +459,7 @@ export type TaskWorktree = {
   root: string;
   path: string;
   branch: string;
-  status: "creating" | "active" | "archived";
+  status: "creating" | "active" | "archiving" | "archived";
   port: number;
   portCount: number;
   snapshot: TaskSnapshot | null;

@@ -12,6 +12,7 @@ use super::project_config::Ports;
 pub enum TaskStatus {
     Creating,
     Active,
+    Archiving,
     Archived,
 }
 
@@ -39,6 +40,19 @@ pub struct TaskSnapshot {
     pub commit: String,
     pub parent: String,
     pub captures_ignored_files: bool,
+}
+
+pub(crate) fn lock_operation(repo: &super::utils::ResolvedGitDirectory) -> Result<File> {
+    let path = super::plumbing::common_dir(repo)?.join("terax-tasks.lock");
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(path)?;
+    file.lock()
+        .map_err(|e| GitError::command("task operation lock", e.to_string()))?;
+    Ok(file)
 }
 
 #[derive(Default, Deserialize, Serialize)]

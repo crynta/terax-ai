@@ -753,6 +753,19 @@ fn copy_included_inner(
     }
 
     candidates.sort();
+    if repo.is_some() {
+        candidates.retain(|relative| {
+            let mut path = src_root.to_path_buf();
+            for component in Path::new(relative).components() {
+                path.push(component);
+                if std::fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_symlink()) {
+                    report.skipped.push(skip(relative, "symlink"));
+                    return false;
+                }
+            }
+            true
+        });
+    }
     if let Some(repo) = repo.filter(|_| !candidates.is_empty()) {
         let input = candidates
             .iter()
