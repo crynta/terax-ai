@@ -93,7 +93,11 @@ fn mutate_store_at(
     }
     let mut candidate = guard.as_ref().expect("cache initialized above").clone();
     update(&mut candidate);
-    persist(path, &candidate)?;
+    if let Err(error) = persist(path, &candidate) {
+        // A rename can succeed before its directory sync fails.
+        *guard = read_store_at(path).ok();
+        return Err(error);
+    }
     *guard = Some(candidate);
     Ok(())
 }
@@ -269,6 +273,48 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(state.cache.lock().unwrap().as_ref(), Some(&committed));
         assert_eq!(read_store_at(&path).unwrap(), committed);
+    }
+
+    #[test]
+    fn failure_after_rename_cannot_restore_a_stale_snapshot() {
+        for delete in [false, true] {
+            let tmp = TempDir::new().unwrap();
+            let path = tmp.path().join("secrets.json");
+            write_store_at(&path, &HashMap::from([("saved".into(), "old".into())])).unwrap();
+            let state = SecretsState::default();
+            let result = mutate_store_at(
+                &state,
+                &path,
+                |map| {
+                    if delete {
+                        map.remove("saved");
+                    } else {
+                        map.insert("saved".into(), "new".into());
+                    }
+                },
+                |path, candidate| {
+                    write_store_at(path, candidate)?;
+                    Err("injected directory sync failure after rename".into())
+                },
+            );
+            assert!(result.is_err());
+            mutate_store_at(
+                &state,
+                &path,
+                |map| {
+                    map.insert("other".into(), "value".into());
+                },
+                write_store_at,
+            )
+            .unwrap();
+            let disk = read_store_at(&path).unwrap();
+            assert_eq!(
+                disk.get("saved").map(String::as_str),
+                if delete { None } else { Some("new") }
+            );
+            assert_eq!(disk.get("other").map(String::as_str), Some("value"));
+            assert_eq!(state.cache.lock().unwrap().as_ref(), Some(&disk));
+        }
     }
 
     #[test]
