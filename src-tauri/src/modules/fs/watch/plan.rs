@@ -203,7 +203,10 @@ impl ListingStamp {
         }
         // Restored mtimes, coarse clocks and missing change indicators cannot
         // safely rule out a name change from a directory-level event.
-        self == previous
+        // Only FSEvents needs metadata inference. Portable backends provide
+        // explicit content/name kinds; do not infer names from their clocks.
+        cfg!(target_os = "macos")
+            && self == previous
             && self.change_time.is_some()
             && self
                 .directory
