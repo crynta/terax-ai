@@ -53,17 +53,15 @@ describe("terminal backend selection", () => {
     const gpu = { userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", gpu: {} };
     const noGpu = { userAgent: gpu.userAgent };
 
-    it("defaults Windows to WebGL while preserving explicit choices on every platform", () => {
-      for (const [userAgent, automatic] of [
-        ["Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "ghostty-webgl"],
-        ["Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", "ghostty-webgpu"],
-        ["Mozilla/5.0 (X11; Linux x86_64)", "ghostty-webgpu"],
-        ["", "ghostty-webgpu"],
-      ] as const) {
+    it("is WebGPU under Automatic and WebGPU on every platform, with WebGL only by choice", () => {
+      for (const userAgent of [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+        "Mozilla/5.0 (X11; Linux x86_64)",
+      ]) {
         vi.stubGlobal("navigator", { userAgent, gpu: {} });
         vi.stubGlobal("window", { localStorage: createStorage() });
-        expect(selectedTerminalBackend(), userAgent).toBe(automatic);
-        expect(terminalBackendFor("auto"), userAgent).toBe(automatic);
+        expect(terminalBackendFor("auto"), userAgent).toBe("ghostty-webgpu");
         expect(terminalBackendFor("webgpu"), userAgent).toBe("ghostty-webgpu");
         expect(terminalBackendFor("webgl"), userAgent).toBe("ghostty-webgl");
       }
@@ -86,51 +84,16 @@ describe("terminal backend selection", () => {
       expect(terminalBackendFor("webgpu")).toBe("ghostty-webgpu");
     });
 
-    it("persists an experimental WebGPU opt-in on Windows and clears it for the platform default", () => {
-      const storage = createStorage();
-      vi.stubGlobal("navigator", gpu);
-      vi.stubGlobal("window", { localStorage: storage });
-      setSelectedTerminalBackend("ghostty-webgpu");
-      expect(storage.getItem(STORAGE_KEY)).toBe("ghostty-webgpu");
-      expect(terminalBackendFor("auto")).toBe("ghostty-webgpu");
-      expect(terminalBackendFor("webgl")).toBe("ghostty-webgl");
-      setSelectedTerminalBackend("ghostty-webgl");
-      expect(storage.getItem(STORAGE_KEY)).toBeNull();
-      expect(terminalBackendFor("auto")).toBe("ghostty-webgl");
-    });
-
-    it("keeps the Windows default when storage is unavailable or has a retired preference", () => {
-      vi.stubGlobal("navigator", gpu);
-      vi.stubGlobal("window", undefined);
-      expect(terminalBackendFor("auto")).toBe("ghostty-webgl");
-      const storage = createStorage();
-      storage.setItem(STORAGE_KEY, "xterm-webgl");
-      vi.stubGlobal("window", { localStorage: storage });
-      expect(terminalBackendFor("auto")).toBe("ghostty-webgl");
-      vi.stubGlobal("window", {
-        get localStorage() {
-          throw new Error("Storage disabled");
-        },
-      });
-      expect(terminalBackendFor("auto")).toBe("ghostty-webgl");
-    });
-
     it("reports which renderer new terminals use and why", () => {
       vi.stubGlobal("navigator", gpu);
       vi.stubGlobal("window", { localStorage: createStorage() });
       expect(terminalRendererReport()).toEqual({
         platform: "windows",
         setting: "auto",
-        preferred: "ghostty-webgl",
-        resolved: "ghostty-webgl",
-        webGpuAvailable: true,
-        reason: "automatic",
-      });
-      expect(terminalRendererReport("webgpu")).toMatchObject({
-        setting: "webgpu",
         preferred: "ghostty-webgpu",
         resolved: "ghostty-webgpu",
-        reason: "settings",
+        webGpuAvailable: true,
+        reason: "automatic",
       });
       expect(terminalRendererReport("webgl")).toMatchObject({
         setting: "webgl",
