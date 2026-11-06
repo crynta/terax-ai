@@ -227,7 +227,16 @@ export const EditorPane = memo(
       // Snapshot before save: edits typed during the formatter round-trip
       // must not be clobbered by the disk read-back.
       const docAtSave = view?.state.doc;
-      const saved = await saveRef.current();
+      let saved = false;
+      try {
+        saved = await saveRef.current();
+      } catch (e) {
+        const name = pathRef.current.split(/[\\/]/).pop() ?? pathRef.current;
+        toast.error(`Could not save ${name}`, {
+          id: `save-error:${pathRef.current}`,
+          description: String(e),
+        });
+      }
       if (!saved) return;
       if (prefs.editorFormatOnSave && formatter !== "lsp") {
         const error = await runExternalFormatter(
