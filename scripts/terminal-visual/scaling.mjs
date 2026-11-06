@@ -26,7 +26,9 @@ function compare(a, b, width, height, ax = 0, ay = 0) {
   let different = 0;
   let maxDelta = 0;
   let sumDelta = 0;
+  let inkPixels = 0;
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    if (b.data[(y * b.width + x) * 4 + 1] > 100) inkPixels++;
     let delta = 0;
     for (let c = 0; c < 3; c++) {
       delta = Math.max(delta, Math.abs(a.data[((y + ay) * a.width + x + ax) * 4 + c] - b.data[(y * b.width + x) * 4 + c]));
@@ -35,6 +37,7 @@ function compare(a, b, width, height, ax = 0, ay = 0) {
     maxDelta = Math.max(maxDelta, delta);
     sumDelta += delta;
   }
+  assert.ok(inkPixels > 100, "the compared region must contain glyph ink, not only the background");
   return { pixels: width * height, different, maxDelta, meanDelta: +(sumDelta / (width * height)).toFixed(5) };
 }
 
@@ -47,7 +50,7 @@ try {
     const browser = await chromium.launch({
       executablePath: process.env.CHROME_PATH,
       channel: process.env.CHROME_CHANNEL ?? "chromium",
-      args: ["--enable-unsafe-webgpu", "--enable-unsafe-swiftshader", "--force-color-profile=srgb", `--force-device-scale-factor=${dpr}`, ...(process.platform === "linux" ? ["--use-angle=swiftshader"] : [])],
+      args: ["--enable-unsafe-webgpu", "--enable-unsafe-swiftshader", "--force-color-profile=srgb", `--force-device-scale-factor=${dpr}`, ...(process.platform === "linux" ? ["--use-angle=swiftshader", "--use-webgpu-adapter=swiftshader"] : [])],
     });
     // Also bounds page.evaluate if device loss prevents the pending texture readback.
     const deadline = setTimeout(() => void browser.close(), 60_000);
@@ -56,7 +59,13 @@ try {
       for (const renderer of ["webgl", "webgpu"]) {
         const page = await browser.newPage({ viewport: { width: 1100, height: 720 }, deviceScaleFactor: dpr });
         const pageErrors = [];
-        page.on("pageerror", (error) => pageErrors.push(error.message));
+        page.on("console", (message) => {
+          if (message.type() === "error") console.error(message.text());
+        });
+        page.on("pageerror", (error) => {
+          pageErrors.push(error.message);
+          console.error(error);
+        });
         await page.goto(`${url}/?renderer=${renderer}&pattern=empty&w=1001&h=641&aw=1001&ah=641`);
         await page.waitForFunction(() => !!window.harness);
         for (const [index, origin] of origins.entries()) {
@@ -70,6 +79,8 @@ try {
             window.harness.write("\x1b[2J\x1b[H\x1b[?25l" + lines.join("\r\n"));
             await window.harness.settle();
           }, origin);
+          const stats = await page.evaluate(() => window.harness.diagnostics());
+          assert.ok(stats.frames > 0, `renderer did not present: ${JSON.stringify(stats)}`);
           const name = `${renderer}-${dpr}-${index}`;
           const meta = await page.evaluate((name) => window.harness.capture(name), name);
           const geometry = await page.evaluate(async () => {

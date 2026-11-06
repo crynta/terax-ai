@@ -47,8 +47,11 @@ that transform. Applying the same offset with layout `left`/`top` avoids the
 second sampling. The allocation policy and WebKit's existing CSS-size fallback
 remain unchanged.
 
-On Windows, select WebGPU, open a terminal at 125% and 150% display scaling, then
-call `window.__teraxTerm().renderer` twice, allowing a frame between calls. The
+On Windows, select WebGPU and open a terminal at 125% and 150% display scaling.
+In a packaged build, first run
+`localStorage.setItem("terax:terminal-diagnostics", "1")` in DevTools and reload
+the window to install the diagnostics. Then call `window.__teraxTerm().renderer`
+twice, allowing a frame between calls. The
 first call schedules a one-shot native box measurement; after a resize or display
 change, call twice again. Check:
 
