@@ -161,7 +161,6 @@ export class WebGpuWindowCanvas {
   private areaCss: CssRect | null = null;
   private areaDevice: { width: number; height: number } | null = null;
   private scale = devicePixelScale();
-  private appliedTransform = "";
   private generation: number;
   private device: GPUDevice;
   private gestureActive = terminalResizeInteractionActive();
@@ -529,8 +528,8 @@ export class WebGpuWindowCanvas {
     if (!box) return;
     // The snap offset depends on the ratio as well as the rectangle: a move to a display with
     // another ratio leaves the rectangle alone (`readAreaRect` reports no change) but needs a
-    // different translation. Idempotent when nothing differs.
-    this.applyTransform(box);
+    // different position. Idempotent when nothing differs.
+    this.applyPosition(box);
     // Rounded up, so the canvas always covers the area: pane rectangles are clamped to it and
     // anything beyond the area is clipped by the area itself.
     this.areaDevice = {
@@ -554,20 +553,19 @@ export class WebGpuWindowCanvas {
     };
     if (cssRectsEqual(this.areaCss, next)) return false;
     this.areaCss = next;
-    this.applyTransform(next);
+    this.applyPosition(next);
     this.layoutStale = true;
     return true;
   }
 
-  private applyTransform(area: CssRect): void {
+  private applyPosition(area: CssRect): void {
     const offset = snapOffsetCss(area.left, area.top, this.scale);
-    const transform =
-      offset.x === 0 && offset.y === 0
-        ? ""
-        : `translate(${offset.x}px, ${offset.y}px)`;
-    if (transform === this.appliedTransform) return;
-    this.canvas.style.transform = transform;
-    this.appliedTransform = transform;
+    // A fractional transform resamples Chromium's already pixel-snapped canvas layer.
+    // Position in layout instead, so snapping happens once, before compositing.
+    const left = `${offset.x}px`;
+    const top = `${offset.y}px`;
+    if (this.canvas.style.left !== left) this.canvas.style.left = left;
+    if (this.canvas.style.top !== top) this.canvas.style.top = top;
   }
 
   private restage(): void {

@@ -3,7 +3,28 @@ import {
   beginSourceControlRefresh,
   planContextRefresh,
   repositoryContainsContext,
+  repositoryForContext,
 } from "./useSourceControl";
+
+describe("repositoryForContext", () => {
+  it("watches the canonical repository resolved from a symlink context", () => {
+    expect(
+      repositoryForContext("/real/repo", "/work/link/src", "/work/link/src"),
+    ).toBe("/real/repo");
+  });
+
+  it("retains the repository when moving between its subdirectories", () => {
+    expect(repositoryForContext("/repo", "/repo/a", "/repo/b")).toBe("/repo");
+  });
+
+  it("does not watch a stale snapshot from a different context", () => {
+    expect(
+      repositoryForContext("/real/repo", "/work/link/src", "/other"),
+    ).toBeNull();
+    expect(repositoryForContext("/repo", "/repo/a", null)).toBeNull();
+    expect(repositoryForContext(null, "/other", "/other")).toBeNull();
+  });
+});
 
 describe("repositoryContainsContext", () => {
   it("matches a repository root and its descendants", () => {
@@ -97,6 +118,7 @@ describe("planContextRefresh", () => {
     contextPath: "/repo/app",
     repoRoot: "/repo",
     hasRepo: true,
+    isLoading: false,
     ageMs: 60_000,
   };
 
@@ -116,6 +138,12 @@ describe("planContextRefresh", () => {
     // Fresh but a different repository: must refetch.
     expect(
       planContextRefresh({ ...loaded, ageMs: 500, contextPath: "/other" }),
+    ).toBe("refresh");
+  });
+
+  it("refreshes when a context change may have invalidated an in-flight request", () => {
+    expect(
+      planContextRefresh({ ...loaded, ageMs: 500, isLoading: true }),
     ).toBe("refresh");
   });
 

@@ -54,7 +54,9 @@ import { setShowHidden } from "@/modules/settings/store";
 import {
   type ShortcutHandlers,
   type ShortcutId,
+  shouldDisableAskSelection,
   shouldDisablePaneSwapShortcut,
+  tabDigit,
   useGlobalShortcuts,
 } from "@/modules/shortcuts";
 import {
@@ -563,7 +565,8 @@ export default function App() {
           return;
         }
         toast("Terminal is busy", {
-          description: "Open a new tab to go there, or exit the running program.",
+          description:
+            "Open a new tab to go there, or exit the running program.",
         });
       });
     },
@@ -768,7 +771,8 @@ export default function App() {
       "tab.close": closeFocusedTab,
       "tab.next": () => stepSwitcher(1),
       "tab.prev": () => stepSwitcher(-1),
-      "tab.selectByIndex": (e) => selectTaskByIndex(parseInt(e.key, 10) - 1),
+      "tab.selectByIndex": (e) =>
+        selectTaskByIndex((tabDigit(e, e.shiftKey) ?? 1) - 1),
       "task.new": openNewTask,
       "space.next": () => cycleSpace(1),
       "space.prev": () => cycleSpace(-1),
@@ -859,7 +863,13 @@ export default function App() {
 
   const shortcutsDisabled = useCallback(
     (id: ShortcutId, e: KeyboardEvent) => {
-      if (shouldDisablePaneSwapShortcut(id, cardCount)) return true;
+      if (
+        shouldDisablePaneSwapShortcut(
+          id,
+          !IS_MAC && isEditorTab ? null : cardCount,
+        )
+      )
+        return true;
       if (
         (id === "pane.focusLeft" ||
           id === "pane.focusRight" ||
@@ -881,10 +891,11 @@ export default function App() {
       if (id === "ai.askSelection") {
         const target =
           (e.target as HTMLElement | null) ?? document.activeElement;
-        const inTerminal = isTerminalSurfaceTarget(target);
-        if (!inTerminal) return false;
-        const sel = captureActiveSelection();
-        return !sel?.trim();
+        return shouldDisableAskSelection(
+          e,
+          () => isTerminalSurfaceTarget(target),
+          () => !!captureActiveSelection()?.trim(),
+        );
       }
       if (id === "terminal.clear") {
         // Only intercept ⌘K while a terminal is focused; elsewhere let the key
@@ -910,7 +921,7 @@ export default function App() {
       }
       return false;
     },
-    [activeTab, cardCount, captureActiveSelection],
+    [activeTab, cardCount, captureActiveSelection, isEditorTab],
   );
 
   useGlobalShortcuts(shortcutHandlers, { isDisabled: shortcutsDisabled });
