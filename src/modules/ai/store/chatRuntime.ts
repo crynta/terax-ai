@@ -3,7 +3,7 @@ import {
   type ChatTransport,
   lastAssistantMessageIsCompleteWithApprovalResponses,
 } from "ai";
-import { getModel, providerNeedsKey, type ModelId } from "../config";
+import { providerNeedsKey, resolveModel } from "../config";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { BUILTIN_AGENTS } from "../lib/agents";
 import { useAgentsStore } from "./agentsStore";
@@ -132,11 +132,14 @@ export async function sendMessage(text: string): Promise<boolean> {
   const state = useChatStore.getState();
   const sessionId = state.activeSessionId;
   if (!sessionId) return false;
-  if (
-    providerNeedsKey(getModel(state.selectedModelId as ModelId).provider) &&
-    !getActiveProviderKey()
-  )
-    return false;
+  // resolveModel, not getModel: a custom-endpoint default is a `compat-` id,
+  // which getModel rejects. The caller is fire-and-forget, so a throw here
+  // was a silent no-op — no error state, no failed-request card.
+  const provider = resolveModel(
+    state.selectedModelId,
+    usePreferencesStore.getState().customEndpoints,
+  ).provider;
+  if (providerNeedsKey(provider) && !getActiveProviderKey()) return false;
   const c = getOrCreateChat(sessionId);
   await c.sendMessage({ text });
   return true;

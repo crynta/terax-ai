@@ -673,6 +673,26 @@ export function isKnownModelId(id: string): id is ModelId {
   return MODELS.some((x) => x.id === id);
 }
 
+/**
+ * True when the id resolves to a model that is actually usable: a static
+ * catalog model, or a `compat-` endpoint id whose endpoint still exists and
+ * is complete. `resolveModel` alone is too permissive — it returns a
+ * placeholder for a `compat-` id whose endpoint is missing, so it never
+ * proves the endpoint is usable. Used to validate model ids persisted across
+ * restarts, so a custom-endpoint default survives a reload instead of
+ * reverting, and never survives pointing at an endpoint the app will not
+ * configure. Mirrors `isConfigured` and the default picker's endpoint filter,
+ * so all three agree on which endpoints count as live.
+ */
+export function isResolvableModelId(
+  id: string,
+  endpoints: readonly CustomEndpoint[] = [],
+): boolean {
+  if (!isCompatModelId(id)) return isKnownModelId(id);
+  const ep = endpoints.find((e) => e.id === endpointIdFromCompatModel(id));
+  return !!ep && ep.baseURL.trim() !== "" && ep.modelId.trim() !== "";
+}
+
 const FREEFORM_PROVIDERS: ReadonlySet<ProviderId> = new Set([
   "openrouter",
   "openai-compatible",
