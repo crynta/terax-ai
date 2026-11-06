@@ -60,6 +60,7 @@ export function useAiBootstrap(): {
   const prefsHydrated = usePreferencesStore((s) => s.hydrated);
   const [keysLoaded, setKeysLoaded] = useState(false);
   useEffect(() => {
+    if (!prefsHydrated) return;
     let alive = true;
     const reload = () => {
       void getAllKeys().then((keys) => {
@@ -67,7 +68,6 @@ export function useAiBootstrap(): {
         setApiKeys(keys);
         setKeysLoaded(true);
       });
-      if (!prefsHydrated) return;
       void getAllCustomEndpointKeys(
         usePreferencesStore.getState().customEndpoints,
       ).then((epKeys) => {
