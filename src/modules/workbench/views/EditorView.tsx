@@ -6,7 +6,7 @@ import { useWindowInactive } from "@/modules/theme/WindowActivityBridge";
 import { memo, useCallback } from "react";
 import { setMarkdownView, updateTab } from "../actions";
 import { useWorkbenchChrome } from "../chrome";
-import { canFocusEditor } from "../editorNavigation";
+import { canFocusTab } from "../viewFocus";
 import { setViewHandle } from "../viewHandles";
 import type { ViewProps } from "./types";
 
@@ -25,7 +25,7 @@ export default memo(function EditorView({
     (dirty: boolean) => updateTab(id, { dirty }),
     [id],
   );
-  const canFocus = useCallback(() => canFocusEditor(id), [id]);
+  const canFocus = useCallback(() => canFocusTab(id), [id]);
   const onClose = useCallback(() => closeTab(id), [closeTab, id]);
   return (
     <div className="relative h-full overflow-hidden bg-background">

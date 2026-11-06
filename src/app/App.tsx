@@ -1340,7 +1340,6 @@ export default function App() {
 
           <AgentNotificationsBridge
             getTabs={getTabs}
-            activeId={activeId ?? -1}
             onActivate={activateAgentTarget}
           />
           <Toaster position="bottom-right" />

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { navigateEditor, canFocusEditor } from "./editorNavigation";
+import { navigateEditor } from "./editorNavigation";
+import { canFocusTab } from "./viewFocus";
 import { setViewHandle, forgetViewHandles } from "./viewHandles";
 import { useWorkbench } from "./store";
 import { EMPTY_WORKBENCH } from "./model/workbench";
@@ -55,6 +56,6 @@ it.each(["project", "sidebar"])(
     const gotoLine = vi.fn();
     setViewHandle(1, "editor", { gotoLine } as never);
     expect(gotoLine).toHaveBeenCalledExactlyOnceWith(42, { focus: false });
-    expect(canFocusEditor(1)).toBe(false);
+    expect(canFocusTab(1)).toBe(false);
   },
 );

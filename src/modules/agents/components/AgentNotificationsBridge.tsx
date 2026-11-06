@@ -1,3 +1,5 @@
+import { slotOf } from "@/modules/workbench/components/slot";
+import { snapshot } from "@/modules/workbench/store";
 import type { Tab } from "@/modules/tabs";
 import { leafIdForPty, subscribeAgentSignals } from "@/modules/terminal";
 import { useEffect, useRef } from "react";
@@ -12,7 +14,6 @@ import { useManagedAgentsStore } from "../store/managedAgentsStore";
 type Activate = (tabId: number, leafId: number) => void;
 type Ctx = {
   getTabs: () => readonly Tab[];
-  activeId: number;
   focused: boolean;
   onActivate: Activate;
 };
@@ -46,7 +47,7 @@ function route(
     title: heading,
     body: info?.title,
     focused: ctx.focused,
-    visible: ctx.activeId === session.tabId,
+    visible: slotOf(snapshot(), session.tabId)?.visible ?? false,
     // Stop fires every turn, so finished only updates the bell; attention toasts.
     allowToast: kind === "attention",
     tabId: session.tabId,
@@ -92,16 +93,14 @@ function handleSignal(sig: AgentSignal, ctx: Ctx): void {
 
 export function AgentNotificationsBridge({
   getTabs,
-  activeId,
   onActivate,
 }: {
   getTabs: () => readonly Tab[];
-  activeId: number;
   onActivate: Activate;
 }) {
   const focused = useWindowFocus();
-  const ctxRef = useRef<Ctx>({ getTabs, activeId, focused, onActivate });
-  ctxRef.current = { getTabs, activeId, focused, onActivate };
+  const ctxRef = useRef<Ctx>({ getTabs, focused, onActivate });
+  ctxRef.current = { getTabs, focused, onActivate };
 
   // Shares the terminal module's single `terax:agent-signal` listener.
   useEffect(

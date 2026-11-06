@@ -136,3 +136,30 @@ it("restarts a background local-task terminal without changing active focus", as
   expect(after.tabs.some((t) => t.id === tabId)).toBe(false);
   expect(disposeSession).toHaveBeenCalledExactlyOnceWith(tabId);
 });
+
+it.each(["unchanged", "project", "sidebar"])(
+  "checks focus ownership when a queued preview mounts: %s",
+  async (target) => {
+    const { openPreview, selectProject } = await import("./actions");
+    const { forgetViewHandles } = await import("./viewHandles");
+    vi.stubGlobal("document", {
+      activeElement: { tagName: "BODY", closest: () => null },
+    });
+    const id = openPreview("")!;
+    try {
+      if (target === "project") selectProject("other");
+      if (target === "sidebar")
+        vi.stubGlobal("document", {
+          activeElement: { tagName: "INPUT", closest: () => null },
+        });
+      const focusAddressBar = vi.fn();
+      setViewHandle(id, "preview", { focusAddressBar } as never);
+      expect(focusAddressBar).toHaveBeenCalledTimes(
+        target === "unchanged" ? 1 : 0,
+      );
+    } finally {
+      forgetViewHandles(id);
+      vi.unstubAllGlobals();
+    }
+  },
+);

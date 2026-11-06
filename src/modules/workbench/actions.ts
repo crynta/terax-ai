@@ -21,6 +21,7 @@ import { type DropZone, zoneSplit } from "./model/dropZone";
 import { type Direction, findCard, type SplitDir } from "./model/layout";
 import * as wb from "./model/workbench";
 import { allocId, commit, snapshot } from "./store";
+import { canFocusTab } from "./viewFocus";
 import { whenViewHandle } from "./viewHandles";
 
 export type TerminalOptions = {
@@ -307,7 +308,9 @@ export function openPreview(url: string): number | null {
 
 /** A blank preview asks for a URL: its address bar takes focus once mounted. */
 function focusAddressBarWhenReady(tabId: number) {
-  whenViewHandle(tabId, "preview", (preview) => preview.focusAddressBar());
+  whenViewHandle(tabId, "preview", (preview) => {
+    if (canFocusTab(tabId)) preview.focusAddressBar();
+  });
 }
 
 export function openGitDiff(
