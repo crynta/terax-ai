@@ -1,4 +1,3 @@
-import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,9 +15,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Toaster } from "@/components/ui/sonner";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import { getBindingTokens, SHORTCUTS } from "@/modules/shortcuts/shortcuts";
 import {
   type CustomEndpoint,
   compatModelIdForEndpoint,
@@ -74,6 +73,7 @@ import {
   setSttProvider,
   setWhispercppBaseURL,
 } from "@/modules/settings/store";
+import { getBindingTokens, SHORTCUTS } from "@/modules/shortcuts/shortcuts";
 import {
   Add01Icon,
   ArrowDown01Icon,
@@ -87,6 +87,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { ProviderIcon } from "../components/ProviderIcon";
 import { ProviderKeyCard } from "../components/ProviderKeyCard";
 import { SectionHeader } from "../components/SectionHeader";
@@ -150,6 +151,12 @@ function reportCredentialRemovalError(error: unknown): void {
   toast.error("Could not remove credential", { description: String(error) });
 }
 
+function reportPartialRemovalError(error: unknown): void {
+  toast.error("Credential removed; settings may be incomplete", {
+    description: String(error),
+  });
+}
+
 export function ModelsSection() {
   const [keys, setKeys] = useState<KeysMap | null>(null);
   const [epKeys, setEpKeys] = useState<CustomEndpointKeys>({});
@@ -187,7 +194,7 @@ export function ModelsSection() {
   const onClearKey = async (provider: ProviderId) => {
     await clearKey(provider);
     setKeys((prev) => (prev ? { ...prev, [provider]: null } : prev));
-    await emitKeysChanged();
+    await emitKeysChanged().catch(reportPartialRemovalError);
   };
 
   const onSaveEndpointKey = async (endpointId: string, value: string) => {
@@ -199,7 +206,7 @@ export function ModelsSection() {
   const onClearEndpointKey = async (endpointId: string) => {
     await clearCustomEndpointKey(endpointId);
     setEpKeys((prev) => ({ ...prev, [endpointId]: null }));
-    await emitKeysChanged();
+    await emitKeysChanged().catch(reportPartialRemovalError);
   };
 
   const addCustomEndpoint = async () => {
@@ -230,33 +237,44 @@ export function ModelsSection() {
       return next;
     });
 
-    // Drop the now-dead model id from favorites/recents before touching the
-    // selection, so the recents push from a selection reset can't race it.
-    const deadModelId = compatModelIdForEndpoint(id);
-    const { favoriteModelIds, recentModelIds } = usePreferencesStore.getState();
-    if (favoriteModelIds.includes(deadModelId)) {
-      await setFavoriteModelIds(
-        favoriteModelIds.filter((m) => m !== deadModelId),
+    try {
+      // Finish history cleanup before resetting the selection, which can add
+      // to recents. A failed write must not prevent removal of the endpoint.
+      const deadModelId = compatModelIdForEndpoint(id);
+      const { favoriteModelIds, recentModelIds } =
+        usePreferencesStore.getState();
+      const history = await Promise.allSettled([
+        ...(favoriteModelIds.includes(deadModelId)
+          ? [
+              setFavoriteModelIds(
+                favoriteModelIds.filter((m) => m !== deadModelId),
+              ),
+            ]
+          : []),
+        ...(recentModelIds.includes(deadModelId)
+          ? [setRecentModelIds(recentModelIds.filter((m) => m !== deadModelId))]
+          : []),
+      ]);
+      const remaining = customEndpoints.filter((e) => e.id !== id);
+      const { selectedModelId, setSelectedModelId } = useChatStore.getState();
+      if (selectedModelId === deadModelId) {
+        setSelectedModelId(
+          remaining[0]
+            ? compatModelIdForEndpoint(remaining[0].id)
+            : DEFAULT_MODEL_ID,
+        );
+      }
+      const cleanup = await Promise.allSettled([
+        setCustomEndpoints(remaining),
+        emitKeysChanged(),
+      ]);
+      const failed = [...history, ...cleanup].find(
+        (result) => result.status === "rejected",
       );
+      if (failed) throw failed.reason;
+    } catch (error) {
+      reportPartialRemovalError(error);
     }
-    if (recentModelIds.includes(deadModelId)) {
-      await setRecentModelIds(recentModelIds.filter((m) => m !== deadModelId));
-    }
-
-    // If the deleted endpoint was the active model, the selection would dangle
-    // and the next send throws "Custom endpoint not found". Fall back to another
-    // endpoint when one remains, else the default model.
-    const remaining = customEndpoints.filter((e) => e.id !== id);
-    const { selectedModelId, setSelectedModelId } = useChatStore.getState();
-    if (selectedModelId === deadModelId) {
-      setSelectedModelId(
-        remaining[0]
-          ? compatModelIdForEndpoint(remaining[0].id)
-          : DEFAULT_MODEL_ID,
-      );
-    }
-
-    await setCustomEndpoints(remaining);
   };
 
   const localConfig = (id: ProviderId): LocalConfig | null => {
@@ -332,20 +350,24 @@ export function ModelsSection() {
 
   const removeProvider = async (id: ProviderId) => {
     await onClearKey(id);
-    if (id === "openrouter") {
-      await setOpenrouterModelId("");
-    } else if (isLocalProvider(id)) {
-      const cfg = localConfig(id);
-      if (cfg) {
-        await cfg.setModelId("");
-        if (id === "openai-compatible") await cfg.setBaseURL("");
+    try {
+      if (id === "openrouter") {
+        await setOpenrouterModelId("");
+      } else if (isLocalProvider(id)) {
+        const cfg = localConfig(id);
+        if (cfg) {
+          await cfg.setModelId("");
+          if (id === "openai-compatible") await cfg.setBaseURL("");
+        }
       }
+      setAdding((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    } catch (error) {
+      reportPartialRemovalError(error);
     }
-    setAdding((prev) => {
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
   };
 
   const addProvider = (id: ProviderId) => {
@@ -354,6 +376,7 @@ export function ModelsSection() {
 
   return (
     <div className="flex flex-col gap-7">
+      <Toaster position="bottom-right" />
       <SectionHeader
         title="Models"
         description="Connect the providers you use. Keys live in your OS keychain and are used only by Terax."

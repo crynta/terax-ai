@@ -71,7 +71,10 @@ pub(crate) fn write_store_at(
 
     let parent = path.parent().ok_or("secrets path has no parent")?;
     let bytes = serde_json::to_vec(map).map_err(|e| e.to_string())?;
-    let mut tmp = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
+    let mut tmp = tempfile::Builder::new()
+        .prefix("secrets.json.")
+        .tempfile_in(parent)
+        .map_err(|e| e.to_string())?;
     tmp.write_all(&bytes).map_err(|e| e.to_string())?;
     tmp.as_file().sync_all().map_err(|e| e.to_string())?;
     tmp.persist(path).map_err(|e| e.error.to_string())?;

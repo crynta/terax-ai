@@ -1,5 +1,5 @@
-import { beforeEach, expect, it, vi } from "vitest";
 import { isValidElement, type ReactNode } from "react";
+import { beforeEach, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   cursor: 0,
@@ -8,6 +8,8 @@ const state = vi.hoisted(() => ({
   error: vi.fn(),
   invoke: vi.fn(),
   setCustomEndpoints: vi.fn(),
+  setFavoriteModelIds: vi.fn(),
+  setRecentModelIds: vi.fn(),
   setOpenrouterModelId: vi.fn(),
   emitKeysChanged: vi.fn(),
 }));
@@ -24,10 +26,17 @@ vi.mock("react/compiler-runtime", () => ({
 }));
 vi.mock("sonner", () => ({ toast: { error: state.error } }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: state.invoke }));
-vi.mock("@/modules/ai/store/chatStore", () => ({ useChatStore: vi.fn() }));
+vi.mock("@/components/ui/sonner", () => ({ Toaster: () => null }));
+vi.mock("@/modules/ai/store/chatStore", () => ({
+  useChatStore: {
+    getState: () => ({ selectedModelId: "other", setSelectedModelId: vi.fn() }),
+  },
+}));
 vi.mock("@/modules/settings/store", async (original) => ({
   ...(await original<typeof import("@/modules/settings/store")>()),
   setCustomEndpoints: state.setCustomEndpoints,
+  setFavoriteModelIds: state.setFavoriteModelIds,
+  setRecentModelIds: state.setRecentModelIds,
   setOpenrouterModelId: state.setOpenrouterModelId,
   emitKeysChanged: state.emitKeysChanged,
 }));
@@ -44,6 +53,8 @@ vi.mock("@/modules/settings/preferences", () => {
         },
       ],
       openrouterModelId: "model",
+      favoriteModelIds: ["compat-custom"],
+      recentModelIds: [],
     },
     { get: (target, key) => Reflect.get(target, key) ?? "" },
   );
@@ -54,6 +65,7 @@ vi.mock("@/modules/settings/preferences", () => {
     ),
   };
 });
+
 import { ModelsSection } from "./ModelsSection";
 
 function card(
@@ -80,7 +92,7 @@ function card(
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   state.cursor = 0;
   state.slots = [
     { openai: "stored", openrouter: "stored" },
@@ -106,3 +118,40 @@ it.each(["openai", "openrouter", "custom"])(
     for (const setter of state.setters) expect(setter).not.toHaveBeenCalled();
   },
 );
+
+it("keeps endpoint removal moving after a settings write fails", async () => {
+  state.invoke.mockResolvedValue(undefined);
+  state.setFavoriteModelIds.mockRejectedValue(new Error("settings failed"));
+  await card(ModelsSection(), "custom")?.onRemove();
+  expect(state.setCustomEndpoints).toHaveBeenCalledWith([]);
+  expect(state.emitKeysChanged).toHaveBeenCalled();
+  expect(state.error).toHaveBeenCalledWith(
+    "Credential removed; settings may be incomplete",
+    {
+      description: "Error: settings failed",
+    },
+  );
+});
+
+it("reports a notification failure after successful deletion without abandoning provider cleanup", async () => {
+  state.invoke.mockResolvedValue(undefined);
+  state.emitKeysChanged.mockRejectedValue(new Error("notification failed"));
+  await card(ModelsSection(), "openrouter")?.onRemove();
+  expect(state.setOpenrouterModelId).toHaveBeenCalledWith("");
+  expect(state.error).toHaveBeenCalledWith(
+    "Credential removed; settings may be incomplete",
+    {
+      description: "Error: notification failed",
+    },
+  );
+});
+
+it("mounts the toast renderer with credential controls", async () => {
+  const { Toaster } = await import("@/components/ui/sonner");
+  const section = ModelsSection();
+  expect(
+    section.props.children.some(
+      (child: ReactNode) => isValidElement(child) && child.type === Toaster,
+    ),
+  ).toBe(true);
+});
