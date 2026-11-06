@@ -108,6 +108,33 @@ fn collect(reader: &Reader, grace: Duration) -> Drained {
 /// `cmd` must already pipe stdout and stderr. Blocks the calling thread, so run
 /// it on the blocking pool.
 pub fn run(cmd: &mut Command, timeout: Duration, limits: Limits) -> io::Result<Captured> {
+    run_with_input(cmd, timeout, limits, None)
+}
+
+/// Writes `input` to the child's stdin from a short thread, so the caller never
+/// blocks on a child that reads none of it, then closes the pipe.
+fn feed_stdin(child: &SharedChild, input: Vec<u8>) -> io::Result<()> {
+    use std::io::Write;
+    let Some(mut stdin) = child.take_stdin() else {
+        return Err(io::Error::other("no stdin pipe"));
+    };
+    thread::Builder::new()
+        .name("terax-cap-in".into())
+        .stack_size(READER_STACK)
+        .spawn(move || {
+            let _ = stdin.write_all(&input);
+        })
+        .map(|_| ())
+}
+
+/// Like `run`, with optional bytes written to the child's stdin (`cmd` must
+/// pipe stdin when `input` is given).
+pub fn run_with_input(
+    cmd: &mut Command,
+    timeout: Duration,
+    limits: Limits,
+    input: Option<Vec<u8>>,
+) -> io::Result<Captured> {
     let child = Arc::new(SharedChild::spawn(cmd)?);
     let fail = |error: io::Error| {
         let _ = child.kill();
@@ -128,6 +155,9 @@ pub fn run(cmd: &mut Command, timeout: Duration, limits: Limits) -> io::Result<C
     )
     .map_err(fail)?;
     let stderr_reader = spawn_reader("terax-cap-err", stderr, limits.stderr, None).map_err(fail)?;
+    if let Some(input) = input {
+        feed_stdin(&child, input).map_err(fail)?;
+    }
 
     let (exit_code, timed_out) = match child.wait_timeout(timeout)? {
         Some(status) => (status.code(), false),
@@ -251,6 +281,44 @@ mod tests {
             "returned after {:?}",
             started.elapsed()
         );
+    }
+
+    #[test]
+    fn input_reaches_the_child_stdin_and_is_closed() {
+        let mut cmd = Command::new("/bin/cat");
+        cmd.stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let payload = vec![b'x'; 300_000];
+        let out = run_with_input(
+            &mut cmd,
+            Duration::from_secs(10),
+            Limits {
+                stdout: 1_000_000,
+                stderr: 1024,
+                stop_on_stdout_cap: false,
+            },
+            Some(payload.clone()),
+        )
+        .unwrap();
+        assert_eq!(out.exit_code, Some(0));
+        assert_eq!(out.stdout, payload);
+    }
+
+    #[test]
+    fn a_child_that_ignores_stdin_does_not_block_the_caller() {
+        let mut cmd = sh("exit 0");
+        cmd.stdin(Stdio::piped());
+        let started = Instant::now();
+        let out = run_with_input(
+            &mut cmd,
+            Duration::from_secs(10),
+            LIMITS,
+            Some(vec![0u8; 2_000_000]),
+        )
+        .unwrap();
+        assert_eq!(out.exit_code, Some(0));
+        assert!(started.elapsed() < Duration::from_secs(5));
     }
 
     #[test]
