@@ -129,9 +129,9 @@ pub enum RedirectDecision {
     TooMany,
 }
 
-/// Scheme, userinfo and host checks mirror the request validation. Without
-/// `allow_private` a redirect may not leave the host whose addresses were
-/// pinned, so a public API cannot bounce a request onto an internal address.
+/// DNS redirects must retain the pinned hostname, including with private
+/// access. Unclassified DNS answers could otherwise reach metadata services.
+/// Literal addresses can be classified here without another DNS lookup.
 pub fn redirect_decision(
     next: &reqwest::Url,
     last_previous: Option<&reqwest::Url>,
@@ -162,12 +162,8 @@ pub fn redirect_decision(
         if !allow_private && matches!(kind, IpKind::Loopback | IpKind::Private) {
             return RedirectDecision::Stop;
         }
-    } else if !allow_private {
-        if let Some(prev) = last_previous {
-            if prev.host_str() != Some(host) {
-                return RedirectDecision::Stop;
-            }
-        }
+    } else if last_previous.is_none_or(|prev| prev.host_str() != Some(host)) {
+        return RedirectDecision::Stop;
     }
     RedirectDecision::Follow
 }
@@ -354,7 +350,7 @@ mod tests {
     }
 
     #[test]
-    fn redirects_stay_on_the_pinned_host_unless_private_access_was_granted() {
+    fn dns_redirects_stay_on_the_pinned_host_even_with_private_access() {
         let from = url("https://api.example.com/v1");
         let same = url("https://api.example.com/v2");
         let other = url("https://evil.example.net/");
@@ -368,7 +364,28 @@ mod tests {
         );
         assert_eq!(
             redirect_decision(&other, Some(&from), 1, true),
+            RedirectDecision::Stop
+        );
+    }
+
+    #[test]
+    fn local_dns_redirects_keep_the_pinned_destination() {
+        let from = url("http://models.internal:11434/v1");
+        let same = url("http://models.internal:11434/v2");
+        assert_eq!(
+            redirect_decision(&same, Some(&from), 1, true),
             RedirectDecision::Follow
+        );
+        // An unchecked hostname must never reach the default resolver, even
+        // when it looks benign: it could resolve to a metadata address.
+        let other = url("http://model-redirect.example/v2");
+        assert_eq!(
+            redirect_decision(&other, Some(&from), 1, true),
+            RedirectDecision::Stop
+        );
+        assert_eq!(
+            redirect_decision(&same, None, 0, true),
+            RedirectDecision::Stop
         );
     }
 
