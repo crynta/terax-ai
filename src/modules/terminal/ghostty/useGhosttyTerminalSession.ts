@@ -28,7 +28,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { isAgentActivePty } from "../lib/agentActivity";
-import { openPty, type PtyColors, type PtySession } from "../lib/pty-bridge";
+import { openPty, type PtySession } from "../lib/pty-bridge";
 import { writeTerminalClipboard } from "../lib/terminalClipboard";
 import { LatestClipboardWrite } from "@/modules/terminal/lib/LatestClipboardWrite";
 import { GhosttySemanticEventRouter } from "./core/GhosttySemanticEventRouter";
@@ -250,7 +250,13 @@ export function useGhosttyTerminalSession({
     [leafId],
   );
   const writeAtPrompt = useCallback(
-    (data: string) => writeToGhosttyPrompt(leafId, data),
+    async (data: string) => {
+      const session = sessions.get(leafId);
+      if (!session || session.shellExited || session.disposed) return false;
+      const { writeAtShellPrompt } = await import("../lib/promptInjection");
+      const agent = session.pty && isAgentActivePty(session.pty.id);
+      return writeAtShellPrompt(session, data, !!agent);
+    },
     [leafId],
   );
   const focus = useCallback(() => focusGhosttySession(leafId), [leafId]);
@@ -304,9 +310,6 @@ export function useGhosttyTerminalSession({
   );
 }
 
-const themeKey = (theme: PtyColors) =>
-  JSON.stringify([theme.foreground, theme.background, theme.cursor, theme.palette]);
-
 function applyThemeToSession(session: GhosttySession): void {
   if (!session.model || !session.surface) return;
   const theme = readTerminalGpuTheme();
@@ -329,36 +332,6 @@ export function hasGhosttySession(leafId: number): boolean {
 export function writeToGhosttySession(leafId: number, data: string): boolean {
   const session = sessions.get(leafId);
   if (!session || session.shellExited || session.disposed) return false;
-  return session.writer.enqueue(textEncoder.encode(data));
-}
-
-/**
- * Types a shell command on the user's behalf only when the shell will read it:
- * never into a running command, a full-screen program or a coding agent.
- */
-async function writeToGhosttyPrompt(
-  leafId: number,
-  data: string,
-): Promise<boolean> {
-  const session = sessions.get(leafId);
-  if (!session || session.shellExited || session.disposed) return false;
-  const { shellAcceptsInjectedCommand } = await import(
-    "../lib/promptInjection"
-  );
-  const accepts = await shellAcceptsInjectedCommand(
-    {
-      integrated: session.promptIntegrated,
-      commandRunning: session.commandRunning,
-      commandTracked: session.commandTracked,
-      alternateScreen: session.model?.modes().alternateScreen ?? false,
-      agentActive: session.pty ? isAgentActivePty(session.pty.id) : false,
-    },
-    () =>
-      session.pty
-        ? invoke<boolean>("pty_has_foreground_job", { id: session.pty.id })
-        : Promise.resolve(false),
-  );
-  if (!accepts || session.shellExited || session.disposed) return false;
   return session.writer.enqueue(textEncoder.encode(data));
 }
 
@@ -932,7 +905,7 @@ async function initializeSessionGeneration(
   }
   // The theme can change while fonts, WASM and the renderer load; a change
   // before the PTY was attached found no PTY to tell, so look again.
-  if (themeKey(readTerminalGpuTheme()) !== themeKey(theme)) {
+  if (JSON.stringify(readTerminalGpuTheme()) !== JSON.stringify(theme)) {
     applyThemeToSession(session);
   }
 }

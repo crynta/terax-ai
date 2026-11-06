@@ -98,13 +98,26 @@ describe("LazyTerminalLinks", () => {
 
   it("loads on the first move with the modifier and hands the pointer over", async () => {
     const { target, tick, ingested } = setup();
-    target.dispatchEvent(pointer("pointermove", { metaKey: true }));
+    const first = pointer("pointermove", { metaKey: true });
     const second = pointer("pointermove", { metaKey: true });
+    target.dispatchEvent(first);
     target.dispatchEvent(second);
     await tick();
     expect(createTerminalLinks).toHaveBeenCalledOnce();
-    expect(ingested()).toHaveLength(1);
-    expect(ingested()[0]).toBe(second);
+    expect(ingested()).toHaveLength(2);
+    expect(ingested()[0]).toBe(first);
+    expect(ingested()[1]).toBe(second);
+  });
+
+  it("keeps a bounded number of events while the code loads, newest last", async () => {
+    const { target, tick, ingested } = setup();
+    const events = Array.from({ length: 200 }, () =>
+      pointer("pointermove", { metaKey: true }),
+    );
+    for (const event of events) target.dispatchEvent(event);
+    await tick();
+    expect(ingested().length).toBeLessThanOrEqual(64);
+    expect(ingested()[ingested().length - 1]).toBe(events[199]);
   });
 
   it("loads on a modified press over a pointer that never moved, and replays the click", async () => {

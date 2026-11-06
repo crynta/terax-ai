@@ -14,7 +14,10 @@ import {
   terminalResizeInteractionActive,
 } from "@/modules/terminal/lib/terminalResizeInteraction";
 import { TerminalResizeSync } from "@/modules/terminal/lib/terminalResizeSync";
-import { LazyTerminalLinks } from "../core/LazyTerminalLinks";
+import {
+  type DeferredTerminalLinks,
+  deferTerminalLinks,
+} from "../core/terminalLinksLoader";
 import type { TerminalLinkHit } from "../core/terminalLinks";
 import type { GhosttyTerminalModelApi } from "../GhosttyTerminalModel";
 import type { GestureGrowth } from "../gpu/CanvasBackingStore";
@@ -136,7 +139,7 @@ export class WebGlTerminalSurface
   private consecutiveRendererErrors = 0;
   private recoveringRenderer = false;
   private contentRevision: number;
-  private readonly links: LazyTerminalLinks;
+  private readonly links: DeferredTerminalLinks;
   private applyingFit = false;
   private readonly unsubscribePresentation: () => void;
   private disposed = false;
@@ -209,7 +212,7 @@ export class WebGlTerminalSurface
       },
     });
     this.root.style.cursor = "text";
-    this.links = new LazyTerminalLinks({
+    this.links = deferTerminalLinks({
       target: this.root,
       keyTarget: window,
       isModifier: isPrimaryModifierPressed,

@@ -11,7 +11,10 @@ import {
   terminalResizeInteractionActive,
 } from "@/modules/terminal/lib/terminalResizeInteraction";
 import { TerminalResizeSync } from "@/modules/terminal/lib/terminalResizeSync";
-import { LazyTerminalLinks } from "../core/LazyTerminalLinks";
+import {
+  type DeferredTerminalLinks,
+  deferTerminalLinks,
+} from "../core/terminalLinksLoader";
 import type { Rgb } from "../core/packedCells";
 import type { TerminalLinkHit } from "../core/terminalLinks";
 import type {
@@ -185,7 +188,7 @@ export class WebGpuTerminalSurface
   private uploadCount = 0;
   private uploadedBytes = 0;
   private contentRevision: number;
-  private readonly links: LazyTerminalLinks;
+  private readonly links: DeferredTerminalLinks;
   private applyingFit = false;
   private disposed = false;
   /** The window canvas has shown this pane's first frame; until then its DOM covers the canvas. */
@@ -265,7 +268,7 @@ export class WebGpuTerminalSurface
       },
     });
     this.root.style.cursor = "text";
-    this.links = new LazyTerminalLinks({
+    this.links = deferTerminalLinks({
       target: this.root,
       keyTarget: window,
       isModifier: isPrimaryModifierPressed,

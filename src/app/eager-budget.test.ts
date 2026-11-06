@@ -40,11 +40,11 @@ describe("startup bundle budget", () => {
       "src/modules/terminal/ghostty/useGhosttyTerminalSession.ts",
     );
     const lazy =
-      /[/\\](?:terminalLinksRuntime|ViewportLinkResolver|TerminalLinkInteraction|LinkUnderlineOverlay|terminalLinks|terminalLinkTargets)\.ts$/;
+      /[/\\](?:LazyTerminalLinks|terminalLinksRuntime|ViewportLinkResolver|TerminalLinkInteraction|LinkUnderlineOverlay|terminalLinks|terminalLinkTargets)\.ts$/;
     expect([...files].filter((file) => lazy.test(file))).toEqual([]);
-    // What stays eager is two listeners and a dynamic import.
+    // What stays eager is one dynamic import, made once the surface exists.
     expect(
-      [...files].some((file) => /[/\\]LazyTerminalLinks\.ts$/.test(file)),
+      [...files].some((file) => /[/\\]terminalLinksLoader\.ts$/.test(file)),
     ).toBe(true);
   });
   it("ships no xterm model or addons, including lazy dependencies", () => {

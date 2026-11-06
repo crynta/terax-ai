@@ -1,3 +1,5 @@
+import { invoke } from "@tauri-apps/api/core";
+
 export type ShellInputState = {
   /** The shell has reported OSC 133 at least once. */
   readonly integrated: boolean;
@@ -27,4 +29,46 @@ export async function shellAcceptsInjectedCommand(
   if (!state.integrated) return true;
   if (!state.commandTracked) return !(await hasForegroundJob());
   return !state.commandRunning;
+}
+
+/** What a terminal session shows about the shell behind it. */
+export type InjectionTarget = {
+  readonly shellExited: boolean;
+  readonly disposed: boolean;
+  readonly promptIntegrated: boolean;
+  readonly commandRunning: boolean;
+  readonly commandTracked: boolean;
+  readonly model: {
+    modes(): { readonly alternateScreen: boolean };
+  } | null;
+  readonly pty: { readonly id: number } | null;
+  readonly writer: { enqueue(bytes: Uint8Array): boolean };
+};
+
+/**
+ * Types a shell command on the user's behalf only when the shell will read it:
+ * never into a running command, a full-screen program or a coding agent.
+ */
+export async function writeAtShellPrompt(
+  session: InjectionTarget,
+  data: string,
+  agentActive: boolean,
+): Promise<boolean> {
+  const { pty } = session;
+  const accepts = await shellAcceptsInjectedCommand(
+    {
+      integrated: session.promptIntegrated,
+      commandRunning: session.commandRunning,
+      commandTracked: session.commandTracked,
+      alternateScreen: session.model?.modes().alternateScreen ?? false,
+      agentActive,
+    },
+    () =>
+      pty
+        ? invoke<boolean>("pty_has_foreground_job", { id: pty.id })
+        : Promise.resolve(false),
+  );
+  // The shell can exit or the pane close while the operating system answers.
+  if (!accepts || session.shellExited || session.disposed) return false;
+  return session.writer.enqueue(new TextEncoder().encode(data));
 }

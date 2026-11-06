@@ -295,9 +295,12 @@ export class AdaptedGhosttyTerminalModel implements GhosttyTerminalModelApi {
 
     this.blockMatch = null;
     let from = 0;
-    for (const cut of this.writeSplitter?.(bytes) ?? []) {
-      this.feed(bytes.subarray(from, cut));
-      from = cut;
+    const cuts = this.writeSplitter?.(bytes);
+    if (cuts) {
+      for (const cut of cuts) {
+        this.feed(bytes.subarray(from, cut));
+        from = cut;
+      }
     }
     this.feed(bytes.subarray(from));
     this.synchronizedOutputPresentation.observe(

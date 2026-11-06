@@ -28,7 +28,7 @@ export interface ActiveTerminalLinks {
   dispose(): void;
 }
 
-const MAX_QUEUED_EVENTS = 32;
+const MAX_QUEUED_EVENTS = 64;
 
 /**
  * Link hover and activation, loaded on demand. A terminal that never sees the
@@ -36,142 +36,125 @@ const MAX_QUEUED_EVENTS = 32;
  * underline and activation code arrives with the first modified pointer
  * movement, press or key press, and takes over the events that happened while
  * it loaded, so the first Cmd/Ctrl-click does not need a second one.
+ *
+ * Everything lives in the constructor's closure: this class is part of the
+ * first terminal's chunk, and closure variables minify where members do not.
  */
 export class LazyTerminalLinks {
-  private active: ActiveTerminalLinks | null = null;
-  private loading = false;
-  private disposed = false;
-  private keysBound = false;
-  private hearingRelease = false;
-  /** The latest pointer event over the pane; null once the pointer left. */
-  private last: PointerEvent | null = null;
-  private queue: Event[] = [];
-
-  constructor(private readonly options: LazyTerminalLinksOptions) {
-    const { target } = options;
-    target.addEventListener("pointermove", this.handlePointer);
-    target.addEventListener("pointerdown", this.handlePointer);
-    target.addEventListener("pointerleave", this.handleLeave);
-    target.addEventListener("pointercancel", this.handleLeave);
-  }
-
   /** The cells under the pointer changed meaning (output, scroll). */
-  invalidate(): void {
-    this.active?.invalidate();
-  }
+  readonly invalidate: () => void;
+  readonly dispose: () => void;
 
-  dispose(): void {
-    if (this.disposed) return;
-    this.disposed = true;
-    this.detach();
-    this.active?.dispose();
-    this.active = null;
-    this.last = null;
-    this.queue = [];
-  }
+  constructor(options: LazyTerminalLinksOptions) {
+    const { target, keyTarget, isModifier } = options;
+    let active: ActiveTerminalLinks | null = null;
+    // Non-null exactly while the code loads: what happened meanwhile.
+    let queue: Event[] | null = null;
+    // The latest pointer event over the pane; null once the pointer left.
+    let last: PointerEvent | null = null;
+    let keysBound = false;
+    let hearing = false;
+    let disposed = false;
 
-  private readonly handlePointer = (event: PointerEvent): void => {
-    if (event.pointerType === "touch") return;
-    if (event.type === "pointerdown" && event.button !== 0) return;
-    this.last = event;
-    if (this.loading) {
-      this.enqueue(event);
-      return;
-    }
-    this.bindKeys();
-    if (this.options.isModifier(event)) void this.load([event]);
-  };
+    const push = (event: Event): void => {
+      queue?.push(event);
+      if (queue && queue.length > MAX_QUEUED_EVENTS) queue.shift();
+    };
 
-  private readonly handleRelease = (event: PointerEvent): void => {
-    if (event.button === 0 && this.last) this.enqueue(event);
-  };
+    const bindKeys = (on: boolean): void => {
+      if (on === keysBound) return;
+      keysBound = on;
+      if (on) keyTarget.addEventListener("keydown", onKey);
+      else keyTarget.removeEventListener("keydown", onKey);
+    };
 
-  private readonly handleKey = (event: KeyboardEvent): void => {
-    if (!this.last) return;
-    if (this.loading) {
-      this.enqueue(event);
-    } else if (this.options.isModifier(event)) {
-      void this.load([this.last, event]);
-    }
-  };
+    // Releases are only worth hearing while a press may wait for the code.
+    const hear = (on: boolean): void => {
+      if (on === hearing) return;
+      hearing = on;
+      if (on) {
+        target.addEventListener("pointerup", onRelease);
+        keyTarget.addEventListener("keyup", onKey);
+      } else {
+        target.removeEventListener("pointerup", onRelease);
+        keyTarget.removeEventListener("keyup", onKey);
+      }
+    };
 
-  private readonly handleLeave = (): void => {
+    const onPointer = (event: PointerEvent): void => {
+      if (event.pointerType === "touch") return;
+      if (event.type === "pointerdown" && event.button) return;
+      last = event;
+      if (queue) {
+        push(event);
+        return;
+      }
+      bindKeys(true);
+      if (isModifier(event)) void load([event]);
+    };
+
+    const onRelease = (event: PointerEvent): void => {
+      if (last) push(event);
+    };
+
+    const onKey = (event: KeyboardEvent): void => {
+      if (!last) return;
+      if (queue) push(event);
+      else if (isModifier(event)) void load([last, event]);
+    };
+
     // Nothing that happened before the pointer left is worth replaying, and a
     // key press elsewhere must not load links for a pane it is not over.
-    this.last = null;
-    this.queue.length = 0;
-    this.unbindKeys();
-  };
+    const onLeave = (): void => {
+      last = null;
+      if (queue) queue.length = 0;
+      bindKeys(false);
+    };
 
-  private enqueue(event: Event): void {
-    const queue = this.queue;
-    if (
-      event.type === "pointermove" &&
-      queue[queue.length - 1]?.type === "pointermove"
-    ) {
-      queue[queue.length - 1] = event;
-      return;
-    }
-    queue.push(event);
-    if (queue.length > MAX_QUEUED_EVENTS) queue.shift();
-  }
+    const detach = (): void => {
+      target.removeEventListener("pointermove", onPointer);
+      target.removeEventListener("pointerdown", onPointer);
+      target.removeEventListener("pointerleave", onLeave);
+      target.removeEventListener("pointercancel", onLeave);
+      bindKeys(false);
+      hear(false);
+    };
 
-  private bindKeys(): void {
-    if (this.keysBound) return;
-    this.keysBound = true;
-    this.options.keyTarget.addEventListener("keydown", this.handleKey);
-  }
+    const load = async (seed: Event[]): Promise<void> => {
+      if (active || queue || disposed) return;
+      queue = seed;
+      hear(true);
+      try {
+        const { createTerminalLinks } = await import("./terminalLinksRuntime");
+        if (disposed) return;
+        const links = createTerminalLinks(options);
+        active = links;
+        const pending = queue ?? [];
+        detach();
+        last = null;
+        for (const event of pending) links.ingest(event);
+      } catch (error) {
+        console.error("[terax] terminal link support failed to load:", error);
+      } finally {
+        queue = null;
+        if (!active) hear(false);
+      }
+    };
 
-  private unbindKeys(): void {
-    if (!this.keysBound) return;
-    this.keysBound = false;
-    this.options.keyTarget.removeEventListener("keydown", this.handleKey);
-  }
+    target.addEventListener("pointermove", onPointer);
+    target.addEventListener("pointerdown", onPointer);
+    target.addEventListener("pointerleave", onLeave);
+    target.addEventListener("pointercancel", onLeave);
 
-  /** Releases are only worth hearing while a press may be waiting for the code. */
-  private listenForRelease(listen: boolean): void {
-    if (listen === this.hearingRelease) return;
-    this.hearingRelease = listen;
-    const { target, keyTarget } = this.options;
-    if (listen) {
-      target.addEventListener("pointerup", this.handleRelease);
-      keyTarget.addEventListener("keyup", this.handleKey);
-    } else {
-      target.removeEventListener("pointerup", this.handleRelease);
-      keyTarget.removeEventListener("keyup", this.handleKey);
-    }
-  }
-
-  private detach(): void {
-    const { target } = this.options;
-    target.removeEventListener("pointermove", this.handlePointer);
-    target.removeEventListener("pointerdown", this.handlePointer);
-    target.removeEventListener("pointerleave", this.handleLeave);
-    target.removeEventListener("pointercancel", this.handleLeave);
-    this.unbindKeys();
-    this.listenForRelease(false);
-  }
-
-  private async load(seed: Event[]): Promise<void> {
-    if (this.active || this.loading || this.disposed) return;
-    this.loading = true;
-    this.queue = seed;
-    this.listenForRelease(true);
-    try {
-      const { createTerminalLinks } = await import("./terminalLinksRuntime");
-      if (this.disposed) return;
-      const active = createTerminalLinks(this.options);
-      this.active = active;
-      const pending = this.queue;
-      this.detach();
-      this.last = null;
-      for (const event of pending) active.ingest(event);
-    } catch (error) {
-      console.error("[terax] terminal link support failed to load:", error);
-    } finally {
-      this.loading = false;
-      this.queue = [];
-      if (!this.active) this.listenForRelease(false);
-    }
+    this.invalidate = () => active?.invalidate();
+    this.dispose = () => {
+      if (disposed) return;
+      disposed = true;
+      detach();
+      active?.dispose();
+      active = null;
+      last = null;
+      queue = null;
+    };
   }
 }
