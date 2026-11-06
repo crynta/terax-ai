@@ -20,6 +20,9 @@ const failures = [];
 const origins = [{ x: 11, y: 21 }, { x: 10.25, y: 20.25 }];
 
 function compare(a, b, width, height, ax = 0, ay = 0) {
+  assert.ok(width > 0 && height > 0 && Number.isInteger(width) && Number.isInteger(height));
+  assert.ok(ax >= 0 && ay >= 0 && ax + width <= a.width && ay + height <= a.height);
+  assert.ok(width <= b.width && height <= b.height, "both images must cover the compared region");
   let different = 0;
   let maxDelta = 0;
   let sumDelta = 0;
@@ -82,7 +85,8 @@ try {
             return { backing: { width: canvas.width, height: canvas.height }, devicePixelContentBoxSize: box };
           });
           assert.deepEqual(geometry.devicePixelContentBoxSize, geometry.backing, "native device-pixel box must equal the backing (DPR emulation alone is insufficient)");
-          const raw = { width: meta.width, data: await fs.readFile(path.join(out, `${name}.rgba`)) };
+          const raw = { width: meta.width, height: meta.height, data: await fs.readFile(path.join(out, `${name}.rgba`)) };
+          assert.equal(raw.data.length, raw.width * raw.height * 4, "complete RGBA readback");
           const shot = await page.screenshot({ path: path.join(out, `${name}.png`) });
           const screen = PNG.sync.read(shot);
           assert.equal(screen.width, 1100 * dpr, "screenshot must contain physical pixels");
