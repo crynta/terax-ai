@@ -20,6 +20,40 @@ fn create(repo: &TestRepo, home: &Path, name: &str) -> tasks::TaskCreated {
     .unwrap()
 }
 
+fn assert_shared_outcome(created: &tasks::TaskCreated, entry: &str) -> bool {
+    let relative = entry.trim_end_matches('/');
+    let path = Path::new(&created.task.path).join(relative);
+    if created
+        .skipped
+        .iter()
+        .any(|s| s.path == entry && s.reason == "symlink-privilege-required")
+    {
+        #[cfg(not(windows))]
+        {
+            panic!("only Windows can report missing symlink privilege");
+        }
+        #[cfg(windows)]
+        {
+            assert!(!created.shared.iter().any(|p| p == entry));
+            assert!(!created.task.shared_links.contains_key(relative));
+            assert_eq!(
+                std::fs::symlink_metadata(path).unwrap_err().kind(),
+                std::io::ErrorKind::NotFound
+            );
+            assert_eq!(created.task.status, TaskStatus::Active);
+            false
+        }
+    } else {
+        assert!(created.shared.iter().any(|p| p == entry));
+        assert!(created.task.shared_links.contains_key(relative));
+        assert!(std::fs::symlink_metadata(path)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        true
+    }
+}
+
 #[test]
 fn config_defaults_unknown_keys_types_and_lines() {
     let config =
@@ -99,14 +133,12 @@ fn lifecycle_preserves_dirty_work_and_reallocates_ports() {
         std::fs::read_to_string(path.join(".env")).unwrap(),
         "SECRET=value\n"
     );
-    assert_eq!(
-        std::fs::read_to_string(path.join("node_modules/.cache/item")).unwrap(),
-        "shared cache\n"
-    );
-    assert!(std::fs::symlink_metadata(path.join("node_modules/.cache"))
-        .unwrap()
-        .file_type()
-        .is_symlink());
+    if assert_shared_outcome(&first, "node_modules/.cache/") {
+        assert_eq!(
+            std::fs::read_to_string(path.join("node_modules/.cache/item")).unwrap(),
+            "shared cache\n"
+        );
+    }
     assert_eq!(first.env["TERAX_PORT_9"], "3009");
     assert!(!first.env["TERAX_WORKSPACE_PATH"].starts_with("\\\\?\\"));
     let second = create(&repo, &home, "Fix Login!");
@@ -758,7 +790,7 @@ fn clean_shared_directory_links_do_not_require_force_and_are_recreated() {
     repo.commit_all("shared dependencies");
     repo.write("node_modules/cache", "keep source\n");
     let task = create(&repo, &home, "clean shared");
-    assert!(task.task.shared_links.contains_key("node_modules"));
+    let linked = assert_shared_outcome(&task, "node_modules");
     let prepared =
         tasks::prepare_archive(&repo.registry, &repo.path(), &task.task.id, &repo.ws, &home)
             .unwrap();
@@ -778,12 +810,8 @@ fn clean_shared_directory_links_do_not_require_force_and_are_recreated() {
     )
     .unwrap();
     assert!(!locked.removal.removed);
-    assert!(
-        std::fs::symlink_metadata(Path::new(&task.task.path).join("node_modules"))
-            .unwrap()
-            .file_type()
-            .is_symlink()
-    );
+    assert_eq!(assert_shared_outcome(&task, "node_modules"), linked);
+    assert!(locked.shared_restore_failures.is_empty());
     repo.git(&["worktree", "unlock", &task.task.path]);
     let archived = tasks::archive(
         &repo.registry,
@@ -806,8 +834,7 @@ fn clean_shared_directory_links_do_not_require_force_and_are_recreated() {
     )
     .unwrap();
     assert_eq!(restored.task.branch, task.task.branch);
-    assert_eq!(restored.shared, ["node_modules"]);
-    assert!(restored.skipped.is_empty());
+    assert_shared_outcome(&restored, "node_modules");
     assert!(
         tasks::archive(
             &repo.registry,
@@ -935,4 +962,127 @@ fn nested_untracked_repositories_refuse_forced_archive() {
         "private history\n"
     );
     assert!(nested.join(".git").is_dir());
+}
+
+#[cfg(unix)]
+#[test]
+fn archive_restores_later_links_and_reports_partial_failure_state() {
+    let repo = TestRepo::new();
+    let (_home, home) = scratch();
+    repo.write(".gitignore", "first/\nsecond/\n");
+    repo.write(
+        ".terax/project.toml",
+        "[worktree]\nshared = ['first/cache', 'second/cache']\n",
+    );
+    repo.commit_all("shared directories");
+    repo.write("first/cache/file", "first\n");
+    repo.write("second/cache/file", "second\n");
+    let created = create(&repo, &home, "restoration errors");
+    let prepared = tasks::prepare_archive(
+        &repo.registry,
+        &repo.path(),
+        &created.task.id,
+        &repo.ws,
+        &home,
+    )
+    .unwrap();
+    let snapshot = prepared.snapshot;
+    let mut task = prepared.task;
+    task.status = TaskStatus::Archiving;
+    Store::open(&home).unwrap().put(task.clone()).unwrap();
+    let mut refusal = prepared.removal;
+    refusal
+        .blockers
+        .push(super::worktree::RemoveBlocker::Locked);
+    let attempt = tasks::remove_with_shared(
+        &task,
+        &["first/cache".into(), "second/cache".into()],
+        || {
+            std::fs::remove_dir(Path::new(&task.path).join("first")).unwrap();
+            std::fs::write(
+                Path::new(&task.path).join("first"),
+                "concurrent replacement",
+            )
+            .unwrap();
+            Ok(refusal)
+        },
+    );
+    let opened = super::plumbing::open_worktree(&repo.registry, &repo.path(), &repo.ws).unwrap();
+    let outcome = tasks::complete_archive(
+        &repo.registry,
+        &opened,
+        task,
+        snapshot.clone(),
+        attempt,
+        &home,
+    )
+    .unwrap();
+    assert_eq!(outcome.shared_restore_failures.len(), 1);
+    assert_eq!(outcome.shared_restore_failures[0].path, "first/cache");
+    assert!(outcome
+        .removal
+        .blockers
+        .contains(&super::worktree::RemoveBlocker::Locked));
+    assert!(
+        std::fs::symlink_metadata(Path::new(&outcome.task.path).join("second/cache"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(outcome.task.status, TaskStatus::Active);
+    assert_eq!(
+        tasks::list(&repo.registry, &repo.path(), &repo.ws, &home).unwrap()[0].status,
+        TaskStatus::Active
+    );
+
+    let mut task = outcome.task;
+    task.status = TaskStatus::Archiving;
+    Store::open(&home).unwrap().put(task.clone()).unwrap();
+    let failure = || {
+        (
+            Err(super::errors::GitError::command(
+                "git remove",
+                "original failure",
+            )),
+            vec![super::checkpoint::Skipped {
+                path: "first/cache".into(),
+                reason: "restore failure".into(),
+            }],
+        )
+    };
+    let error = tasks::complete_archive(
+        &repo.registry,
+        &opened,
+        task.clone(),
+        snapshot.clone(),
+        failure(),
+        &home,
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("original failure"));
+    assert!(error.contains("restore failure"));
+    assert_eq!(
+        tasks::list(&repo.registry, &repo.path(), &repo.ws, &home).unwrap()[0].status,
+        TaskStatus::Archiving
+    );
+    assert!(
+        super::worktree::remove(&repo.registry, &repo.path(), &task.path, true, &repo.ws)
+            .unwrap()
+            .removed
+    );
+    assert!(
+        tasks::complete_archive(&repo.registry, &opened, task, snapshot, failure(), &home).is_err()
+    );
+    assert_eq!(
+        tasks::list(&repo.registry, &repo.path(), &repo.ws, &home).unwrap()[0].status,
+        TaskStatus::Archived
+    );
+    assert_eq!(
+        Store::open(&home)
+            .unwrap()
+            .allocate(&Ports::default(), None)
+            .unwrap(),
+        3000
+    );
 }

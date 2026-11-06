@@ -52,6 +52,7 @@ pub struct TaskArchive {
     pub snapshot: TaskSnapshot,
     pub removal: WorktreeRemoveReport,
     pub archive_script: String,
+    pub shared_restore_failures: Vec<Skipped>,
 }
 
 fn open(
@@ -418,13 +419,11 @@ fn managed_links(repo: &ResolvedGitDirectory, task: &TaskRecord) -> Result<Vec<S
     Ok(links)
 }
 
-fn remove_with_shared(
-    registry: &WorkspaceRegistry,
+pub(crate) fn remove_with_shared(
     task: &TaskRecord,
     links: &[String],
-    force: bool,
-    workspace: &WorkspaceEnv,
-) -> Result<WorktreeRemoveReport> {
+    remove: impl FnOnce() -> Result<WorktreeRemoveReport>,
+) -> (Result<WorktreeRemoveReport>, Vec<Skipped>) {
     let mut detached = Vec::new();
     let result = (|| {
         for relative in links {
@@ -453,20 +452,32 @@ fn remove_with_shared(
             }
             detached.push((relative.clone(), directory));
         }
-        worktree::remove(registry, &task.root, &task.path, force, workspace)
+        remove()
     })();
+    let mut failures = Vec::new();
     if !result.as_ref().is_ok_and(|r| r.removed) {
         // Restore only links removed by this attempt, never replace a user-created path.
         for (relative, directory) in detached {
             let path = Path::new(&task.path).join(&relative);
-            if std::fs::symlink_metadata(&path)
-                .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
-            {
-                symlink(Path::new(&task.shared_links[&relative]), &path, directory)?;
+            let restored = match std::fs::symlink_metadata(&path) {
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    symlink(Path::new(&task.shared_links[&relative]), &path, directory)
+                }
+                Err(error) => Err(error),
+                Ok(_) => Err(std::io::Error::new(
+                    std::io::ErrorKind::AlreadyExists,
+                    "path was replaced; left unchanged",
+                )),
+            };
+            if let Err(error) = restored {
+                failures.push(Skipped {
+                    path: relative,
+                    reason: error.to_string(),
+                });
             }
         }
     }
-    result
+    (result, failures)
 }
 
 fn inspect_archive(
@@ -549,6 +560,7 @@ pub fn prepare_archive(
         task,
         snapshot,
         removal,
+        shared_restore_failures: vec![],
     })
 }
 
@@ -582,24 +594,57 @@ pub fn archive(
                 task,
                 snapshot,
                 removal,
+                shared_restore_failures: vec![],
             });
         }
     }
     task.status = TaskStatus::Archiving;
     Store::open(home)?.put(task.clone())?;
-    let removal = remove_with_shared(registry, &task, &links, force, workspace)?;
-    task.status = if removal.removed {
-        TaskStatus::Archived
-    } else {
-        TaskStatus::Active
-    };
-    Store::open(home)?.put(task.clone())?;
-    Ok(TaskArchive {
-        archive_script: task.archive_script.clone(),
-        task,
-        snapshot,
-        removal,
-    })
+    let attempt = remove_with_shared(&task, &links, || {
+        worktree::remove(registry, &task.root, &task.path, force, workspace)
+    });
+    complete_archive(registry, &repo, task, snapshot, attempt, home)
+}
+
+pub(crate) fn complete_archive(
+    registry: &WorkspaceRegistry,
+    repo: &ResolvedGitDirectory,
+    mut task: TaskRecord,
+    snapshot: TaskSnapshot,
+    attempt: (Result<WorktreeRemoveReport>, Vec<Skipped>),
+    home: &Path,
+) -> Result<TaskArchive> {
+    let (removal, failures) = attempt;
+    match removal {
+        Ok(removal) => {
+            task.status = if removal.removed {
+                TaskStatus::Archived
+            } else {
+                TaskStatus::Active
+            };
+            recover_removed(registry, repo, &mut task, home)?;
+            Store::open(home)?.put(task.clone())?;
+            Ok(TaskArchive {
+                archive_script: task.archive_script.clone(),
+                task,
+                snapshot,
+                removal,
+                shared_restore_failures: failures,
+            })
+        }
+        Err(error) => {
+            // A failed git remove can be partial. Keep Archiving unless the directory is gone.
+            let recovery = recover_removed(registry, repo, &mut task, home);
+            let mut detail = format!("removal failed: {error}");
+            for failure in failures {
+                detail.push_str(&format!("; restoring {}: {}", failure.path, failure.reason));
+            }
+            if let Err(error) = recovery {
+                detail.push_str(&format!("; recovery failed: {error}"));
+            }
+            Err(GitError::command("task archive", detail))
+        }
+    }
 }
 
 fn recover_removed(

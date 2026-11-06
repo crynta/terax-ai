@@ -484,6 +484,7 @@ export type TaskArchive = {
   snapshot: TaskSnapshot;
   removal: WorktreeRemoveReport;
   archiveScript: string;
+  sharedRestoreFailures: { path: string; reason: string }[];
 };
 
 export type TaskDiskUsage = {
