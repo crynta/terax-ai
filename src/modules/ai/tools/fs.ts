@@ -17,6 +17,10 @@ function djb2(s: string): number {
   return h >>> 0;
 }
 
+function byteLength(s: string): number {
+  return new TextEncoder().encode(s).length;
+}
+
 export function buildFsTools(ctx: ToolContext) {
   return {
     read_file: tool({
@@ -173,8 +177,11 @@ export function buildFsTools(ctx: ToolContext) {
 
         try {
           await native.writeFile(abs, content);
-          ctx.readCache.set(abs, { size: content.length, hash: djb2(content) });
-          return { path: abs, bytesWritten: content.length, ok: true };
+          ctx.readCache.set(abs, {
+            size: byteLength(content),
+            hash: djb2(content),
+          });
+          return { path: abs, bytesWritten: byteLength(content), ok: true };
         } catch (e) {
           return { error: String(e), path: abs };
         }
