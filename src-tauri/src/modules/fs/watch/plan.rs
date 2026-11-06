@@ -3,7 +3,7 @@
 //! Everything here is pure so the macOS FSEvents callback and the notify
 //! callback share one tested filter.
 
-use std::collections::hash_map::DefaultHasher;
+use std::collections::hash_map::{DefaultHasher, Entry};
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
@@ -407,13 +407,18 @@ impl WatchSet {
         }
     }
 
-    pub fn add_file(&mut self, dir: String, file: String, stamp: Option<FileStamp>) {
-        self.files
-            .entry(dir)
-            .or_default()
-            .entry(file)
-            .and_modify(|watch| watch.refs += 1)
-            .or_insert(FileWatch { refs: 1, stamp });
+    /// True when this file did not already have a baseline.
+    pub fn add_file(&mut self, dir: String, file: String, stamp: Option<FileStamp>) -> bool {
+        match self.files.entry(dir).or_default().entry(file) {
+            Entry::Occupied(mut entry) => {
+                entry.get_mut().refs += 1;
+                false
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(FileWatch { refs: 1, stamp });
+                true
+            }
+        }
     }
 
     pub fn remove_file(&mut self, dir: &str, file: &str) {
