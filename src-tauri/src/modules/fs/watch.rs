@@ -214,9 +214,8 @@ fn resolve_changes_with(
         .iter()
         .map(|(path, previous, change)| {
             let path = path.as_deref()?;
-            let current = ListingStamp::of(path);
             if !change.forced
-                && current
+                && ListingStamp::of(path)
                     .zip(*previous)
                     .is_some_and(|(now, before)| now.can_skip(&before, change.content_only))
             {
