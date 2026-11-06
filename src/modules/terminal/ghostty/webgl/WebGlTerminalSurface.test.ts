@@ -224,12 +224,15 @@ function harness() {
     });
   const media = new EventTarget();
   vi.stubGlobal("document", { createElement: element });
-  vi.stubGlobal("window", {
-    devicePixelRatio: 1,
-    setTimeout,
-    clearTimeout,
-    matchMedia: () => media,
-  });
+  vi.stubGlobal(
+    "window",
+    Object.assign(new EventTarget(), {
+      devicePixelRatio: 1,
+      setTimeout,
+      clearTimeout,
+      matchMedia: () => media,
+    }),
+  );
   let resize = () => {};
   vi.stubGlobal(
     "ResizeObserver",

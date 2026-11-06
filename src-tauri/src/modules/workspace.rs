@@ -495,7 +495,7 @@ pub(crate) fn validate_wsl_distro_name(distro: &str) -> Result<(), String> {
 }
 
 #[cfg(windows)]
-fn wsl_drvfs_to_windows(path: &str) -> Option<PathBuf> {
+pub(crate) fn wsl_drvfs_to_windows(path: &str) -> Option<PathBuf> {
     let normalized = path.replace('\\', "/");
     let rest = normalized.strip_prefix("/mnt/")?;
     let mut parts = rest.splitn(2, '/');

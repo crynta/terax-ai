@@ -4,6 +4,7 @@ import vm from "node:vm";
 import { TeraxGhostty } from "@terax/ghostty-core/adapted";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { PackedCellView } from "./core/packedCells";
+import { linkUriAt } from "./core/ViewportLinkResolver";
 import { GhosttyCoreRuntime } from "./GhosttyCoreRuntime";
 
 let wasmBytes: ArrayBuffer;
@@ -431,9 +432,20 @@ describe("GhosttyCoreRuntime", () => {
       expect(model.presentationSuppressed()).toBe(false);
       expect(model.consumeDamage().kind).not.toBe("none");
 
+      // An expired update stays over until the application resets the mode, so
+      // one that died inside it does not freeze the screen once a second.
       damage.mockClear();
       model.write(new TextEncoder().encode("second"));
+      expect(damage).toHaveBeenCalledTimes(1);
+      expect(model.presentationSuppressed()).toBe(false);
+      expect(model.deferPresentation()).toBe(false);
+      model.consumeDamage();
+
+      model.write(new TextEncoder().encode("\x1b[?2026l"));
+      damage.mockClear();
+      model.write(new TextEncoder().encode("\x1b[?2026hthird"));
       expect(damage).not.toHaveBeenCalled();
+      expect(model.presentationSuppressed()).toBe(true);
       expect(model.deferPresentation()).toBe(true);
 
       model.write(new TextEncoder().encode("\x1b[?2026l"));
@@ -651,10 +663,10 @@ describe("GhosttyCoreRuntime", () => {
       new TextEncoder().encode(`\x1b]8;;${uri}\x1b\\Terax\x1b]8;;\x1b\\ plain`),
     );
 
-    expect(model.hyperlinkAtViewportCell(0, 0)).toBe(uri);
-    expect(model.hyperlinkAtViewportCell(0, 4)).toBe(uri);
-    expect(model.hyperlinkAtViewportCell(0, 6)).toBeNull();
-    expect(model.hyperlinkAtViewportCell(-1, 0)).toBeNull();
+    expect(linkUriAt(model, 0, 0)).toBe(uri);
+    expect(linkUriAt(model, 0, 4)).toBe(uri);
+    expect(linkUriAt(model, 0, 6)).toBeNull();
+    expect(linkUriAt(model, -1, 0)).toBeNull();
     model.dispose();
   });
 
@@ -666,15 +678,15 @@ describe("GhosttyCoreRuntime", () => {
     model.write(
       new TextEncoder().encode("日本 https://example.com/docs\r\nblank"),
     );
-    expect(model.hyperlinkAtViewportCell(0, 5)).toBe(
+    expect(linkUriAt(model, 0, 5)).toBe(
       "https://example.com/docs",
     );
-    expect(model.hyperlinkAtViewportCell(1, 3)).toBe(
+    expect(linkUriAt(model, 1, 3)).toBe(
       "https://example.com/docs",
     );
-    expect(model.hyperlinkAtViewportCell(1, 15)).toBeNull();
+    expect(linkUriAt(model, 1, 15)).toBeNull();
     model.write(new TextEncoder().encode("\x1bc"));
-    expect(model.hyperlinkAtViewportCell(0, 5)).toBeNull();
+    expect(linkUriAt(model, 0, 5)).toBeNull();
     runtime.dispose();
   });
 

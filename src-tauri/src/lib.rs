@@ -283,6 +283,7 @@ pub fn run() {
             pty::pty_write,
             pty::pty_stream_open,
             pty::pty_set_presentation,
+            pty::pty_set_colors,
             pty::pty_diagnostics,
             pty::pty_resize,
             pty::pty_close,
