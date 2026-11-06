@@ -10,6 +10,7 @@ import { useWhisperRecording } from "../hooks/useWhisperRecording";
 import { expandSnippetTokens, type Snippet } from "../lib/snippets";
 import { tryRunSlashCommand, type SlashCommandMeta } from "./slashCommands";
 import { getChat, useChatStore } from "../store/chatStore";
+import { denyPendingToolApprovals } from "./denyPendingApprovals";
 import { useSnippetsStore } from "../store/snippetsStore";
 import { currentWorkspaceEnv } from "@/modules/workspace";
 
@@ -310,6 +311,11 @@ export function AiComposerProvider({ children }: ProviderProps) {
     void (async () => {
       const { getOrCreateChat } = await import("../store/chatRuntime");
       const chat = getOrCreateChat(sessionId);
+      // Deny pending tool approvals so a follow-up cannot trip
+      // MissingToolResultsError (Fixes #514). Prefer mutating to
+      // output-denied over addToolApprovalResponse to avoid racing
+      // sendAutomaticallyWhen.
+      denyPendingToolApprovals(chat.messages);
       void chat.sendMessage({ role: "user", parts } as Parameters<
         typeof chat.sendMessage
       >[0]);
