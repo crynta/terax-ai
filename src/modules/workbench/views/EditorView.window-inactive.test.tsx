@@ -5,15 +5,25 @@ import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import EditorView from "./EditorView";
+import { WorkbenchChromeContext } from "../chrome";
+
+const editorClose = vi.hoisted(() => ({ current: () => {} }));
 
 vi.mock("@/modules/theme/WindowActivityBridge", () => ({
   useWindowInactive: vi.fn(),
 }));
 
 vi.mock("@/modules/editor/EditorPane", () => ({
-  EditorPane: ({ mediaActive }: { mediaActive: boolean }) => (
-    <div data-media-active={mediaActive} />
-  ),
+  EditorPane: ({
+    mediaActive,
+    onClose,
+  }: {
+    mediaActive: boolean;
+    onClose: () => void;
+  }) => {
+    editorClose.current = onClose;
+    return <div data-media-active={mediaActive} />;
+  },
 }));
 
 function renderEditor(path: string, visible = true) {
@@ -70,4 +80,34 @@ describe("EditorView media", () => {
       'data-media-active="true"',
     );
   });
+});
+
+it("routes editor close requests through the workbench confirmation guard", () => {
+  const closeTab = vi.fn();
+  const chrome = {
+    closeTab,
+    closeTabs() {},
+    newEditor() {},
+    newGitGraph() {},
+    launchAgents() {},
+    newTerminalCwd: () => undefined,
+  };
+  const tab: EditorTab = {
+    id: 42,
+    spaceId: "p",
+    kind: "editor",
+    title: "dirty",
+    path: "/dirty.ts",
+    dirty: true,
+    preview: false,
+  };
+  renderToString(
+    createElement(
+      WorkbenchChromeContext.Provider,
+      { value: chrome },
+      createElement(EditorView, { tab, visible: true, focused: true }),
+    ),
+  );
+  editorClose.current();
+  expect(closeTab).toHaveBeenCalledExactlyOnceWith(42);
 });

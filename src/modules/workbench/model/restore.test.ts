@@ -104,3 +104,36 @@ describe("restoreProject", () => {
     expect(load).not.toHaveBeenCalled();
   });
 });
+
+it.each([null, {}, { tabs: [null, { kind: "terminal" }] }])(
+  "keeps a readable workbench when the legacy entry is corrupt: %j",
+  async (raw) => {
+    const { result } = await restore(workbench(), raw);
+    expect(cwdOf(result)).toBe("/workbench");
+    expect(result.backup).toBe(false);
+  },
+);
+
+it("preserves both input blobs when loading or running migration fails", async () => {
+  const saved = workbench();
+  const before = JSON.stringify({ saved, legacy });
+  for (const load of [
+    async () => {
+      throw new Error("load failed");
+    },
+    async () =>
+      (() => {
+        throw new Error("migration failed");
+      }) as typeof migrateLegacySpace,
+  ]) {
+    await expect(
+      restoreProject(saved, legacy, "p", alloc(), load),
+    ).rejects.toThrow();
+    expect(JSON.stringify({ saved, legacy })).toBe(before);
+  }
+});
+
+it("backs up a partial workbench envelope without a task array", async () => {
+  const { result } = await restore({ version: WORKBENCH_VERSION }, undefined);
+  expect(result.backup).toBe(true);
+});

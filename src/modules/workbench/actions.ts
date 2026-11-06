@@ -240,7 +240,7 @@ export function openFile(
       s,
       task.id,
       tab,
-      (t) => t.kind === "editor" && t.path === path,
+      (t) => t.kind === "editor" && samePath(t.path, path),
       allocId,
       {
         activate: options.activate,

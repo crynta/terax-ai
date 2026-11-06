@@ -6,6 +6,7 @@ import { IS_MAC, MOD_PROP } from "@/lib/platform";
 
 export type ShortcutId =
   | "commandPalette.open"
+  | "commandPalette.files"
   | "commandPalette.content"
   | "tab.new"
   | "tab.newBlock"
@@ -87,9 +88,29 @@ export type Shortcut = {
 };
 
 export const SHORTCUTS: Shortcut[] = [
+  // Matching walks this list in order and skips a shortcut its host disables,
+  // so terminal.clear stays ahead of commandPalette.open: on macOS ⌘K clears a
+  // focused terminal and opens the palette everywhere else.
+  {
+    id: "terminal.clear",
+    label: "Clear terminal",
+    group: "Terminal",
+    // macOS Terminal's ⌘K (clear scrollback, keep the prompt). Default only on
+    // macOS — on other platforms Ctrl+K is readline's kill-line, so we leave it
+    // unbound and let users assign their own in settings.
+    defaultBindings: IS_MAC ? [{ meta: true, key: "k" }] : [],
+  },
   {
     id: "commandPalette.open",
     label: "Open command palette",
+    group: "General",
+    defaultBindings: IS_MAC
+      ? [{ [MOD_PROP]: true, shift: true, key: "p" }, { meta: true, key: "k" }]
+      : [{ [MOD_PROP]: true, shift: true, key: "p" }],
+  },
+  {
+    id: "commandPalette.files",
+    label: "Go to file",
     group: "General",
     defaultBindings: [{ [MOD_PROP]: true, key: "p" }],
   },
@@ -97,7 +118,7 @@ export const SHORTCUTS: Shortcut[] = [
     id: "commandPalette.content",
     label: "Find in files",
     group: "General",
-    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "p" }],
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "h" }],
   },
   {
     id: "settings.open",
@@ -127,7 +148,7 @@ export const SHORTCUTS: Shortcut[] = [
     id: "tab.newPreview",
     label: "New web preview",
     group: "Tabs",
-    // Cmd/Ctrl+P now opens the command palette, so web preview moves here.
+    // Cmd/Ctrl+P is Go to file, so web preview lives on the Shift variant of O.
     defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "o" }],
   },
   {
@@ -233,15 +254,6 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Toggle source panel",
     group: "Cards",
     defaultBindings: [{ [MOD_PROP]: true, key: "g" }],
-  },
-  {
-    id: "terminal.clear",
-    label: "Clear terminal",
-    group: "Terminal",
-    // macOS Terminal's ⌘K (clear scrollback, keep the prompt). Default only on
-    // macOS — on other platforms Ctrl+K is readline's kill-line, so we leave it
-    // unbound and let users assign their own in settings.
-    defaultBindings: IS_MAC ? [{ meta: true, key: "k" }] : [],
   },
   {
     id: "terminal.toggleInput",

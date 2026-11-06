@@ -11,28 +11,35 @@ export function useWorkspaceCwd(
   /** Some open terminal's cwd, for when no terminal was focused yet. */
   anyTerminalCwd: string | undefined,
   home: string | null,
+  projectId: string | null,
 ): Result {
-  const lastTerminalCwd = useRef<string | null>(null);
+  const lastTerminalCwd = useRef(new Map<string | null, string>());
 
   useEffect(() => {
     if (activeTab?.kind === "terminal" && activeTab.cwd) {
-      lastTerminalCwd.current = activeTab.cwd;
+      lastTerminalCwd.current.set(projectId, activeTab.cwd);
     }
-  }, [activeTab]);
+  }, [activeTab, projectId]);
 
   const explorerRoot = useMemo<string | null>(() => {
     if (activeTab?.kind === "terminal" && activeTab.cwd) return activeTab.cwd;
-    if (lastTerminalCwd.current) return lastTerminalCwd.current;
+    const remembered = lastTerminalCwd.current.get(projectId);
+    if (remembered) return remembered;
     return anyTerminalCwd ?? home;
-  }, [activeTab, anyTerminalCwd, home]);
+  }, [activeTab, anyTerminalCwd, home, projectId]);
 
   const inheritedCwdForNewTab = useCallback((): string | undefined => {
     if (activeTab?.kind === "terminal" && activeTab.cwd) return activeTab.cwd;
     // Editor tabs inherit the last terminal's cwd (or workspace home), not
     // the file's folder — opening a new terminal from a file shouldn't
     // hijack the user's working directory context.
-    return lastTerminalCwd.current ?? home ?? undefined;
-  }, [activeTab, home]);
+    return (
+      lastTerminalCwd.current.get(projectId) ??
+      anyTerminalCwd ??
+      home ??
+      undefined
+    );
+  }, [activeTab, anyTerminalCwd, home, projectId]);
 
   return { explorerRoot, inheritedCwdForNewTab };
 }

@@ -11,7 +11,12 @@ import {
   focusIsMovable,
 } from "@/modules/terminal/lib/focusGuard";
 import { openExternalUrl } from "@/lib/external-link";
-import { ensureMonoFontsLoaded, resolveFontFamily } from "@/lib/fonts";
+import {
+  ensureMonoFontsLoaded,
+  resolveFontFamily,
+  subscribeSymbolFonts,
+  symbolFontEpoch,
+} from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { TerminalBackendKind } from "@/modules/terminal/backend/contracts";
 import { setLeafPresentation } from "@/modules/terminal/lib/ptyPresentation";
@@ -19,7 +24,14 @@ import { PtyResizeDelivery } from "@/modules/terminal/lib/ptyResizeDelivery";
 import { useTerminalFont } from "@/modules/terminal/lib/useTerminalFont";
 import type { TerminalSearchController } from "@/modules/terminal/search/TerminalSearchController";
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { openPty, type PtySession } from "../lib/pty-bridge";
 import { writeTerminalClipboard } from "../lib/terminalClipboard";
 import { LatestClipboardWrite } from "@/modules/terminal/lib/LatestClipboardWrite";
@@ -27,13 +39,13 @@ import { GhosttySemanticEventRouter } from "./core/GhosttySemanticEventRouter";
 import { getGhosttyCoreRuntime } from "./GhosttyCoreRuntime";
 import type { GhosttyTerminalModelApi } from "./GhosttyTerminalModel";
 import {
+  fontSpecKey,
   measureTerminalFont,
   readTerminalGpuTheme,
   rgbToInt,
   type TerminalFontSpec,
 } from "./gpu/terminalVisuals";
 import { getWebGpuTerminalRuntime } from "./gpu/WebGpuTerminalRuntime";
-import { webGpuTerminalRuntimeDiagnostics } from "./gpu/WebGpuTerminalRuntime";
 import { WebGpuTerminalSurface } from "./gpu/WebGpuTerminalSurface";
 import { GhosttyInputController } from "./input/GhosttyInputController";
 import { encodeTerminalSubmission } from "./input/terminalInputEncoding";
@@ -138,6 +150,7 @@ export function useGhosttyTerminalSession({
     (state) => state.terminalLetterSpacing,
   );
   const zoomLevel = usePreferencesStore((state) => state.zoomLevel);
+  const symbols = useSyncExternalStore(subscribeSymbolFonts, symbolFontEpoch);
   const font = useMemo<TerminalFontSpec>(
     () => ({
       family: resolveFontFamily(fontFamily),
@@ -145,8 +158,9 @@ export function useGhosttyTerminalSession({
       lineHeight: 1.2,
       letterSpacing,
       weight: fontWeight,
+      symbols,
     }),
-    [fontFamily, fontSize, fontWeight, letterSpacing, zoomLevel],
+    [fontFamily, fontSize, fontWeight, letterSpacing, zoomLevel, symbols],
   );
   const fontRef = useRef(font);
   fontRef.current = font;
@@ -447,71 +461,9 @@ async function respawnGhosttySession(
   return true;
 }
 
-export function ghosttySessionDiagnostics() {
-  return [...sessions.values()].map((session) => ({
-    leafId: session.leafId,
-    blocks: ghosttyBlocks(session.leafId)?.controller?.diagnostics() ?? null,
-    pty: session.pty?.id ?? null,
-    visible: session.visible,
-    focused: session.focused,
-    shellExited: session.shellExited,
-    startupError: session.startupError,
-    rendererError: session.rendererError,
-    model: session.model?.diagnostics() ?? null,
-    surface: session.surface?.diagnostics() ?? null,
-    ptyResize: session.ptyResize.diagnostics(),
-    pendingInputBytes: session.writer.pendingBytes,
-    startup: startupDiagnostics(session.startup),
-  }));
-}
-
-export function ghosttySessionResourceTotals() {
-  let modelCellCapacity = 0;
-  let modelRowCapacity = 0;
-  let scrollbackLines = 0;
-  let surfaceCpuBytes = 0;
-  let surfaceGpuBufferBytes = 0;
-  let canvasColorBytes = 0;
-  let estimatedSwapchainBytes = 0;
-
-  for (const session of sessions.values()) {
-    const model = session.model?.diagnostics();
-    modelCellCapacity += model?.bridgeCellCapacity ?? 0;
-    modelRowCapacity += model?.bridgeRowCapacity ?? 0;
-    scrollbackLines += model?.scrollbackLines ?? 0;
-    const surface = session.surface;
-    if (!surface) continue;
-    if (surface.backend === "ghostty-webgpu") {
-      const stats = surface.diagnostics();
-      surfaceCpuBytes += stats.cpuBufferBytes;
-      surfaceGpuBufferBytes += stats.gpuBufferBytes;
-      canvasColorBytes += stats.canvasColorBytes;
-      estimatedSwapchainBytes += stats.estimatedSwapchainBytes;
-      continue;
-    }
-    const stats = surface.diagnostics();
-    const renderer = stats.renderer;
-    if (!renderer) continue;
-    surfaceCpuBytes += renderer.cpuBufferBytes;
-    surfaceGpuBufferBytes += renderer.gpuBufferBytes;
-    canvasColorBytes += renderer.canvasColorBytes;
-  }
-
-  // The WebGPU swapchain belongs to the window canvases, not to the panes drawing into them.
-  const windowCanvasBytes =
-    webGpuTerminalRuntimeDiagnostics()?.canvases.colorBytes ?? 0;
-  canvasColorBytes += windowCanvasBytes;
-  estimatedSwapchainBytes += windowCanvasBytes * 3;
-
-  return {
-    modelCellCapacity,
-    modelRowCapacity,
-    scrollbackLines,
-    surfaceCpuBytes,
-    surfaceGpuBufferBytes,
-    canvasColorBytes,
-    estimatedSwapchainBytes,
-  };
+/** Live sessions, for the lazily loaded diagnostics (`sessionDiagnostics.ts`). */
+export function ghosttySessionsForDiagnostics() {
+  return sessions.values();
 }
 
 function ensureSession(
@@ -1112,20 +1064,6 @@ function createStartupTimings(): GhosttyStartupTimings {
   };
 }
 
-function startupDiagnostics(startup: GhosttyStartupTimings) {
-  return {
-    fontsReadyMs: startup.fontsReadyMs,
-    coreReadyMs: startup.coreReadyMs,
-    gpuReadyMs: startup.gpuReadyMs,
-    modelReadyMs: startup.modelReadyMs,
-    surfaceReadyMs: startup.surfaceReadyMs,
-    ptyReadyMs: startup.ptyReadyMs,
-    firstOutputMs: startup.firstOutputMs,
-    firstFrameMs: startup.firstFrameMs,
-    firstPromptMs: startup.firstPromptMs,
-  };
-}
-
 async function updateSessionFont(
   session: GhosttySession,
   font: TerminalFontSpec,
@@ -1148,16 +1086,6 @@ async function updateSessionFont(
   ghosttyBlocks(session.leafId)?.changed();
   if (session.surfaceOptions)
     session.surfaceOptions = { ...session.surfaceOptions, metrics };
-}
-
-function fontSpecKey(font: TerminalFontSpec): string {
-  return [
-    font.family,
-    font.size,
-    font.lineHeight,
-    font.letterSpacing,
-    font.weight,
-  ].join("|");
 }
 
 class BoundedPtyWriter {

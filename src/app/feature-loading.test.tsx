@@ -5,6 +5,7 @@ import { renderToString } from "react-dom/server";
 import { expect, it, vi } from "vitest";
 
 const loads = vi.hoisted(() => ({
+  terminal: vi.fn(),
   editor: vi.fn(),
   preview: vi.fn(),
   markdown: vi.fn(),
@@ -12,9 +13,10 @@ const loads = vi.hoisted(() => ({
   git: vi.fn(),
   history: vi.fn(),
 }));
-vi.mock("@/modules/workbench/views/TerminalView", () => ({
-  TerminalView: () => null,
-}));
+vi.mock("@/modules/workbench/views/TerminalView", () => {
+  loads.terminal();
+  return { TerminalView: () => null };
+});
 vi.mock("@/modules/workbench/views/EditorView", () => {
   loads.editor();
   return { default: () => null };
@@ -47,8 +49,8 @@ function render(tabs: Partial<Tab>[], visible: boolean) {
   }
 }
 
-it("does not import unused views for terminals, cold tabs or hidden transient tabs", async () => {
-  render([{ id: 1, kind: "terminal" }], true);
+it("does not import cold views or hidden transient views", async () => {
+  render([{ id: 1, kind: "terminal", cold: true }], true);
   render(
     [
       { id: 2, kind: "editor", cold: true },
@@ -62,6 +64,7 @@ it("does not import unused views for terminals, cold tabs or hidden transient ta
       { id: 5, kind: "ai-diff" },
       { id: 6, kind: "git-diff" },
       { id: 7, kind: "git-history" },
+      { id: 8, kind: "git-commit-file" },
     ],
     false,
   );
@@ -72,12 +75,14 @@ it("does not import unused views for terminals, cold tabs or hidden transient ta
 it("loads each view when its first live tab is shown", async () => {
   render(
     [
+      { id: 0, kind: "terminal" },
       { id: 1, kind: "editor" },
       { id: 2, kind: "preview" },
       { id: 3, kind: "markdown" },
       { id: 4, kind: "ai-diff" },
       { id: 5, kind: "git-commit-file" },
       { id: 6, kind: "git-history" },
+      { id: 7, kind: "git-diff" },
     ],
     true,
   );

@@ -10,6 +10,11 @@ import { snapshot, useWorkbench } from "./store";
 
 /** Legacy entry each project was last reconciled with (set at boot). */
 const legacyFingerprints = new Map<string, string>();
+const failedRestores = new Set<string>();
+
+export function preventProjectOverwrite(projectId: string) {
+  failedRestores.add(projectId);
+}
 
 export function rememberLegacyFingerprint(projectId: string, value?: string) {
   if (value) legacyFingerprints.set(projectId, value);
@@ -22,7 +27,11 @@ const writer = createPersistenceWriter({
     return useSpaces
       .getState()
       .spaces.map((s) => s.id)
-      .filter((id) => state.tasks.some((t) => t.projectId === id));
+      .filter(
+        (id) =>
+          !failedRestores.has(id) &&
+          state.tasks.some((t) => t.projectId === id),
+      );
   },
   serialize: (id) =>
     serializeProject(snapshot(), id, legacyFingerprints.get(id)),
@@ -55,7 +64,10 @@ export function useWorkbenchPersistence(active: boolean) {
         return;
       writer.schedule();
     });
-    const flush = () => void writer.flush();
+    const flush = () =>
+      void writer
+        .flush()
+        .catch((e) => console.error("[terax] workbench save failed:", e));
     const onHidden = () => {
       if (document.visibilityState === "hidden") flush();
     };

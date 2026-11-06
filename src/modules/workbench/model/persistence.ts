@@ -87,7 +87,11 @@ export function fingerprint(value: unknown): string {
 
 /** Whether `raw` is a project state this build can read. */
 function isKnownProjectState(raw: unknown): boolean {
-  return isRecord(raw) && raw.version === WORKBENCH_VERSION;
+  return (
+    isRecord(raw) &&
+    raw.version === WORKBENCH_VERSION &&
+    Array.isArray(raw.tasks)
+  );
 }
 
 function serializeTab(tab: Tab): SerializedTab | null {

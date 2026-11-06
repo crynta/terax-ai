@@ -321,3 +321,20 @@ describe("dropping a tab on a card edge", () => {
     expect(moveTabToSplit(s, 3, 13, "row", "after", alloc())).toBe(s);
   });
 });
+
+it("keeps focus on the neighboring task when the same close also rebuilds it", () => {
+  const s = state(
+    [term(1), term(2), term(3), term(4)],
+    [
+      task(10, card(11, [1]), { kind: "main" }),
+      task(20, card(21, [2, 3])),
+      task(30, card(31, [4])),
+    ],
+  );
+  const next = closeTabs(
+    { ...s, activeTaskByProject: { p: 30 } },
+    [3, 4],
+  ).state;
+  expect(next.activeTaskByProject.p).toBe(20);
+  expect(activeTabId(next)).toBe(2);
+});

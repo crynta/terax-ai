@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { native } from "@/modules/ai/lib/native";
+import { git } from "@/modules/git";
 import type { SidebarViewId } from "@/modules/sidebar";
 import type { Tab } from "@/modules/tabs";
 import {
@@ -111,7 +111,7 @@ export function useSourceControlContext({
     }
     if (!graphContextPath) return;
     try {
-      const repo = await native.gitResolveRepo(graphContextPath);
+      const repo = await git.resolveRepo(graphContextPath);
       if (!repo) return;
       openCommitHistoryTab({ repoRoot: repo.repoRoot, branch: repo.branch });
     } catch {

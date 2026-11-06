@@ -3,6 +3,7 @@ import { usePreferencesStore } from "@/modules/settings/preferences";
 import { activeSpaceEnv, freshTabCwd } from "@/modules/spaces/lib/activeSpace";
 import {
   loadAll,
+  flushSpacesStore,
   type SpaceMeta,
   saveActiveId,
   saveSpacesList,
@@ -16,7 +17,11 @@ import { ensureProjectHasMain } from "./actions";
 import { restoreProject } from "./model/restore";
 import type { Task } from "./model/workbench";
 import { allocId, hydrateWorkbench, markBooted, snapshot } from "./store";
-import { rememberLegacyFingerprint } from "./useWorkbenchPersistence";
+import { toast } from "sonner";
+import {
+  preventProjectOverwrite,
+  rememberLegacyFingerprint,
+} from "./useWorkbenchPersistence";
 
 const loadMigration = () =>
   import("./model/legacyMigration").then((m) => m.migrateLegacySpace);
@@ -92,21 +97,36 @@ export function useWorkbenchBoot({
         const tasks: Task[] = [];
         const activeTaskByProject: Record<string, number> = {};
         for (const space of spaces) {
-          const stored = workbench.get(space.id);
-          const restored = await restoreProject(
-            stored,
-            legacy.get(space.id),
-            space.id,
-            allocId,
-            loadMigration,
-          );
-          if (restored.backup) await saveWorkbenchBackup(space.id, stored);
-          rememberLegacyFingerprint(space.id, restored.legacy);
-          const { project } = restored;
-          tabs.push(...project.tabs);
-          tasks.push(...project.tasks);
-          if (project.activeTaskId !== null)
-            activeTaskByProject[space.id] = project.activeTaskId;
+          try {
+            const stored = workbench.get(space.id);
+            const restored = await restoreProject(
+              stored,
+              legacy.get(space.id),
+              space.id,
+              allocId,
+              loadMigration,
+            );
+            if (restored.backup) {
+              await saveWorkbenchBackup(space.id, stored);
+              await flushSpacesStore();
+            }
+            if (restored.project.dropped > 0)
+              toast.error(
+                `Some views in ${space.name} could not be restored. The original state is kept for recovery.`,
+              );
+            rememberLegacyFingerprint(space.id, restored.legacy);
+            const { project } = restored;
+            tabs.push(...project.tabs);
+            tasks.push(...project.tasks);
+            if (project.activeTaskId !== null)
+              activeTaskByProject[space.id] = project.activeTaskId;
+          } catch (e) {
+            preventProjectOverwrite(space.id);
+            console.error("[terax] project restore failed:", space.id, e);
+            toast.error(
+              `Could not restore ${space.name}. Its saved layout is unchanged; reload to retry.`,
+            );
+          }
         }
 
         const active =

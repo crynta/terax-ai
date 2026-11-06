@@ -1247,6 +1247,7 @@ function fontAtlasKey(metrics: TerminalFontMetrics): string {
     font.weight,
     font.lineHeight,
     font.letterSpacing,
+    font.symbols ?? 0,
     metrics.scale,
     metrics.deviceCellWidth,
     metrics.deviceCellHeight,

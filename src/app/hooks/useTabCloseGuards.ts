@@ -16,6 +16,8 @@ import {
   planClose,
   snapshot,
 } from "@/modules/workbench";
+import { removeProject } from "@/modules/workbench/actions";
+import { useSpaces } from "@/modules/spaces/lib/useSpaces";
 import { useCallback, useRef, useState } from "react";
 
 function confirmRunningTerminal(): boolean {
@@ -24,6 +26,21 @@ function confirmRunningTerminal(): boolean {
 
 function tabsNow(): readonly Tab[] {
   return snapshot().tabs;
+}
+
+function projectTabIds(projectId: string): number[] {
+  return tabsNow()
+    .filter((t) => t.spaceId === projectId)
+    .map((t) => t.id);
+}
+
+function removeProjectNow(id: string) {
+  const { spaces } = useSpaces.getState();
+  if (spaces.length <= 1 || !spaces.some((s) => s.id === id)) return;
+  const nextId = useSpaces.getState().remove(id);
+  if (!nextId) return;
+  const root = useSpaces.getState().spaces.find((s) => s.id === nextId)?.root;
+  removeProject(id, nextId, root ?? undefined);
 }
 
 /** Ids of `ids` that may close (a project's main task keeps its last tab). */
@@ -83,9 +100,9 @@ export function useTabCloseGuards() {
   }, []);
 
   const evaluateCloseMany = useCallback(
-    (closeIds: number[]): Promise<CloseManyHazards> =>
+    (closeIds: number[], projectId?: string): Promise<CloseManyHazards> =>
       evaluateCloseHazards(
-        () => captureCloseMany(closeIds),
+        () => captureCloseMany(projectId ? projectTabIds(projectId) : closeIds),
         leafHasForegroundProcess,
         confirmRunningTerminal(),
       ),
@@ -108,19 +125,44 @@ export function useTabCloseGuards() {
     [evaluateCloseMany],
   );
 
+  const handleDeleteProject = useCallback(
+    async (projectId: string) => {
+      const requestId = ++closeManyRequestRef.current;
+      const hazards = await evaluateCloseMany([], projectId);
+      if (requestId !== closeManyRequestRef.current) return;
+      const closeIds = projectTabIds(projectId);
+      if (hasCloseManyHazards(hazards)) {
+        setPendingCloseMany({
+          kind: "project",
+          projectId,
+          anchorId: closeIds[0],
+          closeIds,
+          ...hazards,
+        });
+        return;
+      }
+      removeProjectNow(projectId);
+    },
+    [evaluateCloseMany],
+  );
+
   const confirmCloseMany = useCallback(async () => {
     if (pendingCloseMany === null) return;
     const requestId = ++closeManyRequestRef.current;
     setCloseManyConfirming(true);
-    const closeIds = closable(pendingCloseMany.closeIds);
-    const hazards = await evaluateCloseMany(closeIds);
+    const { projectId } = pendingCloseMany;
+    const closeIds = projectId
+      ? projectTabIds(projectId)
+      : closable(pendingCloseMany.closeIds);
+    const hazards = await evaluateCloseMany(closeIds, projectId);
     if (requestId !== closeManyRequestRef.current) return;
     if (hasNewCloseManyHazards(pendingCloseMany, hazards)) {
       setPendingCloseMany({ ...pendingCloseMany, closeIds, ...hazards });
       setCloseManyConfirming(false);
       return;
     }
-    closeTabsNow(closeIds);
+    if (projectId) removeProjectNow(projectId);
+    else closeTabsNow(closeIds);
     setPendingCloseMany(null);
     setCloseManyConfirming(false);
   }, [pendingCloseMany, evaluateCloseMany]);
@@ -181,6 +223,7 @@ export function useTabCloseGuards() {
     closeManyConfirming,
     handleClose,
     handleCloseMany,
+    handleDeleteProject,
     confirmClose,
     cancelClose,
     confirmTerminalClose,

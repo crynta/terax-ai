@@ -1,6 +1,5 @@
 import type { Tab, TabKind } from "@/modules/tabs/lib/tabs";
 import { type ComponentType, lazy, Suspense } from "react";
-import { TerminalView } from "./TerminalView";
 import type { ViewProps } from "./types";
 
 type ViewSpec = {
@@ -15,6 +14,9 @@ type ViewSpec = {
   inset?: boolean;
 };
 
+const Terminal = lazy(() =>
+  import("./TerminalView").then((m) => ({ default: m.TerminalView })),
+);
 const Editor = lazy(() => import("./EditorView"));
 const Preview = lazy(() => import("./PreviewView"));
 const Markdown = lazy(() => import("./MarkdownView"));
@@ -23,7 +25,7 @@ const GitDiff = lazy(() => import("./GitDiffView"));
 const GitHistory = lazy(() => import("./GitHistoryView"));
 
 const VIEWS: Record<TabKind, ViewSpec> = {
-  terminal: { component: TerminalView, keepAlive: true, inset: true },
+  terminal: { component: Terminal, keepAlive: true, inset: true },
   editor: { component: Editor, keepAlive: true },
   preview: { component: Preview, keepAlive: true },
   markdown: { component: Markdown, keepAlive: true },

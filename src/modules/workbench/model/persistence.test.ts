@@ -208,7 +208,7 @@ describe("migrateLegacySpace", () => {
   };
 
   it("keeps every terminal and file, and their arrangement", () => {
-    const migrated = migrateLegacySpace(legacy, "p", alloc());
+    const migrated = migrateLegacySpace(legacy, "p", alloc(), 1_000);
     expect(migrated.tasks.map((t) => t.kind)).toEqual(["main", "local"]);
     expect(migrated.tabs.filter((t) => t.kind === "terminal")).toHaveLength(3);
     const [main, second] = migrated.tasks;
@@ -243,8 +243,89 @@ describe("migrateLegacySpace", () => {
   });
 
   it("is a pure function of its input", () => {
-    expect(migrateLegacySpace(legacy, "p", alloc())).toEqual(
-      migrateLegacySpace(legacy, "p", alloc()),
+    expect(migrateLegacySpace(legacy, "p", alloc(), 1_000)).toEqual(
+      migrateLegacySpace(legacy, "p", alloc(), 1_000),
     );
   });
+});
+
+it("salvages valid legacy leaves and documents without mutating a partial input", () => {
+  const legacy = {
+    tabs: [
+      null,
+      {
+        kind: "terminal",
+        blocks: true,
+        customTitle: "agent",
+        tree: {
+          kind: "split",
+          dir: "row",
+          children: [
+            null,
+            { kind: "leaf", cwd: "C:\\repo", active: true },
+            {
+              kind: "split",
+              dir: "col",
+              children: [
+                { kind: "leaf", cwd: "/repo/api" },
+                { kind: "leaf", cwd: "/repo/web" },
+              ],
+            },
+          ],
+        },
+      },
+      { kind: "editor", path: "/repo/file.ts" },
+      { kind: "editor" },
+      { kind: "preview", url: "http://localhost:3000" },
+      { kind: "markdown", path: "/repo/README.md" },
+    ],
+    activeTabIndex: 4,
+  };
+  const before = JSON.stringify(legacy);
+  const migrated = migrateLegacySpace(legacy, "p", alloc(), 123);
+  expect(migrated.dropped).toBe(3);
+  expect(migrated.tabs.map((t) => t.kind)).toEqual([
+    "terminal",
+    "terminal",
+    "terminal",
+    "editor",
+    "preview",
+    "markdown",
+  ]);
+  expect(
+    migrated.tabs
+      .slice(0, 3)
+      .every(
+        (t) => t.kind === "terminal" && t.blocks && t.customTitle === "agent",
+      ),
+  ).toBe(true);
+  expect(JSON.stringify(legacy)).toBe(before);
+  const saved = serializeProject(
+    {
+      ...EMPTY_WORKBENCH,
+      ...migrated,
+      activeProjectId: "p",
+      activeTaskByProject: { p: migrated.activeTaskId! },
+    },
+    "p",
+  );
+  const restored = hydrateProject(saved, "p", alloc(100));
+  expect(restored.dropped).toBe(0);
+  expect(
+    serializeProject(
+      {
+        ...EMPTY_WORKBENCH,
+        ...restored,
+        activeProjectId: "p",
+        activeTaskByProject: { p: restored.activeTaskId! },
+      },
+      "p",
+    ),
+  ).toEqual(saved);
+  const focused = cards(restored.tasks[0].layout).find(
+    (c) => c.id === restored.tasks[0].focusedCardId,
+  )!;
+  expect(restored.tabs.find((t) => t.id === focused.activeTabId)?.kind).toBe(
+    "preview",
+  );
 });

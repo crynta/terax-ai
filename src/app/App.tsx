@@ -28,7 +28,12 @@ import {
   useSelectionAskAi,
 } from "@/modules/ai";
 import { AiComposerProvider } from "@/modules/ai/lib/composer";
-import { CommandPalette, createCommandItems } from "@/modules/command-palette";
+import {
+  CommandPalette,
+  createCommandItems,
+  type OpenFileTarget,
+  type PaletteInitialMode,
+} from "@/modules/command-palette";
 import { useControlBridge } from "@/modules/control";
 import {
   NewEditorDialog,
@@ -117,6 +122,7 @@ import {
 import { cards, tabIdsOf } from "@/modules/workbench/model/layout";
 import {
   activeTask as activeTaskOf,
+  activeTabId as currentTabId,
   focusedTabId,
   type Task,
   tabById,
@@ -189,8 +195,14 @@ export default function App() {
     ),
   );
   const hasOpenGitTab = useWorkbench((s) => s.tabs.some(isGitTab));
+  const activeProjectId = useWorkbench((s) => s.activeProjectId);
+  const projectRoot = useSpaces(
+    (s) => s.spaces.find((p) => p.id === activeProjectId)?.root,
+  );
   const fallbackTerminalCwd = useWorkbench((s) => {
-    for (const t of s.tabs) if (t.kind === "terminal" && t.cwd) return t.cwd;
+    for (const t of s.tabs)
+      if (t.kind === "terminal" && t.cwd && t.spaceId === s.activeProjectId)
+        return t.cwd;
     return undefined;
   });
   const taskTabIds = useWorkbench(
@@ -295,11 +307,10 @@ export default function App() {
 
   const [newEditorOpen, setNewEditorOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
-  const [paletteInitialMode, setPaletteInitialMode] = useState<
-    "commands" | "content"
-  >("commands");
+  const [paletteInitialMode, setPaletteInitialMode] =
+    useState<PaletteInitialMode>("commands");
   const openCommandPalette = useCallback(
-    (mode: "commands" | "content" = "commands") => {
+    (mode: PaletteInitialMode = "commands") => {
       setPaletteInitialMode(mode);
       setCommandPaletteOpen(true);
     },
@@ -340,7 +351,8 @@ export default function App() {
   const { explorerRoot, inheritedCwdForNewTab } = useWorkspaceCwd(
     activeTab,
     fallbackTerminalCwd,
-    launchCwd ?? home,
+    projectRoot ?? launchCwd ?? home,
+    activeProjectId,
   );
 
   useWindowTitle(activeTab, explorerRoot);
@@ -353,6 +365,7 @@ export default function App() {
     closeManyConfirming,
     handleClose,
     handleCloseMany,
+    handleDeleteProject,
     confirmClose,
     cancelClose,
     confirmTerminalClose,
@@ -737,6 +750,7 @@ export default function App() {
   const shortcutHandlers = useMemo<ShortcutHandlers>(
     () => ({
       "commandPalette.open": () => openCommandPalette("commands"),
+      "commandPalette.files": () => openCommandPalette("files"),
       "commandPalette.content": () => openCommandPalette("content"),
       "tab.new": openNewTab,
       "tab.newBlock": openNewBlockTab,
@@ -942,15 +956,6 @@ export default function App() {
     return meta.id;
   }, [activeCwd, home, workspaceEnv]);
 
-  const handleDeleteSpace = useCallback((id: string) => {
-    const nextSpaceId = useSpaces.getState().remove(id);
-    if (!nextSpaceId) return;
-    const root = useSpaces
-      .getState()
-      .spaces.find((s) => s.id === nextSpaceId)?.root;
-    workbench.removeProject(id, nextSpaceId, root ?? undefined);
-  }, []);
-
   const handleNewTaskInSpace = useCallback((spaceId: string) => {
     const root = useSpaces
       .getState()
@@ -972,9 +977,19 @@ export default function App() {
       open={switcherOpen}
       onOpenChange={setSwitcherOpen}
       onNewSpace={() => void handleNewSpace()}
-      onDeleteSpace={handleDeleteSpace}
+      onDeleteSpace={handleDeleteProject}
       onNewTabInSpace={handleNewTaskInSpace}
       onJumpTab={jumpToTask}
+      onFocusView={() => {
+        const id = currentTabId(snapshot());
+        if (id === null) return;
+        const handle = viewHandle(id, "terminal") ?? viewHandle(id, "editor");
+        if (handle) handle.focus();
+        else
+          document
+            .querySelector<HTMLElement>(`[data-tab-slot="${id}"]`)
+            ?.focus();
+      }}
       onCloseTab={closeTask}
       onMoveTabToSpace={workbench.moveTaskToProject}
       onReorderTab={workbench.placeTask}
@@ -1050,6 +1065,15 @@ export default function App() {
     const id = workbench.openFile(path, true);
     if (id !== null) navigateEditor(id, { line, focus: true });
   }, []);
+
+  // `target.side` (open to the side) has no host support yet: plain open.
+  const openPaletteFile = useCallback(
+    (path: string, target: OpenFileTarget) => {
+      if (target.line !== undefined) openContentHit(path, target.line);
+      else handleOpenFile(path, true);
+    },
+    [openContentHit, handleOpenFile],
+  );
 
   const openControlFile = useCallback(
     ({
@@ -1334,6 +1358,7 @@ export default function App() {
             commandItems={commandPaletteItems}
             workspaceRoot={explorerRoot}
             onOpenContentHit={openContentHit}
+            onOpenFile={openPaletteFile}
             insertCommand={insertHistoryCommand}
           />
 

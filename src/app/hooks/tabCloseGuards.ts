@@ -33,7 +33,13 @@ export function hasOpenPathTab(tabs: readonly Tab[], path: string): boolean {
 }
 
 /** What a multi-close covers, for its dialog wording. */
-export type CloseManyKind = "right" | "other" | "card" | "task" | "tasks";
+export type CloseManyKind =
+  | "right"
+  | "other"
+  | "card"
+  | "task"
+  | "tasks"
+  | "project";
 
 export type CloseManyHazards = {
   dirtyIds: number[];
@@ -44,6 +50,7 @@ export type CloseManyPending = CloseManyHazards & {
   kind: CloseManyKind;
   anchorId: number;
   closeIds: number[];
+  projectId?: string;
 };
 
 export function hasCloseManyHazards(hazards: CloseManyHazards): boolean {

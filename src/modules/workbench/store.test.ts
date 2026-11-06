@@ -78,3 +78,14 @@ describe("workbench commit", () => {
     expect(allocId()).toBeGreaterThan(11);
   });
 });
+
+it("reuses an editor opened with Windows separators", async () => {
+  const { openFile } = await import("./actions");
+  const first = openFile("C:\\repo\\file.ts");
+  expect(openFile("C:/repo/file.ts")).toBe(first);
+  expect(
+    useWorkbench
+      .getState()
+      .tabs.filter((t) => t.kind === "editor" && t.id === first),
+  ).toHaveLength(1);
+});

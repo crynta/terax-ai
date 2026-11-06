@@ -112,13 +112,20 @@ const TabSlot = memo(function TabSlot({ id }: { id: number }) {
   const focused = !!slot?.focused && !!slot.visible;
 
   // A card that moved without resizing fires no observer; tell the canvas.
-  const position = slot ? `${slot.x},${slot.y},${slot.w},${slot.h}` : "";
-  const lastPosition = useRef(position);
+  const lastPosition = useRef(slot);
   useLayoutEffect(() => {
-    if (lastPosition.current === position) return;
-    lastPosition.current = position;
-    if (tab?.kind === "terminal") requestTerminalRemeasure();
-  }, [position, tab?.kind]);
+    const previous = lastPosition.current;
+    lastPosition.current = slot;
+    if (
+      tab?.kind === "terminal" &&
+      previous &&
+      slot &&
+      previous.w === slot.w &&
+      previous.h === slot.h &&
+      (previous.x !== slot.x || previous.y !== slot.y)
+    )
+      requestTerminalRemeasure();
+  }, [slot, tab?.kind]);
 
   useEffect(() => {
     if (focused && ref.current) focusView(id, ref.current);

@@ -1,4 +1,4 @@
-import type { LegacySpaceState } from "@/modules/workbench/model/legacyMigration";
+import { fingerprint } from "@/modules/workbench/model/persistence";
 import { LazyStore } from "@tauri-apps/plugin-store";
 import type { WorkspaceEnv } from "@/modules/workspace";
 
@@ -35,7 +35,7 @@ export type LoadedSpaces = {
   activeId: string | null;
   /** Per-project workbench state (versioned, see workbench/model/persistence). */
   workbench: Map<string, unknown>;
-  legacy: Map<string, LegacySpaceState>;
+  legacy: Map<string, unknown>;
 };
 
 export async function loadAll(): Promise<LoadedSpaces> {
@@ -43,7 +43,7 @@ export async function loadAll(): Promise<LoadedSpaces> {
   let spaces: SpaceMeta[] = [];
   let activeId: string | null = null;
   const workbench = new Map<string, unknown>();
-  const legacy = new Map<string, LegacySpaceState>();
+  const legacy = new Map<string, unknown>();
   for (const [k, v] of entries) {
     if (k === KEY_SPACES) spaces = (v as SpaceMeta[]) ?? [];
     else if (k === KEY_ACTIVE) activeId = (v as string | null) ?? null;
@@ -51,7 +51,7 @@ export async function loadAll(): Promise<LoadedSpaces> {
     else if (k.startsWith(WORKBENCH_PREFIX))
       workbench.set(k.slice(WORKBENCH_PREFIX.length), v);
     else if (k.startsWith(LEGACY_PREFIX))
-      legacy.set(k.slice(LEGACY_PREFIX.length), v as LegacySpaceState);
+      legacy.set(k.slice(LEGACY_PREFIX.length), v);
   }
   return { spaces, activeId, workbench, legacy };
 }
@@ -76,7 +76,11 @@ export async function saveWorkbenchBackup(
   id: string,
   state: unknown,
 ): Promise<void> {
-  await store.set(backupKey(id), state);
+  const key = backupKey(id);
+  const existing = await store.get(key);
+  if (existing === undefined || existing === null) await store.set(key, state);
+  else if (fingerprint(existing) !== fingerprint(state))
+    await store.set(`${key}:${fingerprint(state)}`, state);
 }
 
 /** Writes pending changes to disk now (the store otherwise saves on a timer). */
@@ -91,7 +95,9 @@ export async function flushSpacesStore(): Promise<void> {
  */
 export async function deleteSpaceData(id: string): Promise<void> {
   await store.delete(workbenchKey(id));
-  await store.delete(backupKey(id));
+  const backup = backupKey(id);
+  for (const key of await store.keys())
+    if (key === backup || key.startsWith(`${backup}:`)) await store.delete(key);
   await store.delete(legacyKey(id));
 }
 

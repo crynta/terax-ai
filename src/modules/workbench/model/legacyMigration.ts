@@ -23,10 +23,13 @@ function legacyLayout(
   node: unknown,
   projectId: string,
   alloc: Alloc,
-  out: { tabs: Tab[]; focused: number | null },
+  out: { tabs: Tab[]; focused: number | null; dropped: number },
   depth = 0,
 ): LayoutNode | null {
-  if (!isRecord(node) || depth > 32) return null;
+  if (!isRecord(node) || depth > 32) {
+    out.dropped++;
+    return null;
+  }
   if (node.kind === "leaf") {
     const tab = hydrateTab(
       { kind: "terminal", cwd: node.cwd },
@@ -43,10 +46,14 @@ function legacyLayout(
     const children = (Array.isArray(node.children) ? node.children : [])
       .map((child) => legacyLayout(child, projectId, alloc, out, depth + 1))
       .filter((child): child is LayoutNode => child !== null);
-    if (children.length === 0) return null;
+    if (children.length === 0) {
+      out.dropped++;
+      return null;
+    }
     if (children.length === 1) return children[0];
     return split(alloc(), node.dir, children);
   }
+  out.dropped++;
   return null;
 }
 
@@ -59,6 +66,7 @@ export function migrateLegacySpace(
   raw: unknown,
   projectId: string,
   alloc: Alloc,
+  now = Date.now(),
 ): HydratedProject {
   const empty: HydratedProject = {
     tabs: [],
@@ -66,21 +74,30 @@ export function migrateLegacySpace(
     activeTaskId: null,
     dropped: 0,
   };
-  if (!isRecord(raw) || !Array.isArray(raw.tabs)) return empty;
+  if (!isRecord(raw) || !Array.isArray(raw.tabs))
+    return { ...empty, dropped: 1 };
   const activeIndex =
     typeof raw.activeTabIndex === "number" ? raw.activeTabIndex : 0;
   const tabs: Tab[] = [];
   const tasks: Task[] = [];
   const documents: Tab[] = [];
+  let dropped = 0;
   let activeTaskId: number | null = null;
   let activeDocumentId: number | null = null;
-  const now = Date.now();
 
   raw.tabs.forEach((entry: unknown, index: number) => {
-    if (!isRecord(entry)) return;
+    if (!isRecord(entry)) {
+      dropped++;
+      return;
+    }
     if (entry.kind === "terminal") {
-      const out = { tabs: [] as Tab[], focused: null as number | null };
+      const out = {
+        tabs: [] as Tab[],
+        focused: null as number | null,
+        dropped: 0,
+      };
       const layout = legacyLayout(entry.tree, projectId, alloc, out);
+      dropped += out.dropped;
       if (!layout) return;
       const customTitle = str(entry.customTitle);
       for (const tab of out.tabs) {
@@ -108,7 +125,10 @@ export function migrateLegacySpace(
       return;
     }
     const tab = hydrateTab(entry, projectId, alloc);
-    if (!tab) return;
+    if (!tab) {
+      dropped++;
+      return;
+    }
     documents.push(tab);
     if (index === activeIndex) activeDocumentId = tab.id;
   });
@@ -145,7 +165,7 @@ export function migrateLegacySpace(
     tabs,
     tasks,
     activeTaskId: activeTaskId ?? tasks[0]?.id ?? null,
-    dropped: 0,
+    dropped,
   };
 }
 

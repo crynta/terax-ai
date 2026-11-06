@@ -29,7 +29,7 @@ node scripts/terminal-visual/compare.mjs crisp /tmp/visual a
 Query parameters: `dpr` (override the display ratio), `w` `h` `left` `top` (host
 box, CSS px), `fs` `ff` `lh` `ls` (font size, family, line height, letter
 spacing), `cursor` (`block`, `bar`, `underline`), `blink`, `select` (`row,col,row,col[,1]`
-for rectangular), `search`, `pattern=empty`, `pattern=sprites` (see below),
+for rectangular), `search`, `pattern=empty`, `pattern=sprites`, `pattern=colors|icons|cursor` (see below),
 `renderer=webgl` (captures work there too: the harness keeps the WebGL drawing
 buffer and reads it with `readPixels`), `maxtex` (cap the
 atlas texture size to force eviction), `stress=1|2` (page through thousands of
@@ -72,6 +72,34 @@ open "http://localhost:5199/?pattern=sprites&w=1000&h=780&fs=15&dpr=1.25&capture
 Use `h=780` or more so the pattern is not scrolled. Compare against a revision
 that draws these characters from the font by serving it with
 `TERAX_VISUAL_SOURCE_ROOT` as described above.
+
+## Colours, icons and the block cursor
+
+`pattern=colors` draws ANSI 16, indexed 256 and truecolor foregrounds (plus bold ANSI), `pattern=icons`
+draws private-use icons (Powerline, Devicons, Codicons, Font Awesome, Material Design), CJK, Hangul,
+emoji, ZWJ sequences, flags and skin tones, each followed by blank cells, and `pattern=cursor` parks the
+cursor on a letter (`cursorAt=letter`), a wide character (`wide`) or coloured text (`colored`) in the
+`cursor` style. The page checks its own capture (`glyphCheck.ts`) and writes `<name>.check.json`; the
+check reads pixels only, so it runs on both renderers:
+
+- colors: every sample leans toward its expected colour and none collapsed to the default foreground
+- icons: every glyph draws; an icon never reaches left of its cell or past two cells; a Powerline Extra
+  (U+E0C0..E0CD, two cells) or separator (U+E0D6, U+E0D7) fills its cell box exactly, ink touching all four
+  edges and nothing outside, so neighbours join without a seam; wide glyphs stay in two cells
+- cursor: a block recolours the character in the cursor text colour and covers both cells of a wide
+  character; bar and underline leave it alone
+
+The auto-capture of a page that was just navigated to can stall in a background pane, so drive it from the
+page: `await harness.capture(name); await harness.glyphCheck(name)`.
+
+```sh
+node scripts/terminal-visual/compare.mjs check /tmp/visual colors-gpu-125 icons-gl-125 cursor-wide-gpu-150
+node scripts/terminal-visual/compare.mjs parity /tmp/visual icons-gl-125 icons-gpu-125
+```
+
+`parity` requires a `renderer=webgl` and a WebGPU capture of one pattern at one ratio to match pixel for
+pixel. Run both over `dpr=1`, `1.25`, `1.5` and `2`, and again with
+`localStorage["terax:terminal-text-contrast"] = "on"`: both renderers apply the same curve.
 
 ## Window canvas and split panes
 

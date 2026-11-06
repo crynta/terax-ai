@@ -78,3 +78,50 @@ describe("workbench persistence writer", () => {
     expect(elapsed).toBeLessThanOrEqual(WRITE_MAX_WAIT_MS);
   });
 });
+
+it.each(["save", "persist"] as const)(
+  "retries an unchanged project after %s fails",
+  async (failure) => {
+    const fixture = setup({ a: 1 });
+    fixture[failure].mockRejectedValueOnce(new Error("disk failed"));
+    await expect(fixture.writer.flush()).rejects.toThrow("disk failed");
+    await fixture.writer.flush();
+    expect(fixture.save).toHaveBeenCalledTimes(2);
+    expect(fixture.persist).toHaveBeenCalledTimes(failure === "save" ? 1 : 2);
+    await fixture.writer.flush();
+    expect(fixture.save).toHaveBeenCalledTimes(2);
+  },
+);
+
+it("serializes overlapping flushes and waits until both snapshots are durable", async () => {
+  const { state, writer, save, persist } = setup({ a: 1 });
+  let releaseSave!: () => void;
+  let releasePersist!: () => void;
+  save.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        releaseSave = resolve;
+      }),
+  );
+  persist.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        releasePersist = resolve;
+      }),
+  );
+  const first = writer.flush();
+  await vi.waitFor(() => expect(save).toHaveBeenCalledOnce());
+  state.a = 2;
+  const settled = vi.fn();
+  const second = writer.flush().then(settled);
+  await Promise.resolve();
+  expect(save).toHaveBeenCalledOnce();
+  releaseSave();
+  await vi.waitFor(() => expect(persist).toHaveBeenCalledOnce());
+  expect(settled).not.toHaveBeenCalled();
+  releasePersist();
+  await Promise.all([first, second]);
+  expect(save).toHaveBeenLastCalledWith("a", 2);
+  expect(persist).toHaveBeenCalledTimes(2);
+  expect(settled).toHaveBeenCalledOnce();
+});

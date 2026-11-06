@@ -30,21 +30,28 @@ export function createPersistenceWriter(deps: Deps) {
   let timer: unknown = null;
   let pendingSince: number | null = null;
 
-  const flush = async (): Promise<void> => {
-    if (timer !== null) clearTimer(timer);
-    timer = null;
-    pendingSince = null;
-    const saves: Promise<void>[] = [];
+  let inflight: Promise<void> = Promise.resolve();
+
+  const run = async (): Promise<void> => {
+    const changed = new Map<string, string>();
     for (const id of deps.projects()) {
       const state = deps.serialize(id);
       const json = JSON.stringify(state);
       if (written.get(id) === json) continue;
-      written.set(id, json);
-      saves.push(deps.save(id, state));
+      await deps.save(id, state);
+      changed.set(id, json);
     }
-    if (saves.length === 0) return;
-    await Promise.all(saves);
+    if (changed.size === 0) return;
     await deps.persist();
+    for (const [id, json] of changed) written.set(id, json);
+  };
+
+  const flush = (): Promise<void> => {
+    if (timer !== null) clearTimer(timer);
+    timer = null;
+    pendingSince = null;
+    inflight = inflight.catch(() => {}).then(run);
+    return inflight;
   };
 
   return {
@@ -57,7 +64,14 @@ export function createPersistenceWriter(deps: Deps) {
         WRITE_DEBOUNCE_MS,
         WRITE_MAX_WAIT_MS - (at - pendingSince),
       );
-      timer = setTimer(() => void flush(), Math.max(0, wait));
+      timer = setTimer(
+        () => {
+          void flush().catch((e) =>
+            console.error("[terax] workbench save failed:", e),
+          );
+        },
+        Math.max(0, wait),
+      );
     },
     flush,
   };

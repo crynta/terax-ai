@@ -95,6 +95,7 @@ const CLOSE_MANY_TITLE: Record<CloseManyKind, string> = {
   card: "Close Card",
   task: "Close Task",
   tasks: "Close Other Tasks",
+  project: "Delete Project",
 };
 
 const CLOSE_MANY_WHERE: Record<CloseManyKind, (one: boolean) => string> = {
@@ -102,6 +103,7 @@ const CLOSE_MANY_WHERE: Record<CloseManyKind, (one: boolean) => string> = {
   other: (one) => `in ${one ? "another tab" : "other tabs"}`,
   card: () => "in this card",
   task: () => "in this task",
+  project: () => "in this project",
   tasks: (one) => `in ${one ? "another task" : "other tasks"}`,
 };
 

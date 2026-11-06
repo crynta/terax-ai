@@ -81,9 +81,18 @@ struct Running {
     backend: Box<dyn Backend>,
 }
 
+/// Receives the watched directories a burst touched, before the explorer's
+/// listing filter is applied (so in-place file edits are included). Runs on the
+/// drain thread: it must only hand the paths off.
+pub type Tap = Arc<dyn Fn(&[String]) + Send + Sync>;
+
+type Taps = Arc<RwLock<Vec<(u64, Tap)>>>;
+
 #[derive(Default)]
 pub struct FsWatchState {
     inner: Mutex<Option<Running>>,
+    taps: Taps,
+    next_tap: std::sync::atomic::AtomicU64,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -91,7 +100,7 @@ struct ChangedPayload {
     paths: Vec<String>,
 }
 
-fn start(app: &AppHandle) -> Result<Running, String> {
+fn start(app: &AppHandle, taps: Taps) -> Result<Running, String> {
     let (tx, rx) = mpsc::channel::<Batch>();
     let shared = Arc::new(Shared {
         set: Mutex::new(WatchSet::default()),
@@ -110,7 +119,7 @@ fn start(app: &AppHandle) -> Result<Running, String> {
     std::thread::Builder::new()
         .name("terax-fs-watch".into())
         .stack_size(256 * 1024)
-        .spawn(move || drain_loop(rx, drain_shared, app, index))
+        .spawn(move || drain_loop(rx, drain_shared, app, index, taps))
         .map_err(|e| e.to_string())?;
     Ok(Running { shared, backend })
 }
@@ -120,6 +129,7 @@ fn drain_loop(
     shared: Arc<Shared>,
     app: AppHandle,
     index: FileIndexState,
+    taps: Taps,
 ) {
     loop {
         let Ok(first) = rx.recv() else { return };
@@ -144,6 +154,17 @@ fn drain_loop(
         // frontend does: an edited ignore file changes the list without changing a name.
         for path in &touched {
             index.note_change(path);
+        }
+        if !touched.is_empty() {
+            let listeners: Vec<Tap> = taps
+                .read()
+                .unwrap_or_else(|e| e.into_inner())
+                .iter()
+                .map(|(_, tap)| tap.clone())
+                .collect();
+            for tap in listeners {
+                tap(&touched);
+            }
         }
         if report.is_empty() {
             continue;
@@ -233,9 +254,69 @@ impl FsWatchState {
             if !create {
                 return Ok(None);
             }
-            *guard = Some(start(app)?);
+            *guard = Some(start(app, self.taps.clone())?);
         }
         Ok(guard.as_mut().map(f))
+    }
+
+    /// Registers `tap` for every burst; the id removes it again.
+    pub(crate) fn add_tap(&self, tap: Tap) -> u64 {
+        let id = self
+            .next_tap
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.taps
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .push((id, tap));
+        id
+    }
+
+    pub(crate) fn remove_tap(&self, id: u64) {
+        self.taps
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|(tap_id, _)| *tap_id != id);
+    }
+
+    /// Watches already-canonical, already-vetted directories for an internal
+    /// consumer. Reference counted with the explorer's own registrations.
+    pub(crate) fn watch_dirs(&self, app: &AppHandle, dirs: Vec<PathBuf>) -> Result<(), String> {
+        if dirs.is_empty() {
+            return Ok(());
+        }
+        let baselines: Vec<Option<u64>> = dirs
+            .iter()
+            .map(|dir| plan::listing_signature(dir))
+            .collect();
+        self.with_running(app, true, |running| {
+            running.apply(|set| {
+                let mut moved = false;
+                for (dir, signature) in dirs.into_iter().zip(baselines) {
+                    let key = to_canon(&dir);
+                    if set.add_dir(key.clone(), dir) {
+                        set.record_listing(&key, signature);
+                        moved = true;
+                    }
+                }
+                moved
+            });
+        })?;
+        Ok(())
+    }
+
+    pub(crate) fn unwatch_dirs(&self, app: &AppHandle, dirs: &[PathBuf]) {
+        if dirs.is_empty() {
+            return;
+        }
+        let _ = self.with_running(app, false, |running| {
+            running.apply(|set| {
+                let mut moved = false;
+                for dir in dirs {
+                    moved |= set.remove_dir(&to_canon(dir));
+                }
+                moved
+            });
+        });
     }
 }
 
@@ -365,6 +446,32 @@ mod tests {
             subtrees: Vec::new(),
         });
         pending
+    }
+
+    #[test]
+    fn taps_are_registered_and_removed_by_id_and_cost_nothing_when_absent() {
+        let state = FsWatchState::default();
+        assert!(state.taps.read().unwrap().is_empty());
+
+        let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+        let sink = seen.clone();
+        let first = state.add_tap(Arc::new(move |dirs: &[String]| {
+            sink.lock().unwrap().extend(dirs.iter().cloned());
+        }));
+        let second = state.add_tap(Arc::new(|_: &[String]| {}));
+        assert_ne!(first, second);
+        assert_eq!(state.taps.read().unwrap().len(), 2);
+
+        for (_, tap) in state.taps.read().unwrap().iter() {
+            tap(&["/watched/dir".to_string()]);
+        }
+        assert_eq!(*seen.lock().unwrap(), vec!["/watched/dir".to_string()]);
+
+        state.remove_tap(first);
+        state.remove_tap(first);
+        let remaining = state.taps.read().unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].0, second);
     }
 
     #[test]

@@ -43,6 +43,7 @@ type Props = {
   onDeleteSpace: (id: string) => void;
   onNewTabInSpace: (spaceId: string) => void;
   onJumpTab: (id: number) => void;
+  onFocusView?: () => void;
   onCloseTab: (id: number) => void;
   onMoveTabToSpace: (tabId: number, spaceId: string) => void;
   onReorderTab: (
@@ -90,6 +91,7 @@ export function SpaceSwitcher({
   onDeleteSpace,
   onNewTabInSpace,
   onJumpTab,
+  onFocusView,
   onCloseTab,
   onMoveTabToSpace,
   onReorderTab,
@@ -105,6 +107,7 @@ export function SpaceSwitcher({
     activeId ? new Set([activeId]) : new Set(),
   );
 
+  const focusViewOnClose = useRef(false);
   const drag = useRef<DragState | null>(null);
   const dropRef = useRef<DropTarget | null>(null);
   const [dragging, setDragging] = useState<{
@@ -267,7 +270,19 @@ export function SpaceSwitcher({
           />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" sideOffset={6} className="w-[20rem] p-1.5">
+      <PopoverContent
+        align="start"
+        sideOffset={6}
+        className="w-[20rem] p-1.5"
+        onCloseAutoFocus={(event) => {
+          if (!focusViewOnClose.current) return;
+          focusViewOnClose.current = false;
+          if (onFocusView) {
+            event.preventDefault();
+            onFocusView();
+          }
+        }}
+      >
         <div className="flex items-center justify-between px-1.5 pb-1.5 pt-0.5">
           <span className="text-xs font-semibold text-foreground">
             Projects
@@ -296,6 +311,7 @@ export function SpaceSwitcher({
               onPointerUp={onPointerUp}
               onToggle={() => toggleExpand(sp.id)}
               onSwitch={() => {
+                focusViewOnClose.current = true;
                 setActive(sp.id);
                 onOpenChange(false);
               }}
@@ -308,7 +324,10 @@ export function SpaceSwitcher({
               onCancelRename={() => setEditingId(null)}
               onDelete={() => onDeleteSpace(sp.id)}
               onNewTab={() => onNewTabInSpace(sp.id)}
-              onJumpTab={onJumpTab}
+              onJumpTab={(id) => {
+                focusViewOnClose.current = true;
+                onJumpTab(id);
+              }}
               onCloseTab={onCloseTab}
             />
           ))}
@@ -320,7 +339,7 @@ export function SpaceSwitcher({
             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
           >
             <HugeiconsIcon icon={PlusSignIcon} size={14} strokeWidth={1.75} />
-            <span className="flex-1">New space</span>
+            <span className="flex-1">New project</span>
           </button>
         </div>
       </PopoverContent>
@@ -371,6 +390,7 @@ type SpaceRowProps = {
   onDelete: () => void;
   onNewTab: () => void;
   onJumpTab: (id: number) => void;
+  onFocusView?: () => void;
   onCloseTab: (id: number) => void;
 };
 
@@ -473,18 +493,18 @@ function SpaceRow({
             >
               <RowAction
                 icon={PencilEdit02Icon}
-                label="Rename space"
+                label="Rename project"
                 onClick={onStartRename}
               />
               <RowAction
                 icon={PlusSignIcon}
-                label="New tab"
+                label="New task"
                 onClick={onNewTab}
               />
               {canDelete && (
                 <RowAction
                   icon={Delete02Icon}
-                  label="Delete space"
+                  label="Delete project"
                   destructive
                   onClick={onDelete}
                 />

@@ -36,11 +36,14 @@ export async function restoreProject(
   }
   if (source.from === "legacy") {
     const migrate = await loadMigration();
-    return {
-      project: migrate(legacyRaw, projectId, alloc),
-      backup: source.backup,
-      legacy,
-    };
+    const project = migrate(legacyRaw, projectId, alloc);
+    // A corrupt legacy entry must not replace a readable workbench layout.
+    if (project.tasks.length === 0 && project.dropped > 0) {
+      const saved = hydrateProject(workbenchRaw, projectId, alloc);
+      if (saved.tasks.length > 0)
+        return { project: saved, backup: saved.dropped > 0, legacy };
+    }
+    return { project, backup: source.backup, legacy };
   }
   return {
     project: { tabs: [], tasks: [], activeTaskId: null, dropped: 0 },

@@ -4,7 +4,8 @@ import { MarkdownViewToggle } from "@/modules/markdown/MarkdownViewToggle";
 import type { EditorTab } from "@/modules/tabs/lib/tabs";
 import { useWindowInactive } from "@/modules/theme/WindowActivityBridge";
 import { memo, useCallback } from "react";
-import { closeTabsNow, setMarkdownView, updateTab } from "../actions";
+import { setMarkdownView, updateTab } from "../actions";
+import { useWorkbenchChrome } from "../chrome";
 import { setViewHandle } from "../viewHandles";
 import type { ViewProps } from "./types";
 
@@ -13,6 +14,7 @@ export default memo(function EditorView({
   visible,
 }: ViewProps<EditorTab>) {
   const id = tab.id;
+  const { closeTab } = useWorkbenchChrome();
   const windowInactive = useWindowInactive();
   const setRef = useCallback(
     (handle: EditorPaneHandle | null) => setViewHandle(id, "editor", handle),
@@ -22,7 +24,7 @@ export default memo(function EditorView({
     (dirty: boolean) => updateTab(id, { dirty }),
     [id],
   );
-  const onClose = useCallback(() => closeTabsNow([id]), [id]);
+  const onClose = useCallback(() => closeTab(id), [closeTab, id]);
   return (
     <div className="relative h-full overflow-hidden bg-background">
       {isMarkdownPath(tab.path) && (

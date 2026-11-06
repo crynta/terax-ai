@@ -584,13 +584,15 @@ function dropTaskFocus(
   if (next.activeTaskByProject[removed.projectId] !== removed.id) return next;
   const strip = projectTasks(before, removed.projectId);
   const at = strip.findIndex((t) => t.id === removed.id);
-  const remaining = new Set(projectTasks(next, removed.projectId));
+  const remaining = new Set(
+    projectTasks(next, removed.projectId).map((t) => t.id),
+  );
   const fallback =
     strip
       .slice(0, at)
       .reverse()
-      .find((t) => remaining.has(t)) ??
-    strip.slice(at + 1).find((t) => remaining.has(t));
+      .find((t) => remaining.has(t.id)) ??
+    strip.slice(at + 1).find((t) => remaining.has(t.id));
   const activeTaskByProject = { ...next.activeTaskByProject };
   if (fallback) activeTaskByProject[removed.projectId] = fallback.id;
   else delete activeTaskByProject[removed.projectId];

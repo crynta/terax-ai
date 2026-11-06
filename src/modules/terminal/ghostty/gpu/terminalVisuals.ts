@@ -1,5 +1,6 @@
 import { readTerminalTokens } from "@/styles/tokens";
 import type { Rgb } from "../core/packedCells";
+import { resolveCursorText } from "./cursorText";
 
 export type TerminalFontSpec = {
   readonly family: string;
@@ -7,6 +8,11 @@ export type TerminalFontSpec = {
   readonly lineHeight: number;
   readonly letterSpacing: number;
   readonly weight: string;
+  /**
+   * Which lazily loaded symbol faces had arrived (`symbolFontEpoch`). Part of every font
+   * key, so atlases that rasterized before a face arrived are rebuilt when it does.
+   */
+  readonly symbols?: number;
 };
 
 /**
@@ -36,6 +42,8 @@ export type TerminalGpuTheme = {
   readonly background: Rgb;
   readonly foreground: Rgb;
   readonly cursor: Rgb;
+  /** Colour of the character under a block cursor. */
+  readonly cursorText: Rgb;
   readonly selection: {
     readonly color: Rgb;
     readonly alpha: number;
@@ -139,13 +147,14 @@ export function metricsEqual(
   );
 }
 
-function fontSpecKey(font: TerminalFontSpec): string {
+export function fontSpecKey(font: TerminalFontSpec): string {
   return [
     font.family,
     font.size,
     font.lineHeight,
     font.letterSpacing,
     font.weight,
+    font.symbols ?? 0,
   ].join("|");
 }
 
@@ -165,10 +174,17 @@ export function fontCss(
 export function readTerminalGpuTheme(): TerminalGpuTheme {
   const tokens = readTerminalTokens();
   const selection = cssColorToRgba(tokens.selection);
+  const background = cssColorToRgb(tokens.background);
+  const cursor = cssColorToRgb(tokens.cursor);
   return {
-    background: cssColorToRgb(tokens.background),
+    background,
     foreground: cssColorToRgb(tokens.foreground),
-    cursor: cssColorToRgb(tokens.cursor),
+    cursor,
+    cursorText: resolveCursorText(
+      cursor,
+      tokens.cursorAccent ? cssColorToRgb(tokens.cursorAccent) : null,
+      background,
+    ),
     selection: {
       color: [selection[0], selection[1], selection[2]],
       alpha: selection[3],

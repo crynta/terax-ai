@@ -161,6 +161,13 @@ export function TaskStrip({
                     onPointerDown={(e) => onPointerDown(e, id)}
                     onPointerMove={onPointerMove}
                     onPointerUp={onPointerUp}
+                    onMouseDown={(e) => {
+                      if (
+                        e.button === 0 &&
+                        !(e.target as HTMLElement).closest("[data-no-drag]")
+                      )
+                        e.preventDefault();
+                    }}
                     onPointerCancel={() => {
                       pointer.current = null;
                       setDrag(null);

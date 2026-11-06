@@ -3,6 +3,7 @@ import { ScreenUniform, type ScreenUniformState } from "./ScreenUniform";
 import {
   BACKGROUND_SHADER,
   GLYPH_SHADER,
+  SCREEN_FLAG_CURSOR_BLOCK,
   SCREEN_FLAG_SEARCH_ACTIVE,
   SCREEN_FLAG_SELECTION_ACTIVE,
   SCREEN_FLAG_SELECTION_RECTANGULAR,
@@ -24,6 +25,8 @@ const STATE: ScreenUniformState = {
   searchActive: false,
   cursor: { x: 22, y: 42, width: 11, height: 21 },
   cursorColor: [255, 128, 0],
+  cursorBlock: true,
+  cursorText: [10, 20, 30],
   background: [10, 20, 30],
   selection: NO_SELECTION,
   selectionColor: [51, 102, 204],
@@ -83,7 +86,8 @@ describe("ScreenUniform", () => {
       SCREEN_FLAG_TEXT_BLINK_VISIBLE |
         SCREEN_FLAG_SEARCH_ACTIVE |
         SCREEN_FLAG_SELECTION_ACTIVE |
-        SCREEN_FLAG_SELECTION_RECTANGULAR,
+        SCREEN_FLAG_SELECTION_RECTANGULAR |
+        SCREEN_FLAG_CURSOR_BLOCK,
     );
     expect([
       ...f.slice(
@@ -225,6 +229,7 @@ describe("shader uniform layout", () => {
         decoration: SCREEN_OFFSET.decoration,
         contrast: SCREEN_OFFSET.contrast,
         gamma: SCREEN_OFFSET.gamma,
+        cursor_text: SCREEN_OFFSET.cursorText,
       });
     },
   );
@@ -287,6 +292,41 @@ describe("shader uniform layout", () => {
     expect(new Uint32Array(uniform.data.buffer)[SCREEN_OFFSET.shiftY / 4]).toBe(
       0,
     );
+  });
+
+  it("paints the character under a block cursor in the cursor text colour", () => {
+    const uniform = new ScreenUniform();
+    uniform.pack({ ...STATE, cursorText: [51, 102, 204] });
+    const { f, u } = view(uniform);
+    const at = (offset: number, word = 0) => offset / 4 + word;
+    expect(u[at(SCREEN_OFFSET.flags)] & SCREEN_FLAG_CURSOR_BLOCK).not.toBe(0);
+    expect(f[at(SCREEN_OFFSET.cursorText)]).toBeCloseTo(51 / 255, 6);
+    expect(f[at(SCREEN_OFFSET.cursorText, 1)]).toBeCloseTo(102 / 255, 6);
+    expect(f[at(SCREEN_OFFSET.cursorText, 2)]).toBeCloseTo(204 / 255, 6);
+    // The vertex stage hands the block's pixel box to the glyphs of the cells it covers and the
+    // fragment stage recolours only the ink inside it, so a roomy glyph that reaches past the
+    // block keeps its own colour there; the background pass widens the block over a wide
+    // character.
+    expect(GLYPH_SHADER).toMatch(/output\.cursor_box = vec4f\(\s*f32\(span\.x \* screen\.cell_size\.x\)/);
+    expect(GLYPH_SHADER).toMatch(
+      /local_position\.x < cursor_box\.z && local_position\.y < cursor_box\.w\) \{\s*color = vec4f\(screen\.cursor_text\.rgb, 1\.0\);/,
+    );
+    expect(GLYPH_SHADER).not.toMatch(/output\.color = vec4f\(screen\.cursor_text/);
+    expect(GLYPH_SHADER).toMatch(/FLAG_CURSOR_BLOCK/);
+    expect(BACKGROUND_SHADER).toMatch(/cursor_columns\(cursor_at\)/);
+  });
+
+  it("keeps bar and underline cursors, and a hidden cursor, from recolouring text", () => {
+    const uniform = new ScreenUniform();
+    const flagged = () =>
+      new Uint32Array(uniform.data.buffer)[SCREEN_OFFSET.flags / 4] &
+      SCREEN_FLAG_CURSOR_BLOCK;
+    uniform.pack({ ...STATE, cursorBlock: false });
+    expect(flagged()).toBe(0);
+    uniform.pack({ ...STATE, cursor: null });
+    expect(flagged()).toBe(0);
+    uniform.pack(STATE);
+    expect(flagged()).not.toBe(0);
   });
 
   it("binds the storage and texture slots the surface fills", () => {
