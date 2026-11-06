@@ -219,6 +219,7 @@ export default defineConfig(async ({ mode }): Promise<UserConfig> => ({
   },
   clearScreen: false,
   server: {
+    headers: { "Content-Security-Policy": "frame-ancestors 'none'" },
     port: 1420,
     strictPort: true,
     host: host || false,
