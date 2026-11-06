@@ -18,26 +18,17 @@ import {
   excludeNestedSources,
   type FsMoveResult,
 } from "./batchMove";
+import {
+  type DirEntry,
+  refreshTargets,
+  type TreeState,
+} from "./refreshTargets";
 import { listenFsChanged, watchAdd, watchRemove } from "./watch";
 import { createWatchRegistry, planVisibilityEdge } from "./watchRegistry";
 
-export type DirEntry = {
-  name: string;
-  kind: "file" | "dir" | "symlink";
-  size: number;
-  mtime: number;
-  gitignored: boolean;
-};
+export type { DirEntry } from "./refreshTargets";
 
 type DeleteBatchResult = { deleted: string[]; failed: number };
-
-type ChildrenState =
-  | { status: "idle" }
-  | { status: "loading" }
-  | { status: "loaded"; entries: DirEntry[] }
-  | { status: "error"; message: string };
-
-type TreeState = Record<string, ChildrenState>;
 
 export type PendingCreate = {
   parentPath: string;
@@ -135,6 +126,8 @@ export function useFileTree(rootPath: string | null, options?: Options) {
   const scopeKey = `${workspaceKey}\u0000${rootPath ?? ""}`;
   const scopeKeyRef = useRef(scopeKey);
   const scopeGenerationRef = useRef(0);
+  // Latest read started per path: an older reply for a path never overwrites a newer one.
+  const fetchSeqRef = useRef(new Map<string, number>());
   const conflictPromptsRef = useRef<Map<string | number, () => void>>(
     new Map(),
   );
@@ -193,7 +186,12 @@ export function useFileTree(rootPath: string | null, options?: Options) {
     async (path: string) => {
       if (scopeKeyRef.current !== scopeKey) return false;
       const generation = scopeGenerationRef.current;
-      const isCurrent = () => generation === scopeGenerationRef.current;
+      const seq = (fetchSeqRef.current.get(path) ?? 0) + 1;
+      fetchSeqRef.current.set(path, seq);
+      // A newer read of this path supersedes this one, whichever reply arrives first.
+      const isCurrent = () =>
+        generation === scopeGenerationRef.current &&
+        fetchSeqRef.current.get(path) === seq;
       if (nodesRef.current[path]?.status !== "loaded") {
         setNodes((s) => ({ ...s, [path]: { status: "loading" } }));
       }
@@ -411,6 +409,18 @@ export function useFileTree(rootPath: string | null, options?: Options) {
     [fetchChildren, addWatch, rootPath, scopeKey],
   );
 
+  // The Refresh button means "show me what is on disk now": a root-only re-read would leave
+  // every expanded subfolder as stale as the WSL share left it.
+  const refreshAll = useCallback(async () => {
+    if (scopeKeyRef.current !== scopeKey) return;
+    const targets = refreshTargets(
+      rootPath,
+      nodesRef.current,
+      expandedRef.current,
+    );
+    await Promise.all(targets.map((path) => fetchChildren(path)));
+  }, [fetchChildren, rootPath, scopeKey]);
+
   // --- mutations ---
 
   const beginCreate = useCallback(
@@ -610,6 +620,7 @@ export function useFileTree(rootPath: string | null, options?: Options) {
     toggle,
     expand,
     refresh,
+    refreshAll,
     beginCreate,
     cancelCreate,
     commitCreate,
