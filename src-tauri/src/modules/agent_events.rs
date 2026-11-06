@@ -100,6 +100,11 @@ pub struct DecisionBroker {
 }
 
 impl DecisionBroker {
+    #[cfg(test)]
+    pub(crate) fn pending_count(&self) -> usize {
+        self.pending.lock().unwrap().len()
+    }
+
     /// Whether `window` shows decisions; only that window receives the events.
     pub fn ui_ready(&self, window: &str) -> bool {
         self.ready_windows
@@ -377,11 +382,32 @@ fn accepted(request: &ControlRequest, decision: Option<HookDecision>) -> Control
 }
 
 /// Handles one authenticated `hook` request. May block for a decision.
+pub fn handle_bound(
+    stream: &TcpStream,
+    request: &ControlRequest,
+    state: &HookState,
+    host: &dyn AgentHost,
+    expected_pty: u32,
+) -> ControlResponse {
+    handle_impl(stream, request, state, host, Some(expected_pty))
+}
+
+#[cfg(test)]
 pub fn handle(
     stream: &TcpStream,
     request: &ControlRequest,
     state: &HookState,
     host: &dyn AgentHost,
+) -> ControlResponse {
+    handle_impl(stream, request, state, host, None)
+}
+
+fn handle_impl(
+    stream: &TcpStream,
+    request: &ControlRequest,
+    state: &HookState,
+    host: &dyn AgentHost,
+    expected_pty: Option<u32>,
 ) -> ControlResponse {
     let params: HookParams = match serde_json::from_value(request.params.clone()) {
         Ok(params) => params,
@@ -402,6 +428,13 @@ pub fn handle(
     let Some(target) = host.pane(pane_id) else {
         return reject(request, "unknown_pane", "pane has no live terminal");
     };
+    if expected_pty.is_some_and(|id| id != target.pty_id) {
+        return reject(
+            request,
+            "unauthorized",
+            "pane credential generation expired",
+        );
+    }
     let mut facts = match normalize(agent, &params.event, &params.payload) {
         Ok(facts) => facts,
         Err(NormalizeError::UnsupportedEvent) => {

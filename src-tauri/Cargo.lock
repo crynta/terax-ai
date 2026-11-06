@@ -4920,6 +4920,7 @@ dependencies = [
  "objc2-foundation",
  "portable-pty",
  "proptest",
+ "regex",
  "reqwest",
  "rustls",
  "serde",

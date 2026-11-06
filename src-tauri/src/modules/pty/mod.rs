@@ -194,6 +194,9 @@ pub async fn pty_open(
         pane_id.and_then(|pane_id| control.shell_env(pane_id))
     };
     let id = state.next_id.fetch_add(1, Ordering::Relaxed);
+    let credential = control_env.clone();
+    let pending_credential = credential.as_ref().map(|env| control.pending_shell(env));
+    let control_app = app.clone();
     let owner: Arc<str> = Arc::from(webview.label());
     let hub = state.hub.clone();
     let class = presentation.unwrap_or_default();
@@ -232,6 +235,14 @@ pub async fn pty_open(
         e
     })?;
     state.sessions.write().unwrap().insert(id, session);
+    if let Some(env) = credential {
+        control.activate_shell(
+            &env,
+            id,
+            &crate::modules::agent_events::TauriAgentHost(&control_app),
+        );
+    }
+    drop(pending_credential);
     // The shell can exit before this insert (instant failure, `exit` in an rc
     // file); the waiter's reap then ran with the id absent. Re-check and reap
     // so the pseudoconsole isn't stranded.
@@ -505,6 +516,20 @@ pub fn pty_diagnostics(state: tauri::State<PtyState>) -> PtyDiagnostics {
         hub: state.hub.diagnostics(),
         sessions,
     }
+}
+
+#[tauri::command]
+pub fn pty_session_shell(
+    state: tauri::State<PtyState>,
+    webview: tauri::Webview,
+    id: u32,
+) -> Result<String, String> {
+    let sessions = state.sessions.read().unwrap();
+    let session = sessions.get(&id).ok_or("no session")?;
+    if session.owner.as_ref() != webview.label() {
+        return Err("session belongs to another webview".into());
+    }
+    Ok(session.shell_program.clone())
 }
 
 #[tauri::command]

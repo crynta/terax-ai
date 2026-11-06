@@ -8,7 +8,9 @@ use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, Pt
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{mpsc, oneshot};
 
-use super::agent_detect::{AgentDetector, AgentLink, AgentSignal, Signal, TerminalNotificationEvent};
+use super::agent_detect::{
+    AgentDetector, AgentLink, AgentSignal, Signal, TerminalNotificationEvent,
+};
 use super::da_filter::DaFilter;
 use super::hub::{Command, Hub};
 use super::presentation::PresentationClass;
@@ -54,6 +56,7 @@ pub struct Session {
     _job: Option<crate::modules::proc::job::ProcessJob>,
     /// PID of the shell process. 0 means unknown; callers must skip checks when 0.
     pub shell_pid: u32,
+    pub shell_program: String,
     /// Frontend pane (leaf) this terminal belongs to, when it reported one.
     pub pane_id: Option<u32>,
     /// Agent state shared with the control server's structured hooks.
@@ -305,7 +308,8 @@ pub(super) fn spawn_with(
     let pty_system = native_pty_system();
     let pair = pty_system.openpty(size).map_err(|e| e.to_string())?;
 
-    let cmd = build_command()?;
+    let mut cmd = build_command()?;
+    let shell_program = super::shell_init::launched_shell(&mut cmd);
     let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);
 
@@ -360,6 +364,7 @@ pub(super) fn spawn_with(
         #[cfg(windows)]
         _job: job,
         shell_pid,
+        shell_program,
         pane_id,
         link: link.clone(),
         owner,
@@ -676,6 +681,33 @@ mod tests {
         let (host, reaped) = host(1, &hub);
         let session = spawn_with(host, PtySize::default(), || Ok(sh(script))).unwrap();
         (hub, session, frontend, reaped)
+    }
+
+    #[test]
+    fn spawned_wsl_session_stores_the_login_shell_instead_of_the_launcher() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let launcher = directory.path().join("wsl.exe");
+        std::fs::write(&launcher, "#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::set_permissions(&launcher, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        for shell in ["/usr/bin/pwsh", "/bin/bash", "/usr/bin/fish"] {
+            let hub = Hub::new();
+            let mut frontend = Frontend::open(&hub, "main");
+            let (host, reaped) = host(1, &hub);
+            let session = spawn_with(host, PtySize::default(), || {
+                let mut command = CommandBuilder::new("wsl.exe");
+                command.env("PATH", directory.path());
+                command.env("TERAX_WSL_LOGIN_SHELL", shell);
+                Ok(command)
+            })
+            .unwrap();
+            frontend.run_until_exit(1, &session);
+            reaped.recv_timeout(Duration::from_secs(5)).unwrap();
+            assert_eq!(frontend.exit, Some(0));
+            assert_eq!(session.shell_program, shell);
+        }
     }
 
     #[test]

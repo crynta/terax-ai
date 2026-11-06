@@ -53,16 +53,13 @@ export async function setKey(provider: ProviderId, key: string): Promise<void> {
   });
 }
 
+async function deleteKey(account: string): Promise<void> {
+  await invoke("secrets_delete", { service: KEYRING_SERVICE, account });
+}
+
 export async function clearKey(provider: ProviderId): Promise<void> {
   if (!providerSupportsKey(provider)) return;
-  try {
-    await invoke("secrets_delete", {
-      service: KEYRING_SERVICE,
-      account: getProvider(provider).keyringAccount,
-    });
-  } catch {
-    // already absent — fine
-  }
+  await deleteKey(getProvider(provider).keyringAccount);
 }
 
 export async function getAllKeys(): Promise<ProviderKeys> {
@@ -125,12 +122,7 @@ export async function setCustomEndpointKey(
 export async function clearCustomEndpointKey(
   endpointId: string,
 ): Promise<void> {
-  try {
-    await invoke("secrets_delete", {
-      service: KEYRING_SERVICE,
-      account: compatKeyringAccount(endpointId),
-    });
-  } catch {}
+  await deleteKey(compatKeyringAccount(endpointId));
 }
 
 export async function getAllCustomEndpointKeys(

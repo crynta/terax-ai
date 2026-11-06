@@ -69,6 +69,47 @@ pub fn build_command(
     }
 }
 
+/// Preserve the shell behind the WSL launcher for shell-specific input quoting.
+pub fn launched_shell(cmd: &mut CommandBuilder) -> String {
+    let program = cmd
+        .get_argv()
+        .first()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    if program.eq_ignore_ascii_case("wsl.exe") {
+        let shell = cmd
+            .get_env("TERAX_WSL_LOGIN_SHELL")
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        cmd.env_remove("TERAX_WSL_LOGIN_SHELL");
+        shell
+    } else {
+        program
+    }
+}
+
+#[cfg(test)]
+mod launched_shell_tests {
+    use super::*;
+
+    #[test]
+    fn wsl_preserves_the_resolved_shell_instead_of_the_launcher() {
+        for shell in [
+            "/usr/bin/pwsh",
+            "/bin/bash",
+            "/usr/bin/fish",
+            "/usr/bin/unknown",
+        ] {
+            let mut cmd = CommandBuilder::new("wsl.exe");
+            cmd.env("TERAX_WSL_LOGIN_SHELL", shell);
+            assert_eq!(launched_shell(&mut cmd), shell);
+            assert!(cmd.get_env("TERAX_WSL_LOGIN_SHELL").is_none());
+        }
+        let mut direct = CommandBuilder::new("powershell.exe");
+        assert_eq!(launched_shell(&mut direct), "powershell.exe");
+    }
+}
+
 // Honor the override only if it matches an enumerated shell, so a tampered
 // setting can't spawn an arbitrary binary across the IPC boundary.
 fn sanitize_shell_override(shell: Option<String>) -> Option<String> {
@@ -728,6 +769,7 @@ mod windows {
             integration,
         );
         let mut cmd = CommandBuilder::new("wsl.exe");
+        cmd.env("TERAX_WSL_LOGIN_SHELL", &shell_path);
         for arg in &spec.args {
             cmd.arg(arg);
         }
