@@ -1,3 +1,5 @@
+import { useSpaces } from "@/modules/spaces/lib/useSpaces";
+import { LOCAL_WORKSPACE } from "@/modules/workspace";
 import type { TerminalTab } from "@/modules/tabs/lib/tabs";
 import { useTerminalDropStore } from "@/modules/terminal/lib/dropStore";
 import type { TerminalSearchController } from "@/modules/terminal/search/TerminalSearchController";
@@ -53,6 +55,10 @@ export const TerminalView = memo(function TerminalView({
         visible={visible}
         focused={focused}
         initialCwd={tab.cwd}
+        workspace={
+          useSpaces.getState().spaces.find((p) => p.id === tab.spaceId)?.env ??
+          LOCAL_WORKSPACE
+        }
         blocks={tab.blocks ?? false}
         ref={setRef}
         onSearchReady={onSearchReady}

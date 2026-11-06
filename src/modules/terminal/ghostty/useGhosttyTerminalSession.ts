@@ -1,5 +1,9 @@
 import { loadSessionRenderer } from "@/modules/terminal/ghostty/loadSessionRenderer";
-import { currentWorkspaceEnv, workspaceScopeKey } from "@/modules/workspace";
+import {
+  currentWorkspaceEnv,
+  workspaceScopeKey,
+  type WorkspaceEnv,
+} from "@/modules/workspace";
 import { useSpaces } from "@/modules/spaces/lib/useSpaces";
 import {
   ensureGhosttyBlocks,
@@ -84,6 +88,7 @@ type GhosttySession = {
   readonly leafId: number;
   readonly backend: GhosttyBackend;
   initialCwd: string | undefined;
+  workspace: WorkspaceEnv;
   lastCwd: string | null;
   model: GhosttyTerminalModelApi | null;
   surface: GhosttySurface | null;
@@ -136,6 +141,7 @@ type Options = {
   visible: boolean;
   focused: boolean;
   initialCwd?: string;
+  workspace?: WorkspaceEnv;
   blocks?: boolean;
   onExit?: (code: number, livedMs: number) => void;
   onCwd?: (cwd: string) => void;
@@ -149,6 +155,7 @@ export function useGhosttyTerminalSession({
   visible,
   focused,
   initialCwd,
+  workspace,
   blocks = false,
   onSearchReady,
   onExit,
@@ -178,6 +185,7 @@ export function useGhosttyTerminalSession({
   const callbackRef = useRef({ onSearchReady, onExit, onCwd });
   callbackRef.current = { onSearchReady, onExit, onCwd };
   const initialCwdRef = useRef(initialCwd);
+  const workspaceRef = useRef(workspace ?? currentWorkspaceEnv());
 
   useEffect(() => {
     const session = ensureSession(
@@ -185,6 +193,7 @@ export function useGhosttyTerminalSession({
       backend,
       initialCwdRef.current,
       fontRef.current,
+      workspaceRef.current,
     );
     if (blocks) ensureGhosttyBlocks(leafId);
     const node = container.current;
@@ -220,7 +229,13 @@ export function useGhosttyTerminalSession({
   }, [leafId, backend, font]);
 
   useEffect(() => {
-    const session = ensureSession(leafId, backend, initialCwdRef.current);
+    const session = ensureSession(
+      leafId,
+      backend,
+      initialCwdRef.current,
+      undefined,
+      workspaceRef.current,
+    );
     session.visible = visible;
     session.focused = focused;
     if (!visible || !focused) session.cancelFocusRetry?.();
@@ -521,6 +536,7 @@ function ensureSession(
   backend: GhosttyBackend,
   initialCwd?: string,
   font?: TerminalFontSpec,
+  workspace: WorkspaceEnv = currentWorkspaceEnv(),
 ): GhosttySession {
   const existing = sessions.get(leafId);
   if (existing) {
@@ -541,6 +557,7 @@ function ensureSession(
     leafId,
     backend,
     initialCwd,
+    workspace,
     lastCwd: null,
     model: null,
     surface: null,
@@ -858,6 +875,7 @@ async function initializeSessionGeneration(
     preferences.terminalShell || undefined,
     session.leafId,
     theme,
+    session.workspace,
   );
   if (session.disposed || generation !== session.generation) {
     await pty.close();

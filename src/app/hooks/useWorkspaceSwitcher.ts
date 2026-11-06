@@ -1,6 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { homeDir } from "@tauri-apps/api/path";
 import { native } from "@/modules/ai/lib/native";
+import { useSpaces } from "@/modules/spaces/lib/useSpaces";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import { leafHasForegroundProcess } from "@/modules/terminal";
+import { evaluateCloseHazards } from "./tabCloseGuards";
 import { snapshot } from "@/modules/workbench/store";
 import {
   getWslHome,
@@ -17,8 +21,8 @@ async function resolveEnvHome(env: WorkspaceEnv): Promise<string> {
 type Params = {
   workspaceEnv: WorkspaceEnv;
   setWorkspaceEnv: (env: WorkspaceEnv) => void;
-  /** Replaces the active project's tasks with a fresh one at `home`. */
-  resetWorkspace: (home?: string) => void;
+  /** Replaces only the originating project's tasks. */
+  resetWorkspace: (projectId: string, home: string, env: WorkspaceEnv) => void;
 };
 
 /**
@@ -31,6 +35,7 @@ export function useWorkspaceSwitcher({
   setWorkspaceEnv,
   resetWorkspace,
 }: Params) {
+  const operation = useRef(0);
   const [home, setHome] = useState<string | null>(null);
   const [launchCwd, setLaunchCwd] = useState<string | null>(null);
   const [launchCwdResolved, setLaunchCwdResolved] = useState(false);
@@ -41,7 +46,7 @@ export function useWorkspaceSwitcher({
         const normalized = p.replace(/\\/g, "/");
         setHome(normalized);
         try {
-          await native.workspaceAuthorize(normalized);
+          await native.workspaceAuthorize(normalized, LOCAL_WORKSPACE);
         } catch {
           // Bootstrap already authorizes home from Rust; ignore.
         }
@@ -57,51 +62,91 @@ export function useWorkspaceSwitcher({
       .finally(() => setLaunchCwdResolved(true));
   }, []);
 
-  const authorizeHome = useCallback(async (nextHome: string) => {
-    setHome(nextHome);
-    setLaunchCwd(nextHome);
-    try {
-      await native.workspaceAuthorize(nextHome);
-    } catch {
-      // Non-fatal — git panel will surface "not authorized" if needed.
-    }
-  }, []);
+  const authorizeHome = useCallback(
+    async (nextHome: string, env: WorkspaceEnv) => {
+      try {
+        await native.workspaceAuthorize(nextHome, env);
+      } catch {
+        // Non-fatal — git panel will surface "not authorized" if needed.
+      }
+    },
+    [],
+  );
 
   const switchWorkspace = useCallback(
-    async (env: WorkspaceEnv): Promise<boolean> => {
+    async (projectId: string, env: WorkspaceEnv): Promise<boolean> => {
+      const token = ++operation.current;
+      const current = () =>
+        operation.current === token &&
+        snapshot().activeProjectId === projectId &&
+        useSpaces.getState().activeId === projectId;
+      if (!current()) return false;
+      const capture = () => {
+        const tabs = snapshot().tabs.filter((t) => t.spaceId === projectId);
+        return {
+          dirtyIds: tabs
+            .filter((t) => t.kind === "editor" && t.dirty)
+            .map((t) => t.id),
+          leafIds: tabs.filter((t) => t.kind === "terminal").map((t) => t.id),
+        };
+      };
+      const previous =
+        useSpaces.getState().spaces.find((s) => s.id === projectId)?.env ??
+        workspaceEnv;
       if (
-        env.kind === workspaceEnv.kind &&
+        env.kind === previous.kind &&
         (env.kind === "local" ||
-          (workspaceEnv.kind === "wsl" && env.distro === workspaceEnv.distro))
-      ) {
+          (previous.kind === "wsl" && env.distro === previous.distro))
+      )
         return false;
-      }
-      const dirty = snapshot().tabs.some((t) => t.kind === "editor" && t.dirty);
-      if (dirty) {
+      const rejectDirty = () => {
+        if (!capture().dirtyIds.length) return false;
         window.alert(
           "Save or close unsaved editor tabs before switching workspace.",
         );
-        return false;
-      }
-
+        return true;
+      };
+      if (rejectDirty()) return false;
       let nextHome: string;
       try {
         nextHome = await resolveEnvHome(env);
       } catch (e) {
-        window.alert(String(e));
+        if (current()) window.alert(String(e));
         return false;
       }
-
+      if (!current()) return false;
+      await authorizeHome(nextHome, env);
+      if (!current()) return false;
+      const hazards = await evaluateCloseHazards(
+        capture,
+        leafHasForegroundProcess,
+        usePreferencesStore.getState().confirmCloseRunningTerminal,
+      );
+      if (!current() || rejectDirty()) return false;
+      if (
+        hazards.busyLeafIds.length &&
+        !window.confirm(
+          "Running processes will stop when this project's environment changes. Continue?",
+        )
+      )
+        return false;
+      if (!current() || rejectDirty()) return false;
       setWorkspaceEnv(env.kind === "local" ? LOCAL_WORKSPACE : env);
-      await authorizeHome(nextHome);
-      resetWorkspace(nextHome);
+      setHome(nextHome);
+      setLaunchCwd(nextHome);
+      resetWorkspace(projectId, nextHome, env);
       return true;
     },
     [workspaceEnv, setWorkspaceEnv, resetWorkspace, authorizeHome],
   );
 
   const adoptWorkspaceEnv = useCallback(
-    async (env: WorkspaceEnv): Promise<string | null> => {
+    async (env: WorkspaceEnv, projectId?: string): Promise<string | null> => {
+      const token = ++operation.current;
+      const current = () =>
+        operation.current === token &&
+        (!projectId || useSpaces.getState().activeId === projectId);
+      if (!current()) return null;
       setWorkspaceEnv(env.kind === "local" ? LOCAL_WORKSPACE : env);
       let nextHome: string;
       try {
@@ -109,7 +154,11 @@ export function useWorkspaceSwitcher({
       } catch {
         return null;
       }
-      await authorizeHome(nextHome);
+      if (!current()) return null;
+      await authorizeHome(nextHome, env);
+      if (!current()) return null;
+      setHome(nextHome);
+      setLaunchCwd(nextHome);
       return nextHome;
     },
     [setWorkspaceEnv, authorizeHome],

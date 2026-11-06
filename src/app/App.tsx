@@ -239,9 +239,13 @@ export default function App() {
 
   const workspaceEnv = useWorkspaceEnvStore((s) => s.env);
   const setWorkspaceEnv = useWorkspaceEnvStore((s) => s.setEnv);
-  const resetWorkspace = useCallback((home?: string) => {
-    workbench.resetProject(snapshot().activeProjectId, home);
-  }, []);
+  const resetWorkspace = useCallback(
+    (projectId: string, home: string, env: WorkspaceEnv) => {
+      useSpaces.getState().setEnv(projectId, env);
+      workbench.resetProject(projectId, home);
+    },
+    [],
+  );
   const {
     home,
     launchCwd,
@@ -261,10 +265,8 @@ export default function App() {
 
   const handleWorkspaceChange = useCallback(
     async (env: WorkspaceEnv) => {
-      const switched = await switchWorkspace(env);
-      if (switched && activeSpaceId) {
-        useSpaces.getState().setEnv(activeSpaceId, env);
-      }
+      if (!activeSpaceId) return;
+      await switchWorkspace(activeSpaceId, env);
     },
     [switchWorkspace, activeSpaceId],
   );
@@ -288,7 +290,7 @@ export default function App() {
     const meta = useSpaces
       .getState()
       .spaces.find((s) => s.id === activeSpaceId);
-    if (meta) void adoptWorkspaceEnv(meta.env);
+    if (meta) void adoptWorkspaceEnv(meta.env, activeSpaceId);
   }, [activeSpaceId, spacesHydrated, adoptWorkspaceEnv]);
 
   const [switcherOpen, setSwitcherOpen] = useState(false);

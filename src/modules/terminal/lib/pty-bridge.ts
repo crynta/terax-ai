@@ -18,7 +18,7 @@ import {
 } from "@/modules/terminal/lib/ptyPresentation";
 import { tokenBytes } from "@/modules/terminal/lib/ptyWire";
 import type { TerminalGpuTheme } from "@/modules/terminal/ghostty/gpu/terminalVisuals";
-import { currentWorkspaceEnv } from "@/modules/workspace";
+import { currentWorkspaceEnv, type WorkspaceEnv } from "@/modules/workspace";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 
@@ -115,6 +115,7 @@ export async function openPty(
   shell?: string,
   paneId?: number,
   colors?: PtyColors,
+  workspace: WorkspaceEnv = currentWorkspaceEnv(),
 ): Promise<PtySession> {
   const stream = outputHub();
   let id: number | null = null;
@@ -167,7 +168,7 @@ export async function openPty(
       cols,
       rows,
       cwd: cwd ?? null,
-      workspace: currentWorkspaceEnv(),
+      workspace,
       blocks: blocks ?? false,
       shell: shell ?? null,
       paneId: paneId ?? null,

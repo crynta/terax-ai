@@ -125,3 +125,19 @@ it("serializes overlapping flushes and waits until both snapshots are durable", 
   expect(persist).toHaveBeenCalledTimes(2);
   expect(settled).toHaveBeenCalledOnce();
 });
+
+it("rewrites the durable layout when reverting after a failed persist", async () => {
+  const { state, writer, save, persist } = setup({ a: "A" });
+  await writer.flush();
+  state.a = "B";
+  persist.mockRejectedValueOnce(new Error("disk failed"));
+  await expect(writer.flush()).rejects.toThrow("disk failed");
+  state.a = "A";
+  await writer.flush();
+  expect(save.mock.calls).toEqual([
+    ["a", "A"],
+    ["a", "B"],
+    ["a", "A"],
+  ]);
+  expect(persist).toHaveBeenCalledTimes(3);
+});

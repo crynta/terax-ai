@@ -279,6 +279,25 @@ describe("PTY bridge over the multiplexed stream", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("spawns in the supplied owning environment even when another project is active", async () => {
+    const { openPty } = await load();
+    nativeInvoke(80);
+    const workspace = { kind: "wsl", distro: "Ubuntu" } as const;
+    const session = await openPty(
+      80,
+      24,
+      { onData: vi.fn() },
+      "/repo",
+      false,
+      undefined,
+      12,
+      undefined,
+      workspace,
+    );
+    expect(openArguments().workspace).toEqual(workspace);
+    await session.close();
+  });
+
   it("starts a terminal in the class its pane is in and reports later changes", async () => {
     const { openPty, setLeafPresentation } = await load();
     nativeInvoke(70);

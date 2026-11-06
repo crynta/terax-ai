@@ -38,6 +38,7 @@ export function createPersistenceWriter(deps: Deps) {
       const state = deps.serialize(id);
       const json = JSON.stringify(state);
       if (written.get(id) === json) continue;
+      written.delete(id);
       await deps.save(id, state);
       changed.set(id, json);
     }
