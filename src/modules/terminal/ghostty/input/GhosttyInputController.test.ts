@@ -254,6 +254,7 @@ describe("GhosttyInputController", () => {
           ...inputModel(),
           modes: () => terminal.modes(),
           encodeKey: (event) => terminal.encodeKey(event),
+          kittyKeyboardFlags: () => terminal.kittyKeyboardFlags(),
         },
         input: input as unknown as HTMLTextAreaElement,
         pointerTarget: new FakeElement() as unknown as HTMLElement,
@@ -464,6 +465,7 @@ describe("GhosttyInputController", () => {
         model: {
           ...inputModel(),
           encodeKey: (event) => terminal.encodeKey(event),
+          kittyKeyboardFlags: () => terminal.kittyKeyboardFlags(),
         },
         input: input as unknown as HTMLTextAreaElement,
         pointerTarget: new FakeElement() as unknown as HTMLElement,
@@ -504,6 +506,54 @@ describe("GhosttyInputController", () => {
         expect(new TextDecoder().decode(onData.mock.calls[3][0])).toBe(
           "\x1b[120;1:3u",
         );
+      } finally {
+        controller.dispose();
+        terminal.dispose();
+      }
+    },
+  );
+
+  it.each(["ghostty-vt.wasm", "ghostty-vt-scalar.wasm"])(
+    "types the shifted character under Kitty flags 3 (%s)",
+    async (artifact) => {
+      const bytes = await readFile(
+        new URL(
+          `../../../../../packages/ghostty-core/adapted/${artifact}`,
+          import.meta.url,
+        ),
+      );
+      const core = await TeraxGhostty.loadBytes(Uint8Array.from(bytes).buffer);
+      const terminal = core.createTerminal(80, 24);
+      const input = new FakeTextArea();
+      const onData = vi.fn();
+      const controller = new GhosttyInputController({
+        model: {
+          ...inputModel(),
+          encodeKey: (event) => terminal.encodeKey(event),
+          kittyKeyboardFlags: () => terminal.kittyKeyboardFlags(),
+        },
+        input: input as unknown as HTMLTextAreaElement,
+        pointerTarget: new FakeElement() as unknown as HTMLElement,
+        cellSize: () => ({ width: 10, height: 20 }),
+        isMac: true,
+        onCopy: () => false,
+        onData,
+      });
+      try {
+        // Disambiguate escape codes + report event types, as Neovim pushes.
+        terminal.write(new TextEncoder().encode("\x1b[>3u"));
+        const sent = (values: Partial<KeyboardEvent>): string => {
+          onData.mockClear();
+          input.dispatchEvent(keyboardEvent(values));
+          return new TextDecoder().decode(onData.mock.calls[0]?.[0]);
+        };
+        expect(sent({ key: ":", code: "Semicolon", shiftKey: true })).toBe(":");
+        expect(sent({ key: "!", code: "Digit1", shiftKey: true })).toBe("!");
+        expect(sent({ key: "A", code: "KeyA", shiftKey: true })).toBe("A");
+        expect(sent({ key: "a", code: "KeyA" })).toBe("a");
+        expect(
+          sent({ key: "A", code: "KeyA", shiftKey: true, ctrlKey: true }),
+        ).toBe("\x1b[97;6u");
       } finally {
         controller.dispose();
         terminal.dispose();
@@ -848,6 +898,7 @@ function inputModel(
     scrollPosition: () => ({ offset: 0, history: 0 }),
     scrollBy: () => false,
     encodeKey: () => new Uint8Array(0),
+    kittyKeyboardFlags: () => 0,
   } as unknown as GhosttyTerminalModelApi;
 }
 
