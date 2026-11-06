@@ -87,6 +87,11 @@ describe("writeAtShellPrompt", () => {
       true,
     );
     expect(written).toEqual(["cd /tmp\r"]);
+    expect(target.commandTracked).toBe(false);
+    expect(writeAtShellPrompt(target, "cd /another\r", () => false)).toBe(
+      false,
+    );
+    expect(written).toEqual(["cd /tmp\r"]);
   });
 
   it("types nothing while a coding agent owns the terminal", async () => {

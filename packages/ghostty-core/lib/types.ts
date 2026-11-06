@@ -506,6 +506,7 @@ export type GhosttyTerminalEvent =
       readonly marker?: number;
     }
   | { readonly type: "screen-cleared" }
+  | { readonly type: "synchronized-output-reset" }
   | { readonly type: "overflow"; readonly dropped: number };
 
 /**

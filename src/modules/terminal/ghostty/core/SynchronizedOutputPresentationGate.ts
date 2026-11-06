@@ -6,7 +6,8 @@ export const SYNCHRONIZED_OUTPUT_PRESENTATION_WATCHDOG_MS = 1_000;
  * freezing the last complete frame indefinitely. `observe` receives the mode
  * level after every write, so an expired transaction stays over until the mode
  * is seen off: an application that died inside one would otherwise re-arm the
- * hold on its next write and update the screen once a second.
+ * hold on its next write and update the screen once a second. Parser reset
+ * events also observe the off state when a write immediately enables it again.
  */
 export class SynchronizedOutputPresentationGate {
   private watchdog: ReturnType<typeof setTimeout> | null = null;

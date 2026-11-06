@@ -173,9 +173,23 @@ pub async fn fs_canonicalize(
     validate_link_path(&path, local_only)?;
     blocking(move || {
         let workspace = WorkspaceEnv::from_option(workspace);
+        #[cfg(windows)]
+        if local_only == Some(true) {
+            let canon =
+                super::local_file::canonicalize(&super::local_file::open(&path, &workspace)?)?;
+            return match &workspace {
+                WorkspaceEnv::Wsl { distro } => canonical_wsl_path(&canon, distro),
+                WorkspaceEnv::Local => Ok(canon),
+            };
+        }
         let p = resolve_path(&path, &workspace);
         let canon = std::fs::canonicalize(&p).map_err(|e| e.to_string())?;
-        Ok(super::to_canon(&canon))
+        let canon = super::to_canon(&canon);
+        #[cfg(windows)]
+        if let WorkspaceEnv::Wsl { distro } = &workspace {
+            return canonical_wsl_path(&canon, distro);
+        }
+        Ok(canon)
     })
     .await
 }
@@ -187,7 +201,52 @@ pub async fn fs_stat(
     local_only: Option<bool>,
 ) -> Result<FileStat, String> {
     validate_link_path(&path, local_only)?;
-    blocking(move || stat_path(path, workspace)).await
+    blocking(move || {
+        #[cfg(windows)]
+        if local_only == Some(true) {
+            let file = super::local_file::open(&path, &WorkspaceEnv::from_option(workspace))?;
+            let meta = file.metadata().map_err(|e| e.to_string())?;
+            return Ok(FileStat {
+                size: meta.len(),
+                mtime: mtime_millis(&meta),
+                kind: if meta.is_dir() {
+                    StatKind::Dir
+                } else {
+                    StatKind::File
+                },
+            });
+        }
+        stat_path(path, workspace)
+    })
+    .await
+}
+
+#[cfg(any(windows, test))]
+fn canonical_wsl_path(path: &str, distro: &str) -> Result<String, String> {
+    for host in ["wsl.localhost", "wsl$"] {
+        let prefix = format!("//{host}/{distro}");
+        if path
+            .get(..prefix.len())
+            .is_some_and(|p| p.eq_ignore_ascii_case(&prefix))
+        {
+            let tail = &path[prefix.len()..];
+            if tail.is_empty() {
+                return Ok("/".into());
+            }
+            if tail.starts_with('/') {
+                return Ok(tail.into());
+            }
+        }
+    }
+    let bytes = path.as_bytes();
+    if bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && &bytes[1..3] == b":/" {
+        return Ok(format!(
+            "/mnt/{}/{}",
+            (bytes[0] as char).to_ascii_lowercase(),
+            &path[3..]
+        ));
+    }
+    Err("canonical path is outside the workspace's WSL namespace".into())
 }
 
 fn validate_link_path(path: &str, local_only: Option<bool>) -> Result<(), String> {
@@ -227,6 +286,65 @@ fn stat_path(path: String, workspace: Option<WorkspaceEnv>) -> Result<FileStat, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn canonical_wsl_paths_keep_the_distro_namespace() {
+        assert_eq!(
+            canonical_wsl_path("//wsl.localhost/Ubuntu/home/me/target", "Ubuntu").unwrap(),
+            "/home/me/target"
+        );
+        assert_eq!(
+            canonical_wsl_path("//wsl$/Ubuntu/home/Target", "Ubuntu").unwrap(),
+            "/home/Target"
+        );
+        assert_eq!(
+            canonical_wsl_path("C:/work/target", "Ubuntu").unwrap(),
+            "/mnt/c/work/target"
+        );
+        assert_eq!(
+            canonical_wsl_path("//wsl.localhost/Ubuntu", "Ubuntu").unwrap(),
+            "/"
+        );
+        assert!(canonical_wsl_path("//wsl.localhost/Ubuntu-other/file", "Ubuntu").is_err());
+        assert!(canonical_wsl_path("//remote/share/file", "Ubuntu").is_err());
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn local_file_links_reject_leaf_and_parent_reparse_points() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        std::fs::create_dir(&target).unwrap();
+        std::fs::write(target.join("file"), "safe").unwrap();
+        let local = dir.path().join("local-link");
+        std::os::windows::fs::symlink_dir(&target, &local).unwrap();
+        let remote = dir.path().join("remote-link");
+        std::os::windows::fs::symlink_dir(r"\\terax-unreachable.invalid\share", &remote).unwrap();
+        for path in [&local, &local.join("file"), &remote, &remote.join("file")] {
+            let path = super::super::to_canon(path);
+            assert!(fs_stat(path.clone(), None, Some(true))
+                .await
+                .err()
+                .unwrap()
+                .contains("reparse"));
+            assert!(fs_canonicalize(path, None, Some(true))
+                .await
+                .err()
+                .unwrap()
+                .contains("reparse"));
+        }
+        let plain = super::super::to_canon(target.join("file"));
+        assert_eq!(
+            fs_stat(plain.clone(), None, Some(true)).await.unwrap().size,
+            4
+        );
+        assert_eq!(
+            fs_canonicalize(plain.clone(), None, Some(true))
+                .await
+                .unwrap(),
+            plain
+        );
+    }
 
     #[tokio::test]
     async fn local_file_links_reject_network_paths_before_filesystem_access() {

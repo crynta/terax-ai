@@ -109,6 +109,8 @@ window-vibrancy = "0.6"
 # feature, and the previous reqwest honoured it unconditionally on Windows.
 reqwest = { version = "0.13", default-features = false, features = ["system-proxy"] }
 windows-sys = { version = "0.61", features = [
+	"Wdk_Foundation",
+	"Wdk_Storage_FileSystem",
 	"Wdk_System_SystemServices",
 	"Win32_Foundation",
 	"Win32_Security",
@@ -116,10 +118,12 @@ windows-sys = { version = "0.61", features = [
 	"Win32_System_Console",
 	"Win32_System_DataExchange",
 	"Win32_System_JobObjects",
+	"Win32_System_IO",
 	"Win32_System_Ole",
 	"Win32_System_SystemInformation",
 	"Win32_System_ProcessStatus",
 	"Win32_System_Threading",
+	"Win32_System_WindowsProgramming",
 	"Win32_System_Diagnostics_ToolHelp",
 	"Win32_UI_Shell",
 ] }

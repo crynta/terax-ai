@@ -1,3 +1,5 @@
+import { enqueueTerminalInput } from "../ghostty/input/terminalInputEncoding";
+
 export type ShellInputState = {
   /** The shell has reported OSC 133 at least once. */
   readonly integrated: boolean;
@@ -29,7 +31,7 @@ export type InjectionTarget = {
   readonly disposed: boolean;
   readonly promptIntegrated: boolean;
   readonly commandRunning: boolean;
-  readonly commandTracked: boolean;
+  commandTracked: boolean;
   readonly model: {
     modes(): { readonly alternateScreen: boolean };
   } | null;
@@ -56,5 +58,5 @@ export function writeAtShellPrompt(
     agentActive: agentActive(),
   });
   if (!accepts) return false;
-  return session.writer.enqueue(new TextEncoder().encode(data));
+  return enqueueTerminalInput(session, new TextEncoder().encode(data));
 }

@@ -41,6 +41,22 @@ describe.each(["ghostty-vt", "ghostty-vt-scalar"])(
       };
     }
 
+    it("retains endpoints for all 1,000 blocks after the native pin ring wraps", () => {
+      const { blocks, write, dispose } = create();
+      try {
+        for (let i = 1; i <= 1500; i++)
+          write(
+            `\x1b]133;C;echo ${i}\x07out ${i}\r\n\x1b]133;D;0\x07\x1b]133;A\x07\x1b]133;B\x07`,
+          );
+        expect(blocks.diagnostics().blocks).toBe(1000);
+        expect(blocks.readById("500")).toBeNull();
+        expect(blocks.readById("501")?.output).toBe("out 501");
+        expect(blocks.readById("1500")?.output).toBe("out 1500");
+      } finally {
+        dispose();
+      }
+    });
+
     it("yields during large block searches and cancels without scanning the remaining history", async () => {
       const { model, blocks, write, dispose } = create();
       vi.useFakeTimers();
@@ -170,7 +186,9 @@ describe.each(["ghostty-vt", "ghostty-vt-scalar"])(
       const { model, blocks, write, dispose } = create();
       try {
         const output = "abcdefghijklmnopqrstuvwxyz0123456789";
-        write(`\x1b]133;B\x07\x1b]133;C;exec\x07${output}\x1b]133;A\x07prompt> \x1b]133;B\x07`);
+        write(
+          `\x1b]133;B\x07\x1b]133;C;exec\x07${output}\x1b]133;A\x07prompt> \x1b]133;B\x07`,
+        );
         for (const cols of [10, 40, 15, 20]) {
           model.resize(cols, 6);
           expect(blocks.readById("1")?.output).toBe(output);

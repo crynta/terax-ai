@@ -22,3 +22,24 @@ export function encodeTerminalSubmission(
       : normalized;
   return `${payload}\r`;
 }
+/** Revoke prompt readiness before queued input can start a command. */
+export function enqueueTerminalInput(
+  session: {
+    commandTracked: boolean;
+    writer: { enqueue(bytes: Uint8Array): boolean };
+  },
+  bytes: Uint8Array,
+): boolean {
+  const accepted = session.writer.enqueue(bytes);
+  if (
+    accepted &&
+    (bytes.includes(13) ||
+      bytes.includes(10) ||
+      (bytes[0] === 27 &&
+        /\x1b\[(?:13(?:;[\d:]+)*u|27;\d+;13~)/.test(
+          new TextDecoder().decode(bytes),
+        )))
+  )
+    session.commandTracked = false;
+  return accepted;
+}

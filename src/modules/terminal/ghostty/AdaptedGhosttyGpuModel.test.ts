@@ -4,7 +4,7 @@ import {
   TeraxGhostty,
   decodeGpuCell,
 } from "@terax/ghostty-core/adapted";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { AdaptedGhosttyTerminalModel } from "./AdaptedGhosttyTerminalModel";
 import { linkUriAt } from "./core/ViewportLinkResolver";
 import type { GhosttyGpuFrame } from "./GhosttyTerminalModel";
@@ -151,9 +151,7 @@ describe.each(["ghostty-vt", "ghostty-vt-scalar"])(
 
         write("\x1b[3;1Hrow two changed");
         // A pointer move reads links, which forces a render-state update.
-        expect(linkUriAt(model, 0, 1)).toBe(
-          "https://example.test/x",
-        );
+        expect(linkUriAt(model, 0, 1)).toBe("https://example.test/x");
         write("\x1b[6;1Hrow five changed");
         const frame = model.consumeGpuFrame();
         expect(frame.dirtyRanges).toEqual([
@@ -175,9 +173,7 @@ describe.each(["ghostty-vt", "ghostty-vt-scalar"])(
         model.consumeDamage();
 
         write("\x1b[3;1Hrow two changed");
-        expect(linkUriAt(model, 0, 1)).toBe(
-          "https://example.test/x",
-        );
+        expect(linkUriAt(model, 0, 1)).toBe("https://example.test/x");
         write("\x1b[6;1Hrow five changed");
         expect(model.renderFormat()).toBe("soa");
         // The SoA format reports Ghostty-dirty rows (including the row the
@@ -209,6 +205,25 @@ describe.each(["ghostty-vt", "ghostty-vt-scalar"])(
         expect(reader.rowText(frame, 2)).toBe("complete");
       } finally {
         model.dispose();
+      }
+    });
+
+    it("recovers an expired synchronization hold when reset and set share a write", () => {
+      vi.useFakeTimers();
+      const { model, write } = create();
+      try {
+        write("\x1b[?2026hpartial");
+        vi.advanceTimersByTime(1000);
+        expect(model.deferPresentation()).toBe(false);
+        write("still expired");
+        expect(model.deferPresentation()).toBe(false);
+        write("\x1b[?2026l\x1b[?2026hnext partial");
+        expect(model.deferPresentation()).toBe(true);
+        write("complete\x1b[?2026l");
+        expect(model.deferPresentation()).toBe(false);
+      } finally {
+        model.dispose();
+        vi.useRealTimers();
       }
     });
 
@@ -245,12 +260,8 @@ describe.each(["ghostty-vt", "ghostty-vt-scalar"])(
         );
         model.consumeGpuFrame();
         expect(model.cursor()).toMatchObject({ x: 6, y: 1, visible: true });
-        expect(linkUriAt(model, 0, 5)).toBe(
-          "https://example.test/a",
-        );
-        expect(linkUriAt(model, 0, 15)).toBe(
-          "https://plain.example/path",
-        );
+        expect(linkUriAt(model, 0, 5)).toBe("https://example.test/a");
+        expect(linkUriAt(model, 0, 15)).toBe("https://plain.example/path");
         expect(linkUriAt(model, 0, 1)).toBeNull();
         expect(model.grapheme(0, 0)).toBe("s");
         expect(model.readCellLine(1).slice(0, 6).join("")).toBe("second");

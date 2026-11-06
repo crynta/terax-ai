@@ -525,7 +525,6 @@ export class AdaptedGhosttyTerminalModel implements GhosttyTerminalModelApi {
     };
   }
 
-
   scrollPosition(): ScrollPosition {
     this.assertLive();
     if (this.scrollPositionCurrent) return this.scrollPositionValue;
@@ -995,6 +994,8 @@ export class AdaptedGhosttyTerminalModel implements GhosttyTerminalModelApi {
   private drainEvents(): void {
     const events = this.terminal.drainEvents();
     for (const event of events) {
+      if (event.type === "synchronized-output-reset")
+        this.synchronizedOutputPresentation.observe(false);
       this.promptPresentation.observe(event);
       this.resizePromptHold.observe(event);
       this.eventSink?.(event);

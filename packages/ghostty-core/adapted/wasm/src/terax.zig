@@ -32,6 +32,7 @@ const TerminalEvent = enum(u8) {
     end_of_input = 9,
     end_of_command = 10,
     screen_cleared = 11,
+    synchronized_output_reset = 12,
 };
 
 const CursorInfo = extern struct {
@@ -846,6 +847,14 @@ const StreamHandler = struct {
             .full_reset => {
                 defer self.readonly.vt(action, value);
                 try self.clearSemanticMarkers();
+                if (self.term.modes.get(.synchronized_output))
+                    try self.emitEvent(.synchronized_output_reset, &.{});
+            },
+            .reset_mode, .restore_mode => {
+                const was_synchronized = self.term.modes.get(.synchronized_output);
+                self.readonly.vt(action, value);
+                if (value.mode == .synchronized_output and was_synchronized and !self.term.modes.get(.synchronized_output))
+                    try self.emitEvent(.synchronized_output_reset, &.{});
             },
             .request_mode => try self.requestMode(value.mode),
             .request_mode_unknown => try self.requestModeUnknown(value.mode, value.ansi),
@@ -936,7 +945,8 @@ const StreamHandler = struct {
 const TerminalStream = ghostty.Stream(StreamHandler);
 
 const SemanticMarkers = struct {
-    const capacity = 2048;
+    // GhosttyBlocks retains 1,000 commands, each with C, D and A pins.
+    const capacity = 4096;
     const Entry = struct { id: u32, pin: *ghostty.PageList.Pin };
     enabled: bool = false,
     entries: std.ArrayListUnmanaged(Entry) = .empty,

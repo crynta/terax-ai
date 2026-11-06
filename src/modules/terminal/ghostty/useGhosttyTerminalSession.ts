@@ -44,7 +44,10 @@ import {
 import { getWebGpuTerminalRuntime } from "./gpu/WebGpuTerminalRuntime";
 import { WebGpuTerminalSurface } from "./gpu/WebGpuTerminalSurface";
 import { GhosttyInputController } from "./input/GhosttyInputController";
-import { encodeTerminalSubmission } from "./input/terminalInputEncoding";
+import {
+  encodeTerminalSubmission,
+  enqueueTerminalInput,
+} from "./input/terminalInputEncoding";
 import type {
   WebGlTerminalSurface,
   WebGlTerminalSurfaceOptions,
@@ -256,8 +259,10 @@ export function useGhosttyTerminalSession({
       const { writeAtShellPrompt } = await import("../lib/promptInjection");
       const session = sessions.get(leafId);
       if (!session || session !== expected || session.pty !== pty) return false;
-      return writeAtShellPrompt(session, data, () =>
-        !!session.pty && isAgentActivePty(session.pty.id),
+      return writeAtShellPrompt(
+        session,
+        data,
+        () => !!session.pty && isAgentActivePty(session.pty.id),
       );
     },
     [leafId],
@@ -335,7 +340,7 @@ export function hasGhosttySession(leafId: number): boolean {
 export function writeToGhosttySession(leafId: number, data: string): boolean {
   const session = sessions.get(leafId);
   if (!session || session.shellExited || session.disposed) return false;
-  return session.writer.enqueue(textEncoder.encode(data));
+  return enqueueTerminalInput(session, textEncoder.encode(data));
 }
 
 export function submitToGhosttySession(leafId: number, text: string): boolean {
@@ -345,7 +350,7 @@ export function submitToGhosttySession(leafId: number, text: string): boolean {
     text,
     session.model?.modes().bracketedPaste ?? false,
   );
-  const accepted = session.writer.enqueue(textEncoder.encode(data));
+  const accepted = enqueueTerminalInput(session, textEncoder.encode(data));
   if (accepted) {
     const blocks = ghosttyBlocks(leafId);
     if (blocks) {
@@ -876,7 +881,7 @@ function createGhosttyInput(
         !(bytes.length === 1 && bytes[0] === 3)
       )
         return;
-      session.writer.enqueue(bytes);
+      enqueueTerminalInput(session, bytes);
     },
     onKeyDown: (event) => {
       const blocks = ghosttyBlocks(session.leafId);
