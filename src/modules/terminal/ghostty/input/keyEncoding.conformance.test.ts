@@ -650,6 +650,33 @@ const ROWS: Row[] = [
     press: all(""),
   },
 
+  ...(
+    [
+      ["ƒ", "KeyF", 102, "\x06"],
+      ["Dead", "KeyE", 101, "\x05"],
+    ] as const
+  ).map(
+    ([key, code, base, control]): Row => ({
+      name: `Ctrl+Option ${code} follows Option-as-Alt, including dead keys`,
+      key,
+      code,
+      mods: "CA",
+      platform: "macMeta",
+      press: {
+        ...all(`${E}[${base};7u`),
+        legacy: `${E}${control}`,
+        decckm: `${E}${control}`,
+      },
+    }),
+  ),
+  {
+    name: "Ctrl+Insert without a selection only forwards under Kitty",
+    key: "Insert",
+    code: "Insert",
+    mods: "C",
+    press: { ...all(`${E}[2;5~`), legacy: "", decckm: "" },
+  },
+
   // Windows AltGr (reported as Ctrl+Alt) types its character as text.
   {
     name: "AltGr+q types @",

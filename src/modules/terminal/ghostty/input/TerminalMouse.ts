@@ -9,8 +9,10 @@ export type MouseHost = {
   readonly cellSize: () => { width: number; height: number };
   /** CSS pixels the drawn grid is moved up inside the pointer target; zero when absent. */
   readonly gridShiftY?: () => number;
-  readonly send: (report: string) => void;
+  readonly send: (report: Uint8Array) => void;
 };
+
+const encoder = new TextEncoder();
 
 /**
  * Mouse reports for programs that track the mouse (DEC 1000 to 1006). Nothing
@@ -20,6 +22,9 @@ export type MouseHost = {
 export class TerminalMouse {
   private buttons = 0;
   private lastMotion: string | null = null;
+  private lastPress: MouseEvent | null = null;
+  private readonly documentRelease = (event: MouseEvent): void =>
+    this.button(event, true);
 
   private readonly listeners: [string, (event: MouseEvent) => void][] = [
     ["mousedown", (event) => this.button(event, false)],
@@ -30,9 +35,18 @@ export class TerminalMouse {
   constructor(private readonly host: MouseHost) {
     for (const [type, listener] of this.listeners)
       host.pointerTarget.addEventListener(type, listener as EventListener);
+    host.pointerTarget.ownerDocument.defaultView?.addEventListener(
+      "blur",
+      this.releaseButtons,
+    );
   }
 
   dispose(): void {
+    this.clearButtons();
+    this.host.pointerTarget.ownerDocument.defaultView?.removeEventListener(
+      "blur",
+      this.releaseButtons,
+    );
     for (const [type, listener] of this.listeners)
       this.host.pointerTarget.removeEventListener(
         type,
@@ -41,16 +55,52 @@ export class TerminalMouse {
   }
 
   button(event: MouseEvent, release: boolean): void {
-    // A release always ends the press, even when Shift hands the click back.
-    if (release) this.buttons &= ~(1 << event.button);
-    if (!this.host.model.modes().mouseTracking || event.shiftKey) return;
+    if (event.button < 0 || event.button > 2) return;
+    const bit = 1 << event.button;
+    if (release) {
+      if ((this.buttons & bit) === 0) return;
+      this.buttons &= ~bit;
+      if (this.buttons === 0) this.clearButtons();
+    } else if (event.shiftKey) return;
+    if (!this.host.model.modes().mouseTracking) {
+      this.clearButtons();
+      return;
+    }
     const position = this.position(event);
     if (!position) return;
-    const bit = 1 << event.button;
-    this.buttons = release ? this.buttons & ~bit : this.buttons | bit;
+    if (!release) {
+      this.buttons |= bit;
+      this.lastPress = event;
+      this.host.pointerTarget.ownerDocument.addEventListener(
+        "mouseup",
+        this.documentRelease as EventListener,
+        true,
+      );
+    }
     this.lastMotion = null;
     consume(event);
     this.send(event.button, position, release, event);
+  }
+
+  readonly releaseButtons = (): void => {
+    const event = this.lastPress;
+    const position = event && this.position(event);
+    if (event && position && this.host.model.modes().mouseTracking)
+      for (let button = 0; button < 3; button++)
+        if ((this.buttons & (1 << button)) !== 0)
+          this.send(button, position, true, event);
+    this.clearButtons();
+  };
+
+  private clearButtons(): void {
+    this.buttons = 0;
+    this.lastPress = null;
+    this.lastMotion = null;
+    this.host.pointerTarget.ownerDocument.removeEventListener(
+      "mouseup",
+      this.documentRelease as EventListener,
+      true,
+    );
   }
 
   move(event: MouseEvent): void {
@@ -74,7 +124,8 @@ export class TerminalMouse {
           ? 1
           : (this.buttons & 4) !== 0
             ? 2
-            : 0);
+            : 3);
+    if (this.buttons !== 0) this.lastPress = event;
     const signature = [
       button,
       position.col,
@@ -83,6 +134,7 @@ export class TerminalMouse {
       buttonMotion ? 1 : 0,
       anyMotion ? 1 : 0,
       model.mode(1006) ? 1 : 0,
+      model.mode(1005) ? 1 : 0,
     ].join(":");
     consume(event);
     if (signature === this.lastMotion) return;
@@ -93,10 +145,12 @@ export class TerminalMouse {
   /** `times` wheel notches up or down at the pointer. */
   wheel(event: MouseEvent, up: boolean, times: number): void {
     const position = this.position(event);
-    if (position)
-      this.host.send(
-        this.report(up ? 64 : 65, position, false, event).repeat(times),
-      );
+    if (!position || times <= 0) return;
+    const report = this.report(up ? 64 : 65, position, false, event);
+    const reports = new Uint8Array(report.length * times);
+    for (let index = 0; index < times; index++)
+      reports.set(report, index * report.length);
+    this.host.send(reports);
   }
 
   private position(event: MouseEvent): { col: number; row: number } | null {
@@ -129,14 +183,28 @@ export class TerminalMouse {
     { col, row }: { col: number; row: number },
     release: boolean,
     event: MouseEvent,
-  ): string {
+  ): Uint8Array {
     const encodedButton = button + terminalMouseModifiers(event);
     if (this.host.model.mode(1006))
-      return `\x1b[<${encodedButton};${col};${row}${release ? "m" : "M"}`;
-    const legacyButton = release ? 3 : encodedButton;
-    return `\x1b[M${String.fromCharCode(legacyButton + 32)}${String.fromCharCode(
-      Math.min(255, col + 32),
-    )}${String.fromCharCode(Math.min(255, row + 32))}`;
+      return encoder.encode(
+        `\x1b[<${encodedButton};${col};${row}${release ? "m" : "M"}`,
+      );
+    const legacyButton = release
+      ? 3 + terminalMouseModifiers(event)
+      : encodedButton;
+    const utf8 = this.host.model.mode(1005);
+    const limit = utf8 ? 2047 : 255;
+    const bytes = [
+      27,
+      91,
+      77,
+      legacyButton + 32,
+      Math.min(limit, col + 32),
+      Math.min(limit, row + 32),
+    ];
+    return utf8
+      ? encoder.encode(String.fromCharCode(...bytes))
+      : Uint8Array.from(bytes);
   }
 
   private send(

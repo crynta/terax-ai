@@ -123,7 +123,9 @@ export class GhosttyInputController {
           pointerTarget: options.pointerTarget,
           cellSize: options.cellSize,
           gridShiftY: options.gridShiftY,
-          send: (report) => this.emitText(report, "keydown", false, false),
+          send: (report) => {
+            if (!this.disposed) options.onData(report);
+          },
         });
       },
     );
@@ -408,6 +410,7 @@ export class GhosttyInputController {
 
   private readonly handleBlur = (): void => {
     this.releasePressedKeys();
+    this.mouse?.releaseButtons();
     this.optionKeys = 0;
     this.composing = false;
     this.imeAnchor?.end();

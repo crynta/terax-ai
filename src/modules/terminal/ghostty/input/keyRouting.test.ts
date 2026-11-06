@@ -165,7 +165,8 @@ describe("ignoredForIme", () => {
     const option = press({ key: "Dead", keyCode: 229, altKey: true });
     expect(ignoredForIme(option, meta)).toBe(false);
     expect(ignoredForIme(option, ctx())).toBe(true);
-    expect(ignoredForIme({ ...option, ctrlKey: true }, meta)).toBe(true);
+    expect(ignoredForIme({ ...option, ctrlKey: true }, meta)).toBe(false);
+    expect(ignoredForIme({ ...option, ctrlKey: true }, ctx())).toBe(true);
   });
 });
 
@@ -297,20 +298,21 @@ describe("routeKeyDown", () => {
     ).toEqual({ kind: "paste", forwardKeyWhenEmpty: false });
   });
 
-  it("sends nothing in legacy mode and the key in the protocol when copy has nothing to copy", () => {
-    const event = press({
-      key: "C",
-      code: "KeyC",
-      ctrlKey: true,
-      shiftKey: true,
-    });
-    expect(routeKeyDown(event, ctx())).toEqual({ kind: "copy" });
-    expect(routeKeyDown(event, ctx(), true).kind).toBe("ignore");
-    expect(routeKeyDown(event, ctx({ kittyFlags: () => 1 }), true)).toEqual({
-      kind: "key",
-      key: Key.C,
-    });
-  });
+  it.each([
+    ["C", "KeyC", true, Key.C],
+    ["Insert", "Insert", false, Key.INSERT],
+  ] as const)(
+    "ignores unsuccessful %s copy outside the protocol",
+    (key, code, shiftKey, mapped) => {
+      const event = press({ key, code, ctrlKey: true, shiftKey });
+      expect(routeKeyDown(event, ctx())).toEqual({ kind: "copy" });
+      expect(routeKeyDown(event, ctx(), true).kind).toBe("ignore");
+      expect(routeKeyDown(event, ctx({ kittyFlags: () => 1 }), true)).toEqual({
+        kind: "key",
+        key: mapped,
+      });
+    },
+  );
 
   it("sends Shift+Enter as a newline only outside the Kitty protocol", () => {
     const event = press({ key: "Enter", code: "Enter", shiftKey: true });
@@ -369,20 +371,29 @@ describe("routeKeyDown", () => {
     ).toEqual({ kind: "text", text: "å", key: null });
   });
 
-  it("encodes the physical key for Option as Meta", () => {
-    expect(
-      routeKeyDown(
-        press({ key: "∫", code: "KeyB", altKey: true }),
-        ctx({ isMac: true, optionIsMeta: () => true }),
-      ),
-    ).toEqual({ kind: "key", key: Key.B, utf8: "b" });
-    expect(
-      routeKeyDown(
-        press({ key: "Ï", code: "KeyF", altKey: true, shiftKey: true }),
-        ctx({ isMac: true, optionIsMeta: () => true }),
-      ),
-    ).toEqual({ kind: "key", key: Key.F, utf8: "F" });
-  });
+  it.each([false, true])(
+    "encodes Option as Meta with Ctrl held: %s",
+    (ctrlKey) => {
+      expect(
+        routeKeyDown(
+          press({ key: "∫", code: "KeyB", altKey: true, ctrlKey }),
+          ctx({ isMac: true, optionIsMeta: () => true }),
+        ),
+      ).toEqual({ kind: "key", key: Key.B, utf8: "b" });
+      expect(
+        routeKeyDown(
+          press({
+            key: "Ï",
+            code: "KeyF",
+            altKey: true,
+            shiftKey: true,
+            ctrlKey,
+          }),
+          ctx({ isMac: true, optionIsMeta: () => true }),
+        ),
+      ).toEqual({ kind: "key", key: Key.F, utf8: "F" });
+    },
+  );
 
   it("leaves unclaimed Command shortcuts and unmapped keys to the webview", () => {
     expect(

@@ -907,6 +907,39 @@ describe("GhosttyInputController", () => {
     controller.dispose();
   });
 
+  it.each([
+    [0, [27, 91, 77, 32, 128, 128]],
+    [1005, [27, 91, 77, 32, 194, 128, 194, 128]],
+    [1006, Array.from(new TextEncoder().encode("\x1b[<0;96;96M"))],
+  ])(
+    "preserves the mouse wire encoding for mode %s",
+    async (mode, expected) => {
+      const pointerTarget = new FakeElement();
+      const onData = vi.fn();
+      const controller = new GhosttyInputController({
+        model: {
+          ...inputModel((value) => value === mode),
+          cols: 300,
+          rows: 300,
+        },
+        input: new FakeTextArea() as unknown as HTMLTextAreaElement,
+        pointerTarget: pointerTarget as unknown as HTMLElement,
+        cellSize: () => ({ width: 10, height: 20 }),
+        onData,
+        onCopy: () => false,
+        isMac: false,
+      });
+      await vi.dynamicImportSettled();
+      pointerTarget.dispatchEvent(
+        mouseEvent("mousedown", { clientX: 955, clientY: 1910 }),
+      );
+      expect(Array.from(onData.mock.calls[0][0] as Uint8Array)).toEqual(
+        expected,
+      );
+      controller.dispose();
+    },
+  );
+
   it("reports the cell that is drawn under the pointer while the grid is shifted up", async () => {
     const input = new FakeTextArea();
     const pointerTarget = new FakeElement();
@@ -931,9 +964,9 @@ describe("GhosttyInputController", () => {
       return new TextDecoder().decode(onData.mock.calls[0][0]);
     };
     // 25 px down with the grid moved up 40 px is 65 px into the grid: row 4 (1-based).
-    expect(report(25)).toBe("\x1b[<32;2;4M");
+    expect(report(25)).toBe("\x1b[<35;2;4M");
     shift = 0;
-    expect(report(31)).toBe("\x1b[<32;2;2M");
+    expect(report(31)).toBe("\x1b[<35;2;2M");
     controller.dispose();
   });
 
@@ -963,7 +996,7 @@ describe("GhosttyInputController", () => {
 
     expect(onData).toHaveBeenCalledOnce();
     expect(new TextDecoder().decode(onData.mock.calls[0][0])).toBe(
-      "\x1b[<32;2;2M",
+      "\x1b[<35;2;2M",
     );
     controller.dispose();
   });
@@ -987,6 +1020,9 @@ describe("GhosttyInputController", () => {
     pointerTarget.dispatchEvent(
       mouseEvent("mouseup", { ...at, shiftKey: true }),
     );
+    expect(
+      onData.mock.calls.map(([bytes]) => new TextDecoder().decode(bytes)),
+    ).toEqual(["\x1b[<0;2;2M", "\x1b[<4;2;2m"]);
     onData.mockClear();
     pointerTarget.dispatchEvent(
       mouseEvent("mousemove", { clientX: 35, clientY: 45 }),

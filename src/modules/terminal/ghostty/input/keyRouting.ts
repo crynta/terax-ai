@@ -98,13 +98,7 @@ function isAltGraph(event: KeyboardLike, ctx: KeyContext): boolean {
 }
 
 function isOptionMeta(event: KeyboardLike, ctx: KeyContext): boolean {
-  return (
-    ctx.isMac &&
-    event.altKey &&
-    !event.ctrlKey &&
-    !event.metaKey &&
-    ctx.optionIsMeta()
-  );
+  return ctx.isMac && event.altKey && !event.metaKey && ctx.optionIsMeta();
 }
 
 /**
@@ -147,7 +141,10 @@ export function routeKeyDown(
       isLayoutKey(event, "v")
       ? PASTE_OR_KEY
       : PASTE;
-  if (!skipCopy && clipboard === "copy") return COPY;
+  if (clipboard === "copy") {
+    if (!skipCopy) return COPY;
+    if (ctx.kittyFlags() === 0) return IGNORE;
+  }
 
   const readline = terminalReadlineSequence(event, ctx);
   if (readline) return { kind: "bytes", text: readline };
@@ -188,12 +185,10 @@ export function routeKeyDown(
   ) {
     const letter = layoutLetter(event);
     if (letter !== null)
-      return clipboard === "copy"
-        ? IGNORE
-        : {
-            kind: "bytes",
-            text: String.fromCharCode(letter.charCodeAt(0) & 0x1f),
-          };
+      return {
+        kind: "bytes",
+        text: String.fromCharCode(letter.charCodeAt(0) & 0x1f),
+      };
   }
 
   if (optionMeta) {
