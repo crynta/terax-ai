@@ -6,6 +6,8 @@ import {
 import { useWorkspaceEnvStore, workspaceScopeKey } from "@/modules/workspace";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { watchSourceControl } from "./watchSourceControl";
+
 const AUTO_FETCH_THROTTLE_MS = 5 * 60_000;
 const AUTO_FETCH_LRU_LIMIT = 16;
 const FOCUS_REFRESH_MIN_INTERVAL_MS = 1500;
@@ -569,6 +571,34 @@ export function useSourceControl(
       }
     };
   }, [refresh, contextPath, enabled, live]);
+
+  const watchedRoot = state.repo?.repoRoot;
+  useEffect(() => {
+    if (
+      !enabled ||
+      !live ||
+      workspaceEnv.kind !== "local" ||
+      !watchedRoot ||
+      !repositoryContainsContext(watchedRoot, contextPath)
+    )
+      return;
+    return watchSourceControl(
+      watchedRoot,
+      () => refresh({ remote: "never" }),
+      () =>
+        inflightRef.current?.contextKey === contextKey
+          ? inflightRef.current.promise
+          : undefined,
+    );
+  }, [
+    enabled,
+    live,
+    workspaceEnv.kind,
+    watchedRoot,
+    contextPath,
+    contextKey,
+    refresh,
+  ]);
 
   useEffect(() => {
     if (!enabled || !live) return;
