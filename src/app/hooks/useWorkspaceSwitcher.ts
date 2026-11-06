@@ -7,6 +7,7 @@ import { leafHasForegroundProcess } from "@/modules/terminal";
 import { evaluateCloseHazards } from "./tabCloseGuards";
 import { snapshot } from "@/modules/workbench/store";
 import {
+  currentWorkspaceEnv,
   getWslHome,
   LOCAL_WORKSPACE,
   type WorkspaceEnv,
@@ -44,14 +45,16 @@ export function useWorkspaceSwitcher({
     homeDir()
       .then(async (p) => {
         const normalized = p.replace(/\\/g, "/");
-        setHome(normalized);
+        if (currentWorkspaceEnv().kind === "local") setHome(normalized);
         try {
           await native.workspaceAuthorize(normalized, LOCAL_WORKSPACE);
         } catch {
           // Bootstrap already authorizes home from Rust; ignore.
         }
       })
-      .catch(() => setHome(null));
+      .catch(() => {
+        if (currentWorkspaceEnv().kind === "local") setHome(null);
+      });
   }, []);
 
   useEffect(() => {
@@ -148,6 +151,8 @@ export function useWorkspaceSwitcher({
         (!projectId || useSpaces.getState().activeId === projectId);
       if (!current()) return null;
       setWorkspaceEnv(env.kind === "local" ? LOCAL_WORKSPACE : env);
+      setHome(null);
+      setLaunchCwd(null);
       let nextHome: string;
       try {
         nextHome = await resolveEnvHome(env);

@@ -5,6 +5,8 @@ import type { Tab } from "@/modules/tabs/lib/tabs";
 
 const data = vi.hoisted(() => ({
   project: "a",
+  values: [null, null, false] as unknown[],
+  cursor: 0,
   tabs: [] as Tab[],
   home: vi.fn(async () => "/home/user"),
   authorize: vi.fn(async () => ""),
@@ -14,12 +16,26 @@ const data = vi.hoisted(() => ({
   alert: vi.fn(),
   confirm: vi.fn(() => false),
 }));
+vi.mock("react", async (original) => ({
+  ...(await original<typeof import("react")>()),
+  useState(initial: unknown) {
+    const index = data.cursor++;
+    if (!(index in data.values)) data.values[index] = initial;
+    return [
+      data.values[index],
+      (value: unknown) => {
+        data.values[index] = value;
+      },
+    ];
+  },
+}));
 vi.mock("@tauri-apps/api/path", () => ({ homeDir: data.home }));
 vi.mock("@/modules/ai/lib/native", () => ({
   native: { workspaceAuthorize: data.authorize },
 }));
 vi.mock("@/modules/workspace", () => ({
   LOCAL_WORKSPACE: { kind: "local" },
+  currentWorkspaceEnv: () => ({ kind: "local" }),
   getWslHome: data.home,
 }));
 vi.mock("@/modules/terminal", () => ({ leafHasForegroundProcess: data.busy }));
@@ -39,6 +55,7 @@ import { useWorkspaceSwitcher } from "./useWorkspaceSwitcher";
 function render() {
   let hook!: ReturnType<typeof useWorkspaceSwitcher>;
   function Probe() {
+    data.cursor = 0;
     hook = useWorkspaceSwitcher({
       workspaceEnv: { kind: "local" },
       setWorkspaceEnv: data.setEnv,
@@ -64,6 +81,7 @@ const dirty = (spaceId: string): Tab => ({
 beforeEach(() => {
   vi.clearAllMocks();
   data.project = "a";
+  data.values = [null, null, false];
   data.tabs = [{ id: 1, kind: "terminal", spaceId: "a", title: "shell" }];
   data.home.mockResolvedValue("/home/user");
   data.authorize.mockResolvedValue("");
@@ -134,4 +152,13 @@ it("does not let a stale adoption replace the newest environment", async () => {
   expect(await first).toBeNull();
   expect(data.setEnv).toHaveBeenLastCalledWith(next);
   expect(data.setEnv).toHaveBeenCalledTimes(2);
+});
+
+it("clears the previous environment's directory fallbacks when home resolution fails", async () => {
+  data.values = ["C:/old-home", "C:/old-launch", true];
+  data.home.mockRejectedValueOnce(new Error("distro unavailable"));
+  expect(await render().adoptWorkspaceEnv(env, "a")).toBeNull();
+  const latest = render();
+  expect(latest.home).toBeNull();
+  expect(latest.launchCwd).toBeNull();
 });
