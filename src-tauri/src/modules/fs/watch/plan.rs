@@ -899,11 +899,11 @@ mod tests {
     }
 
     #[test]
-    fn a_listing_changed_during_fingerprinting_has_no_reusable_stamp() {
+    fn an_ignore_file_created_during_fingerprinting_has_no_reusable_stamp() {
         let dir = tempfile::tempdir().unwrap();
         let snapshot = ListingSnapshot::read(dir.path(), &|path| {
             let before = listing_signature(path);
-            std::fs::write(path.join("new.txt"), "new").unwrap();
+            std::fs::write(path.join(".gitignore"), "ignored.txt").unwrap();
             before
         });
         assert!(snapshot.stamp.is_none());
