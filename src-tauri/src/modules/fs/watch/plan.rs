@@ -159,6 +159,7 @@ impl FileStamp {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct ListingStamp {
     directory: FileStamp,
+    change_time: Option<(i64, i64)>,
     ignores: [Option<FileStamp>; 2],
 }
 
@@ -169,16 +170,13 @@ impl ListingStamp {
             return None;
         }
         let directory = FileStamp::from_metadata(&meta);
-        // Coarse or unavailable timestamps cannot safely rule out a name change.
-        if directory
-            .modified?
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .ok()?
-            .subsec_nanos()
-            == 0
-        {
-            return None;
-        }
+        #[cfg(unix)]
+        let change_time = {
+            use std::os::unix::fs::MetadataExt;
+            Some((meta.ctime(), meta.ctime_nsec()))
+        };
+        #[cfg(not(unix))]
+        let change_time = None;
         let mut ignores = [None; 2];
         for (slot, name) in ignores.iter_mut().zip([".gitignore", ".ignore"]) {
             *slot = match std::fs::metadata(dir.join(name)) {
@@ -190,7 +188,28 @@ impl ListingStamp {
                 Err(_) => return None,
             };
         }
-        Some(Self { directory, ignores })
+        Some(Self {
+            directory,
+            change_time,
+            ignores,
+        })
+    }
+    pub fn can_skip(&self, previous: &Self, content_only: bool) -> bool {
+        if self.ignores != previous.ignores {
+            return false;
+        }
+        if content_only {
+            return true;
+        }
+        // Restored mtimes, coarse clocks and missing change indicators cannot
+        // safely rule out a name change from a directory-level event.
+        self == previous
+            && self.change_time.is_some()
+            && self
+                .directory
+                .modified
+                .and_then(|time| time.duration_since(SystemTime::UNIX_EPOCH).ok())
+                .is_some_and(|time| time.subsec_nanos() != 0)
     }
 }
 
@@ -896,6 +915,17 @@ mod tests {
             assert!(check.forced);
             assert!(!check.content_only);
         }
+    }
+
+    #[test]
+    fn coarse_metadata_forces_listing_scans_but_can_validate_content_events() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut stamp = ListingStamp::of(dir.path()).unwrap();
+        stamp.directory.modified = Some(SystemTime::UNIX_EPOCH);
+        assert!(!stamp.can_skip(&stamp, false));
+        assert!(stamp.can_skip(&stamp, true));
+        stamp.change_time = None;
+        assert!(!stamp.can_skip(&stamp, false));
     }
 
     #[test]

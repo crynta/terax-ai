@@ -213,12 +213,13 @@ fn resolve_changes_with(
     let snapshots: Vec<_> = locations
         .iter()
         .map(|(path, previous, change)| {
-            if change.content_only && !change.forced {
-                return None;
-            }
             let path = path.as_deref()?;
             let current = ListingStamp::of(path);
-            if !change.forced && current.is_some() && current == *previous {
+            if !change.forced
+                && current
+                    .zip(*previous)
+                    .is_some_and(|(now, before)| now.can_skip(&before, change.content_only))
+            {
                 return None;
             }
             Some(ListingSnapshot::read(path, scan))
@@ -490,6 +491,13 @@ mod tests {
             std::fs::write(dir.path().join(format!("{i}.txt")), "").unwrap();
         }
         let shared = shared_watching(dir.path());
+        let reusable = shared
+            .set
+            .lock()
+            .unwrap()
+            .listing_stamp(&to_canon(dir.path()))
+            .is_some_and(|stamp| stamp.can_skip(&stamp, false));
+        let expected_scans = if reusable { 0 } else { 9 };
         let scans = std::cell::Cell::new(0);
         let scan = |path: &std::path::Path| {
             scans.set(scans.get() + 1);
@@ -502,13 +510,13 @@ mod tests {
         }
         assert_eq!(
             scans.get(),
-            0,
-            "in-place writes must not enumerate the parent"
+            expected_scans,
+            "only uncertain directory metadata should require a scan"
         );
         std::fs::rename(dir.path().join("0.txt"), dir.path().join("renamed.txt")).unwrap();
         let changes = resolve_changes_with(burst(dir.path()), &shared, &scan);
         assert_eq!(changes.report, vec![to_canon(dir.path())]);
-        assert_eq!(scans.get(), 1);
+        assert_eq!(scans.get(), expected_scans + 1);
     }
 
     #[test]
@@ -522,11 +530,6 @@ mod tests {
             to_canon(&file),
             FileStamp::of(&file),
         );
-        shared
-            .set
-            .lock()
-            .unwrap()
-            .record_listing_stamp(&to_canon(dir.path()), None);
         std::fs::write(&file, "new content").unwrap();
         let mut pending = Pending::default();
         pending.merge(Batch {
@@ -541,6 +544,46 @@ mod tests {
             panic!("content-only event must not enumerate")
         });
         assert_eq!(changes.report, vec![to_canon(&file)]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn restoring_directory_mtime_cannot_hide_a_rename() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("before.txt"), "").unwrap();
+        let directory = std::fs::File::open(dir.path()).unwrap();
+        let original =
+            std::time::SystemTime::UNIX_EPOCH + std::time::Duration::new(123456, 123456789);
+        directory.set_modified(original).unwrap();
+        let shared = shared_watching(dir.path());
+        // Give the filesystem change clock a tick; the mtime is restored below.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::rename(dir.path().join("before.txt"), dir.path().join("after.txt")).unwrap();
+        directory.set_modified(original).unwrap();
+        let changes = resolve_changes(burst(dir.path()), &shared);
+        assert_eq!(changes.report, vec![to_canon(dir.path())]);
+    }
+
+    #[test]
+    fn content_edits_through_an_ignore_alias_still_update_the_listing() {
+        let dir = tempfile::tempdir().unwrap();
+        let ignore = dir.path().join(".gitignore");
+        let alias = dir.path().join("rules.txt");
+        std::fs::write(&ignore, "old").unwrap();
+        std::fs::hard_link(&ignore, &alias).unwrap();
+        let shared = shared_watching(dir.path());
+        std::fs::write(&alias, "a new ignore rule").unwrap();
+        let mut pending = Pending::default();
+        pending.merge(Batch {
+            dirs: vec![to_canon(dir.path())],
+            listing: plan::ListingChange {
+                content_only: true,
+                forced: false,
+            },
+            ..Batch::default()
+        });
+        let changes = resolve_changes(pending, &shared);
+        assert_eq!(changes.report, vec![to_canon(dir.path())]);
     }
 
     #[test]

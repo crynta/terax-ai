@@ -47,12 +47,12 @@ impl Notify {
                     ..Batch::default()
                 };
                 if event.need_rescan() {
-                    batch.subtrees = dirs
+                    batch.dirs = dirs
                         .iter()
                         .filter_map(|dir| String::from_utf8(dir.clone()).ok())
                         .collect();
                 }
-                for path in &event.paths {
+                for path in event.paths.iter().filter(|_| !event.need_rescan()) {
                     if let Some(dir) = plan::owning_dir(&to_canon(path), &dirs) {
                         if !batch.dirs.contains(&dir) {
                             batch.dirs.push(dir);
