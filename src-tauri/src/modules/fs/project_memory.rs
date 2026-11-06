@@ -42,7 +42,11 @@ fn read_memory(root: &Path, checked_path: &Path) -> Result<Option<String>, Strin
     }
     // Validate the opened object before reading, so a link swapped after the
     // frontend secret-policy check cannot substitute a different target.
-    let actual = comparison_path(&opened_path(&file)?);
+    let opened = opened_path(&file)?;
+    if !lossless_paths(&[opened.as_path(), root, checked_path]) {
+        return Err("project memory path cannot be represented losslessly".into());
+    }
+    let actual = comparison_path(&opened);
     let root = comparison_path(root);
     let checked = comparison_path(checked_path);
     if !Path::new(&actual).starts_with(&root) || actual != checked {
@@ -64,6 +68,10 @@ fn read_memory(root: &Path, checked_path: &Path) -> Result<Option<String>, Strin
         }
     }
     Ok(String::from_utf8(bytes).ok())
+}
+
+fn lossless_paths(paths: &[&Path]) -> bool {
+    paths.iter().all(|path| path.to_str().is_some())
 }
 
 fn comparison_path(path: &Path) -> String {
@@ -111,6 +119,32 @@ mod tests {
             comparison_path(Path::new("C:/Repo/memory.md")),
             comparison_path(Path::new("C:/repo/memory.md"))
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn invalid_utf8_sibling_cannot_alias_an_authorized_root() {
+        use std::os::unix::ffi::OsStrExt;
+        let dir = tempfile::tempdir().unwrap();
+        let parent = std::fs::canonicalize(dir.path()).unwrap();
+        let root = parent.join("repo�");
+        let outside = parent.join(std::ffi::OsStr::from_bytes(b"repo\xff"));
+        std::fs::create_dir(&root).unwrap();
+        std::fs::create_dir(&outside).unwrap();
+        let target = outside.join("instructions.md");
+        std::fs::write(&target, "OUTSIDE_FIXTURE").unwrap();
+        std::os::unix::fs::symlink(&target, root.join("TERAX.md")).unwrap();
+        let frontend_path = PathBuf::from(target.to_string_lossy().as_ref());
+        assert!(read_memory(&root, &frontend_path).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn byte_distinct_paths_are_not_accepted_as_display_strings() {
+        use std::os::unix::ffi::OsStrExt;
+        let raw = Path::new(std::ffi::OsStr::from_bytes(b"/repo\xff/memory.md"));
+        assert!(!lossless_paths(&[Path::new("/repo�"), raw]));
+        assert!(lossless_paths(&[Path::new("/repo�/memory.md")]));
     }
 
     #[test]

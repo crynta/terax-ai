@@ -79,6 +79,8 @@ describe("automatic project memory", () => {
 });
 
 it("keeps the captured workspace when it changes during canonicalization", async () => {
+  vi.resetAllMocks();
+  runAgentStream.mockResolvedValue({ toUIMessageStream: () => null });
   currentWorkspaceEnv.mockReturnValue({ kind: "local" });
   native.canonicalize.mockImplementation(async () => {
     currentWorkspaceEnv.mockReturnValue({ kind: "wsl" });
@@ -86,5 +88,9 @@ it("keeps the captured workspace when it changes during canonicalization", async
   });
   native.readProjectMemory.mockResolvedValue("original workspace");
   expect(await send("/repo-switch")).toBe("original workspace");
-  expect(native.readProjectMemory).toHaveBeenLastCalledWith("/repo-switch", "/repo-switch/TERAX.md", { kind: "local" });
+  expect(native.readProjectMemory).toHaveBeenLastCalledWith(
+    "/repo-switch",
+    "/repo-switch/TERAX.md",
+    { kind: "local" },
+  );
 });
