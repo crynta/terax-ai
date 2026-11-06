@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { GitLogEntry } from "@/modules/ai/lib/native";
+import type { GitLogEntry } from "@/modules/git";
 import { LANE_COLORS, laneColor, layoutGraph } from "./graph";
 
 function commit(sha: string, parents: string[]): GitLogEntry {

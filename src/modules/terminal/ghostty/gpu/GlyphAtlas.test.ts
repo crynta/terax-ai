@@ -168,6 +168,37 @@ describe("GlyphAtlas", () => {
     atlas.dispose();
   });
 
+  it("keeps font fallback styles separate after lazy glyph loading fails", async () => {
+    vi.resetModules();
+    vi.doMock("./builtin/legacyComputing", () => {
+      throw new Error("chunk missing");
+    });
+    try {
+      const { GlyphAtlas: FreshAtlas } = await import("./GlyphAtlas");
+      const { loadLazyBuiltin } = await import("./builtin/lazyGlyphs");
+      const h = createHarness();
+      const atlas = new FreshAtlas(h.device, METRICS);
+      atlas.resolve("\u{1fb00}", 0);
+      expect(h.context.fillText).not.toHaveBeenCalled();
+      await loadLazyBuiltin();
+      // The symbol epoch invalidates atlases that cached a pending blank.
+      atlas.flush();
+      const entries = [0, 1, 2, 3].map((style) =>
+        atlas.resolve("\u{1fb00}", style),
+      );
+      expect(new Set(entries).size).toBe(4);
+      expect(h.context.fillText).toHaveBeenCalledTimes(4);
+      for (let style = 0; style < 4; style++) {
+        expect(atlas.resolve("\u{1fb00}", style)).toBe(entries[style]);
+      }
+      expect(h.context.fillText).toHaveBeenCalledTimes(4);
+      atlas.dispose();
+    } finally {
+      vi.doUnmock("./builtin/legacyComputing");
+      vi.resetModules();
+    }
+  });
+
   it("gives a glyph that may take two cells a constrained and a roomy entry, one after the other", () => {
     const h = createHarness();
     const atlas = new GlyphAtlas(h.device, METRICS);

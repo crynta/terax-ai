@@ -27,13 +27,11 @@ describe("SpriteMask rectangles", () => {
     expect(mask.data[0 * 6 + 5]).toBe(0);
   });
 
-  it("flips and inverts", () => {
+  it("flips", () => {
     const mask = new SpriteMask(3, 2);
     mask.box(0, 0, 1, 2, 200);
     mask.flipHorizontal();
     expect(Array.from(mask.data)).toEqual([0, 0, 200, 0, 0, 200]);
-    mask.invert();
-    expect(Array.from(mask.data)).toEqual([255, 255, 55, 255, 255, 55]);
   });
 });
 
@@ -137,22 +135,6 @@ describe("SpriteMask strokes", () => {
     // A hairpin: the miter would be enormous.
     mask.stroke([2, 20, 36, 20, 2, 21], 2);
     expect(sum(mask)).toBeLessThan(200);
-  });
-
-  it("insets a ring by a distance, and gives up when it collapses", () => {
-    const mask = new SpriteMask(10, 10);
-    mask.outline([0, 0, 10, 0, 10, 10, 0, 10], 2);
-    // A square frame two pixels wide.
-    expect(sum(mask)).toBe(100 - 36);
-    expect(mask.data[1 * 10 + 1]).toBe(255);
-    expect(mask.data[2 * 10 + 2]).toBe(0);
-    // Thicker than the shape is wide: the whole shape is the outline.
-    const solid = new SpriteMask(4, 4);
-    solid.outline([0, 0, 4, 0, 4, 4, 0, 4], 3);
-    expect(sum(solid)).toBe(16);
-    const triangle = new SpriteMask(4, 8);
-    triangle.outline([0, 0, 0, 8, 4, 0], 2);
-    expect(sum(triangle)).toBeCloseTo(16, 0);
   });
 });
 

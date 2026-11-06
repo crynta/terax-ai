@@ -64,9 +64,15 @@ let symbolEpoch = 0;
 const symbolListeners = new Set<() => void>();
 let extendedSymbols: "idle" | "loading" | "settled" = "idle";
 
-/** Increments each time a lazily loaded symbol face arrives (`useSyncExternalStore` snapshot). */
+/** Increments each time a lazily loaded glyph source arrives (`useSyncExternalStore` snapshot). */
 export function symbolFontEpoch(): number {
   return symbolEpoch;
+}
+
+/** A lazily loaded glyph source (symbol face, procedural glyph code) arrived: terminals rebuild their atlases. */
+export function notifySymbolFontsChanged(): void {
+  symbolEpoch += 1;
+  for (const listener of [...symbolListeners]) listener();
 }
 
 export function subscribeSymbolFonts(listener: () => void): () => void {
@@ -91,8 +97,7 @@ export function extendedSymbolsPending(): boolean {
   extendedSymbols = "loading";
   const settle = () => {
     extendedSymbols = "settled";
-    symbolEpoch += 1;
-    for (const listener of [...symbolListeners]) listener();
+    notifySymbolFontsChanged();
   };
   document.fonts
     .load(`400 14px "${EXTENDED_SYMBOLS_FAMILY}"`, "\u{f024b}")

@@ -19,7 +19,7 @@ vi.mock("@/modules/terminal/ghostty/gpu/WebGpuTerminalRuntime", () => ({
 vi.mock("@/modules/terminal/ghostty/webgl/WebGlTerminalRuntime", () => ({
   webGlTerminalRuntimeDiagnostics: () => null,
 }));
-vi.mock("@/modules/terminal/ghostty/useGhosttyTerminalSession", () => ({
+vi.mock("@/modules/terminal/ghostty/sessionDiagnostics", () => ({
   ghosttySessionResourceTotals: () => ({}),
   ghosttySessionDiagnostics: () => [],
 }));
