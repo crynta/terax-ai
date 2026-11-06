@@ -15,7 +15,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Toaster } from "@/components/ui/sonner";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
@@ -376,7 +375,6 @@ export function ModelsSection() {
 
   return (
     <div className="flex flex-col gap-7">
-      <Toaster position="bottom-right" />
       <SectionHeader
         title="Models"
         description="Connect the providers you use. Keys live in your OS keychain and are used only by Terax."

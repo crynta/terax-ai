@@ -66,6 +66,12 @@ vi.mock("@/modules/settings/preferences", () => {
   };
 });
 
+vi.mock("./AboutSection", () => ({ AboutSection: () => null }));
+vi.mock("./AgentsSection", () => ({ AgentsSection: () => null }));
+vi.mock("./EditorSection", () => ({ EditorSection: () => null }));
+vi.mock("./GeneralSection", () => ({ GeneralSection: () => null }));
+vi.mock("./ShortcutsSection", () => ({ ShortcutsSection: () => null }));
+vi.mock("./ThemesSection", () => ({ ThemesSection: () => null }));
 import { ModelsSection } from "./ModelsSection";
 
 function card(
@@ -146,12 +152,17 @@ it("reports a notification failure after successful deletion without abandoning 
   );
 });
 
-it("mounts the toast renderer with credential controls", async () => {
-  const { Toaster } = await import("@/components/ui/sonner");
-  const section = ModelsSection();
-  expect(
-    section.props.children.some(
-      (child: ReactNode) => isValidElement(child) && child.type === Toaster,
-    ),
-  ).toBe(true);
-});
+it.each(["models", "general"])(
+  "keeps the toast renderer mounted on the %s settings tab",
+  async (tab) => {
+    const { Toaster } = await import("@/components/ui/sonner");
+    const { SettingsApp } = await import("../SettingsApp");
+    state.slots = [tab];
+    const root = SettingsApp();
+    expect(
+      root.props.children.some(
+        (child: ReactNode) => isValidElement(child) && child.type === Toaster,
+      ),
+    ).toBe(true);
+  },
+);
