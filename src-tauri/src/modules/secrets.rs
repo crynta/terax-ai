@@ -71,7 +71,10 @@ pub(crate) fn write_store_at(
     let parent = path.parent().ok_or("secret store has no parent")?;
     let bytes = serde_json::to_vec(map).map_err(|e| e.to_string())?;
     // NamedTempFile uses exclusive creation and mode 0600 on Unix.
-    let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
+    let mut file = tempfile::Builder::new()
+        .prefix("secrets.json.tmp-")
+        .tempfile_in(parent)
+        .map_err(|e| e.to_string())?;
     file.write_all(&bytes).map_err(|e| e.to_string())?;
     file.as_file().sync_all().map_err(|e| e.to_string())?;
     file.persist(path).map_err(|e| e.to_string())?;
