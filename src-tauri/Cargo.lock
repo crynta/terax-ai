@@ -4922,6 +4922,7 @@ dependencies = [
  "percent-encoding",
  "portable-pty",
  "proptest",
+ "regex",
  "reqwest",
  "rustls",
  "serde",

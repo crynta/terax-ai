@@ -18,24 +18,46 @@ struct Grant {
 }
 
 #[derive(Default)]
-pub struct AssetGrants(Mutex<HashMap<String, Grant>>);
+pub struct AssetGrants(Mutex<GrantState>);
+
+#[derive(Default)]
+struct GrantState {
+    grants: HashMap<String, Grant>,
+    generations: HashMap<String, u64>,
+}
 
 impl AssetGrants {
     pub fn revoke_owner(&self, owner: &str) {
-        self.0
-            .lock()
-            .unwrap()
-            .retain(|_, grant| grant.owner != owner);
+        let mut state = self.0.lock().unwrap();
+        *state.generations.entry(owner.into()).or_default() += 1;
+        state.grants.retain(|_, grant| grant.owner != owner);
     }
 
-    fn grant(&self, owner: String, path: &str, workspace: WorkspaceEnv) -> Result<String, String> {
+    fn generation(&self, owner: &str) -> u64 {
+        *self.0.lock().unwrap().generations.get(owner).unwrap_or(&0)
+    }
+
+    fn grant(
+        &self,
+        owner: String,
+        path: &str,
+        workspace: WorkspaceEnv,
+        generation: u64,
+    ) -> Result<String, String> {
         let root =
             std::fs::canonicalize(resolve_path(path, &workspace)).map_err(|e| e.to_string())?;
         let directory = root.is_dir();
+        if directory {
+            super::read_policy::readable(&root)?;
+        }
         if !directory && media_type(&root).is_none() {
             return Err("only media files can be granted".into());
         }
-        let mut grants = self.0.lock().unwrap();
+        let mut state = self.0.lock().unwrap();
+        if *state.generations.get(&owner).unwrap_or(&0) != generation {
+            return Err("media view was unloaded".into());
+        }
+        let grants = &mut state.grants;
         if grants.len() >= 1024 {
             return Err("too many active media grants".into());
         }
@@ -66,16 +88,22 @@ pub async fn asset_grant(
     workspace: Option<WorkspaceEnv>,
 ) -> Result<String, String> {
     let owner = webview.label().to_owned();
+    let generation = app.state::<AssetGrants>().generation(&owner);
     super::blocking(move || {
-        app.state::<AssetGrants>()
-            .grant(owner, &path, WorkspaceEnv::from_option(workspace))
+        app.state::<AssetGrants>().grant(
+            owner,
+            &path,
+            WorkspaceEnv::from_option(workspace),
+            generation,
+        )
     })
     .await
 }
 
 #[tauri::command]
 pub fn asset_revoke(state: tauri::State<AssetGrants>, webview: tauri::Webview, token: String) {
-    let mut grants = state.0.lock().unwrap();
+    let mut state = state.0.lock().unwrap();
+    let grants = &mut state.grants;
     if grants
         .get(&token)
         .is_some_and(|grant| grant.owner == webview.label())
@@ -130,6 +158,7 @@ fn respond(
         .0
         .lock()
         .unwrap()
+        .grants
         .get(token)
         .filter(|grant| grant.owner == owner)
         .cloned()
@@ -145,6 +174,9 @@ fn respond(
     .map_err(|e| e.to_string())?;
     let path =
         std::fs::canonicalize(resolve_path(&path, &grant.workspace)).map_err(|e| e.to_string())?;
+    if grant.directory {
+        super::read_policy::readable(&path)?;
+    }
     if !within(&path, &grant) {
         return Err("outside media grant".into());
     }
@@ -157,6 +189,9 @@ fn respond(
     }
     let mut file = options.open(&path).map_err(|e| e.to_string())?;
     let actual = opened_path(&file)?;
+    if grant.directory {
+        super::read_policy::readable(&actual)?;
+    }
     if !within(&actual, &grant) {
         return Err("opened asset escaped its grant".into());
     }
@@ -180,9 +215,6 @@ fn respond(
         })
         .transpose()?;
     let (start, length) = range.unwrap_or((0, size));
-    if range.is_none() && length > 64 * 1024 * 1024 {
-        return Ok(response(413, "text/plain", Vec::new()));
-    }
     let mut body = Vec::new();
     if request.method() != "HEAD" {
         file.seek(SeekFrom::Start(start))
@@ -210,9 +242,19 @@ fn respond(
 }
 
 fn within(path: &Path, grant: &Grant) -> bool {
-    let path = super::to_canon(path);
-    let root = super::to_canon(&grant.root);
-    path == root || (grant.directory && Path::new(&path).starts_with(root))
+    #[cfg(unix)]
+    {
+        path == grant.root || (grant.directory && path.starts_with(&grant.root))
+    }
+    #[cfg(windows)]
+    {
+        if path.to_str().is_none() || grant.root.to_str().is_none() {
+            return false;
+        }
+        let path = super::to_canon(path);
+        let root = super::to_canon(&grant.root);
+        path == root || (grant.directory && Path::new(&path).starts_with(root))
+    }
 }
 
 fn media_type(path: &Path) -> Option<&'static str> {
@@ -283,6 +325,79 @@ mod tests {
     }
 
     #[test]
+    fn revocation_invalidates_queued_grants_but_allows_the_new_page() {
+        let dir = tempfile::tempdir().unwrap();
+        let grants = AssetGrants::default();
+        let path = super::super::to_canon(dir.path());
+        let queued = grants.generation("main");
+        grants.revoke_owner("main");
+        assert!(grants
+            .grant("main".into(), &path, WorkspaceEnv::Local, queued)
+            .is_err());
+        assert!(grants.0.lock().unwrap().grants.is_empty());
+        assert!(grants
+            .grant(
+                "main".into(),
+                &path,
+                WorkspaceEnv::Local,
+                grants.generation("main")
+            )
+            .is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn byte_distinct_siblings_are_not_inside_a_media_grant() {
+        use std::os::unix::ffi::OsStrExt;
+        let grant = Grant {
+            owner: "main".into(),
+            root: PathBuf::from("/repo�"),
+            directory: true,
+            workspace: WorkspaceEnv::Local,
+        };
+        assert!(!within(
+            Path::new(std::ffi::OsStr::from_bytes(b"/repo\xff/private.png")),
+            &grant
+        ));
+        assert!(within(Path::new("/repo�/safe.png"), &grant));
+    }
+
+    #[test]
+    fn automatic_images_cannot_read_protected_canonical_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let protected = dir.path().join(".git");
+        std::fs::create_dir(&protected).unwrap();
+        let image = protected.join("secret.svg");
+        std::fs::write(&image, "SYNTHETIC_PRIVATE_MEDIA").unwrap();
+        let grants = AssetGrants::default();
+        let token = grants
+            .grant(
+                "main".into(),
+                &super::super::to_canon(dir.path()),
+                WorkspaceEnv::Local,
+                0,
+            )
+            .unwrap();
+        assert!(respond(&grants, "main", &request(&image, &token)).is_err());
+        #[cfg(unix)]
+        {
+            let link = dir.path().join("innocent.svg");
+            std::os::unix::fs::symlink(&image, &link).unwrap();
+            assert!(respond(&grants, "main", &request(&link, &token)).is_err());
+        }
+        // Explicitly selected media retains the user's direct file grant.
+        let direct = grants
+            .grant(
+                "main".into(),
+                &super::super::to_canon(&image),
+                WorkspaceEnv::Local,
+                0,
+            )
+            .unwrap();
+        assert!(respond(&grants, "main", &request(&image, &direct)).is_ok());
+    }
+
+    #[test]
     fn asset_documents_and_ungranted_files_are_refused() {
         let dir = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
@@ -298,6 +413,7 @@ mod tests {
                 "main".into(),
                 &super::super::to_canon(dir.path()),
                 WorkspaceEnv::Local,
+                0,
             )
             .unwrap();
         assert!(respond(&grants, "main", &request(&html, &token)).is_err());
@@ -326,6 +442,7 @@ mod tests {
                 "main".into(),
                 &super::super::to_canon(&path),
                 WorkspaceEnv::Local,
+                0,
             )
             .unwrap();
         let mut request = request(&path, &token);

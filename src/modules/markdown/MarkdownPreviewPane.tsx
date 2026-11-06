@@ -106,7 +106,7 @@ const MarkdownBody = memo(function MarkdownBody({
   boundary: string;
   content: string;
 }) {
-  const assetUrlFor = useAssetGrant(boundary);
+  const { urlFor: assetUrlFor, error: assetError, retry } = useAssetGrant(boundary);
   const rehypePlugins = useMemo(() => {
     const d = defaultRehypePlugins;
     return [
@@ -121,6 +121,8 @@ const MarkdownBody = memo(function MarkdownBody({
   }, [path, boundary, assetUrlFor]);
 
   return (
+    <>
+    {assetError && <div className="mb-3 text-xs text-muted-foreground"><p role="alert">Local images unavailable: {assetError}</p><button type="button" className="underline" onClick={retry}>Retry images</button></div>}
     <Streamdown
       className="select-text [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
       components={components}
@@ -130,5 +132,6 @@ const MarkdownBody = memo(function MarkdownBody({
     >
       {content}
     </Streamdown>
+    </>
   );
 });

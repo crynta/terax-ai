@@ -7,6 +7,7 @@ pub mod index;
 #[cfg(windows)]
 mod local_file;
 pub mod mutate;
+mod read_policy;
 pub mod search;
 pub mod supersede;
 pub mod tree;
