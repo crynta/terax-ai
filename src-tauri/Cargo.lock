@@ -1314,6 +1314,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fsevent-sys"
+version = "5.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e90520699e70a2008360ae6259fa3474a8c14fcf2e6b067c71b58eb6b1f53625"
+dependencies = [
+ "core-foundation 0.10.1",
+ "dispatch2",
+]
+
+[[package]]
 name = "futures-channel"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2635,7 +2645,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4d3d07927151ff8575b7087f245456e549fea62edf0ec4e565a5ee50c8402bc3"
 dependencies = [
  "bitflags 2.11.1",
- "fsevent-sys",
+ "fsevent-sys 4.1.0",
  "inotify",
  "kqueue",
  "libc",
@@ -4901,7 +4911,7 @@ dependencies = [
  "block2",
  "bytes",
  "dirs 7.0.0",
- "fsevent-sys",
+ "fsevent-sys 5.2.0",
  "futures-util",
  "getrandom 0.4.3",
  "globset",
