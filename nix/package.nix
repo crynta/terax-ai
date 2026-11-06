@@ -12,6 +12,10 @@ let
       url = "https://github.com/crynta/terax-ai/releases/download/v${version}/Terax_${version}_amd64.deb";
       hash = sources.hashes.x86_64-linux;
     };
+    aarch64-linux = fetchurl {
+      url = "https://github.com/crynta/terax-ai/releases/download/v${version}/Terax_${version}_arm64.deb";
+      hash = sources.hashes.aarch64-linux;
+    };
     x86_64-darwin = fetchurl {
       url = "https://github.com/crynta/terax-ai/releases/download/v${version}/Terax_x64.app.tar.gz";
       hash = sources.hashes.x86_64-darwin;
@@ -71,6 +75,6 @@ stdenv.mkDerivation {
     description = "Open-source lightweight cross-platform AI-native terminal (ADE)";
     homepage = "https://terax.app";
     license = licenses.asl20;
-    platforms = [ "x86_64-linux" "x86_64-darwin" "aarch64-darwin" ];
+    platforms = builtins.attrNames sources.hashes;
   };
 }
