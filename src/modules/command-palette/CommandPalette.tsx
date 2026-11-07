@@ -18,6 +18,7 @@ import {
   type ShortcutId,
 } from "@/modules/shortcuts";
 import { listBuiltinThemes, useTheme } from "@/modules/theme";
+import { useWorkspaceEnvStore, workspaceScopeKey } from "@/modules/workspace";
 import {
   AlertCircleIcon,
   ArrowTurnBackwardIcon,
@@ -85,6 +86,7 @@ export function CommandPalette({
   const [base, setBase] = useState<PaletteBase>("commands");
   const userShortcuts = usePreferencesStore((s) => s.shortcuts);
   const showHidden = usePreferencesStore((s) => s.showHidden);
+  const workspaceScope = useWorkspaceEnvStore((s) => workspaceScopeKey(s.env));
   const { themeId, customThemes, setThemeId, previewThemeId } = useTheme();
 
   const parsed = parseQuery(query, base);
@@ -115,8 +117,9 @@ export function CommandPalette({
 
   const mru = useMemo(() => (open ? mruSnapshot() : {}), [open]);
   const recent = useMemo(
-    () => (open && workspaceRoot ? recentFiles(workspaceRoot) : []),
-    [open, workspaceRoot],
+    () =>
+      open && workspaceRoot ? recentFiles(workspaceRoot, workspaceScope) : [],
+    [open, workspaceRoot, workspaceScope],
   );
 
   const fileRows = useMemo<FileHit[]>(() => {
@@ -226,24 +229,31 @@ export function CommandPalette({
 
   const openContent = useCallback(
     (path: string, line: number) => {
-      if (workspaceRoot) recordRecentFile(workspaceRoot, path);
+      if (workspaceRoot) recordRecentFile(workspaceRoot, path, workspaceScope);
       runAfterClose(() => onOpenContentHit(path, line));
     },
-    [onOpenContentHit, runAfterClose, workspaceRoot],
+    [onOpenContentHit, runAfterClose, workspaceRoot, workspaceScope],
   );
 
   const openFile = useCallback(
     (path: string) => {
       const side = openSideRef.current;
       openSideRef.current = false;
-      if (workspaceRoot) recordRecentFile(workspaceRoot, path);
+      if (workspaceRoot) recordRecentFile(workspaceRoot, path, workspaceScope);
       const target: OpenFileTarget = {};
       if (fileTarget.line !== undefined) target.line = fileTarget.line;
       if (fileTarget.column !== undefined) target.column = fileTarget.column;
       if (side) target.side = true;
       runAfterClose(() => onOpenFile(path, target));
     },
-    [fileTarget.line, fileTarget.column, onOpenFile, runAfterClose, workspaceRoot],
+    [
+      fileTarget.line,
+      fileTarget.column,
+      onOpenFile,
+      runAfterClose,
+      workspaceRoot,
+      workspaceScope,
+    ],
   );
 
   const runHistory = useCallback(
