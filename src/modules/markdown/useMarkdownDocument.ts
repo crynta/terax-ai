@@ -55,6 +55,7 @@ export function useMarkdownDocument(
 
   useEffect(() => {
     let alive = true;
+    let watching = false;
     let requestId = 0;
     const workspace = currentWorkspaceEnv();
     // The watcher reports canonical paths; the tab may hold an alias spelling.
@@ -89,8 +90,12 @@ export function useMarkdownDocument(
         });
     };
 
-    const coalescer = createCoalescer(read);
+    const coalescer = createCoalescer(() => {
+      if (visibleRef.current) read();
+      else staleRef.current = true;
+    });
     const onTouched = () => {
+      if (!watching || !alive) return;
       if (visibleRef.current) coalescer.poke();
       else staleRef.current = true;
     };
@@ -101,25 +106,32 @@ export function useMarkdownDocument(
       (canonical !== null && touchesPath(paths, canonical));
 
     const dir = parentDir(path);
-    watchAdd([dir], [path], workspace);
     const unlisten: Array<() => void> = [];
     const track = (pending: Promise<() => void>) =>
-      void pending.then((un) => (alive ? unlisten.push(un) : un()));
-    track(
-      listenFsChanged((paths) => {
-        if (matches(paths)) onTouched();
-      }),
-    );
-    track(
-      getCurrentWebviewWindow().listen<{ path: string }>(
-        "fs:file-written",
-        (e) => {
-          if (matches([e.payload.path])) onTouched();
-        },
-      ),
-    );
+      pending.then((un) => (alive ? unlisten.push(un) : un()));
 
-    read();
+    // Watch registration can report a change immediately. Install listeners
+    // before registering the watch and taking the initial snapshot.
+    void Promise.allSettled([
+      track(
+        listenFsChanged((paths) => {
+          if (matches(paths)) onTouched();
+        }),
+      ),
+      track(
+        getCurrentWebviewWindow().listen<{ path: string }>(
+          "fs:file-written",
+          (e) => {
+            if (matches([e.payload.path])) onTouched();
+          },
+        ),
+      ),
+    ]).then(() => {
+      if (!alive) return;
+      watching = true;
+      watchAdd([dir], [path], workspace);
+      read();
+    });
     invoke<string>("fs_canonicalize", { path, workspace })
       .then((c) => {
         if (alive) canonical = c;
@@ -131,7 +143,7 @@ export function useMarkdownDocument(
       coalescer.cancel();
       reloadRef.current = null;
       for (const un of unlisten) un();
-      watchRemove([dir], [path], workspace);
+      if (watching) watchRemove([dir], [path], workspace);
     };
   }, [path]);
 
