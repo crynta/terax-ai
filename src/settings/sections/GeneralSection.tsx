@@ -23,6 +23,7 @@ import {
   setConfirmCloseRunningTerminal,
   setDefaultWorkspaceEnv,
   setExplorerGitDecorations,
+  setNotifyUpdates,
   setRestoreWindowState,
   setShowHidden,
   setTerminalCursorBlink,
@@ -134,6 +135,7 @@ export function GeneralSection() {
   );
   const zoomLevel = usePreferencesStore((s) => s.zoomLevel);
   const agentNotifications = usePreferencesStore((s) => s.agentNotifications);
+  const notifyUpdates = usePreferencesStore((s) => s.notifyUpdates);
   const agentNotificationSound = usePreferencesStore(
     (s) => s.agentNotificationSound,
   );
@@ -617,6 +619,15 @@ export function GeneralSection() {
             <Switch
               checked={restoreWindowState}
               onCheckedChange={(v) => void setRestoreWindowState(v)}
+            />
+          </SettingRow>
+          <SettingRow
+            title="Update notifications"
+            description="Automatically check for updates and show the update dialog when one is available. You can still check manually under About."
+          >
+            <Switch
+              checked={notifyUpdates}
+              onCheckedChange={(v) => void setNotifyUpdates(v)}
             />
           </SettingRow>
         </div>
