@@ -6,7 +6,7 @@ import {
   checkWritableCanonical,
 } from "../lib/security";
 import { newQueuedEditId, usePlanStore } from "../store/planStore";
-import { resolvePath, type ToolContext } from "./context";
+import { gateApproval, resolvePath, type ToolContext } from "./context";
 
 const READ_BYTE_CAP = 25 * 1024;
 const READ_LINE_CAP = 2000;
@@ -135,12 +135,12 @@ export function buildFsTools(ctx: ToolContext) {
 
     write_file: tool({
       description:
-        "Create or overwrite a file with the given content. Always asks the user before running. Prefer `edit` / `multi_edit` for in-place changes — only use `write_file` for creating a brand-new file or fully replacing a tiny one.",
+        "Create or overwrite a file with the given content. Asks the user before running (unless the user enabled bypass approvals). Prefer `edit` / `multi_edit` for in-place changes — only use `write_file` for creating a brand-new file or fully replacing a tiny one.",
       inputSchema: z.object({
         path: z.string(),
         content: z.string(),
       }),
-      needsApproval: true,
+      needsApproval: () => gateApproval(true),
       execute: async ({ path, content }) => {
         const reqPath = resolvePath(path, ctx.getCwd());
         const safety = await checkWritableCanonical(reqPath, native.canonicalize);
@@ -191,11 +191,11 @@ export function buildFsTools(ctx: ToolContext) {
 
     create_directory: tool({
       description:
-        "Create a directory (and any missing parents). Always asks the user before running.",
+        "Create a directory (and any missing parents). Asks the user before running (unless the user enabled bypass approvals).",
       inputSchema: z.object({
         path: z.string(),
       }),
-      needsApproval: true,
+      needsApproval: () => gateApproval(true),
       execute: async ({ path }) => {
         const reqPath = resolvePath(path, ctx.getCwd());
         const safety = await checkWritableCanonical(reqPath, native.canonicalize);
