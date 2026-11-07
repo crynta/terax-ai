@@ -10,6 +10,7 @@ const harness = vi.hoisted(() => ({
   effects: [] as (() => (() => void) | undefined)[],
   cleanups: [] as (() => void)[],
   requests: [] as { args: unknown; resolve: (value: unknown) => void }[],
+  invoke: vi.fn(),
 }));
 
 vi.mock("@/modules/workspace", () => ({
@@ -18,12 +19,7 @@ vi.mock("@/modules/workspace", () => ({
   workspaceScopeKey: (env: WorkspaceEnv) =>
     env.kind === "wsl" ? `wsl:${env.distro}` : "local",
 }));
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (command: string, args: unknown) =>
-    command === "fs_search"
-      ? new Promise((resolve) => harness.requests.push({ args, resolve }))
-      : Promise.resolve(),
-}));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: harness.invoke }));
 vi.mock("react", () => ({
   useCallback: <T>(callback: T) => callback,
   useEffect: (effect: () => (() => void) | undefined) => {
@@ -68,6 +64,13 @@ beforeEach(() => {
   harness.requests = [];
   harness.effects = [];
   harness.cleanups = [];
+  harness.invoke
+    .mockReset()
+    .mockImplementation((command: string, args: { query?: string }) =>
+      command === "fs_search" && args.query
+        ? new Promise((resolve) => harness.requests.push({ args, resolve }))
+        : Promise.resolve(),
+    );
 });
 
 it("retains hits while typing but never exposes the previous root's results", async () => {
@@ -97,5 +100,60 @@ it("invalidates results when the environment or hidden-file filter changes", asy
     root: "/repo",
     workspace: harness.workspace,
     showHidden: false,
+  });
+});
+
+it("cancels the previous search and index warm-up when the scope changes", () => {
+  render("/old");
+  commit();
+  harness.invoke.mockClear();
+  harness.workspace = { kind: "wsl", distro: "Ubuntu" };
+  render("/new");
+  commit();
+  expect(harness.invoke.mock.calls).toEqual([
+    [
+      "fs_search",
+      expect.objectContaining({
+        root: "/old",
+        query: "",
+        requestKey: "palette-files",
+      }),
+    ],
+    [
+      "fs_warm_index",
+      expect.objectContaining({
+        root: "/old",
+        workspace: { kind: "local" },
+        cancel: true,
+        requestKey: "palette-files-warm",
+      }),
+    ],
+    [
+      "fs_search",
+      expect.objectContaining({
+        root: "/new",
+        query: "file",
+        workspace: harness.workspace,
+        requestKey: "palette-files",
+      }),
+    ],
+    [
+      "fs_warm_index",
+      expect.objectContaining({
+        root: "/new",
+        workspace: harness.workspace,
+        requestKey: "palette-files-warm",
+      }),
+    ],
+  ]);
+});
+
+it("supersedes active search when the query becomes empty", () => {
+  render("/repo", "");
+  commit();
+  expect(harness.invoke).toHaveBeenCalledWith("fs_search", {
+    root: "/repo",
+    query: "",
+    requestKey: "palette-files",
   });
 });

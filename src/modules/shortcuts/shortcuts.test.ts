@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { MOD_PROP } from "@/lib/platform";
 import {
+  buildShortcuts,
   getBindingTokens,
   type KeyBinding,
   matchBinding,
   SHORTCUTS,
+  type Shortcut,
 } from "./shortcuts";
 
 // These tests run in the vitest node environment, where the Tauri OS plugin is
@@ -99,8 +101,8 @@ describe("matchBinding", () => {
     ).toBe(false);
   });
 
-  it("falls back to the physical code for shift combinations", () => {
-    // Shift turns Period into ">"; ⌘⇧. still matches the "." binding.
+  it("matches recognized shifted punctuation by its logical key", () => {
+    // The logical ">" names period even when its physical position moves.
     expect(
       matchBinding(
         event({ key: ">", code: "Period", shiftKey: true, metaKey: true }),
@@ -112,7 +114,42 @@ describe("matchBinding", () => {
         event({ key: ">", code: "Comma", shiftKey: true, metaKey: true }),
         { key: ".", shift: true, meta: true },
       ),
+    ).toBe(true);
+  });
+
+  it("follows a layout that types another letter on the key (Dvorak Ctrl+Shift+C is on KeyI)", () => {
+    const toggleAi = { ctrl: true, shift: true, key: "i" };
+    const dvorakC = event({
+      key: "C",
+      code: "KeyI",
+      ctrlKey: true,
+      shiftKey: true,
+    });
+    expect(matchBinding(dvorakC, toggleAi)).toBe(false);
+    expect(matchBinding(dvorakC, { ctrl: true, shift: true, key: "c" })).toBe(
+      true,
+    );
+    expect(
+      matchBinding(
+        event({ key: "W", code: "Comma", ctrlKey: true, shiftKey: true }),
+        { ctrl: true, shift: true, key: "," },
+      ),
     ).toBe(false);
+  });
+
+  it("still falls back to the physical key for another script or a dead key", () => {
+    expect(
+      matchBinding(
+        event({ key: "Ш", code: "KeyI", ctrlKey: true, shiftKey: true }),
+        { ctrl: true, shift: true, key: "i" },
+      ),
+    ).toBe(true);
+    expect(
+      matchBinding(
+        event({ key: "Dead", code: "KeyE", altKey: true, metaKey: true }),
+        { alt: true, meta: true, key: "e" },
+      ),
+    ).toBe(true);
   });
 
   it("does not fall back to the physical code without alt or shift", () => {
@@ -147,45 +184,74 @@ describe("SHORTCUTS registry", () => {
 });
 
 describe("palette shortcuts", () => {
-  const defaults = (id: string) =>
-    SHORTCUTS.find((s) => s.id === id)?.defaultBindings ?? [];
+  const defaults = (list: Shortcut[], id: string) =>
+    list.find((s) => s.id === id)?.defaultBindings ?? [];
   const press = (key: string, over: Partial<KeyboardEvent>) =>
     event({ key, ...over });
 
-  it("opens files on the primary modifier + P and commands with Shift", () => {
-    const [files] = defaults("commandPalette.files");
-    const [commands] = defaults("commandPalette.open");
-    expect(matchBinding(press("p", { ctrlKey: true }), files)).toBe(true);
+  it("opens files on Command+P and commands with Shift on macOS", () => {
+    const mac = buildShortcuts(true);
+    const [files] = defaults(mac, "commandPalette.files");
+    const [commands] = defaults(mac, "commandPalette.open");
+    expect(matchBinding(press("p", { metaKey: true }), files)).toBe(true);
     expect(
-      matchBinding(press("P", { ctrlKey: true, shiftKey: true }), commands),
+      matchBinding(press("P", { metaKey: true, shiftKey: true }), commands),
     ).toBe(true);
     expect(
-      matchBinding(press("p", { ctrlKey: true, shiftKey: true }), files),
+      matchBinding(press("p", { metaKey: true, shiftKey: true }), files),
     ).toBe(false);
   });
 
+  it("opens commands on Ctrl+Shift+P and files on Ctrl+Shift+O on Windows and Linux", () => {
+    const other = buildShortcuts(false);
+    const [files] = defaults(other, "commandPalette.files");
+    const [commands] = defaults(other, "commandPalette.open");
+    expect(
+      matchBinding(press("O", { ctrlKey: true, shiftKey: true }), files),
+    ).toBe(true);
+    expect(
+      matchBinding(press("P", { ctrlKey: true, shiftKey: true }), commands),
+    ).toBe(true);
+    // Ctrl+P is readline's previous-history: the palette never takes it.
+    expect(matchBinding(press("p", { ctrlKey: true }), files)).toBe(false);
+    expect(matchBinding(press("p", { ctrlKey: true }), commands)).toBe(false);
+  });
+
   it("keeps the macOS terminal clear ahead of the palette on the shared key", () => {
-    const ids = SHORTCUTS.map((s) => s.id);
+    const ids = buildShortcuts(true).map((s) => s.id);
     expect(ids.indexOf("terminal.clear")).toBeLessThan(
       ids.indexOf("commandPalette.open"),
     );
   });
 
-  it("gives no default binding to two shortcuts in the same context", () => {
-    const seen = new Map<string, string>();
-    for (const s of SHORTCUTS) {
-      if (s.id === "tab.selectByIndex") continue;
-      for (const b of s.defaultBindings) {
-        const sig = [b.ctrl, b.shift, b.alt, b.meta, b.key.toLowerCase()].join(
-          "|",
-        );
-        const other = seen.get(sig);
-        // Documented overlaps: ⌘K (clear vs palette) is resolved by scope.
-        if (other && !(sig.endsWith("|k") && s.id === "commandPalette.open")) {
-          throw new Error(`${s.id} and ${other} share ${sig}`);
+  it.each([
+    ["macOS", true],
+    ["Windows and Linux", false],
+  ])(
+    "gives no default binding to two shortcuts in the same context (%s)",
+    (_name, isMac) => {
+      const seen = new Map<string, string>();
+      for (const s of buildShortcuts(isMac)) {
+        if (s.id === "tab.selectByIndex") continue;
+        for (const b of s.defaultBindings) {
+          const sig = [
+            b.ctrl,
+            b.shift,
+            b.alt,
+            b.meta,
+            b.key.toLowerCase(),
+          ].join("|");
+          const other = seen.get(sig);
+          // Documented overlaps: ⌘K (clear vs palette) is resolved by scope.
+          if (
+            other &&
+            !(sig.endsWith("|k") && s.id === "commandPalette.open")
+          ) {
+            throw new Error(`${s.id} and ${other} share ${sig}`);
+          }
+          seen.set(sig, s.id);
         }
-        seen.set(sig, s.id);
       }
-    }
-  });
+    },
+  );
 });

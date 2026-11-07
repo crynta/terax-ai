@@ -74,6 +74,20 @@ jobs:
       - name: Terminal models, input, blocks, transport, and renderer lifecycle
         run: pnpm exec vitest run src/modules/terminal
 
+      - uses: actions/cache@v5
+        if: matrix.os == 'macos-latest'
+        with:
+          path: ~/Library/Caches/ms-playwright
+          key: chromium-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Terminal compositor pixel parity (DPR 1, 1.25, 1.5, 2)
+        if: matrix.os == 'macos-latest'
+        env:
+          TERAX_VISUAL_SOFTWARE: '1'
+        run: |
+          pnpm exec playwright install chromium --no-shell
+          pnpm test:terminal-scaling
+
   rust:
     runs-on: ubuntu-22.04
     steps:
@@ -86,6 +100,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             fish \
+            zsh \
             libwebkit2gtk-4.1-dev \
             libgtk-3-dev \
             librsvg2-dev \
@@ -123,17 +138,29 @@ jobs:
       - name: fish shell integration
         run: fish --no-config src-tauri/src/modules/pty/scripts/init.test.fish
 
+      - name: bash shell integration
+        run: bash src-tauri/src/modules/pty/scripts/bashrc.test.bash
+
+      - name: zsh shell integration
+        run: python3 src-tauri/src/modules/pty/scripts/zshrc.test.py
+
   rust-platforms:
     name: rust-test (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        os: [windows-latest, macos-latest, ubuntu-24.04-arm]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libssl-dev
 
       - uses: dtolnay/rust-toolchain@stable
 

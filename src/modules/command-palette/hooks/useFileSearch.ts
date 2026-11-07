@@ -5,6 +5,7 @@ import type { FileHit } from "../lib/quickOpen";
 
 const LIMIT = 100;
 const REQUEST_KEY = "palette-files";
+const WARM_REQUEST_KEY = "palette-files-warm";
 
 type SearchResponse = {
   hits: FileHit[];
@@ -88,6 +89,13 @@ export function useFileSearch(
   useEffect(() => {
     if (!enabled || !root || !query) {
       setState(null);
+      if (enabled && root) {
+        void invoke("fs_search", {
+          root,
+          query: "",
+          requestKey: REQUEST_KEY,
+        }).catch(() => {});
+      }
       return;
     }
     execute(query);
@@ -100,11 +108,21 @@ export function useFileSearch(
   // it while the user is still typing the first character.
   useEffect(() => {
     if (!enabled || !root) return;
-    void invoke("fs_warm_index", {
+    const args = {
       root,
       showHidden,
       workspace,
-    }).catch(() => {});
+      requestKey: WARM_REQUEST_KEY,
+    };
+    void invoke("fs_warm_index", args).catch(() => {});
+    return () => {
+      void invoke("fs_search", {
+        root,
+        query: "",
+        requestKey: REQUEST_KEY,
+      }).catch(() => {});
+      void invoke("fs_warm_index", { ...args, cancel: true }).catch(() => {});
+    };
   }, [enabled, root, showHidden, workspace]);
 
   const retry = useCallback(() => {

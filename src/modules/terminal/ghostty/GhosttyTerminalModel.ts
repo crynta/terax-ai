@@ -11,6 +11,7 @@ import type {
   KeyEvent,
 } from "@terax/ghostty-core/protocol";
 import type { TerminalCellReader } from "@/modules/terminal/ghostty/core/packedCells";
+import type { ViewportLinkSource } from "@/modules/terminal/ghostty/core/ViewportLinkResolver";
 
 export type GhosttyTerminalModelOptions = {
   readonly backend: Extract<TerminalBackendKind, `ghostty-${string}`>;
@@ -156,7 +157,7 @@ export interface GhosttyTerminalModelApi extends TerminalModel {
     blinking: boolean,
   ): void;
   grapheme(row: number, column: number): string;
-  hyperlinkAtViewportCell(row: number, column: number): string | null;
+  linkSource(): ViewportLinkSource;
   scrollPosition(): { readonly offset: number; readonly history: number };
   scrollBy(lines: number): boolean;
   scrollTo(offset: number): boolean;
@@ -175,6 +176,7 @@ export interface GhosttyTerminalModelApi extends TerminalModel {
   trackedSelection?(): TerminalBufferSelection | null;
   encodeKey(event: KeyEvent): Uint8Array;
   mode(mode: number, isAnsi?: boolean): boolean;
+  kittyKeyboardFlags?(): number;
   setReplySink(sink: ((bytes: Uint8Array) => void) | null): void;
   enableSemanticMarkers?(enabled: boolean): void;
   semanticMarkerColumn?(id: number): number | null;
@@ -186,6 +188,7 @@ export interface GhosttyTerminalModelApi extends TerminalModel {
     endCol?: number,
   ): string;
   bufferCursorLine?(): number;
+  bufferCursorColumn?(): number;
   readCellLine?(line: number): readonly string[];
   blockSearchActive?(): boolean;
   setBlockSearchMatch?(

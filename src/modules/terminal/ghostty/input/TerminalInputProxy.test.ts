@@ -48,6 +48,13 @@ function model(): GhosttyTerminalModelApi {
     scrollToBottom: () => false,
     scrollPosition: () => ({ offset: 0, history: 0 }),
     scrollBy: () => false,
+    cursor: () => ({
+      x: 0,
+      y: 0,
+      visible: true,
+      blinking: false,
+      style: "block",
+    }),
     encodeKey: (event: { utf8?: string }) =>
       new TextEncoder().encode(event.utf8 ?? ""),
   } as unknown as GhosttyTerminalModelApi;

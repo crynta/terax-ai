@@ -41,6 +41,22 @@ describe.each(["ghostty-vt", "ghostty-vt-scalar"])(
       };
     }
 
+    it("retains endpoints for all 1,000 blocks after the native pin ring wraps", () => {
+      const { blocks, write, dispose } = create();
+      try {
+        for (let i = 1; i <= 1500; i++)
+          write(
+            `\x1b]133;C;echo ${i}\x07out ${i}\r\n\x1b]133;D;0\x07\x1b]133;A\x07\x1b]133;B\x07`,
+          );
+        expect(blocks.diagnostics().blocks).toBe(1000);
+        expect(blocks.readById("500")).toBeNull();
+        expect(blocks.readById("501")?.output).toBe("out 501");
+        expect(blocks.readById("1500")?.output).toBe("out 1500");
+      } finally {
+        dispose();
+      }
+    });
+
     it("yields during large block searches and cancels without scanning the remaining history", async () => {
       const { model, blocks, write, dispose } = create();
       vi.useFakeTimers();
@@ -83,6 +99,132 @@ describe.each(["ghostty-vt", "ghostty-vt-scalar"])(
         expect(blocks.navigate(-1)).toBe(true);
         expect(model.trackedSelection()).not.toBeNull();
         expect(blocks.clearSelection()).toBe(true);
+      } finally {
+        dispose();
+      }
+    });
+
+    it("ends a command whose shell replaced itself when the next prompt starts", () => {
+      const { blocks, write, dispose } = create();
+      try {
+        // `exec zsh`: C, then the new shell's prompt with no D in between.
+        write("\x1b]133;B\x07\x1b]133;C;exec zsh\x07");
+        expect(blocks.mode).toBe("running");
+        expect(blocks.visibleBlocks(20).blocks[0].running).toBe(true);
+        write("\x1b]133;A\x07new> \x1b]133;B\x07");
+        expect(blocks.mode).toBe("prompt");
+        expect(blocks.visibleBlocks(20).blocks[0].running).toBe(false);
+        write("\x1b]133;C;next\x07out\r\n");
+        write("\x1b]133;D;0\x07\x1b]133;A\x07");
+        const shown = blocks.visibleBlocks(20).blocks;
+        expect(shown.map((block) => block.running)).toEqual([false, false]);
+        expect(shown[0].exitCode).toBeNull();
+        expect(shown[1].exitCode).toBe(0);
+      } finally {
+        dispose();
+      }
+    });
+
+    it("keeps the output of a command ended by the next prompt instead of closing it empty", () => {
+      const { blocks, write, dispose } = create();
+      try {
+        write("$ \x1b]133;B\x07\x1b]133;C;long\x07one\r\ntwo\r\nthree\r\n");
+        // The shell died or replaced itself: no D, the next prompt follows.
+        write("\x1b]133;A\x07new> \x1b]133;B\x07");
+        const [block] = blocks.visibleBlocks(20).blocks;
+        expect(block.running).toBe(false);
+        expect(block.exitCode).toBeNull();
+        expect(blocks.readById("1")).toEqual({
+          command: "long",
+          cwd: "/workspace",
+          exitCode: null,
+          output: "one\ntwo\nthree",
+        });
+        // And the following command still gets its own block.
+        write("\x1b]133;C;next\x07out\r\n\x1b]133;D;0\x07");
+        expect(blocks.readById("2")?.output).toBe("out");
+        expect(blocks.readById("1")?.output).toBe("one\ntwo\nthree");
+      } finally {
+        dispose();
+      }
+    });
+
+    it("ends an implicitly closed command where its prompt started, not where the chunk ended", () => {
+      const { blocks, write, dispose } = create();
+      try {
+        write("$ \x1b]133;B\x07\x1b]133;C;long\x07one\r\ntwo\r\n");
+        // One read holds the new prompt and a lot more after it.
+        write(
+          "\x1b]133;A\x07new> \x1b]133;B\x07\r\nlater\r\nlines\r\nof\r\ntext\r\n",
+        );
+        expect(blocks.readById("1")).toMatchObject({
+          exitCode: null,
+          output: "one\ntwo",
+        });
+        const [block] = blocks.visibleBlocks(20).blocks;
+        expect(block.running).toBe(false);
+      } finally {
+        dispose();
+      }
+    });
+
+    it("keeps a last output line that has no newline when its prompt ends the command", () => {
+      const { blocks, write, dispose } = create();
+      try {
+        write("$ \x1b]133;B\x07\r\n\x1b]133;C;printf\x07one\r\nabc");
+        write("\x1b]133;A\x07new> \x1b]133;B\x07\r\nlater\r\n");
+        expect(blocks.readById("1")?.output).toBe("one\nabc");
+        write("\x1b]133;C;bare\x07x");
+        write("\x1b]133;A\x07new> ");
+        expect(blocks.readById("2")?.output).toBe("x");
+      } finally {
+        dispose();
+      }
+    });
+
+    it("tracks an implicit prompt endpoint through narrow and wide reflow", () => {
+      const { model, blocks, write, dispose } = create();
+      try {
+        const output = "abcdefghijklmnopqrstuvwxyz0123456789";
+        write(
+          `\x1b]133;B\x07\x1b]133;C;exec\x07${output}\x1b]133;A\x07prompt> \x1b]133;B\x07`,
+        );
+        for (const cols of [10, 40, 15, 20]) {
+          model.resize(cols, 6);
+          expect(blocks.readById("1")?.output).toBe(output);
+        }
+      } finally {
+        dispose();
+      }
+    });
+
+    it("resolves each event of a chunk at the point where it was parsed", () => {
+      const { blocks, write, dispose } = create();
+      try {
+        write("$ \x1b]133;B\x07\x1b]133;C;first\x07one\r\ntwo\r\n");
+        // The replacement shell's prompt, a command and its end, in one read.
+        write(
+          "\x1b]133;A\x07new> \x1b]133;B\x07\x1b]133;C;second\x07alpha\r\nbeta\r\n\x1b]133;D;0\x07\x1b]133;A\x07",
+        );
+        expect(blocks.readById("1")?.output).toBe("one\ntwo");
+        expect(blocks.readById("2")).toMatchObject({
+          command: "second",
+          exitCode: 0,
+          output: "alpha\nbeta",
+        });
+      } finally {
+        dispose();
+      }
+    });
+
+    it("finds the prompt start even when the sequence arrives in pieces", () => {
+      const { blocks, write, dispose } = create();
+      try {
+        write("$ \x1b]133;B\x07\x1b]133;C;long\x07one\r\ntwo\r\n");
+        write("\x1b]13");
+        write("3;A");
+        write("\x1b\\new> \x1b]133;B\x07\r\nmore\r\nmore\r\n");
+        expect(blocks.readById("1")?.output).toBe("one\ntwo");
       } finally {
         dispose();
       }

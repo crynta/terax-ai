@@ -13,6 +13,7 @@ import {
 } from "@/modules/editor/lib/externalFormat";
 import { EXPOSED_LANGUAGES } from "@/modules/editor/lib/languageDefinitions";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import { useShortcutHint } from "@/modules/shortcuts";
 import {
   AUTO_SAVE_DELAY_MAX,
   AUTO_SAVE_DELAY_MIN,
@@ -43,6 +44,7 @@ import { SettingRow } from "../components/SettingRow";
 const AUTO_SAVE_STEP = 100;
 
 export function EditorSection() {
+  const saveHint = useShortcutHint("editor.save");
   const editorFontSize = usePreferencesStore((s) => s.editorFontSize);
   const vimMode = usePreferencesStore((s) => s.vimMode);
   const editorWordWrap = usePreferencesStore((s) => s.editorWordWrap);
@@ -139,7 +141,7 @@ export function EditorSection() {
         )}
         <SettingRow
           title="Format on save"
-          description="Format the file on explicit save (Cmd+S / :w) with the formatter below."
+          description={`Format the file on explicit save (${saveHint} / :w) with the formatter below.`}
         >
           <Switch
             checked={editorFormatOnSave}

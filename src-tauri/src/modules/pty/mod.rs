@@ -9,6 +9,7 @@ mod protocol;
 mod queue;
 mod session;
 pub(crate) mod shell_init;
+mod terminal_colors;
 #[cfg(unix)]
 mod unix_reader;
 mod wake;
@@ -28,6 +29,7 @@ use hub::{Command, Hub};
 pub use presentation::PresentationClass;
 pub use protocol::stream_protocol;
 use session::Session;
+use terminal_colors::TerminalColors;
 
 /// Largest `pty_set_presentation` batch accepted; a window never has more
 /// terminals than this, so anything larger is a malformed request.
@@ -180,6 +182,7 @@ pub async fn pty_open(
     shell: Option<String>,
     pane_id: Option<u32>,
     presentation: Option<PresentationClass>,
+    colors: Option<TerminalColors>,
 ) -> Result<u32, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
     let blocks = blocks.unwrap_or(false);
@@ -191,6 +194,9 @@ pub async fn pty_open(
         pane_id.and_then(|pane_id| control.shell_env(pane_id))
     };
     let id = state.next_id.fetch_add(1, Ordering::Relaxed);
+    let credential = control_env.clone();
+    let pending_credential = credential.as_ref().map(|env| control.pending_shell(env));
+    let control_app = app.clone();
     let owner: Arc<str> = Arc::from(webview.label());
     let hub = state.hub.clone();
     let class = presentation.unwrap_or_default();
@@ -215,6 +221,7 @@ pub async fn pty_open(
             blocks,
             shell,
             control_env,
+            colors,
             pane_id,
         )
     })
@@ -228,6 +235,14 @@ pub async fn pty_open(
         e
     })?;
     state.sessions.write().unwrap().insert(id, session);
+    if let Some(env) = credential {
+        control.activate_shell(
+            &env,
+            id,
+            &crate::modules::agent_events::TauriAgentHost(&control_app),
+        );
+    }
+    drop(pending_credential);
     // The shell can exit before this insert (instant failure, `exit` in an rc
     // file); the waiter's reap then ran with the id absent. Re-check and reap
     // so the pseudoconsole isn't stranded.
@@ -313,6 +328,25 @@ pub fn pty_resize(
             e
         });
     result
+}
+
+/// Pushes the terminal's theme so colour queries (`OSC 4/10/11/12`,
+/// `CSI ? 996 n`) are answered by the reader without a webview round trip.
+#[tauri::command]
+pub fn pty_set_colors(
+    state: tauri::State<PtyState>,
+    id: u32,
+    colors: TerminalColors,
+) -> Result<(), String> {
+    let session = state
+        .sessions
+        .read()
+        .unwrap()
+        .get(&id)
+        .cloned()
+        .ok_or_else(|| "no session".to_string())?;
+    session.set_colors(colors);
+    Ok(())
 }
 
 #[tauri::command]
@@ -485,6 +519,20 @@ pub fn pty_diagnostics(state: tauri::State<PtyState>) -> PtyDiagnostics {
 }
 
 #[tauri::command]
+pub fn pty_session_shell(
+    state: tauri::State<PtyState>,
+    webview: tauri::Webview,
+    id: u32,
+) -> Result<String, String> {
+    let sessions = state.sessions.read().unwrap();
+    let session = sessions.get(&id).ok_or("no session")?;
+    if session.owner.as_ref() != webview.label() {
+        return Err("session belongs to another webview".into());
+    }
+    Ok(session.shell_program.clone())
+}
+
+#[tauri::command]
 pub fn pty_shell_name() -> String {
     shell_init::detect_shell_name()
 }
@@ -527,6 +575,7 @@ mod tests {
                         session::drop_session(session);
                     }
                 }),
+                colors: None,
             },
             PtySize::default(),
             || {

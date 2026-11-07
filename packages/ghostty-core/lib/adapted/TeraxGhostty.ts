@@ -27,10 +27,10 @@ export const ADAPTED_GHOSTTY_COMMIT =
 export const ADAPTED_RESTTY_COMMIT =
   "7700b14a7643ba9240818209ef1e0aa90d83ad77";
 export const ADAPTED_GHOSTTY_WASM_SHA256 =
-  "302b7952e0f84d1701b64a4348f597bbe5ab2bc1f2b58c12d6cf775251a895f7";
+  "32b630675916b3122c2c187c640191e90ae848ee9f196ec5fe091681560c1f11";
 
 export const ADAPTED_GHOSTTY_SCALAR_WASM_SHA256 =
-  "c9cffe386b771bd1a76b493bf064b30abb30fd5ef3d36d700226b318309c1cad";
+  "3749923e6d7c9ad8f1919f0072073843d9792dcd41d6628b42f208b1f733aa13";
 
 let wasmSimdAvailable: boolean | undefined;
 
@@ -94,6 +94,7 @@ const requiredExports = [
   "restty_scrollbar_total",
   "restty_scrollbar_offset",
   "restty_scrollbar_len",
+  "restty_active_cursor_x",
   "restty_active_cursor_y",
   "restty_selection_set",
   "restty_semantic_markers_enable",
@@ -116,6 +117,7 @@ const requiredExports = [
   "restty_reset_palette",
   "restty_mode",
   "restty_mode_bits",
+  "restty_kitty_keyboard_flags",
   "restty_set_cursor_options",
   "restty_encode_key",
   "restty_key_output_ptr",
@@ -828,6 +830,11 @@ export class TeraxGhosttyTerminal {
     return bar.total - bar.length + this.exports.restty_active_cursor_y(this.handle);
   }
 
+  bufferCursorColumn(): number {
+    this.assertLive();
+    return this.exports.restty_active_cursor_x(this.handle);
+  }
+
   semanticMarkerColumn(id: number): number | null {
     this.assertLive();
     if (!Number.isInteger(id) || id <= 0 || id > 0xffff_ffff) return null;
@@ -900,6 +907,12 @@ export class TeraxGhosttyTerminal {
   modeBits(): number {
     this.assertLive();
     return this.exports.restty_mode_bits(this.handle);
+  }
+
+  /** Active Kitty keyboard protocol flags on the active screen. */
+  kittyKeyboardFlags(): number {
+    this.assertLive();
+    return this.exports.restty_kitty_keyboard_flags(this.handle);
   }
 
   setCursorOptions(
@@ -1805,8 +1818,11 @@ function decodeTerminalEvent(
         body: textDecoder.decode(payload.subarray(4 + titleLength)),
       };
     }
-    case 6:
-      return { type: "prompt-start" };
+    case 6: {
+      if (payload.byteLength < 4) return { type: "prompt-start" };
+      const marker = new DataView(payload.buffer, payload.byteOffset, payload.byteLength).getUint32(0, true);
+      return marker ? { type: "prompt-start", marker } : { type: "prompt-start" };
+    }
     case 7:
       return { type: "prompt-continuation" };
     case 8:
@@ -1830,6 +1846,8 @@ function decodeTerminalEvent(
     }
     case 11:
       return { type: "screen-cleared" };
+    case 12:
+      return { type: "synchronized-output-reset" };
     default:
       return null;
   }

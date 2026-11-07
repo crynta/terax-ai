@@ -4,6 +4,7 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { Toaster } from "@/components/ui/sonner";
+import { toast } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { consumeLaunchFiles, getLaunchDir } from "@/lib/launchDir";
 import { IS_MAC } from "@/lib/platform";
@@ -58,7 +59,9 @@ import { setShowHidden } from "@/modules/settings/store";
 import {
   type ShortcutHandlers,
   type ShortcutId,
+  shouldDisableAskSelection,
   shouldDisablePaneSwapShortcut,
+  tabDigit,
   useGlobalShortcuts,
 } from "@/modules/shortcuts";
 import {
@@ -660,8 +663,15 @@ export default function App() {
       if (activeLeafId === null) return;
       const term = terminalRefs.current.get(activeLeafId);
       if (!term) return;
-      term.write(`cd ${quoteShellArg(path)}\r`);
-      term.focus();
+      void term.writeAtPrompt(`cd ${quoteShellArg(path)}\r`).then((typed) => {
+        if (typed) {
+          term.focus();
+          return;
+        }
+        toast("Terminal is busy", {
+          description: "Open a new tab to go there, or exit the running program.",
+        });
+      });
     },
     [activeLeafId],
   );
@@ -910,7 +920,7 @@ export default function App() {
       "tab.prev": () => stepSwitcher(-1),
       "tab.selectByIndex": (e) =>
         selectByIndex(
-          parseInt(e.key, 10) - 1,
+          (tabDigit(e, e.shiftKey) ?? 1) - 1,
           activeSpaceId ?? DEFAULT_SPACE_ID,
         ),
       "space.next": () => cycleSpace(1),
@@ -1017,10 +1027,11 @@ export default function App() {
       if (id === "ai.askSelection") {
         const target =
           (e.target as HTMLElement | null) ?? document.activeElement;
-        const inTerminal = isTerminalSurfaceTarget(target);
-        if (!inTerminal) return false;
-        const sel = captureActiveSelection();
-        return !sel?.trim();
+        return shouldDisableAskSelection(
+          e,
+          () => isTerminalSurfaceTarget(target),
+          () => !!captureActiveSelection()?.trim(),
+        );
       }
       if (id === "terminal.clear") {
         // Only intercept ⌘K while a terminal is focused; elsewhere let the key

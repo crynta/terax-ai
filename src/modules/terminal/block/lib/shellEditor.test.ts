@@ -10,7 +10,7 @@ vi.mock("@/modules/workspace", () => ({
   currentWorkspaceEnv: () => workspace,
 }));
 vi.mock("@/lib/platform", () => ({ IS_WINDOWS: false }));
-import { makeCompletionSource } from "./shellEditor";
+import { makeCompletionSource, shellPlaceholder } from "./shellEditor";
 
 function context(doc: string, pos = doc.length, explicit = true) {
   return new CompletionContext(EditorState.create({ doc }), pos, explicit);
@@ -114,3 +114,10 @@ function required<T>(value: T | null | undefined): T {
   if (value == null) throw new Error("Expected a completion result");
   return value;
 }
+
+it("names the shortcut that switches to the AI input in the placeholder", () => {
+  expect(shellPlaceholder("Ctrl+Shift+Y")).toBe(
+    "Run a command  -  ↑ history  Ctrl+Shift+Y switch to AI",
+  );
+  expect(shellPlaceholder("⌘U")).toContain("⌘U");
+});

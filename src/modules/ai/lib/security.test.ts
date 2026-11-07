@@ -370,3 +370,13 @@ describe("checkShellCommand — home directory rm guard", () => {
     expect(checkShellCommand("rm -rf /home/me/safe")).toMatchObject({ ok: true });
   });
 });
+
+describe("application credentials", () => {
+  it.each([
+    "/Users/me/Library/Caches/terax/control.json",
+    "/home/me/.cache/terax/control.json",
+    "C:/Users/me/AppData/Local/terax/control.json",
+  ])("refuses %s even inside a home grant", (path) => {
+    expect(checkReadable(path).ok).toBe(false);
+  });
+});

@@ -216,8 +216,10 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         // One async scheme multiplexes every terminal's output; see pty/hub.rs.
         .register_asynchronous_uri_scheme_protocol("terax-pty", pty::stream_protocol)
+        .register_asynchronous_uri_scheme_protocol("asset", fs::assets::serve)
         .on_page_load(|webview, payload| {
             if matches!(payload.event(), tauri::webview::PageLoadEvent::Started) {
+                if let Some(grants) = webview.try_state::<fs::assets::AssetGrants>() { grants.revoke_owner(webview.label()); }
                 if let Some(state) = webview.try_state::<net::AiStreamState>() {
                     state.cancel_window(webview.window().label());
                 }
@@ -263,6 +265,7 @@ pub fn run() {
         .manage(shell::ShellState::default())
         .manage(secrets::SecretsState::default())
         .manage(fs::watch::FsWatchState::default())
+        .manage(fs::assets::AssetGrants::default())
         .manage(git::watch::GitWatchState::default())
         .manage(history::HistoryState::default())
         .manage(lsp::LspState::default())
@@ -283,6 +286,7 @@ pub fn run() {
             pty::pty_write,
             pty::pty_stream_open,
             pty::pty_set_presentation,
+            pty::pty_set_colors,
             pty::pty_diagnostics,
             pty::pty_resize,
             pty::pty_close,
@@ -290,10 +294,18 @@ pub fn run() {
             pty::pty_has_foreground_process,
             pty::pty_has_foreground_job,
             pty::pty_shell_name,
+            pty::pty_session_shell,
             pty::pty_list_shells,
             fs::tree::list_subdirs,
             fs::tree::fs_read_dir,
             fs::file::fs_read_file,
+            fs::ai::ai_read_file,
+            fs::ai::ai_read_dir,
+            fs::ai::ai_grep,
+            fs::ai::ai_glob,
+            fs::assets::asset_grant,
+            fs::assets::asset_revoke,
+            fs::project_memory::fs_read_project_memory,
             fs::file::fs_write_file,
             fs::file::fs_stat,
             fs::file::fs_canonicalize,
@@ -344,6 +356,13 @@ pub fn run() {
             git::commands_review::git_apply_hunks,
             git::commands_review::git_worktree_list,
             git::commands_review::git_worktree_add,
+            git::commands_tasks::task_project_config,
+            git::commands_tasks::task_worktree_list,
+            git::commands_tasks::task_worktree_create,
+            git::commands_tasks::task_worktree_prepare_archive,
+            git::commands_tasks::task_worktree_archive,
+            git::commands_tasks::task_worktree_restore,
+            git::commands_tasks::task_worktree_disk_usage,
             git::commands_review::git_worktree_remove,
             git::commands_review::git_worktree_prune,
             git::commands_review::git_checkpoint_create,
@@ -416,6 +435,7 @@ pub fn run() {
                     event: tauri::WindowEvent::Destroyed,
                     ..
                 } => {
+                    if let Some(grants) = app.try_state::<fs::assets::AssetGrants>() { grants.revoke_owner(&label); }
                     if let Some(state) = app.try_state::<net::AiStreamState>() {
                         state.cancel_window(&label);
                     }
