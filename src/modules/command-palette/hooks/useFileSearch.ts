@@ -1,4 +1,4 @@
-import { currentWorkspaceEnv } from "@/modules/workspace";
+import { useWorkspaceEnvStore, workspaceScopeKey } from "@/modules/workspace";
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FileHit } from "../lib/quickOpen";
@@ -21,14 +21,16 @@ export type FileSearchState = {
 };
 
 type Snapshot = Omit<FileSearchState, "retry">;
+type ScopedSnapshot = Snapshot & { scope: string };
 
 const IDLE: Snapshot = { hits: [], loading: false, error: null };
+const LOADING: Snapshot = { ...IDLE, loading: true };
 
 /**
  * Fuzzy file search over the Rust-side cached index. No debounce: every
  * keystroke asks, the backend drops the superseded query, and a reply for an
- * older query is ignored here as well. The previous hits stay on screen until
- * the new ones land so the list never blanks between keystrokes.
+ * older query is ignored here as well. Only hits from the current scope stay
+ * on screen between keystrokes.
  */
 export function useFileSearch(
   root: string | null,
@@ -36,14 +38,25 @@ export function useFileSearch(
   enabled: boolean,
   showHidden: boolean,
 ): FileSearchState {
-  const [state, setState] = useState<Snapshot>(IDLE);
+  const workspace = useWorkspaceEnvStore((s) => s.env);
+  const scope = JSON.stringify([
+    root,
+    workspaceScopeKey(workspace),
+    showHidden,
+  ]);
+  const [state, setState] = useState<ScopedSnapshot | null>(null);
   const requestIdRef = useRef(0);
 
   const execute = useCallback(
     (q: string) => {
       if (!root) return;
       const requestId = ++requestIdRef.current;
-      setState((s) => ({ ...s, loading: true, error: null }));
+      setState((s) => ({
+        ...(s?.scope === scope ? s : IDLE),
+        scope,
+        loading: true,
+        error: null,
+      }));
       invoke<SearchResponse>("fs_search", {
         root,
         query: q,
@@ -52,25 +65,30 @@ export function useFileSearch(
         filesOnly: true,
         withIndices: true,
         requestKey: REQUEST_KEY,
-        workspace: currentWorkspaceEnv(),
+        workspace,
       })
         .then((res) => {
           if (requestId !== requestIdRef.current) return;
-          if (res.cancelled) setState((s) => ({ ...s, loading: false }));
-          else setState({ hits: res.hits, loading: false, error: null });
+          if (res.cancelled) {
+            setState((s) => ({
+              ...(s?.scope === scope ? s : IDLE),
+              scope,
+              loading: false,
+            }));
+          } else
+            setState({ scope, hits: res.hits, loading: false, error: null });
         })
         .catch((e) => {
           if (requestId !== requestIdRef.current) return;
-          setState({ hits: [], loading: false, error: String(e) });
+          setState({ scope, hits: [], loading: false, error: String(e) });
         });
     },
-    [root, showHidden],
+    [root, scope, showHidden, workspace],
   );
 
   useEffect(() => {
-    requestIdRef.current += 1;
     if (!enabled || !root || !query) {
-      setState(IDLE);
+      setState(null);
       if (enabled && root) {
         void invoke("fs_search", {
           root,
@@ -93,7 +111,7 @@ export function useFileSearch(
     const args = {
       root,
       showHidden,
-      workspace: currentWorkspaceEnv(),
+      workspace,
       requestKey: WARM_REQUEST_KEY,
     };
     void invoke("fs_warm_index", args).catch(() => {});
@@ -105,11 +123,22 @@ export function useFileSearch(
       }).catch(() => {});
       void invoke("fs_warm_index", { ...args, cancel: true }).catch(() => {});
     };
-  }, [enabled, root, showHidden]);
+  }, [enabled, root, showHidden, workspace]);
 
   const retry = useCallback(() => {
     if (enabled && root && query) execute(query);
   }, [enabled, root, query, execute]);
 
-  return { ...state, retry };
+  const visible =
+    !enabled || !root || !query
+      ? IDLE
+      : state?.scope === scope
+        ? state
+        : LOADING;
+  return {
+    hits: visible.hits,
+    loading: visible.loading,
+    error: visible.error,
+    retry,
+  };
 }
