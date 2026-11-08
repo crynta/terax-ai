@@ -54,6 +54,24 @@ function dirname(path: string): string {
   return parentDir(path, "/");
 }
 
+export function removedChildDirectories(
+  parent: string,
+  cachedPaths: readonly string[],
+  liveDirs: ReadonlySet<string>,
+): string[] {
+  return cachedPaths.filter(
+    (path) => path !== parent && dirname(path) === parent && !liveDirs.has(path),
+  );
+}
+
+export function planExplorerRename(path: string, newName: string) {
+  const name = newName.trim();
+  const oldName = path.slice(path.lastIndexOf("/") + 1);
+  if (!name || name === oldName) return null;
+  const parent = dirname(path);
+  return { parent, to: joinPath(parent, name) };
+}
+
 const EXPANSION_CACHE_LIMIT = 8;
 const expansionCache = new Map<string, string[]>();
 
@@ -218,11 +236,11 @@ export function useFileTree(rootPath: string | null, options?: Options) {
             .filter((e) => e.kind === "dir")
             .map((e) => joinPath(path, e.name)),
         );
-        const removedRoots: string[] = [];
-        for (const key of Object.keys(nodesRef.current)) {
-          if (dirname(key) === path && !liveDirs.has(key))
-            removedRoots.push(key);
-        }
+        const removedRoots = removedChildDirectories(
+          path,
+          Object.keys(nodesRef.current),
+          liveDirs,
+        );
         const dead = new Set<string>();
         if (removedRoots.length > 0) {
           const candidates = new Set<string>([
@@ -469,14 +487,12 @@ export function useFileTree(rootPath: string | null, options?: Options) {
   const commitRename = useCallback(
     async (newName: string) => {
       if (!renaming) return;
-      const trimmed = newName.trim();
-      const parent = dirname(renaming);
-      const oldName = renaming.slice(parent === "/" ? 1 : parent.length + 1);
-      if (!trimmed || trimmed === oldName) {
+      const plan = planExplorerRename(renaming, newName);
+      if (!plan) {
         setRenaming(null);
         return;
       }
-      const to = joinPath(parent, trimmed);
+      const { parent, to } = plan;
       try {
         await invoke("fs_rename", {
           from: renaming,
