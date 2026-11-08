@@ -1,9 +1,10 @@
-import { expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 import { useAsyncQuery } from "./useAsyncQuery";
 
 const harness = vi.hoisted(() => ({
   snapshot: null as unknown,
   requestId: { current: 0 },
+  timer: { current: null as number | null },
   effect: undefined as (() => (() => void) | undefined) | undefined,
 }));
 
@@ -12,7 +13,8 @@ vi.mock("react", () => ({
   useEffect: (effect: () => (() => void) | undefined) => {
     harness.effect = effect;
   },
-  useRef: () => harness.requestId,
+  useRef: (initial: number | null) =>
+    initial === null ? harness.timer : harness.requestId,
   useState: () => [
     harness.snapshot,
     (value: unknown) => {
@@ -20,6 +22,13 @@ vi.mock("react", () => ({
     },
   ],
 }));
+
+beforeEach(() => {
+  harness.snapshot = null;
+  harness.requestId.current = 0;
+  harness.timer.current = null;
+  harness.effect = undefined;
+});
 
 function render(run: (term: string) => Promise<string[]>) {
   // biome-ignore lint/correctness/useHookAtTopLevel: hooks use the explicit test scheduler above.
@@ -68,6 +77,28 @@ it("hides previous results and reruns the same query when its search source chan
       results: ["/new/file"],
       loading: false,
     });
+  } finally {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  }
+});
+
+it("runs a manual retry once when an automatic search is queued", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("window", { setTimeout, clearTimeout });
+  try {
+    const run = vi.fn(async () => ["/repo/file"]);
+    const query = render(run);
+    const cleanup = harness.effect?.();
+    expect(run).not.toHaveBeenCalled();
+    query.retry();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(run).toHaveBeenCalledExactlyOnceWith("needle");
+    expect(render(run)).toMatchObject({
+      results: ["/repo/file"],
+      loading: false,
+    });
+    cleanup?.();
   } finally {
     vi.unstubAllGlobals();
     vi.useRealTimers();

@@ -31,9 +31,17 @@ export function useAsyncQuery<T>({
 }: Params<T>): AsyncQueryState<T> {
   const [snapshot, setSnapshot] = useState<Snapshot<T> | null>(null);
   const requestIdRef = useRef(0);
+  const timerRef = useRef<number | null>(null);
   const active = enabled && term.length >= minLength;
 
+  const cancelPending = useCallback(() => {
+    if (timerRef.current === null) return;
+    window.clearTimeout(timerRef.current);
+    timerRef.current = null;
+  }, []);
+
   const execute = useCallback(() => {
+    cancelPending();
     const requestId = ++requestIdRef.current;
     setSnapshot({ run, term, results: [], loading: true, error: null });
     run(term)
@@ -51,19 +59,19 @@ export function useAsyncQuery<T>({
           error: String(e),
         });
       });
-  }, [run, term]);
+  }, [cancelPending, run, term]);
 
   useEffect(() => {
     if (!active) {
       setSnapshot(null);
       return;
     }
-    const handle = window.setTimeout(execute, debounceMs);
+    timerRef.current = window.setTimeout(execute, debounceMs);
     return () => {
-      window.clearTimeout(handle);
+      cancelPending();
       requestIdRef.current += 1;
     };
-  }, [active, debounceMs, execute]);
+  }, [active, cancelPending, debounceMs, execute]);
 
   const retry = useCallback(() => {
     if (active) execute();
