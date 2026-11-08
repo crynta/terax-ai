@@ -18,6 +18,7 @@ import {
   excludeNestedSources,
   type FsMoveResult,
 } from "./batchMove";
+import { parentDir } from "./pathParent";
 import { listenFsChanged, watchAdd, watchRemove } from "./watch";
 import { createWatchRegistry, planVisibilityEdge } from "./watchRegistry";
 
@@ -50,9 +51,7 @@ export function joinPath(parent: string, name: string): string {
 }
 
 function dirname(path: string): string {
-  const i = path.lastIndexOf("/");
-  if (i <= 0) return "/";
-  return path.slice(0, i);
+  return parentDir(path, "/");
 }
 
 const EXPANSION_CACHE_LIMIT = 8;

@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { currentWorkspaceEnv, type WorkspaceEnv } from "@/modules/workspace";
 
+export { parentDir } from "./pathParent";
+
 const FS_CHANGED_EVENT = "fs:changed";
 
 type FsChangedPayload = { paths: string[] };
@@ -44,10 +46,4 @@ export function listenFsChanged(
     FS_CHANGED_EVENT,
     (e) => handler(e.payload.paths),
   );
-}
-
-export function parentDir(path: string): string {
-  const i = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
-  if (i <= 0) return path.slice(0, i + 1) || path;
-  return path.slice(0, i);
 }

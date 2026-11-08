@@ -32,6 +32,27 @@ describe("resolveExplorerMoveTarget", () => {
     ).toBe("/repo/src");
   });
 
+  it("moves beside a file at the drive root using its absolute directory", () => {
+    expect(
+      resolveExplorerMoveTarget(
+        ["C:/folder/move.txt"],
+        "C:/",
+        "C:/target.txt",
+        true,
+        isDir,
+      ),
+    ).toBe("C:/");
+    expect(
+      resolveExplorerMoveTarget(
+        ["C:/move.txt"],
+        "C:/",
+        "C:/target.txt",
+        true,
+        isDir,
+      ),
+    ).toBeNull();
+  });
+
   it("uses the root only over empty explorer space", () => {
     expect(
       resolveExplorerMoveTarget(
