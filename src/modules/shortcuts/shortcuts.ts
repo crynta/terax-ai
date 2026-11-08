@@ -31,6 +31,7 @@ export type ShortcutId =
   | "pane.swapDown"
   | "pane.source"
   | "terminal.clear"
+  | "terminal.passwordManager"
   | "terminal.toggleInput"
   | "blocks.prev"
   | "blocks.next"
@@ -184,6 +185,12 @@ const SHORTCUT_META: Omit<Shortcut, "defaultBindings">[] = [
     id: "pane.source",
     label: "Toggle source panel",
     group: "Panes",
+  },
+  {
+    id: "terminal.passwordManager",
+    label: "Insert terminal password",
+    group: "Terminal",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "l" }],
   },
   {
     id: "terminal.toggleInput",
