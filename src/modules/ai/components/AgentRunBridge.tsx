@@ -192,7 +192,8 @@ function Bridge({
         } else if (
           state === "approval-responded" ||
           state === "output-available" ||
-          state === "output-error"
+          state === "output-error" ||
+          state === "output-denied"
         ) {
           if (openedRef.current.has(approvalId)) toClose.add(approvalId);
         }
