@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
-const target = "terax-test-target";
+const target = `terax-test-${process.pid}`;
 const sidecar = join(root, "src-tauri", "binaries", `terax-cli-${target}`);
 
 describe.skipIf(process.platform === "win32")("build-cli", () => {
