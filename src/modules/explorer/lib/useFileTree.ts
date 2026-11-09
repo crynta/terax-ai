@@ -18,7 +18,7 @@ import {
   excludeNestedSources,
   type FsMoveResult,
 } from "./batchMove";
-import { parentDir } from "./pathParent";
+import { parentDir, pathBasename } from "./pathParent";
 import { listenFsChanged, watchAdd, watchRemove } from "./watch";
 import { createWatchRegistry, planVisibilityEdge } from "./watchRegistry";
 
@@ -66,10 +66,11 @@ export function removedChildDirectories(
 
 export function planExplorerRename(path: string, newName: string) {
   const name = newName.trim();
-  const oldName = path.slice(path.lastIndexOf("/") + 1);
+  const oldName = pathBasename(path);
   if (!name || name === oldName) return null;
   const parent = dirname(path);
-  return { parent, to: joinPath(parent, name) };
+  const prefix = path.slice(0, path.length - oldName.length);
+  return { parent, to: prefix ? `${prefix}${name}` : joinPath(parent, name) };
 }
 
 const EXPANSION_CACHE_LIMIT = 8;

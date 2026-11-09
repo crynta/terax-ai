@@ -23,3 +23,14 @@ it("compares the full filename when renaming at a Windows drive root", () => {
     to: "C:/EADME.md",
   });
 });
+
+it.each([
+  ["D:\\README.md", "README.md", "D:\\", "D:\\renamed.md"],
+  ["/repo/a\\b.md", "a\\b.md", "/repo", "/repo/renamed.md"],
+])(
+  "keeps the filename and parent rules aligned for %s",
+  (path, basename, parent, to) => {
+    expect(planExplorerRename(path, basename)).toBeNull();
+    expect(planExplorerRename(path, "renamed.md")).toEqual({ parent, to });
+  },
+);
