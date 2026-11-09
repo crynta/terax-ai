@@ -1,6 +1,7 @@
 import { EditorSelection, EditorState } from "@codemirror/state";
 import { describe, expect, it } from "vitest";
-import { cursorPosition } from "./cursorReporter";
+import { cursorPosition, cursorTracker } from "./cursorReporter";
+import { useCursorStore } from "./cursorStore";
 
 function at(doc: string, selection: EditorSelection, tabSize = 4) {
   return cursorPosition(
@@ -42,5 +43,21 @@ describe("cursorPosition", () => {
       line: 1,
       col: 1,
     });
+  });
+});
+
+describe("cursorTracker", () => {
+  it("moves the entry when the path changes under a live view", () => {
+    let path = "/a.ts";
+    const tracker = cursorTracker(() => path);
+    const state = EditorState.create({ doc: "abc", selection: cursor(2) });
+    tracker.sync(state);
+    path = "/b.ts";
+    tracker.sync(state);
+    expect(useCursorStore.getState().byPath).toEqual({
+      "/b.ts": { line: 1, col: 3 },
+    });
+    tracker.clear();
+    expect(useCursorStore.getState().byPath).toEqual({});
   });
 });

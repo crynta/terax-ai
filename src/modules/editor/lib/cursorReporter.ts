@@ -12,11 +12,26 @@ export function cursorPosition(state: EditorState): CursorPosition {
   };
 }
 
+export function cursorTracker(getPath: () => string) {
+  const { report } = useCursorStore.getState();
+  // A rename changes getPath() under a live view, so remember what this view reported.
+  let path = getPath();
+  return {
+    sync(state: EditorState) {
+      if (path !== getPath()) {
+        report(path, null);
+        path = getPath();
+      }
+      report(path, cursorPosition(state));
+    },
+    clear: () => report(path, null),
+  };
+}
+
 export function cursorReporter(getPath: () => string) {
-  const report = (state: EditorState) =>
-    useCursorStore.getState().report(getPath(), cursorPosition(state));
   return ViewPlugin.define((view) => {
-    report(view.state);
+    const tracker = cursorTracker(getPath);
+    tracker.sync(view.state);
     return {
       update(update) {
         if (
@@ -24,12 +39,10 @@ export function cursorReporter(getPath: () => string) {
           update.docChanged ||
           update.startState.tabSize !== update.state.tabSize
         ) {
-          report(update.state);
+          tracker.sync(update.state);
         }
       },
-      destroy() {
-        useCursorStore.getState().report(getPath(), null);
-      },
+      destroy: tracker.clear,
     };
   });
 }
