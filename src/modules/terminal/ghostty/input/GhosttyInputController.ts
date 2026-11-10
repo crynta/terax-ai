@@ -277,6 +277,8 @@ export class GhosttyInputController {
     // Ctrl+V is also a key: an application that reads the clipboard itself (an
     // image paste) gets it when there is no text to paste.
     const { code } = event;
+    // A repeat must not replace the pending press that the next keyup releases.
+    if (event.repeat && this.pasteKeys.has(code)) return;
     const flags = this.kittyFlags();
     const data = route.forwardKeyWhenEmpty
       ? buildKeyEvent(event, Key.V, KeyAction.PRESS, flags)
