@@ -94,6 +94,7 @@ import {
 } from "./lib/sessionTitles";
 import { liveWorking } from "./lib/stopControl";
 import { buildDocument, type ReaderTurn } from "./lib/transcript";
+import { PromptSearch } from "./ReaderPromptSearch";
 import {
   clampSegments,
   type PromptSegment,
@@ -118,6 +119,7 @@ import {
   InfoPanel,
   OutlinePanel,
   SearchBox,
+  flashTurn,
   scrollToTurn,
   useCurrentTurn,
   useReaderSearch,
@@ -158,7 +160,11 @@ import {
   SessionRail,
   useSessionFacts,
 } from "./ReaderStrip";
-import { useReaderStore, viewPastChat } from "./readerStore";
+import {
+  READER_SEARCH_EVENT,
+  useReaderStore,
+  viewPastChat,
+} from "./readerStore";
 
 export type SessionReaderProps = {
   leafId: number;
@@ -453,6 +459,37 @@ export default function SessionReader({
       if (el) el.scrollTop += el.scrollHeight - before;
     });
   };
+
+  const [promptSearch, setPromptSearch] = useState(false);
+  /**
+   * Scrolls to the turn of prompt `uuid`, paging back through the transcript
+   * until it is loaded; false when it lies past what the Reader can hold.
+   */
+  const jumpToPrompt = async (uuid: string): Promise<boolean> => {
+    const loaded = () =>
+      follower.current?.buffer.entries.some((e) => e.uuid === uuid) ?? false;
+    while (!loaded()) {
+      if (!(await follower.current?.loadEarlier())) break;
+    }
+    if (!loaded()) return false;
+    setFollowing(false);
+    // Let the paged-in turns render before measuring.
+    await new Promise((done) =>
+      requestAnimationFrame(() => requestAnimationFrame(done)),
+    );
+    scrollToTurn(scroller.current, uuid);
+    flashTurn(scroller.current, uuid);
+    return true;
+  };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the root element changes with the view
+  useEffect(() => {
+    const el = root.current;
+    if (!el) return;
+    // Cmd+F while the Reader has focus (the app routes it here).
+    const open = () => setPromptSearch(true);
+    el.addEventListener(READER_SEARCH_EVENT, open);
+    return () => el.removeEventListener(READER_SEARCH_EVENT, open);
+  }, [full]);
 
   const search = useReaderSearch(
     content,
@@ -792,6 +829,11 @@ export default function SessionReader({
       composer.current?.stop();
       return;
     }
+    if (mod && !event.shiftKey && event.key.toLowerCase() === "f") {
+      event.preventDefault();
+      setPromptSearch(true);
+      return;
+    }
     if (
       !typing &&
       !mod &&
@@ -1084,6 +1126,13 @@ export default function SessionReader({
               />
             </>
           )}
+          <PromptSearch
+            sessionId={activeId}
+            open={promptSearch}
+            onOpenChange={setPromptSearch}
+            turnCount={doc.turns.length}
+            onJump={jumpToPrompt}
+          />
           <HistoryButton
             open={showHistory}
             onToggle={() => setShowHistory((v) => !v)}

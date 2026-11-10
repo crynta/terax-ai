@@ -863,3 +863,38 @@ export async function transcriptSearch(
   }
   return out;
 }
+
+// ---------------------------------------------------------------- prompts
+
+/** Prompts a session lists for its search, at most. */
+const PROMPTS_MAX = 5000;
+/** Bytes kept of each listed prompt. */
+const PROMPT_TEXT_CAP = 2 * 1024;
+/** Lines longer than this (a prompt carrying a large image) are skipped. */
+const PROMPT_LINE_MAX = 4 * 1024 * 1024;
+
+export type SessionPrompt = { uuid: string; at: string | null; text: string };
+
+/** Every prompt the user typed in session `sessionId`, oldest first. */
+export async function transcriptPrompts(sessionId: string): Promise<SessionPrompt[]> {
+  const buf = await fs.readFile(await resolveSession(sessionId));
+  const out: SessionPrompt[] = [];
+  for (const line of splitLines(buf)) {
+    if (out.length >= PROMPTS_MAX) break;
+    if (line.length > PROMPT_LINE_MAX || line.indexOf('"type":"user"') < 0) continue;
+    const value = parseJson(line);
+    if (!isObj(value) || value.isSidechain === true || typeof value.uuid !== "string") continue;
+    const text = promptBody(value);
+    if (text === null) continue;
+    const bytes = Buffer.from(text, "utf8");
+    out.push({
+      uuid: value.uuid,
+      at: typeof value.timestamp === "string" ? value.timestamp : null,
+      text:
+        bytes.length <= PROMPT_TEXT_CAP
+          ? text
+          : `${bytes.subarray(0, PROMPT_TEXT_CAP).toString("utf8").replace(/�$/u, "")}…`,
+    });
+  }
+  return out;
+}

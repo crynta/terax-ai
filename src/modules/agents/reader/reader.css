@@ -616,3 +616,18 @@
   border-color: color-mix(in oklab, var(--reader-red) 60%, transparent);
   color: var(--reader-red);
 }
+
+/* A turn just jumped to from the prompt search. */
+@keyframes terax-reader-turn-flash {
+  0%,
+  40% {
+    background: color-mix(in oklab, var(--primary) 14%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+.terax-reader-turn-flash {
+  border-radius: 14px;
+  animation: terax-reader-turn-flash 1.4s ease-out;
+}

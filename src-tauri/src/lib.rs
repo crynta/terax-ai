@@ -362,6 +362,7 @@ pub fn run() {
             modules::agent_transcript::agent_save_context,
             modules::agent_transcript::agent_transcript_list,
             modules::agent_transcript::agent_transcript_search,
+            modules::agent_transcript::agent_transcript_prompts,
             modules::agent_commands::agent_list_commands,
             secrets::secrets_get,
             secrets::secrets_set,

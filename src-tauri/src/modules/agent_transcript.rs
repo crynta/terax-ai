@@ -1301,6 +1301,68 @@ pub async fn agent_transcript_search(
     .await
 }
 
+/// Prompts a session lists for its search, at most.
+const PROMPTS_MAX: usize = 5000;
+/// Bytes kept of each listed prompt.
+const PROMPT_TEXT_CAP: usize = 2 * 1024;
+/// Lines longer than this (a prompt carrying a large image) are skipped.
+const PROMPT_LINE_MAX: usize = 4 * 1024 * 1024;
+
+/// One prompt of a session, for searching the session by what was asked.
+#[derive(Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionPrompt {
+    /// The prompt line's uuid: the Reader's id for its turn.
+    pub uuid: String,
+    pub at: Option<String>,
+    pub text: String,
+}
+
+/// Every prompt the user typed in the transcript at `path`, oldest first.
+fn prompts_in(path: &Path) -> Vec<SessionPrompt> {
+    let Ok(file) = File::open(path) else {
+        return Vec::new();
+    };
+    let mut reader = std::io::BufReader::with_capacity(1 << 20, file);
+    let mut line = Vec::new();
+    let mut out = Vec::new();
+    while out.len() < PROMPTS_MAX {
+        line.clear();
+        match std::io::BufRead::read_until(&mut reader, b'\n', &mut line) {
+            Ok(0) | Err(_) => break,
+            Ok(_) => {}
+        }
+        if line.len() > PROMPT_LINE_MAX || !contains(&line, b"\"type\":\"user\"") {
+            continue;
+        }
+        let Ok(value) = serde_json::from_slice::<Value>(&line) else {
+            continue;
+        };
+        if value.get("isSidechain") == Some(&Value::Bool(true)) {
+            continue;
+        }
+        let Some(uuid) = value.get("uuid").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(text) = prompt_body(&value) else {
+            continue;
+        };
+        out.push(SessionPrompt {
+            uuid: uuid.to_string(),
+            at: value.get("timestamp").and_then(Value::as_str).map(str::to_string),
+            text: cap(&text, PROMPT_TEXT_CAP),
+        });
+    }
+    out
+}
+
+/// The prompts of session `session_id`, the whole file, for the Reader's
+/// search over what the user asked.
+#[tauri::command]
+pub async fn agent_transcript_prompts(session_id: String) -> Result<Vec<SessionPrompt>, String> {
+    super::fs::blocking(move || Ok(prompts_in(&resolve(&session_id)?))).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1446,6 +1508,31 @@ mod tests {
         assert!(hits[0].snippet.starts_with('…') && hits[0].snippet.ends_with('…'));
         assert!(search_in(&root, cwd, "z", 10).is_empty(), "one-letter queries are ignored");
         assert!(search_in(&root, cwd, "nothing like this", 10).is_empty());
+    }
+
+    #[test]
+    fn lists_every_prompt_with_its_uuid_skipping_results_and_plumbing() {
+        let root = temp_root("prompts");
+        let path = root.join("s.jsonl");
+        std::fs::write(
+            &path,
+            format!(
+                "{}{}{}{}{}",
+                user("u1", "deploy the fluss tiering job"),
+                assistant("a1", json!([{"type": "text", "text": "ok"}])),
+                line(json!({"type": "user", "uuid": "r1", "message": {"role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "t", "content": "done"}]}})),
+                user("u2", "<command-name>/clear</command-name>"),
+                user("u3", "<pasted_content id=\"a\">\n│ grid\n</pasted_content id=\"a\">\nwhy?"),
+            ),
+        )
+        .unwrap();
+        let prompts = prompts_in(&path);
+        assert_eq!(
+            prompts.iter().map(|p| (p.uuid.as_str(), p.text.as_str())).collect::<Vec<_>>(),
+            vec![("u1", "deploy the fluss tiering job"), ("u3", "│ grid\n\n\nwhy?")]
+        );
+        assert_eq!(prompts[0].at.as_deref(), Some("2026-11-04T10:00:00Z"));
     }
 
     #[test]

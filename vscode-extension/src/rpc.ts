@@ -71,6 +71,8 @@ export async function handleRpc(ctx: RpcContext, cmd: string, args: Args): Promi
       return transcript.transcriptList(s(args, "cwd"), n(args, "limit") ?? undefined);
     case "agent_transcript_search":
       return transcript.transcriptSearch(s(args, "cwd"), s(args, "query"), n(args, "limit") ?? undefined);
+    case "agent_transcript_prompts":
+      return transcript.transcriptPrompts(s(args, "sessionId"));
     case "agent_save_pasted_image":
       return transcript.savePastedImage(s(args, "type"), Buffer.from(s(args, "bytes"), "base64"));
     case "agent_save_pasted_image_from_path":

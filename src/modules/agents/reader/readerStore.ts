@@ -56,3 +56,9 @@ export function viewPastChat(leafId: number, sessionId: string | null): void {
   store.setViewing(leafId, sessionId);
   if (sessionId) store.setOpen(leafId, true);
 }
+
+/**
+ * Sent to a Reader's root (`[data-terax-reader]`) to open its prompt search:
+ * the app's Cmd+F shortcut takes the key before the Reader sees it.
+ */
+export const READER_SEARCH_EVENT = "terax:reader-search";

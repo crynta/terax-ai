@@ -22,6 +22,7 @@ import { setAgentCommandLauncher } from "@/modules/agents/lib/agentLaunchBridge"
 import { selectSessionRows } from "@/modules/agents/lib/sessionRows";
 import {
   openReader,
+  READER_SEARCH_EVENT,
   toggleReader,
   viewPastChat,
 } from "@/modules/agents/reader/readerStore";
@@ -999,6 +1000,12 @@ export default function App() {
       "blocks.prev": () => navigateFocusedBlocks(-1),
       "blocks.next": () => navigateFocusedBlocks(1),
       "search.focus": () => {
+        // In a Claude Reader, Cmd+F searches the prompts of its chat.
+        const reader = document.activeElement?.closest("[data-terax-reader]");
+        if (reader) {
+          reader.dispatchEvent(new CustomEvent(READER_SEARCH_EVENT));
+          return;
+        }
         const editor = editorRefs.current.get(activeId);
         if (editor) editor.openSearch();
         else searchInlineRef.current?.focus();

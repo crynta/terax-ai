@@ -14,6 +14,7 @@ import {
   type SavedContext,
   type SpecialSources,
 } from "./mentions";
+import type { SessionPrompt } from "./promptSearch";
 import { buildDocument } from "./transcript";
 import { openTranscript, readTranscript } from "./transcriptClient";
 
@@ -42,6 +43,11 @@ export function searchPastChats(
     query,
     limit,
   });
+}
+
+/** Every prompt the user typed in session `sessionId`, oldest first. */
+export function listSessionPrompts(sessionId: string): Promise<SessionPrompt[]> {
+  return invoke<SessionPrompt[]>("agent_transcript_prompts", { sessionId });
 }
 
 /** Claude sessions recorded for `cwd`, newest first. */

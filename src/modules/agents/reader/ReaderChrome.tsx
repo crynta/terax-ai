@@ -283,6 +283,19 @@ export function scrollToTurn(scroller: HTMLElement | null, id: string): void {
   scroller.scrollTo({ top });
 }
 
+/** Briefly highlights the turn `id`, after a jump to it. */
+export function flashTurn(scroller: HTMLElement | null, id: string): void {
+  const target = scroller?.querySelector<HTMLElement>(
+    `[data-turn-id="${CSS.escape(id)}"]`,
+  );
+  if (!target) return;
+  target.classList.remove("terax-reader-turn-flash");
+  // Restart the animation when the same turn is picked twice.
+  void target.offsetWidth;
+  target.classList.add("terax-reader-turn-flash");
+  setTimeout(() => target.classList.remove("terax-reader-turn-flash"), 1400);
+}
+
 export function OutlinePanel({
   items,
   current,

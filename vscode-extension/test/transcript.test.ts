@@ -12,6 +12,7 @@ import {
   transcriptFind,
   transcriptList,
   transcriptRead,
+  transcriptPrompts,
   transcriptSearch,
   editedInSession,
 } from "../src/transcript";
@@ -166,5 +167,20 @@ describe("editedInSession", () => {
     expect(await editedInSession(ID, "/etc/hosts")).toBe(false);
     expect(await editedInSession(ID, "/elsewhere/repo/y.ts")).toBe(false);
     expect(await editedInSession("not-a-session", "/elsewhere/repo/x.ts")).toBe(false);
+  });
+});
+
+describe("transcriptPrompts", () => {
+  it("lists the prompts with their uuids, pasted text unwrapped", async () => {
+    appendFileSync(
+      file,
+      `${user('<pasted_content id="9f">\n│ grid\n</pasted_content id="9f">\nwhy?', "u9")}\n`,
+    );
+    const prompts = await transcriptPrompts(ID);
+    expect(prompts.map((p) => [p.uuid, p.text])).toEqual([
+      ["u1", "fix the build please"],
+      ["u2", "and run tests"],
+      ["u9", "│ grid\n\n\nwhy?"],
+    ]);
   });
 });
