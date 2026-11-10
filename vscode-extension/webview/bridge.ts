@@ -80,7 +80,7 @@ window.addEventListener("message", (event: MessageEvent<HostToWebview>) => {
       // not yet reloaded after an update): fill in what it doesn't send.
       hostState.env = {
         ...msg.env,
-        theme: msg.env.theme === "tokyo-night" ? "tokyo-night" : "vscode",
+        theme: msg.env.theme === "vscode" ? "vscode" : "tokyo-night",
         accent: msg.env.accent === "theme" ? "theme" : "neutral",
         fonts: validFonts(msg.env.fonts),
       };

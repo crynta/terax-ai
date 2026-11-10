@@ -35,6 +35,7 @@ export default defineConfig({
       },
       { find: /^@\/app\/components\/useGitBranch$/u, replacement: shim("useGitBranch.ts") },
       { find: /^\.\/ComposerVoice$/u, replacement: shim("ComposerVoice.tsx") },
+      { find: /^\.\/ReaderHeaderLead$/u, replacement: shim("ReaderHeaderLead.tsx") },
       { find: /^@\//u, replacement: `${path.join(terax, "src")}/` },
     ],
   },

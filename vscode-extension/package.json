@@ -2,7 +2,7 @@
   "name": "terax-claude-reader",
   "displayName": "Terax Reader for Claude Code",
   "description": "Terax's chat view for Claude Code sessions running in the VS Code terminal: cards, permission prompts, a prompt box, Stop, modes, changes and history.",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "publisher": "local",
   "license": "Apache-2.0",
   "private": true,
@@ -21,9 +21,12 @@
     "commands": [
       {
         "command": "teraxReader.open",
-        "title": "Open Reader for Active Terminal",
+        "title": "Open Claude Reader",
         "category": "Claude Reader",
-        "icon": "$(comment-discussion)"
+        "icon": {
+          "light": "media/claude-accent.svg",
+          "dark": "media/claude-accent.svg"
+        }
       },
       {
         "command": "teraxReader.pick",
@@ -53,6 +56,13 @@
           "when": "view == terminal",
           "group": "navigation"
         }
+      ],
+      "editor/title": [
+        {
+          "command": "teraxReader.open",
+          "group": "navigation@-10",
+          "when": "activeWebviewPanelId != teraxReader"
+        }
       ]
     },
     "configuration": {
@@ -76,14 +86,14 @@
         "teraxReader.theme": {
           "type": "string",
           "enum": [
-            "vscode",
-            "tokyo-night"
+            "tokyo-night",
+            "vscode"
           ],
           "enumDescriptions": [
-            "Follow the active VS Code color theme (light, dark or high contrast).",
-            "Terax's Tokyo Night Session look."
+            "Terax's Tokyo Night Session look (the default). Click the Claude icon in the Reader header to switch.",
+            "Follow the active VS Code color theme (light, dark or high contrast)."
           ],
-          "default": "vscode",
+          "default": "tokyo-night",
           "description": "Colours of the Claude Reader."
         },
         "teraxReader.accent": {

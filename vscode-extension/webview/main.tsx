@@ -18,7 +18,7 @@ import "./shims/stores";
 import { applyReaderFonts } from "./fontSize";
 import { applyReaderTheme } from "./theme";
 
-applyReaderTheme("vscode");
+applyReaderTheme("tokyo-night");
 onThemeChange(applyReaderTheme);
 onFontsChange(applyReaderFonts);
 

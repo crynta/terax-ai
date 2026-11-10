@@ -259,7 +259,7 @@ export function readerLocation(): ReaderLocation {
 
 function readerTheme(): ReaderTheme {
   const value = vscode.workspace.getConfiguration("teraxReader").get<string>("theme");
-  return value === "tokyo-night" ? "tokyo-night" : "vscode";
+  return value === "vscode" ? "vscode" : "tokyo-night";
 }
 
 function readerAccent(): ReaderAccent {

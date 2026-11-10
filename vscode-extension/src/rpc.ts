@@ -138,6 +138,13 @@ export async function handleRpc(ctx: RpcContext, cmd: string, args: Args): Promi
       ctx.tracker.byId(n(args, "leafId") ?? ctx.leafId)?.terminal.show(false);
       return null;
     }
+    case "host_set_theme": {
+      const theme = s(args, "theme") === "vscode" ? "vscode" : "tokyo-night";
+      await vscode.workspace
+        .getConfiguration("teraxReader")
+        .update("theme", theme, vscode.ConfigurationTarget.Global);
+      return null;
+    }
     case "host_open_file": {
       const file = s(args, "path");
       const line = n(args, "line");

@@ -4,7 +4,6 @@ import {
   MarkdownLinkProvider,
 } from "@/components/ai-elements/markdown-link";
 import { cn } from "@/lib/utils";
-import { AgentIcon } from "@/modules/agents/lib/agentIcon";
 import { displayAgent } from "@/modules/agents/lib/format";
 import { basename } from "@/modules/agents/lib/sessionRows";
 import { useAgentStore } from "@/modules/agents/store/agentStore";
@@ -101,6 +100,7 @@ import {
   usePinnedTurns,
   useSessionPins,
 } from "./lib/pinnedTurns";
+import { ReaderHeaderLead } from "./ReaderHeaderLead";
 import { PromptSearch } from "./ReaderPromptSearch";
 import {
   clampSegments,
@@ -1461,9 +1461,7 @@ function ReaderHeader({
 }) {
   return (
     <header className="flex h-11 shrink-0 items-center gap-2.5 border-b border-border/60 bg-card px-4">
-      <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-primary/12 text-primary">
-        <AgentIcon agent={agent} size={15} />
-      </span>
+      <ReaderHeaderLead agent={agent} />
       <div className="min-w-0 flex-1">
         {titleNode ?? (
           <div className="truncate text-[13px] font-semibold text-foreground">
