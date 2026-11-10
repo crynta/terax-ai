@@ -23,6 +23,7 @@ import {
   ArrowExpand01Icon,
   ArrowShrink02Icon,
   ComputerTerminal01Icon,
+  PinIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { homeDir } from "@tauri-apps/api/path";
@@ -67,6 +68,7 @@ import {
   sessionStats,
   turnCalls,
   turnMarkdown,
+  turnSummary,
 } from "./lib/readerDoc";
 import {
   displayPath,
@@ -94,6 +96,11 @@ import {
 } from "./lib/sessionTitles";
 import { liveWorking } from "./lib/stopControl";
 import { buildDocument, type ReaderTurn } from "./lib/transcript";
+import {
+  loadPinnedTurns,
+  usePinnedTurns,
+  useSessionPins,
+} from "./lib/pinnedTurns";
 import { PromptSearch } from "./ReaderPromptSearch";
 import {
   clampSegments,
@@ -461,6 +468,11 @@ export default function SessionReader({
   };
 
   const [promptSearch, setPromptSearch] = useState(false);
+  const pins = useSessionPins(activeId);
+  const togglePin = usePinnedTurns((s) => s.toggle);
+  useEffect(() => {
+    void loadPinnedTurns();
+  }, []);
   /**
    * Scrolls to the turn of prompt `uuid`, paging back through the transcript
    * until it is loaded; false when it lies past what the Reader can hold.
@@ -1257,6 +1269,19 @@ export default function SessionReader({
                 setFollowing(false);
                 scrollToTurn(scroller.current, id);
               }}
+              pins={pins}
+              onPickPin={(id) => {
+                void jumpToPrompt(id).then((shown) => {
+                  if (!shown)
+                    setNotice(
+                      "That pinned turn is too far back to show here; open it from History.",
+                    );
+                });
+              }}
+              onUnpin={(id) => {
+                const pin = pins.find((p) => p.id === id);
+                if (activeId && pin) togglePin(activeId, pin);
+              }}
             />
             <div className="flex min-w-0 flex-1 flex-col">
               {documentBody}
@@ -1624,7 +1649,10 @@ function TurnView({
             · {tools} tool{tools === 1 ? "" : "s"}
           </span>
         )}
-        <span className="group/prose ml-auto">
+        <span className="group/prose ml-auto flex items-center gap-0.5">
+          {ctx.sessionId && (turn.prompt || turn.command) && (
+            <PinTurnButton sessionId={ctx.sessionId} turn={turn} />
+          )}
           <CopyButton
             text={() => turnMarkdown(turn)}
             label="Copy turn"
@@ -1654,6 +1682,43 @@ function TurnView({
         {liveCard}
       </div>
     </section>
+  );
+}
+
+/** Pins the turn to the full view's "Pinned" list, or unpins it. */
+function PinTurnButton({
+  sessionId,
+  turn,
+}: {
+  sessionId: string;
+  turn: ReaderTurn;
+}) {
+  const pinned = usePinnedTurns(
+    (s) => s.pins[sessionId]?.some((p) => p.id === turn.id) ?? false,
+  );
+  const toggle = usePinnedTurns((s) => s.toggle);
+  return (
+    <button
+      type="button"
+      aria-pressed={pinned}
+      onClick={() =>
+        toggle(sessionId, {
+          id: turn.id,
+          summary: turnSummary(turn),
+          at: turn.promptAt,
+        })
+      }
+      aria-label={pinned ? "Unpin turn" : "Pin turn"}
+      title={pinned ? "Unpin turn" : "Pin turn (listed under Pinned in the full view)"}
+      className={cn(
+        "grid size-6 place-items-center rounded-md outline-none transition-[opacity,color] hover:bg-foreground/[0.06] focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-primary/40",
+        pinned
+          ? "text-primary opacity-100"
+          : "text-muted-foreground opacity-0 hover:text-foreground group-hover/turn:opacity-100",
+      )}
+    >
+      <HugeiconsIcon icon={PinIcon} size={13} strokeWidth={2} />
+    </button>
   );
 }
 
