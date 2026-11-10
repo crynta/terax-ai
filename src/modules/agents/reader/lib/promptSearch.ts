@@ -57,6 +57,19 @@ function wordStart(lower: string, word: string): number {
 }
 
 /**
+ * Whether `text` holds `query`, or has a word starting with each of the
+ * query's words (in any order). An empty query matches everything.
+ */
+export function matchesQuery(text: string, query: string): boolean {
+  const q = query.trim().toLocaleLowerCase();
+  if (!q) return true;
+  const lower = text.toLocaleLowerCase();
+  if (lower.includes(q)) return true;
+  const words = queryWords(q);
+  return words.length > 0 && words.every((w) => wordStart(lower, w) !== -1);
+}
+
+/**
  * The prompts matching `query`: those holding it, newest first, then those
  * sharing at least two of its words (a word matching the start of a prompt's
  * word, so "deploy" finds "deployment"), most shared words first.

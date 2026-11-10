@@ -1,7 +1,7 @@
 import type { ClaudeFooter, FooterAgent, PermissionMode } from "./claudeFooter";
 import type { SessionInfo } from "./sessionInfo";
 
-/** One set of session facts for the strip and the full-view card. */
+/** One set of session facts for the header and the Session panel. */
 export type SessionFacts = {
   mode: PermissionMode | null;
   model: string | null;

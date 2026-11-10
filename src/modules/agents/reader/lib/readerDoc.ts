@@ -1,8 +1,9 @@
 /**
- * Pure helpers for Reader v2: merged thinking, the full-view outline and
+ * Pure helpers for Reader v2: merged thinking, the Chats panel's turn list and
  * session stats, in-document search, view filters, prompt payloads for the
  * composer, and per-turn Markdown for copying.
  */
+import type { SessionPrompt } from "./promptSearch";
 import { promptMarkdown } from "./promptSegments";
 import { toolKind } from "./readerView";
 import type { ReaderBlock, ReaderTurn, ToolCall } from "./transcript";
@@ -38,7 +39,7 @@ export type ReaderFilters = { tools: boolean; thinking: boolean };
 
 export const ALL_FILTERS: ReaderFilters = { tools: true, thinking: true };
 
-/** Blocks hidden by the full view's "Show tools" / "Show thinking" toggles. */
+/** Blocks hidden by the "Show tool steps" / "Show thinking" options. */
 export function filterBlocks(
   blocks: readonly ReaderBlock[],
   filters: ReaderFilters,
@@ -87,6 +88,8 @@ export function turnSummary(turn: ReaderTurn): string {
 export type OutlineItem = {
   id: string;
   summary: string;
+  /** The whole prompt, for searching turns. */
+  text: string;
   at: string | null;
   tools: number;
   edits: number;
@@ -103,6 +106,7 @@ export function buildOutline(turns: readonly ReaderTurn[]): OutlineItem[] {
     return {
       id: turn.id,
       summary: turnSummary(turn),
+      text: [turn.command, turn.prompt].filter(Boolean).join("\n"),
       at: turn.promptAt,
       tools: calls.length,
       edits: calls.filter((c) => EDIT_KINDS.has(toolKind(c.name))).length,
@@ -133,6 +137,49 @@ export function sessionStats(turns: readonly ReaderTurn[]): SessionStats {
     }
   }
   return { turns: turns.length, toolCalls, errors, files: [...files] };
+}
+
+/** A one-line summary of a prompt's text, as the turn list shows it. */
+export function promptSummary(text: string): string {
+  const line = (text.split("\n").find((l) => l.trim()) ?? "").trim();
+  if (!line) return "Earlier work";
+  return line.length > SUMMARY_MAX
+    ? `${line.slice(0, SUMMARY_MAX - 1).trimEnd()}…`
+    : line;
+}
+
+/**
+ * The Chats panel's "All" list: every prompt of the session (`prompts`, the
+ * whole transcript), with the step counts of the turns already loaded, plus
+ * loaded turns the prompt list doesn't have yet (one just sent). Without a
+ * prompt list it is the loaded turns alone.
+ */
+export function chatList(
+  prompts: readonly SessionPrompt[] | null,
+  loaded: readonly OutlineItem[],
+): OutlineItem[] {
+  if (!prompts) return [...loaded];
+  const byId = new Map(loaded.map((item) => [item.id, item]));
+  const listed = new Set(prompts.map((p) => p.uuid));
+  const items: OutlineItem[] = prompts.map((p) => {
+    const item = byId.get(p.uuid);
+    return (
+      item ?? {
+        id: p.uuid,
+        summary: promptSummary(p.text),
+        text: p.text,
+        at: p.at,
+        tools: 0,
+        edits: 0,
+        images: 0,
+        pinnable: true,
+      }
+    );
+  });
+  for (const item of loaded) {
+    if (item.pinnable && !listed.has(item.id)) items.push(item);
+  }
+  return items;
 }
 
 /** Start offsets of every case-insensitive, non-overlapping `query` in `text`. */

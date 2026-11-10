@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   buildOutline,
+  chatList,
   filterBlocks,
   findMatches,
   mergeThinking,
+  type OutlineItem,
   promptPayload,
+  promptSummary,
   promptWrites,
   sessionStats,
   turnMarkdown,
@@ -126,6 +129,7 @@ describe("outline and stats", () => {
       {
         id: "t1",
         summary: "fix the bug",
+        text: "fix the bug\nmore detail",
         at: "2026-11-04T10:00:00Z",
         tools: 5,
         edits: 2,
@@ -236,5 +240,41 @@ describe("promptWrites", () => {
     expect(promptWrites("", ["/c/x\x1b[201~\r.png"], true)).toEqual([
       paste("/c/x[201~.png"),
     ]);
+  });
+});
+
+describe("chatList", () => {
+  const loaded = (id: string, extra: Partial<OutlineItem> = {}): OutlineItem => ({
+    id,
+    summary: `loaded ${id}`,
+    text: `loaded ${id}`,
+    at: null,
+    tools: 2,
+    edits: 1,
+    images: 0,
+    pinnable: true,
+    ...extra,
+  });
+
+  it("is the loaded turns until the prompt list arrives", () => {
+    expect(chatList(null, [loaded("a")]).map((i) => i.id)).toEqual(["a"]);
+  });
+
+  it("lists every prompt, keeping loaded turns' counts", () => {
+    const items = chatList(
+      [
+        { uuid: "old", at: "2026-11-10T09:00:00Z", text: "\n  first ask\nmore" },
+        { uuid: "a", at: "2026-11-10T10:00:00Z", text: "loaded a" },
+      ],
+      [loaded("earlier", { pinnable: false }), loaded("a"), loaded("new")],
+    );
+    expect(items.map((i) => i.id)).toEqual(["old", "a", "new"]);
+    expect(items[0]).toMatchObject({ summary: "first ask", tools: 0, pinnable: true });
+    expect(items[1].tools).toBe(2);
+  });
+
+  it("summarises a long first line", () => {
+    expect(promptSummary("x".repeat(200)).length).toBe(80);
+    expect(promptSummary("  ")).toBe("Earlier work");
   });
 });

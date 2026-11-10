@@ -5,7 +5,6 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { Search01Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listSessionPrompts } from "./lib/contextClient";
 import {
@@ -13,6 +12,7 @@ import {
   rankPrompts,
   type SessionPrompt,
 } from "./lib/promptSearch";
+import { HeaderButton } from "./ReaderChrome";
 
 const MENU_Z = "z-[1000]";
 /** Prompts listed before anything is typed: the latest asks. */
@@ -126,20 +126,14 @@ export function PromptSearch({
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverAnchor asChild>
-        <button
-          type="button"
-          aria-pressed={open}
+        <HeaderButton
+          icon={Search01Icon}
+          label="Search"
+          title="Search what you asked (⌘F)"
+          active={open}
           disabled={!sessionId}
           onClick={() => onOpenChange(!open)}
-          aria-label="Search my prompts"
-          title="Search my prompts (⌘F)"
-          className={cn(
-            "relative grid size-7 shrink-0 place-items-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-40",
-            open && "bg-primary/12 text-foreground",
-          )}
-        >
-          <HugeiconsIcon icon={Search01Icon} size={14} strokeWidth={1.8} />
-        </button>
+        />
       </PopoverAnchor>
       <PopoverContent
         align="end"

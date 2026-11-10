@@ -3,7 +3,7 @@ import { create } from "zustand";
 
 /**
  * Turns the user pinned in a Claude session, keyed by session id, so the
- * full view can list them and jump back to them. Each pin keeps its summary
+ * Chats panel can list them and jump back to them. Each pin keeps its summary
  * and time, so it lists even when its turn is not loaded.
  */
 const STORE_PATH = "terax-pinned-turns.json";

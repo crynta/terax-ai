@@ -1,236 +1,116 @@
 import { useGitBranch } from "@/app/components/useGitBranch";
 import { cn } from "@/lib/utils";
 import {
-  ArrowDown01Icon,
-  ArrowUp01Icon,
+  BubbleChatIcon,
   Cancel01Icon,
+  DashboardSquare01Icon,
   PinIcon,
   PinOffIcon,
   Search01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
+  type ComponentProps,
   type ReactNode,
   type RefObject,
-  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import {
-  findMatches,
-  type OutlineItem,
-  type ReaderFilters,
-  type SessionStats,
-} from "./lib/readerDoc";
 import { type PinnedTurn, pinsInOrder } from "./lib/pinnedTurns";
+import { matchesQuery } from "./lib/promptSearch";
+import type { OutlineItem, SessionStats } from "./lib/readerDoc";
 import { displayPath, formatClock, formatDuration } from "./lib/readerView";
 import { formatTokens, type SessionInfo } from "./lib/sessionInfo";
 import { FileChip, type ReaderContext } from "./ReaderBlocks";
 
 /**
- * In-document search with the CSS Custom Highlight API: every match is
- * highlighted, the current one more strongly, and next/prev scroll to it.
+ * A Reader header tool: a large icon, with its name beside it when the
+ * header is wide enough. `badge` counts something; `dot` marks a status.
  */
-export function useReaderSearch(
-  container: RefObject<HTMLElement | null>,
-  scroller: RefObject<HTMLElement | null>,
-  query: string,
-  version: number,
-) {
-  const ranges = useRef<Range[]>([]);
-  const [count, setCount] = useState(0);
-  const [index, setIndex] = useState(0);
-  const supported = typeof CSS !== "undefined" && "highlights" in CSS;
-
-  const paint = useCallback(
-    (current: number) => {
-      if (!supported) return;
-      const all = ranges.current;
-      CSS.highlights.set("terax-reader-match", new Highlight(...all));
-      const active = all[current];
-      if (active)
-        CSS.highlights.set("terax-reader-current", new Highlight(active));
-      else CSS.highlights.delete("terax-reader-current");
-    },
-    [supported],
-  );
-
-  const reveal = useCallback(
-    (current: number) => {
-      const range = ranges.current[current];
-      const el = scroller.current;
-      if (!range || !el) return;
-      const rect = range.getBoundingClientRect();
-      const box = el.getBoundingClientRect();
-      el.scrollTo({
-        top: el.scrollTop + rect.top - box.top - el.clientHeight / 3,
-      });
-    },
-    [scroller],
-  );
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: version re-scans new content
-  useEffect(() => {
-    const root = container.current;
-    const timer = setTimeout(() => {
-      const found: Range[] = [];
-      if (root && query.trim()) {
-        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-          const text = node.nodeValue ?? "";
-          for (const at of findMatches(text, query.trim())) {
-            const range = document.createRange();
-            range.setStart(node, at);
-            range.setEnd(node, at + query.trim().length);
-            found.push(range);
-          }
-        }
-      }
-      ranges.current = found;
-      setCount(found.length);
-      setIndex(0);
-      paint(0);
-    }, 120);
-    return () => clearTimeout(timer);
-  }, [container, query, version, paint]);
-
-  useEffect(
-    () => () => {
-      if (!supported) return;
-      CSS.highlights.delete("terax-reader-match");
-      CSS.highlights.delete("terax-reader-current");
-    },
-    [supported],
-  );
-
-  const step = useCallback(
-    (delta: number) => {
-      const total = ranges.current.length;
-      if (total === 0) return;
-      setIndex((i) => {
-        const next = (i + delta + total) % total;
-        paint(next);
-        reveal(next);
-        return next;
-      });
-    },
-    [paint, reveal],
-  );
-
-  return { count, index, next: () => step(1), prev: () => step(-1) };
-}
-
-export function SearchBox({
-  query,
-  onQuery,
-  count,
-  index,
-  onNext,
-  onPrev,
+export function HeaderButton({
+  icon,
+  label,
+  title,
+  active,
+  badge,
+  dot,
+  className,
+  ...rest
 }: {
-  query: string;
-  onQuery: (q: string) => void;
-  count: number;
-  index: number;
-  onNext: () => void;
-  onPrev: () => void;
-}) {
+  icon: typeof PinIcon;
+  label: string;
+  title?: string;
+  /** A toggle's state; leave out for a plain button. */
+  active?: boolean;
+  badge?: number;
+  /** A status dot before the name (the Session button's state). */
+  dot?: ReactNode;
+} & Omit<ComponentProps<"button">, "children" | "title">) {
   return (
-    <div className="flex h-8 min-w-0 items-center gap-1.5 rounded-lg border border-border/70 bg-background/70 pr-1 pl-2.5 focus-within:border-primary/55">
-      <HugeiconsIcon
-        icon={Search01Icon}
-        size={13}
-        className="shrink-0 text-muted-foreground"
-      />
-      <input
-        value={query}
-        onChange={(e) => onQuery(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            if (e.shiftKey) onPrev();
-            else onNext();
-          }
-          if (e.key === "Escape" && query) {
-            e.stopPropagation();
-            onQuery("");
-          }
-        }}
-        placeholder="Search this session"
-        aria-label="Search this session"
-        className="w-44 min-w-0 bg-transparent text-[12.5px] text-foreground outline-none placeholder:text-muted-foreground/80"
-      />
-      {query && (
-        <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-          {count === 0 ? "0" : `${index + 1}/${count}`}
+    <button
+      type="button"
+      aria-label={label}
+      title={title ?? label}
+      aria-pressed={active}
+      className={cn(
+        "relative flex h-8 min-w-8 shrink-0 items-center justify-center gap-1.5 rounded-lg px-2 text-[12px] font-medium text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.07] hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40 disabled:pointer-events-none disabled:opacity-40 data-[state=open]:bg-primary/15 data-[state=open]:text-foreground",
+        active && "bg-primary/15 text-foreground hover:bg-primary/20",
+        className,
+      )}
+      {...rest}
+    >
+      <HugeiconsIcon icon={icon} size={17} strokeWidth={1.8} />
+      {dot}
+      <span className="hidden @[60rem]/reader:inline">{label}</span>
+      {badge !== undefined && badge > 0 && (
+        <span className="absolute -top-0.5 -right-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-[9.5px] font-semibold tabular-nums text-primary-foreground @[60rem]/reader:static @[60rem]/reader:h-[18px] @[60rem]/reader:min-w-[18px] @[60rem]/reader:text-[10.5px]">
+          {badge > 99 ? "99+" : badge}
         </span>
       )}
-      <IconButton label="Previous match" onClick={onPrev} disabled={!count}>
-        <HugeiconsIcon icon={ArrowUp01Icon} size={13} />
-      </IconButton>
-      <IconButton label="Next match" onClick={onNext} disabled={!count}>
-        <HugeiconsIcon icon={ArrowDown01Icon} size={13} />
-      </IconButton>
+    </button>
+  );
+}
+
+/** The top row of a Reader side panel: icon, name, a count and Close. */
+export function PanelHeader({
+  icon,
+  title,
+  detail,
+  onClose,
+}: {
+  icon: typeof PinIcon;
+  title: string;
+  detail?: ReactNode;
+  onClose: () => void;
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-4 py-2.5">
+      <HugeiconsIcon
+        icon={icon}
+        size={14}
+        strokeWidth={1.8}
+        className="text-primary"
+      />
+      <span className="text-[12.5px] font-semibold text-foreground">
+        {title}
+      </span>
+      {detail !== undefined && (
+        <span className="text-[11.5px] tabular-nums text-muted-foreground">
+          {detail}
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label={`Close ${title.toLowerCase()}`}
+        title="Close (Esc)"
+        className="ml-auto grid size-6 place-items-center rounded-md text-muted-foreground outline-none hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40"
+      >
+        <HugeiconsIcon icon={Cancel01Icon} size={13} strokeWidth={2} />
+      </button>
     </div>
-  );
-}
-
-export function IconButton({
-  label,
-  onClick,
-  disabled,
-  active,
-  children,
-}: {
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  active?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      aria-pressed={active}
-      disabled={disabled}
-      onClick={onClick}
-      className={cn(
-        "grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-35",
-        active && "bg-primary/15 text-foreground",
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-export function ToggleChip({
-  label,
-  on,
-  onToggle,
-}: {
-  label: string;
-  on: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={on}
-      onClick={onToggle}
-      className={cn(
-        "h-7 shrink-0 rounded-lg border px-2.5 text-[11.5px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary/40",
-        on
-          ? "border-primary/45 bg-primary/12 text-foreground"
-          : "border-border/70 text-muted-foreground hover:text-foreground",
-      )}
-    >
-      {label}
-    </button>
   );
 }
 
@@ -300,94 +180,150 @@ export function flashTurn(scroller: HTMLElement | null, id: string): void {
   setTimeout(() => target.classList.remove("terax-reader-turn-flash"), 1400);
 }
 
-type OutlineTab = "pinned" | "all";
+type ChatsTab = "pinned" | "all";
 
 /**
- * The full view's turn list: "Pinned" (the turns the user pinned, the default
- * when there are any) and "All". Picking an entry scrolls to its turn.
+ * The Chats panel: this session's turns as "Pinned" (the default when there
+ * are any) and "All", filtered by the search box. Picking one jumps to it,
+ * paging back through the chat when it isn't loaded.
  */
-export function OutlinePanel({
+export function ChatsPanel({
   items,
   current,
   onPick,
   pins,
-  onPickPin,
   onUnpin,
   onTogglePin,
+  onClose,
 }: {
+  /** Every turn of the session, oldest first (see `chatList`). */
   items: readonly OutlineItem[];
   current: string | null;
   onPick: (id: string) => void;
   pins: readonly PinnedTurn[];
-  /** Jumps to a pinned turn, paging back to it if it isn't loaded. */
-  onPickPin: (id: string) => void;
   onUnpin: (id: string) => void;
   /** Pins or unpins a turn from the "All" list; absent when it can't be pinned. */
   onTogglePin?: (item: OutlineItem) => void;
+  onClose: () => void;
 }) {
   const list = useRef<HTMLOListElement | null>(null);
-  const [chosen, setChosen] = useState<OutlineTab | null>(null);
-  const tab: OutlineTab = chosen ?? (pins.length > 0 ? "pinned" : "all");
+  const [chosen, setChosen] = useState<ChatsTab | null>(null);
+  const [query, setQuery] = useState("");
+  const tab: ChatsTab = chosen ?? (pins.length > 0 ? "pinned" : "all");
   const pinnedIds = useMemo(() => new Set(pins.map((p) => p.id)), [pins]);
-  const numbers = useMemo(
-    () => new Map(items.map((item, n) => [item.id, n + 1])),
+  const byId = useMemo(
+    () => new Map(items.map((item, n) => [item.id, { item, n: n + 1 }])),
     [items],
   );
-  const ordered = useMemo(() => pinsInOrder(pins), [pins]);
+  const shownItems = useMemo(
+    () =>
+      items
+        .map((item, n) => ({ item, n: n + 1 }))
+        .filter(({ item }) => matchesQuery(item.text, query)),
+    [items, query],
+  );
+  const shownPins = useMemo(
+    () =>
+      pinsInOrder(pins).filter((pin) =>
+        matchesQuery(byId.get(pin.id)?.item.text ?? pin.summary, query),
+      ),
+    [pins, byId, query],
+  );
   useEffect(() => {
-    if (!current || tab !== "all") return;
+    if (!current || tab !== "all" || query) return;
     list.current
       ?.querySelector<HTMLElement>(`[data-outline-id="${CSS.escape(current)}"]`)
       ?.scrollIntoView({ block: "nearest" });
-  }, [current, tab]);
-  const tabButton = (id: OutlineTab, label: string, count: number) => (
+  }, [current, tab, query]);
+  const filtering = query.trim() !== "";
+  const tabButton = (id: ChatsTab, label: string, count: number) => (
     <button
       type="button"
       role="tab"
       aria-selected={tab === id}
       onClick={() => setChosen(id)}
       className={cn(
-        "flex h-7 flex-1 items-center justify-center gap-1.5 rounded-md text-[11.5px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary/40",
+        "flex h-8 flex-1 items-center justify-center gap-1.5 rounded-md text-[12px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary/40",
         tab === id
           ? "bg-background text-foreground shadow-sm"
           : "text-muted-foreground hover:text-foreground",
       )}
     >
+      {id === "pinned" && (
+        <HugeiconsIcon
+          icon={PinIcon}
+          size={13}
+          strokeWidth={2}
+          className={tab === id ? "text-primary" : undefined}
+        />
+      )}
       {label}
       <span className="tabular-nums opacity-70">{count}</span>
     </button>
   );
   return (
-    <nav
-      aria-label="Turns"
-      className="flex min-h-0 w-64 shrink-0 flex-col border-r border-border/60 bg-sidebar/60"
-    >
-      <div
-        role="tablist"
-        aria-label="Turn list"
-        className="mx-3 mt-3 mb-2 flex gap-1 rounded-lg bg-foreground/[0.05] p-0.5"
-      >
-        {tabButton("pinned", "Pinned", pins.length)}
-        {tabButton("all", "All", items.length)}
+    <section aria-label="Chats" className="flex min-h-0 flex-1 flex-col">
+      <PanelHeader
+        icon={BubbleChatIcon}
+        title="Chats"
+        detail={`${items.length} turn${items.length === 1 ? "" : "s"}`}
+        onClose={onClose}
+      />
+      <div className="flex shrink-0 flex-col gap-2 px-3 pt-3 pb-2">
+        <div
+          role="tablist"
+          aria-label="Turn list"
+          className="flex gap-1 rounded-lg bg-foreground/[0.05] p-0.5"
+        >
+          {tabButton("pinned", "Pinned", shownPins.length)}
+          {tabButton("all", "All", shownItems.length)}
+        </div>
+        <label className="flex h-8 items-center gap-2 rounded-lg border border-border/70 bg-background/70 px-2.5 focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/20">
+          <HugeiconsIcon
+            icon={Search01Icon}
+            size={13}
+            strokeWidth={1.9}
+            className="shrink-0 text-muted-foreground"
+          />
+          <input
+            // biome-ignore lint/a11y/noAutofocus: the panel opens to find a turn
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Escape") {
+                if (query) setQuery("");
+                else onClose();
+              }
+            }}
+            placeholder={
+              tab === "pinned" ? "Search pinned turns" : "Search all turns"
+            }
+            aria-label="Search turns"
+            className="min-w-0 flex-1 bg-transparent text-[12.5px] text-foreground outline-none placeholder:text-muted-foreground/80"
+          />
+        </label>
       </div>
       <ol ref={list} className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
         {tab === "pinned" ? (
-          ordered.length === 0 ? (
+          shownPins.length === 0 ? (
             <li className="px-2.5 py-3 text-[12px] leading-relaxed text-muted-foreground">
-              No pinned turns yet. Hover a turn and press the pin to keep it
-              here.
+              {filtering
+                ? "No pinned turns match."
+                : "No pinned turns yet. Press Pin on a turn, or the pin beside it under All, to keep it here."}
             </li>
           ) : (
-            ordered.map((pin) => {
-              const n = numbers.get(pin.id);
+            shownPins.map((pin) => {
+              const n = byId.get(pin.id)?.n;
               return (
                 <li key={pin.id} className="group/pin relative">
                   <button
                     type="button"
                     data-outline-id={pin.id}
                     aria-current={pin.id === current}
-                    onClick={() => onPickPin(pin.id)}
-                    className="terax-reader-outline-item flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-2 pr-9 text-left text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40"
+                    onClick={() => onPick(pin.id)}
+                    className="terax-reader-outline-item flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-2 pr-10 text-left text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40"
                   >
                     <span className="flex items-center gap-1.5 text-[10.5px] tabular-nums">
                       <HugeiconsIcon
@@ -397,9 +333,13 @@ export function OutlinePanel({
                         className="text-primary"
                       />
                       {n !== undefined && (
-                        <span className="font-semibold text-primary/90">{n}</span>
+                        <span className="font-semibold text-primary/90">
+                          {n}
+                        </span>
                       )}
-                      {formatClock(pin.at) && <span>{formatClock(pin.at)}</span>}
+                      {formatClock(pin.at) && (
+                        <span>{formatClock(pin.at)}</span>
+                      )}
                     </span>
                     <span className="line-clamp-2 text-[12.5px] leading-snug text-foreground/90">
                       {pin.summary}
@@ -410,16 +350,24 @@ export function OutlinePanel({
                     onClick={() => onUnpin(pin.id)}
                     aria-label="Unpin"
                     title="Unpin"
-                    className="absolute top-1.5 right-1.5 grid size-7 place-items-center rounded-md text-muted-foreground opacity-0 outline-none transition-opacity hover:bg-foreground/10 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-primary/40 group-hover/pin:opacity-100"
+                    className="absolute top-1.5 right-1.5 grid size-7 place-items-center rounded-md bg-primary/15 text-primary outline-none transition-colors hover:bg-primary/25 focus-visible:ring-2 focus-visible:ring-primary/40"
                   >
-                    <HugeiconsIcon icon={PinOffIcon} size={14} strokeWidth={2} />
+                    <HugeiconsIcon
+                      icon={PinOffIcon}
+                      size={14}
+                      strokeWidth={2}
+                    />
                   </button>
                 </li>
               );
             })
           )
+        ) : shownItems.length === 0 ? (
+          <li className="px-2.5 py-3 text-[12px] leading-relaxed text-muted-foreground">
+            {filtering ? "No turns match." : "No turns yet."}
+          </li>
         ) : (
-          items.map((item, n) => (
+          shownItems.map(({ item, n }) => (
             <li key={item.id} className="group/pin relative">
               <button
                 type="button"
@@ -428,20 +376,11 @@ export function OutlinePanel({
                 onClick={() => onPick(item.id)}
                 className={cn(
                   "terax-reader-outline-item group flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-2 text-left text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40",
-                  onTogglePin && "pr-9",
+                  onTogglePin && "pr-10",
                 )}
               >
                 <span className="flex items-center gap-1.5 text-[10.5px] tabular-nums">
-                  <span className="font-semibold text-primary/90">{n + 1}</span>
-                  {pinnedIds.has(item.id) && (
-                    <HugeiconsIcon
-                      icon={PinIcon}
-                      size={11}
-                      strokeWidth={2}
-                      className="text-primary"
-                      aria-label="Pinned"
-                    />
-                  )}
+                  <span className="font-semibold text-primary/90">{n}</span>
                   {formatClock(item.at) && <span>{formatClock(item.at)}</span>}
                   {item.tools > 0 && (
                     <span className="ml-auto">
@@ -470,29 +409,27 @@ export function OutlinePanel({
                       : "text-muted-foreground opacity-0 hover:bg-foreground/10 hover:text-foreground group-hover/pin:opacity-100",
                   )}
                 >
-                  <HugeiconsIcon
-                    icon={pinnedIds.has(item.id) ? PinOffIcon : PinIcon}
-                    size={14}
-                    strokeWidth={2}
-                  />
+                  <HugeiconsIcon icon={PinIcon} size={14} strokeWidth={2} />
                 </button>
               )}
             </li>
           ))
         )}
       </ol>
-    </nav>
+    </section>
   );
 }
 
-export function InfoPanel({
+/**
+ * The Session panel: what the session is (folder, branch, status), its
+ * facts card, counts, the files it changed, and its plan and to-dos.
+ */
+export function SessionPanel({
   title,
   cwd,
   phaseLabel,
-  elapsed,
   stats,
   info,
-  live,
   ctx,
   onClose,
   children,
@@ -500,27 +437,18 @@ export function InfoPanel({
   title: string;
   cwd: string | null;
   phaseLabel: string | null;
-  elapsed: string | null;
   stats: SessionStats;
   info: SessionInfo;
-  live: boolean;
   ctx: ReaderContext;
   onClose: () => void;
-  /** The session facts card (model, mode, context, cost, changes, duration, agents). */
+  /** The session facts card, then the plan and to-dos. */
   children?: ReactNode;
 }) {
   const branch = useGitBranch(cwd);
-  const duration = useSessionDuration(info, live);
   const rows: [string, string | null][] = [
     ["Folder", cwd ? displayPath(cwd, null, ctx.home) : null],
     ["Branch", branch],
     ["Status", phaseLabel],
-    ...(children
-      ? []
-      : ([
-          ["Model", info.model],
-          ["Duration", duration ?? elapsed],
-        ] as [string, string | null][])),
     [
       "Output",
       info.outputTokens > 0
@@ -529,132 +457,71 @@ export function InfoPanel({
     ],
   ];
   return (
-    <aside
-      aria-label="Session info"
-      className="flex min-h-0 w-72 shrink-0 flex-col gap-3 overflow-y-auto border-l border-border/60 bg-sidebar/60 p-4"
-    >
-      <div className="flex items-center gap-2">
-        <span className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
-          Session
-        </span>
-        <span className="ml-auto">
-          <IconButton label="Hide session info" onClick={onClose}>
-            <HugeiconsIcon icon={Cancel01Icon} size={12} />
-          </IconButton>
-        </span>
-      </div>
-      <div className="rounded-xl border border-border/60 bg-card p-3.5">
-        <div className="text-[13.5px] font-semibold leading-snug text-foreground">
-          {title}
-        </div>
-        <dl className="mt-2.5 flex flex-col gap-1.5 text-[12px]">
-          {rows
-            .filter(([, v]) => v)
-            .map(([k, v]) => (
-              <div key={k} className="flex gap-2">
-                <dt className="w-20 shrink-0 text-muted-foreground">{k}</dt>
-                <dd
-                  className="terax-reader-mono min-w-0 truncate text-foreground"
-                  title={v ?? ""}
-                >
-                  {v}
-                </dd>
-              </div>
-            ))}
-        </dl>
-      </div>
-      {children}
-      {!children && info.contextPercent !== null && (
+    <section aria-label="Session" className="flex min-h-0 flex-1 flex-col">
+      <PanelHeader
+        icon={DashboardSquare01Icon}
+        title="Session"
+        onClose={onClose}
+      />
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
         <div className="rounded-xl border border-border/60 bg-card p-3.5">
-          <div className="mb-2 flex items-center text-[11px] font-semibold text-muted-foreground">
-            Context window
-            <span className="ml-auto tabular-nums text-foreground">
-              {info.contextPercent}%
-            </span>
+          <div className="text-[13.5px] font-semibold leading-snug text-foreground">
+            {title}
           </div>
-          <ContextMeter percent={info.contextPercent} wide />
-          <div className="mt-1.5 text-[11px] tabular-nums text-muted-foreground">
-            {formatTokens(info.contextUsed ?? 0)} of{" "}
-            {formatTokens(info.contextWindow ?? 0)} tokens
-          </div>
+          <dl className="mt-2.5 flex flex-col gap-1.5 text-[12px]">
+            {rows
+              .filter(([, v]) => v)
+              .map(([k, v]) => (
+                <div key={k} className="flex gap-2">
+                  <dt className="w-20 shrink-0 text-muted-foreground">{k}</dt>
+                  <dd
+                    className="terax-reader-mono min-w-0 truncate text-foreground"
+                    title={v ?? ""}
+                  >
+                    {v}
+                  </dd>
+                </div>
+              ))}
+          </dl>
         </div>
-      )}
-      <div className="grid grid-cols-3 gap-2">
-        {(
-          [
-            ["Turns", stats.turns],
-            ["Tool calls", stats.toolCalls],
-            ["Errors", stats.errors],
-          ] as const
-        ).map(([label, value]) => (
-          <div
-            key={label}
-            className="rounded-xl border border-border/60 bg-card px-2.5 py-2"
-          >
-            <div className="text-[17px] font-semibold tabular-nums text-foreground">
-              {value}
+        {children}
+        <div className="grid grid-cols-3 gap-2">
+          {(
+            [
+              ["Turns", stats.turns],
+              ["Tool calls", stats.toolCalls],
+              ["Errors", stats.errors],
+            ] as const
+          ).map(([label, value]) => (
+            <div
+              key={label}
+              className="rounded-xl border border-border/60 bg-card px-2.5 py-2"
+            >
+              <div className="text-[17px] font-semibold tabular-nums text-foreground">
+                {value}
+              </div>
+              <div className="text-[10.5px] text-muted-foreground">{label}</div>
             </div>
-            <div className="text-[10.5px] text-muted-foreground">{label}</div>
-          </div>
-        ))}
-      </div>
-      <div className="rounded-xl border border-border/60 bg-card p-3.5">
-        <div className="mb-2 text-[11px] font-semibold text-muted-foreground">
-          Files changed · {stats.files.length}
+          ))}
         </div>
-        {stats.files.length === 0 ? (
-          <div className="text-[12px] text-muted-foreground">None yet</div>
-        ) : (
-          <ul className="flex flex-col gap-1.5">
-            {stats.files.map((file) => (
-              <li key={file} className="flex min-w-0">
-                <FileChip path={file} ctx={ctx} />
-              </li>
-            ))}
-          </ul>
-        )}
+        <div className="rounded-xl border border-border/60 bg-card p-3.5">
+          <div className="mb-2 text-[11px] font-semibold text-muted-foreground">
+            Files changed · {stats.files.length}
+          </div>
+          {stats.files.length === 0 ? (
+            <div className="text-[12px] text-muted-foreground">None yet</div>
+          ) : (
+            <ul className="flex flex-col gap-1.5">
+              {stats.files.map((file) => (
+                <li key={file} className="flex min-w-0">
+                  <FileChip path={file} ctx={ctx} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
-    </aside>
-  );
-}
-
-export function FilterBar({
-  filters,
-  onFilters,
-  onExpandAll,
-}: {
-  filters: ReaderFilters;
-  onFilters: (f: ReaderFilters) => void;
-  onExpandAll: (open: boolean) => void;
-}) {
-  return (
-    <div className="flex items-center gap-1.5">
-      <ToggleChip
-        label="Tools"
-        on={filters.tools}
-        onToggle={() => onFilters({ ...filters, tools: !filters.tools })}
-      />
-      <ToggleChip
-        label="Thinking"
-        on={filters.thinking}
-        onToggle={() => onFilters({ ...filters, thinking: !filters.thinking })}
-      />
-      <span className="mx-1 h-4 w-px bg-border/70" />
-      <button
-        type="button"
-        onClick={() => onExpandAll(true)}
-        className="h-7 rounded-lg px-2 text-[11.5px] text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40"
-      >
-        Expand all
-      </button>
-      <button
-        type="button"
-        onClick={() => onExpandAll(false)}
-        className="h-7 rounded-lg px-2 text-[11.5px] text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40"
-      >
-        Collapse all
-      </button>
-    </div>
+    </section>
   );
 }
 

@@ -1,5 +1,6 @@
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
@@ -8,7 +9,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import {
+  ArrowExpand01Icon,
   ArrowLeft01Icon,
+  ArrowShrink02Icon,
   BubbleChatAddIcon,
   Cancel01Icon,
   Clock01Icon,
@@ -25,7 +28,9 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { CompactBanner } from "./lib/contextBanner";
+import type { ReaderFilters } from "./lib/readerDoc";
 import type { RewindStage } from "./lib/rewindDriver";
+import { HeaderButton } from "./ReaderChrome";
 
 const MENU_Z = "z-[1000]";
 
@@ -37,24 +42,24 @@ export function HistoryButton({
   onToggle: () => void;
 }) {
   return (
-    <button
-      type="button"
-      aria-pressed={open}
-      onClick={onToggle}
-      aria-label="Chat history"
+    <HeaderButton
+      icon={Clock01Icon}
+      label="History"
       title="Chat history"
-      className={cn(
-        "relative grid size-7 shrink-0 place-items-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40",
-        open && "bg-primary/12 text-foreground",
-      )}
-    >
-      <HugeiconsIcon icon={Clock01Icon} size={14} strokeWidth={1.8} />
-    </button>
+      active={open}
+      onClick={onToggle}
+    />
   );
 }
 
-/** The header's overflow menu: new chat, rename, export, resume or fork. */
+/**
+ * The header's "More" menu: view options (tool steps, thinking, expand or
+ * collapse every step), then new chat, rename, fork and export.
+ */
 export function ConversationMenu({
+  filters,
+  onFilters,
+  onExpandAll,
   canAct,
   onNewChat,
   onRename,
@@ -64,6 +69,10 @@ export function ConversationMenu({
   onFork,
   onAfterClose,
 }: {
+  filters: ReaderFilters;
+  onFilters: (filters: ReaderFilters) => void;
+  /** Opens (true) or folds (false) every tool step in the chat. */
+  onExpandAll: (open: boolean) => void;
   /** Claude is idle and linked: commands can be sent now. */
   canAct: boolean;
   onNewChat: () => void;
@@ -77,14 +86,11 @@ export function ConversationMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label="Chat actions"
-          title="Chat actions"
-          className="grid size-7 shrink-0 place-items-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40"
-        >
-          <HugeiconsIcon icon={MoreHorizontalIcon} size={14} strokeWidth={2} />
-        </button>
+        <HeaderButton
+          icon={MoreHorizontalIcon}
+          label="More"
+          title="More: view options, new chat, rename, export"
+        />
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
@@ -94,6 +100,36 @@ export function ConversationMenu({
           onAfterClose();
         }}
       >
+        <DropdownMenuLabel className="text-[10.5px] uppercase tracking-[0.08em] text-muted-foreground">
+          View
+        </DropdownMenuLabel>
+        <DropdownMenuCheckboxItem
+          checked={filters.tools}
+          onCheckedChange={(tools) => onFilters({ ...filters, tools })}
+          onSelect={(e) => e.preventDefault()}
+          className="rounded-xl py-1.5 text-[13px] font-normal"
+        >
+          Show tool steps
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem
+          checked={filters.thinking}
+          onCheckedChange={(thinking) => onFilters({ ...filters, thinking })}
+          onSelect={(e) => e.preventDefault()}
+          className="rounded-xl py-1.5 text-[13px] font-normal"
+        >
+          Show thinking
+        </DropdownMenuCheckboxItem>
+        <MenuRow
+          icon={ArrowExpand01Icon}
+          label="Expand all steps"
+          onSelect={() => onExpandAll(true)}
+        />
+        <MenuRow
+          icon={ArrowShrink02Icon}
+          label="Collapse all steps"
+          onSelect={() => onExpandAll(false)}
+        />
+        <DropdownMenuSeparator />
         <DropdownMenuLabel className="text-[10.5px] uppercase tracking-[0.08em] text-muted-foreground">
           This chat
         </DropdownMenuLabel>

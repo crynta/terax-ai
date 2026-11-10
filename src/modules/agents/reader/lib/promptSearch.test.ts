@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { queryWords, rankPrompts, type SessionPrompt } from "./promptSearch";
+import {
+  matchesQuery,
+  queryWords,
+  rankPrompts,
+  type SessionPrompt,
+} from "./promptSearch";
 
 const prompts: SessionPrompt[] = [
   "deploy the fluss tiering job to staging",
@@ -40,5 +45,29 @@ describe("rankPrompts", () => {
     expect(hit.snippet.before.startsWith("…")).toBe(true);
     expect(hit.snippet.after.endsWith("…")).toBe(true);
     expect(hit.snippet.before.length).toBeLessThan(60);
+  });
+});
+
+describe("matchesQuery", () => {
+  const text = "Deploy the reader build to staging\nthen check the logs";
+
+  it("matches everything for an empty query", () => {
+    expect(matchesQuery(text, "  ")).toBe(true);
+  });
+
+  it("matches a phrase anywhere, ignoring case", () => {
+    expect(matchesQuery(text, "READER BUILD")).toBe(true);
+    expect(matchesQuery(text, "check the logs")).toBe(true);
+  });
+
+  it("matches word starts in any order", () => {
+    expect(matchesQuery(text, "logs deploy")).toBe(true);
+    expect(matchesQuery(text, "stag dep")).toBe(true);
+  });
+
+  it("needs every word", () => {
+    expect(matchesQuery(text, "deploy production")).toBe(false);
+    expect(matchesQuery(text, "eader")).toBe(true);
+    expect(matchesQuery(text, "eader uild")).toBe(false);
   });
 });

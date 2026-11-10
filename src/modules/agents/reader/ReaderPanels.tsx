@@ -60,6 +60,7 @@ import {
   type ReaderContext,
   ReaderItems,
 } from "./ReaderBlocks";
+import { HeaderButton } from "./ReaderChrome";
 import { useFileDiff } from "./ReaderFileDiff";
 
 function useTicker(enabled: boolean, ms = 1000): number {
@@ -250,7 +251,7 @@ export function WorkPanel({
   todos: SessionTodos | null;
   plan: SessionPlan | null;
   leafId: number;
-  /** Pinned to the top of the pane's document; the full view's side panel isn't. */
+  /** Pinned to the top of the document; the Session panel's copy isn't. */
   sticky: boolean;
 }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -933,7 +934,7 @@ function Tag({
   );
 }
 
-/** Compact / Detailed segmented toggle for the Reader header. */
+/** The header's Compact toggle: on folds tool steps, off shows every step. */
 export function ViewModeToggle({
   compact,
   onChange,
@@ -941,23 +942,18 @@ export function ViewModeToggle({
   compact: boolean;
   onChange: (compact: boolean) => void;
 }) {
-  const label = compact
-    ? "Compact view: show every step (Detailed)"
-    : "Detailed view: fold tool steps (Compact)";
   return (
-    <button
-      type="button"
-      aria-pressed={compact}
-      aria-label={label}
-      title={label}
+    <HeaderButton
+      icon={TextIndentIcon}
+      label="Compact"
+      title={
+        compact
+          ? "Compact: tool steps folded. Click to show every step."
+          : "Detailed: every step shown. Click to fold tool steps."
+      }
+      active={compact}
       onClick={() => onChange(!compact)}
-      className={cn(
-        "relative grid size-7 shrink-0 place-items-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40",
-        compact && "bg-primary/12 text-foreground",
-      )}
-    >
-      <HugeiconsIcon icon={TextIndentIcon} size={14} strokeWidth={1.8} />
-    </button>
+    />
   );
 }
 
@@ -971,25 +967,14 @@ export function ChangesButton({
   open: boolean;
   onToggle: () => void;
 }) {
-  const label = count > 0 ? `Changes (${count} files)` : "Changes";
   return (
-    <button
-      type="button"
-      aria-pressed={open}
-      aria-label={label}
-      title={label}
+    <HeaderButton
+      icon={GitCompareIcon}
+      label="Changes"
+      title={count > 0 ? `Changes (${count} files)` : "Changes"}
+      active={open}
+      badge={count}
       onClick={onToggle}
-      className={cn(
-        "relative grid size-7 shrink-0 place-items-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40",
-        open && "bg-primary/12 text-foreground",
-      )}
-    >
-      <HugeiconsIcon icon={GitCompareIcon} size={14} strokeWidth={1.8} />
-      {count > 0 && (
-        <span className="absolute -top-0.5 -right-0.5 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-primary px-0.5 text-[9px] font-semibold tabular-nums text-primary-foreground">
-          {count > 99 ? "99+" : count}
-        </span>
-      )}
-    </button>
+    />
   );
 }

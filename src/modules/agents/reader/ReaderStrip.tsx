@@ -1,8 +1,3 @@
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import type { AgentPhase } from "@/modules/terminal/lib/agentActivity";
 import {
@@ -12,6 +7,7 @@ import {
   ArrowUp02Icon,
   CheckListIcon,
   CheckmarkCircle02Icon,
+  DashboardSquare01Icon,
   Clock01Icon,
   FlashIcon,
   Folder01Icon,
@@ -38,7 +34,7 @@ import {
   sessionFacts,
 } from "./lib/sessionFacts";
 import type { SessionInfo } from "./lib/sessionInfo";
-import { ContextMeter, useSessionDuration } from "./ReaderChrome";
+import { ContextMeter, HeaderButton, useSessionDuration } from "./ReaderChrome";
 
 type IconData = typeof Folder01Icon;
 
@@ -311,7 +307,7 @@ export function SessionStrip({
   );
 }
 
-/** The full view's "Session" card: the same facts as labelled rows. */
+/** A "Session" card: the same facts as labelled rows. */
 export function SessionFactsCard({
   facts,
   folderPath,
@@ -638,7 +634,7 @@ function StatusValue({
 /**
  * The session's facts as cards: Session (status, account, model, mode,
  * context, cost, changes, duration), Agents, and Queued when anything waits.
- * One component for the pane rail, the header pill's popover and full view.
+ * One component for the Session panel's facts.
  */
 export function SessionCards({
   leafId,
@@ -653,7 +649,7 @@ export function SessionCards({
   working: boolean;
   facts: SessionFacts;
   folderPath: string | null;
-  /** The pane header already names the folder; full view's panel may not. */
+  /** Show the folder row (the panel's own summary may already name it). */
   showFolder?: boolean;
 }) {
   const queued = useQueuedPrompts(leafId);
@@ -801,57 +797,43 @@ export function SessionCards({
   );
 }
 
-/** The pane's session rail beside the document column; scrolls on its own. */
-export function SessionRail(props: Parameters<typeof SessionCards>[0]) {
-  return (
-    <aside
-      aria-label="Session details"
-      className="terax-reader-in min-h-0 w-[264px] shrink-0 overflow-y-auto py-5 pr-4"
-    >
-      <SessionCards {...props} />
-    </aside>
-  );
-}
-
 /**
- * The header's "Session" pill for narrow panes: a status dot and the cost,
- * opening the same cards in a popover.
+ * The header's "Session" button: a status dot and the cost, opening the
+ * Session panel.
  */
-export function SessionPill(props: Parameters<typeof SessionCards>[0]) {
-  const { facts, working, phase } = props;
+export function SessionButton({
+  phase,
+  working,
+  cost,
+  open,
+  onToggle,
+}: {
+  phase: AgentPhase | undefined;
+  working: boolean;
+  cost: string | null;
+  open: boolean;
+  onToggle: () => void;
+}) {
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          title="Session details"
-          className="flex h-7 shrink-0 items-center gap-1.5 rounded-lg px-2 text-[11.5px] text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40"
-        >
-          <span
-            aria-hidden
-            className={cn(
-              "size-2 rounded-full",
-              working
-                ? "terax-reader-activity-dot bg-agent-working"
-                : phase === "attention"
-                  ? "bg-agent-attention"
-                  : "bg-muted-foreground/50",
-            )}
-          />
-          Session
-          {facts.cost && (
-            <span className="tabular-nums text-foreground/85">
-              {facts.cost}
-            </span>
+    <HeaderButton
+      icon={DashboardSquare01Icon}
+      label="Session"
+      title={cost ? `Session details · ${cost}` : "Session details"}
+      active={open}
+      onClick={onToggle}
+      dot={
+        <span
+          aria-hidden
+          className={cn(
+            "absolute top-1 left-1 size-2 rounded-full ring-2 ring-card",
+            working
+              ? "terax-reader-activity-dot bg-agent-working"
+              : phase === "attention"
+                ? "bg-agent-attention"
+                : "hidden",
           )}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="end"
-        className="z-[1000] w-[300px] border-border/70 bg-popover p-2"
-      >
-        <SessionCards {...props} />
-      </PopoverContent>
-    </Popover>
+        />
+      }
+    />
   );
 }

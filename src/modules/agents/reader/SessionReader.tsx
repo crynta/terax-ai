@@ -19,8 +19,7 @@ import {
 import {
   AiChat02Icon,
   ArrowDown02Icon,
-  ArrowExpand01Icon,
-  ArrowShrink02Icon,
+  BubbleChatIcon,
   ComputerTerminal01Icon,
   PinIcon,
 } from "@hugeicons/core-free-icons";
@@ -35,7 +34,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { createPortal } from "react-dom";
 import "./reader.css";
 import {
   copyToClipboard,
@@ -61,6 +59,7 @@ import {
 import {
   ALL_FILTERS,
   buildOutline,
+  chatList,
   commandLabel,
   filterBlocks,
   type ReaderFilters,
@@ -75,6 +74,8 @@ import {
   formatDuration,
   turnOutcome,
 } from "./lib/readerView";
+import { listSessionPrompts } from "./lib/contextClient";
+import type { SessionPrompt } from "./lib/promptSearch";
 import { promptOccurrence } from "./lib/rewind";
 import {
   clearClaudeInput,
@@ -122,14 +123,12 @@ import {
   ReaderItems,
 } from "./ReaderBlocks";
 import {
-  FilterBar,
-  InfoPanel,
-  OutlinePanel,
-  SearchBox,
+  ChatsPanel,
   flashTurn,
+  HeaderButton,
+  SessionPanel,
   scrollToTurn,
   useCurrentTurn,
-  useReaderSearch,
 } from "./ReaderChrome";
 import { type ComposerHandle, ReaderComposer } from "./ReaderComposer";
 import {
@@ -162,9 +161,8 @@ import {
 } from "./ReaderPanels";
 import {
   ActivityRow,
+  SessionButton,
   SessionCards,
-  SessionPill,
-  SessionRail,
   useSessionFacts,
 } from "./ReaderStrip";
 import {
@@ -187,6 +185,9 @@ type LoadState =
   | { kind: "loading" }
   | { kind: "ready" }
   | { kind: "error"; message: string };
+
+/** The side panels the header opens beside the chat. */
+type ReaderPanel = "chats" | "changes" | "history" | "session";
 
 const FOLLOW_THRESHOLD_PX = 64;
 /** Transcript poll interval while Claude works, and otherwise. */
@@ -312,11 +313,8 @@ export default function SessionReader({
   const canLoadEarlier = buffer?.canLoadEarlier ?? false;
   const truncated = buffer?.truncated ?? false;
 
-  const [full, setFull] = useState(false);
   const [filters, setFilters] = useState<ReaderFilters>(ALL_FILTERS);
   const [toolsOpen, setToolsOpen] = useState<ReaderContext["toolsOpen"]>(null);
-  const [query, setQuery] = useState("");
-  const [showInfo, setShowInfo] = useState(true);
   const [compact, setCompactState] = useState(
     () => readViewMode() === "compact",
   );
@@ -324,24 +322,10 @@ export default function SessionReader({
     setCompactState(next);
     writeViewMode(next ? "compact" : "detailed");
   };
-  /** Pane view: the Changes slide-over. Full view: the right column's Changes tab. */
-  const [showChanges, setShowChangesState] = useState(false);
-  /** The chat history list, in the same place as Changes (one at a time). */
-  const [showHistory, setShowHistoryState] = useState(false);
-  const setShowChanges = (next: boolean | ((v: boolean) => boolean)) => {
-    setShowChangesState((v) => {
-      const value = typeof next === "function" ? next(v) : next;
-      if (value) setShowHistoryState(false);
-      return value;
-    });
-  };
-  const setShowHistory = (next: boolean | ((v: boolean) => boolean)) => {
-    setShowHistoryState((v) => {
-      const value = typeof next === "function" ? next(v) : next;
-      if (value) setShowChangesState(false);
-      return value;
-    });
-  };
+  /** The side panel open beside the chat: one at a time. */
+  const [panel, setPanel] = useState<ReaderPanel | null>(null);
+  const togglePanel = (next: ReaderPanel) =>
+    setPanel((open) => (open === next ? null : next));
   const [renaming, setRenaming] = useState(false);
   const [confirmNewChat, setConfirmNewChat] = useState(false);
   const [rewind, setRewind] = useState<RewindStatus | null>(null);
@@ -380,12 +364,11 @@ export default function SessionReader({
     if (free) composer.current?.focus();
   }, [leafId]);
   // Opening the Reader, switching views, or the pane becoming active.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-run when the view switches
   useEffect(() => {
     if (!focused) return;
     const frame = requestAnimationFrame(focusComposer);
     return () => cancelAnimationFrame(frame);
-  }, [focused, full, focusComposer]);
+  }, [focused, focusComposer]);
   useEffect(() => {
     if (!focused) return;
     const onWindowFocus = () => requestAnimationFrame(focusComposer);
@@ -447,7 +430,7 @@ export default function SessionReader({
   useLayoutEffect(() => {
     const el = scroller.current;
     if (el && following) el.scrollTop = el.scrollHeight;
-  }, [version, state.kind, full]);
+  }, [version, state.kind]);
   const jumpToLatest = () => {
     const el = scroller.current;
     if (el) el.scrollTo({ top: el.scrollHeight });
@@ -493,7 +476,6 @@ export default function SessionReader({
     flashTurn(scroller.current, uuid);
     return true;
   };
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the root element changes with the view
   useEffect(() => {
     const el = root.current;
     if (!el) return;
@@ -501,15 +483,17 @@ export default function SessionReader({
     const open = () => setPromptSearch(true);
     el.addEventListener(READER_SEARCH_EVENT, open);
     return () => el.removeEventListener(READER_SEARCH_EVENT, open);
-  }, [full]);
+  }, []);
 
-  const search = useReaderSearch(
-    content,
-    scroller,
-    query,
-    version + (full ? 1e6 : 0),
-  );
   const outline = useMemo(() => buildOutline(doc.turns), [doc]);
+  const sessionPrompts = useSessionPrompts(
+    panel === "chats" ? activeId : null,
+    doc.turns.length,
+  );
+  const chats = useMemo(
+    () => chatList(sessionPrompts, outline),
+    [sessionPrompts, outline],
+  );
   const stats = useMemo(() => sessionStats(doc.turns), [doc]);
   const info = useMemo(
     () => sessionInfo(buffer?.entries ?? [], doc.turns),
@@ -528,7 +512,7 @@ export default function SessionReader({
   );
   const currentTurn = useCurrentTurn(
     scroller,
-    full ? outline.map((o) => o.id) : [],
+    panel === "chats" ? outline.map((o) => o.id) : [],
   );
 
   const agent = session?.agent ?? "claude";
@@ -539,6 +523,8 @@ export default function SessionReader({
   const footerVisible = useClaudeFooter(leafId) !== null;
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const bodyWidth = useElementWidth(bodyRef);
+  /** Wide panes keep a side panel beside the chat instead of over it. */
+  const docked = bodyWidth >= DOCK_MIN_PANE;
   /** Read off Claude's screen when visible: an Esc interrupt fires no hook. */
   const working = liveWorking(phase, activity, footerVisible);
   const linked = liveId !== null && viewing === null;
@@ -610,7 +596,7 @@ export default function SessionReader({
 
   const onReview = (changed: ChangedFile[]) => {
     composer.current?.submit(reviewPrompt(changed, cwd, home));
-    if (!full) setShowChanges(false);
+    if (!docked) setPanel(null);
     setFollowing(true);
     requestAnimationFrame(() => {
       const el = scroller.current;
@@ -619,8 +605,7 @@ export default function SessionReader({
   };
 
   const closePanels = () => {
-    setShowChanges(false);
-    setShowHistory(false);
+    setPanel(null);
     requestAnimationFrame(focusComposer);
   };
 
@@ -816,7 +801,7 @@ export default function SessionReader({
       (event.target.isContentEditable ||
         ["INPUT", "TEXTAREA"].includes(event.target.tagName));
     const mod = event.metaKey || event.ctrlKey;
-    if (event.key === "Escape" && (showChanges || showHistory) && !full) {
+    if (event.key === "Escape" && panel !== null) {
       event.preventDefault();
       closePanels();
       return;
@@ -824,11 +809,6 @@ export default function SessionReader({
     if (mod && event.shiftKey && event.code === "Space") {
       event.preventDefault();
       composer.current?.toggleVoice();
-      return;
-    }
-    if (mod && event.shiftKey && event.key === "Enter") {
-      event.preventDefault();
-      setFull((v) => !v);
       return;
     }
     if (mod && !event.shiftKey && event.key.toLowerCase() === "l") {
@@ -872,18 +852,6 @@ export default function SessionReader({
     }
     composer.current?.insert(event.key);
   };
-
-  useEffect(() => {
-    if (!full) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      if (document.querySelector('[role="dialog"][aria-label="Image"]')) return;
-      event.preventDefault();
-      setFull(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [full]);
 
   const lastTurn = doc.turns[doc.turns.length - 1] ?? null;
   /** The document shows the live session working (never for a past chat). */
@@ -957,7 +925,7 @@ export default function SessionReader({
         {state.kind === "error" && <ErrorState message={state.message} />}
         {state.kind === "ready" && (
           <>
-            {!(full && showInfo && !showChanges) && workPanel(true)}
+            {panel !== "session" && workPanel(true)}
             {(canLoadEarlier || truncated) && (
               <div className="flex justify-center">
                 {canLoadEarlier ? (
@@ -1003,9 +971,6 @@ export default function SessionReader({
     </div>
   );
 
-  /** The rail only takes width the full content column can't use. */
-  const showRail =
-    !full && !viewing && state.kind === "ready" && bodyWidth >= RAIL_MIN_PANE;
   const sessionProps = {
     leafId,
     phase: viewing ? undefined : phase,
@@ -1020,10 +985,7 @@ export default function SessionReader({
       {rewind && (
         <RewindStatusBar
           status={rewind}
-          onOpenTerminal={() => {
-            setFull(false);
-            onShowTerminal();
-          }}
+          onOpenTerminal={onShowTerminal}
           onDismiss={() => {
             setRewind(null);
             requestAnimationFrame(focusComposer);
@@ -1074,10 +1036,7 @@ export default function SessionReader({
       ctx={ctx}
       facts={facts}
       history={promptHistory}
-      onOpenTerminal={() => {
-        setFull(false);
-        onShowTerminal();
-      }}
+      onOpenTerminal={onShowTerminal}
       onSent={() => {
         // Sending always talks to the live session.
         if (viewing) viewPastChat(leafId, null);
@@ -1115,29 +1074,9 @@ export default function SessionReader({
               : phase
       }
       startedAt={session?.startedAt ?? null}
-      session={
-        !showRail && !full && state.kind === "ready" && !viewing ? (
-          <SessionPill {...sessionProps} />
-        ) : null
-      }
-      full={full}
-      onToggleFull={() => setFull((v) => !v)}
-      onShowTerminal={() => {
-        setFull(false);
-        onShowTerminal();
-      }}
+      onShowTerminal={onShowTerminal}
       tools={
         <>
-          {state.kind === "ready" && (
-            <>
-              <ViewModeToggle compact={compact} onChange={setCompact} />
-              <ChangesButton
-                count={files.length}
-                open={showChanges}
-                onToggle={() => setShowChanges((v) => !v)}
-              />
-            </>
-          )}
           <PromptSearch
             sessionId={activeId}
             open={promptSearch}
@@ -1145,11 +1084,45 @@ export default function SessionReader({
             turnCount={doc.turns.length}
             onJump={jumpToPrompt}
           />
+          {state.kind === "ready" && (
+            <>
+              <HeaderButton
+                icon={BubbleChatIcon}
+                label="Chats"
+                title={
+                  pins.length > 0
+                    ? `Chats: all turns and ${pins.length} pinned`
+                    : "Chats: all turns and pinned ones"
+                }
+                active={panel === "chats"}
+                badge={pins.length}
+                onClick={() => togglePanel("chats")}
+              />
+              <ChangesButton
+                count={files.length}
+                open={panel === "changes"}
+                onToggle={() => togglePanel("changes")}
+              />
+              <ViewModeToggle compact={compact} onChange={setCompact} />
+            </>
+          )}
           <HistoryButton
-            open={showHistory}
-            onToggle={() => setShowHistory((v) => !v)}
+            open={panel === "history"}
+            onToggle={() => togglePanel("history")}
           />
+          {state.kind === "ready" && !viewing && (
+            <SessionButton
+              phase={phase}
+              working={working}
+              cost={facts.cost}
+              open={panel === "session"}
+              onToggle={() => togglePanel("session")}
+            />
+          )}
           <ConversationMenu
+            filters={filters}
+            onFilters={setFilters}
+            onExpandAll={expandAll}
             canAct={linked && busyReason === null}
             onNewChat={() => setConfirmNewChat(true)}
             onRename={() => setRenaming(true)}
@@ -1221,118 +1194,63 @@ export default function SessionReader({
     />
   );
 
-  if (full) {
-    return createPortal(
-      <FileDiffProvider value={fileDiffApi}>
-        <section
-          ref={root}
-          aria-label="Session Reader, full view"
-          onKeyDown={onKeyDown}
-          data-terax-reader=""
-          data-reader-settling={settled ? undefined : ""}
-          className="terax-reader-full fixed inset-0 z-[900] flex flex-col bg-background"
-        >
-          {diffDialog}
-          {header}
-          {pastBanner}
-          <div className="flex shrink-0 items-center gap-3 border-b border-border/60 bg-card/60 px-4 py-2">
-            <SearchBox
-              query={query}
-              onQuery={setQuery}
-              count={search.count}
-              index={search.index}
-              onNext={search.next}
-              onPrev={search.prev}
-            />
-            <FilterBar
-              filters={filters}
-              onFilters={setFilters}
-              onExpandAll={expandAll}
-            />
-            <div className="ml-auto flex items-center gap-2">
-              {!showInfo && (
-                <button
-                  type="button"
-                  onClick={() => setShowInfo(true)}
-                  className="h-7 rounded-lg px-2 text-[11.5px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40"
-                >
-                  Session info
-                </button>
-              )}
-            </div>
-          </div>
-          <div className="flex min-h-0 flex-1">
-            <OutlinePanel
-              items={outline}
-              current={currentTurn}
-              onPick={(id) => {
-                setFollowing(false);
-                scrollToTurn(scroller.current, id);
-              }}
-              pins={pins}
-              onPickPin={(id) => {
-                void jumpToPrompt(id).then((shown) => {
-                  if (!shown)
-                    setNotice(
-                      "That pinned turn is too far back to show here; open it from History.",
-                    );
-                });
-              }}
-              onUnpin={(id) => {
-                const pin = pins.find((p) => p.id === id);
-                if (activeId && pin) togglePin(activeId, pin);
-              }}
-              onTogglePin={
-                activeId
-                  ? (item) =>
-                      togglePin(activeId, {
-                        id: item.id,
-                        summary: item.summary,
-                        at: item.at,
-                      })
-                  : undefined
-              }
-            />
-            <div className="flex min-w-0 flex-1 flex-col">
-              {documentBody}
-              {composerBanners}
-              {composerView}
-            </div>
-            {showChanges || showHistory ? (
-              <aside
-                aria-label={showHistory ? "Chat history" : "Changes"}
-                className="flex min-h-0 w-[420px] shrink-0 flex-col border-l border-border/60 bg-sidebar/60"
-              >
-                {showHistory ? historyPanel : changesPanel}
-              </aside>
-            ) : (
-              showInfo && (
-                <InfoPanel
-                  title={title}
-                  cwd={cwd}
-                  phaseLabel={phaseLabel(phase)}
-                  elapsed={
-                    session?.startedAt
-                      ? formatDuration(Date.now() - session.startedAt)
-                      : null
-                  }
-                  stats={stats}
-                  info={info}
-                  live={phase === "working"}
-                  ctx={ctx}
-                  onClose={() => setShowInfo(false)}
-                >
-                  <SessionCards {...sessionProps} showFolder />
-                  {workPanel(false)}
-                </InfoPanel>
-              )
-            )}
-          </div>
-        </section>
-      </FileDiffProvider>,
-      document.body,
-    );
-  }
+  const chatsPanel = (
+    <ChatsPanel
+      items={chats}
+      current={currentTurn}
+      onPick={(id) => {
+        void jumpToPrompt(id).then((shown) => {
+          if (!shown)
+            setNotice(
+              "That turn is too far back to show here; open it from History.",
+            );
+          else if (!docked) setPanel(null);
+        });
+      }}
+      pins={pins}
+      onUnpin={(id) => {
+        const pin = pins.find((p) => p.id === id);
+        if (activeId && pin) togglePin(activeId, pin);
+      }}
+      onTogglePin={
+        activeId
+          ? (item) =>
+              togglePin(activeId, {
+                id: item.id,
+                summary: item.summary,
+                at: item.at,
+              })
+          : undefined
+      }
+      onClose={closePanels}
+    />
+  );
+
+  const sessionPanel = (
+    <SessionPanel
+      title={title}
+      cwd={cwd}
+      phaseLabel={phaseLabel(phase)}
+      stats={stats}
+      info={info}
+      ctx={ctx}
+      onClose={closePanels}
+    >
+      <SessionCards {...sessionProps} />
+      {workPanel(false)}
+    </SessionPanel>
+  );
+
+  const sidePanel =
+    panel === "chats"
+      ? chatsPanel
+      : panel === "changes"
+        ? changesPanel
+        : panel === "history"
+          ? historyPanel
+          : panel === "session"
+            ? sessionPanel
+            : null;
 
   return (
     <FileDiffProvider value={fileDiffApi}>
@@ -1355,10 +1273,16 @@ export default function SessionReader({
             {composerBanners}
             {composerView}
           </div>
-          {showRail && <SessionRail {...sessionProps} />}
-          {(showChanges || showHistory) && (
-            <div className="terax-reader-in absolute inset-y-0 right-0 z-[8] flex w-[min(440px,100%)] flex-col border-l border-border/60 bg-background shadow-[-18px_0_40px_-28px_rgba(0,0,0,0.9)]">
-              {showHistory ? historyPanel : changesPanel}
+          {sidePanel && (
+            <div
+              className={cn(
+                "terax-reader-in flex flex-col border-l border-border/60",
+                docked
+                  ? "w-[420px] shrink-0 bg-sidebar/60"
+                  : "absolute inset-y-0 right-0 z-[8] w-[min(440px,100%)] bg-background shadow-[-18px_0_40px_-28px_rgba(0,0,0,0.9)]",
+              )}
+            >
+              {sidePanel}
             </div>
           )}
         </div>
@@ -1372,6 +1296,37 @@ function phaseLabel(phase: AgentPhase | undefined): string | null {
   if (phase === "attention") return "Needs you";
   if (phase === "finished") return "Done";
   return null;
+}
+
+/**
+ * Every prompt of session `sessionId` (the whole transcript, not only the
+ * loaded turns), refetched as the chat grows; null until listed or when
+ * `sessionId` is null.
+ */
+function useSessionPrompts(
+  sessionId: string | null,
+  turnCount: number,
+): SessionPrompt[] | null {
+  const [prompts, setPrompts] = useState<SessionPrompt[] | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: turnCount refetches a grown session
+  useEffect(() => {
+    if (!sessionId) {
+      setPrompts(null);
+      return;
+    }
+    let cancelled = false;
+    listSessionPrompts(sessionId)
+      .then((next) => {
+        if (!cancelled) setPrompts(next);
+      })
+      .catch(() => {
+        if (!cancelled) setPrompts(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, turnCount]);
+  return prompts;
 }
 
 /**
@@ -1438,11 +1393,8 @@ function ReaderHeader({
   subtitle,
   phase,
   startedAt,
-  full,
-  onToggleFull,
   onShowTerminal,
   tools,
-  session,
 }: {
   agent: string;
   title: string;
@@ -1451,16 +1403,12 @@ function ReaderHeader({
   subtitle: string | null;
   phase: AgentPhase | undefined;
   startedAt: number | null;
-  full: boolean;
-  onToggleFull: () => void;
   onShowTerminal: () => void;
-  /** Extra header buttons (view mode, Changes). */
+  /** The header tools: Search, Chats, Changes, Compact, History, Session, More. */
   tools?: ReactNode;
-  /** The Session pill, when the pane is too narrow for the rail. */
-  session?: ReactNode;
 }) {
   return (
-    <header className="flex h-11 shrink-0 items-center gap-2.5 border-b border-border/60 bg-card px-4">
+    <header className="@container/reader flex h-12 shrink-0 items-center gap-2.5 border-b border-border/60 bg-card px-4">
       <ReaderHeaderLead agent={agent} />
       <div className="min-w-0 flex-1">
         {titleNode ?? (
@@ -1475,22 +1423,12 @@ function ReaderHeader({
         )}
       </div>
       <StatusPill phase={phase} startedAt={startedAt} />
-      {session}
-      <div className="flex shrink-0 items-center gap-0.5">
+      <div
+        role="toolbar"
+        aria-label="Reader tools"
+        className="flex shrink-0 items-center gap-1"
+      >
         {tools}
-        <button
-          type="button"
-          onClick={onToggleFull}
-          aria-label={full ? "Exit full view" : "Full view"}
-          title={full ? "Exit full view (Esc)" : "Full view (⌘⇧↩)"}
-          className="grid size-7 shrink-0 place-items-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40"
-        >
-          <HugeiconsIcon
-            icon={full ? ArrowShrink02Icon : ArrowExpand01Icon}
-            size={14}
-            strokeWidth={1.8}
-          />
-        </button>
       </div>
       <fieldset
         aria-label="Pane view"
@@ -1699,7 +1637,7 @@ function TurnView({
   );
 }
 
-/** Pins the turn to the full view's "Pinned" list, or unpins it. */
+/** Pins the turn to the Chats panel's "Pinned" list, or unpins it. */
 function PinTurnButton({
   sessionId,
   turn,
@@ -1725,8 +1663,8 @@ function PinTurnButton({
       aria-label={pinned ? "Unpin turn" : "Pin turn"}
       title={
         pinned
-          ? "Pinned: listed under Pinned in the full view. Click to unpin."
-          : "Pin this turn to find it under Pinned in the full view"
+          ? "Pinned: listed under Chats › Pinned. Click to unpin."
+          : "Pin this turn to find it under Chats › Pinned"
       }
       className={cn(
         "flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-[12px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary/40",
@@ -1940,8 +1878,8 @@ function LoadingState() {
   );
 }
 
-/** Pane width for the session rail: the 1280px column, its gutters and the rail. */
-const RAIL_MIN_PANE = 1280 + 48 + 264;
+/** A docked side panel still leaves the chat a comfortable reading width. */
+const DOCK_MIN_PANE = 1100;
 
 /** `ref`'s current width, kept in step with resizes. */
 function useElementWidth(ref: { current: HTMLElement | null }): number {

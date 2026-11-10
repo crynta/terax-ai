@@ -444,21 +444,6 @@
   background: color-mix(in oklab, var(--muted) 80%, transparent);
 }
 
-/* In-document search (CSS Custom Highlight API). */
-::highlight(terax-reader-match) {
-  background-color: color-mix(in oklab, var(--terminal-ansi-yellow) 38%, transparent);
-  color: var(--foreground);
-}
-::highlight(terax-reader-current) {
-  background-color: var(--terminal-ansi-yellow);
-  color: var(--background);
-}
-
-/* Full view: a larger, calmer document. */
-.terax-reader-full .terax-reader-prose {
-  font-size: 14.5px;
-  line-height: 1.75;
-}
 .terax-reader-outline-item[aria-current="true"] {
   background: color-mix(in oklab, var(--primary) 14%, transparent);
   color: var(--foreground);

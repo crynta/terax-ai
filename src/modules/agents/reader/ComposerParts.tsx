@@ -56,7 +56,7 @@ export const MENTION_ICON: Record<MentionKind, typeof File01Icon> = {
   chat: BubbleChatIcon,
 };
 
-/** Above the dropdown so it shows over the full-view Reader (z 900). */
+/** Above the dropdown and the Reader's side panels. */
 const MENU_Z = "z-[1000]";
 
 /** The removable mention pills above the composer's text. */
