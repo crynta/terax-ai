@@ -21,6 +21,18 @@ import { highlight, isHighlightable, type HighlightedNode } from "./chat-code-le
 const StreamingCtx = createContext(false);
 export const ChatStreamingProvider = StreamingCtx.Provider;
 
+/**
+ * A host's additions to every finished code block: extra header buttons
+ * (given the code and language label), and whether to drop "Run in terminal"
+ * (a Claude pane's Reader must not type commands into Claude itself).
+ */
+export type CodeBlockExtras = {
+  render: (code: string, lang: string) => React.ReactNode;
+  hideRun?: boolean;
+};
+const ExtrasCtx = createContext<CodeBlockExtras | null>(null);
+export const CodeBlockExtrasProvider = ExtrasCtx.Provider;
+
 const POSIX_SHELL = new Set([
   "bash",
   "sh",
@@ -93,24 +105,41 @@ function BlockChrome({
   code: string;
   children: React.ReactNode;
 }) {
+  const extras = useContext(ExtrasCtx);
   return (
-    <div className="not-prose my-2 overflow-hidden rounded-lg border border-border/50 bg-muted/30">
+    <div data-code-lang={label} className="not-prose my-2 overflow-hidden rounded-lg border border-border/50 bg-muted/30">
       <div className="flex items-center justify-between gap-2 border-b border-border/40 bg-muted/20 px-3 py-1">
         <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
           {label}
         </span>
-        <CopyButton text={code} />
+        <div className="flex items-center gap-1">
+          {extras?.render(code, label)}
+          <CopyButton text={code} />
+        </div>
       </div>
       <div className="overflow-x-auto">{children}</div>
     </div>
   );
 }
 
+/** Box-drawing, block and geometric-shape glyphs: the marks of a diagram. */
+const DIAGRAM_GLYPH = /[\u2500-\u25FF]/;
+
+/** True when a code block draws a diagram rather than holding code. */
+export function isDiagram(code: string): boolean {
+  return DIAGRAM_GLYPH.test(code);
+}
+
 function FinalizedCodeBlock({ code, lang }: { code: string; lang: string }) {
   if (!isHighlightable(lang)) {
     return (
       <BlockChrome label={lang} code={code}>
-        <pre className="m-0 px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-foreground">
+        <pre
+          className={cn(
+            "m-0 px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-foreground",
+            isDiagram(code) && "terax-code-diagram",
+          )}
+        >
           {code}
         </pre>
       </BlockChrome>
@@ -179,14 +208,16 @@ const HighlightedPre = memo(function HighlightedPre({
 function CommandCard({ code, lang }: { code: string; lang: string }) {
   const isMultiline = code.includes("\n");
   const prompt = shellPrompt(lang);
+  const extras = useContext(ExtrasCtx);
   return (
-    <div className="not-prose my-2 overflow-hidden rounded-lg border border-border/50 bg-muted/40">
+    <div data-code-lang={normalizeLangLabel(lang)} className="not-prose my-2 overflow-hidden rounded-lg border border-border/50 bg-muted/40">
       <div className="flex items-center justify-between gap-2 px-3 py-1.5">
         <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
           {normalizeLangLabel(lang)}
         </span>
         <div className="flex items-center gap-1">
-          <RunInTerminalButton command={code} />
+          {extras?.render(code, normalizeLangLabel(lang))}
+          {!extras?.hideRun && <RunInTerminalButton command={code} />}
           <CopyButton text={code} />
         </div>
       </div>

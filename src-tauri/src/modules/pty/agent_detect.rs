@@ -144,6 +144,9 @@ pub struct AgentLink {
     armed: AtomicBool,
     hooked: AtomicBool,
     waiting: AtomicBool,
+    /// Armed with no turn reported yet: the agent is idle at its prompt, so
+    /// the first prompt must report work (the UI shows a new agent as idle).
+    fresh: AtomicBool,
 }
 
 impl AgentLink {
@@ -169,6 +172,8 @@ impl AgentLink {
         if armed {
             self.hooked.store(false, Ordering::Release);
             self.waiting.store(false, Ordering::Release);
+            // A fresh agent sits at its prompt: its first prompt reports work.
+            self.fresh.store(true, Ordering::Release);
         }
         armed
     }
@@ -177,6 +182,7 @@ impl AgentLink {
         let was_armed = self.armed.swap(false, Ordering::AcqRel);
         self.hooked.store(false, Ordering::Release);
         self.waiting.store(false, Ordering::Release);
+        self.fresh.store(false, Ordering::Release);
         was_armed
     }
 
@@ -199,16 +205,19 @@ impl AgentLink {
         match intent {
             HookIntent::Quiet | HookIntent::Start | HookIntent::Activity => {}
             HookIntent::Working => {
-                if self.waiting.swap(false, Ordering::AcqRel) {
+                let fresh = self.fresh.swap(false, Ordering::AcqRel);
+                if self.waiting.swap(false, Ordering::AcqRel) || fresh {
                     out.push(Transition::Working);
                 }
             }
             HookIntent::Attention => {
+                self.fresh.store(false, Ordering::Release);
                 if !self.waiting.swap(true, Ordering::AcqRel) {
                     out.push(Transition::Attention);
                 }
             }
             HookIntent::Finished => {
+                self.fresh.store(false, Ordering::Release);
                 self.waiting.store(true, Ordering::Release);
                 out.push(Transition::Finished);
             }
@@ -488,7 +497,7 @@ impl AgentDetector {
 
     fn ensure_armed<F: FnMut(Signal)>(&mut self, agent: &str, emit: &mut F) {
         if self.link.arm() {
-            self.status = Status::Working;
+            self.status = Status::Waiting;
             self.last_attention = None;
             emit(Signal::Transition(Transition::Started { agent: agent.to_string() }));
         }
@@ -799,9 +808,12 @@ mod tests {
 
     #[test]
     fn four_field_marker_self_arms_named_agent() {
-        // Fresh arm already implies Working, so `working` emits only Started.
+        // A fresh arm sits at the prompt, so `working` follows Started.
         let mut d = AgentDetector::new();
-        assert_eq!(run(&mut d, &osc("777;notify;Terax;codex;working")), vec![started("codex")]);
+        assert_eq!(
+            run(&mut d, &osc("777;notify;Terax;codex;working")),
+            vec![started("codex"), Transition::Working]
+        );
         let mut g = AgentDetector::new();
         assert_eq!(
             run(&mut g, &osc("777;notify;Terax;gemini;finished")),
@@ -814,7 +826,7 @@ mod tests {
         let mut d = AgentDetector::new();
         assert_eq!(
             run(&mut d, &osc("777;notify;Terax;pi;working")),
-            vec![started("pi")]
+            vec![started("pi"), Transition::Working]
         );
         assert_eq!(
             run(&mut d, &osc("777;notify;Terax;pi;finished")),
@@ -1192,6 +1204,8 @@ mod tests {
     fn hooks_self_arm_then_track_turns() {
         let link = AgentLink::new();
         assert_eq!(hooked(&link, HookIntent::Start), vec![started("claude")]);
+        // Started at its prompt: the first prompt reports work, once.
+        assert_eq!(hooked(&link, HookIntent::Working), vec![Transition::Working]);
         assert!(hooked(&link, HookIntent::Working).is_empty());
         assert!(hooked(&link, HookIntent::Activity).is_empty());
         assert_eq!(hooked(&link, HookIntent::Attention), vec![Transition::Attention]);
@@ -1267,7 +1281,10 @@ mod tests {
         let mut d = AgentDetector::with_link(link.clone());
         run(&mut d, &osc("133;C;claude"));
         run(&mut d, &osc("133;D;0"));
-        assert_eq!(hooked(&link, HookIntent::Working), vec![started("claude")]);
+        assert_eq!(
+            hooked(&link, HookIntent::Working),
+            vec![started("claude"), Transition::Working]
+        );
     }
 
     fn timed_with(link: Arc<AgentLink>) -> AgentDetector {

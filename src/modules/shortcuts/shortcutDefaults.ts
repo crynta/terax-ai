@@ -63,6 +63,7 @@ export const MAC_DEFAULTS: Readonly<Record<ShortcutId, readonly KeyBinding[]>> =
     "ai.toggleMini": [{ shift: true, meta: true, key: "i" }],
     "ai.askSelection": [{ meta: true, key: "j" }],
     "agent.focusAttention": [{ shift: true, meta: true, key: "a" }],
+    "agent.toggleReader": [{ shift: true, meta: true, key: "r" }],
     "sidebar.toggle": [
       { meta: true, key: "b" },
       { shift: true, meta: true, key: "b" },
@@ -129,6 +130,9 @@ export const WIN_LINUX_DEFAULTS: Readonly<
   "ai.toggleMini": [{ ...CS, key: "," }],
   "ai.askSelection": [{ ...CS, key: "j" }],
   "agent.focusAttention": [{ ...CS, key: "a" }],
+  // Every free Ctrl+Shift letter is taken by the app or the editor, and Alt
+  // chords reach the terminal: open it from the palette or bind one.
+  "agent.toggleReader": [],
   "sidebar.toggle": [{ ...CS, key: "b" }],
   "explorer.focus": [{ ...CS, key: "x" }],
   "explorer.toggleHidden": [{ ...CS, key: "." }],

@@ -1,5 +1,5 @@
 use std::ffi::{OsStr, OsString};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::modules::git::errors::{GitError, Result};
 use crate::modules::git::parser::parse_porcelain_v2;
@@ -9,7 +9,9 @@ use crate::modules::git::process::{
 };
 use crate::modules::git::types::{
     DiscardEntry, GitBranchEntry, GitBranchListResult, GitCommitFileChange, GitCommitResult,
-    GitDiffContentResult, GitDiffResult, GitLogEntry, GitOutput, GitPanelSnapshot, GitPushResult,
+    GitDiffContentResult, GitDiffResult, GitFileVersions, GitHeadFileChange, GitLogEntry,
+    GitOutput,
+    GitPanelSnapshot, GitPushResult,
     GitRepoInfo, GitStatusSnapshot, TextSource, DEFAULT_TIMEOUT_SECS, NETWORK_TIMEOUT_SECS,
 };
 use crate::modules::git::untracked;
@@ -208,6 +210,279 @@ pub fn diff(
     let repo_root = authorized_repo_root(registry, repo_root, workspace)?;
     ensure_git_available(&repo_root.workspace)?;
     diff_inner(&repo_root, path, staged)
+}
+
+/// Bytes of diff kept for a chat context attachment; git is stopped after this.
+pub const CONTEXT_DIFF_CAP: usize = 64 * 1024;
+
+/// The working-tree diff against HEAD (`working`), or the branch diff against
+/// the default branch's merge base (`branch`), capped for a chat attachment.
+pub fn context_diff(
+    registry: &WorkspaceRegistry,
+    repo_root: &str,
+    kind: &str,
+    workspace: &WorkspaceEnv,
+) -> Result<GitDiffResult> {
+    let repo_root = authorized_repo_root(registry, repo_root, workspace)?;
+    ensure_git_available(&repo_root.workspace)?;
+    let mut args: Vec<OsString> = vec!["diff".into(), "--no-ext-diff".into()];
+    match kind {
+        "working" => args.push("HEAD".into()),
+        "branch" => {
+            let base = default_branch(&repo_root.workspace, &repo_root.git_path)?.ok_or(
+                GitError::CommandFailed {
+                    context: "no default branch (main/master) to compare against",
+                    detail: String::new(),
+                },
+            )?;
+            args.push(format!("{base}...HEAD").into());
+        }
+        _ => {
+            return Err(GitError::CommandFailed {
+                context: "unknown diff kind",
+                detail: kind.to_string(),
+            })
+        }
+    }
+    let output = run_git_capped(
+        &repo_root.workspace,
+        Some(&repo_root.git_path),
+        args,
+        DEFAULT_TIMEOUT_SECS,
+        CONTEXT_DIFF_CAP,
+    )?;
+    if !output.truncated {
+        ensure_success(&output, "git diff failed")?;
+    }
+    let diff_text = match String::from_utf8(output.stdout) {
+        Ok(text) => text,
+        Err(e) => String::from_utf8_lossy(&e.into_bytes()).into_owned(),
+    };
+    Ok(GitDiffResult {
+        diff_text,
+        truncated: output.truncated,
+    })
+}
+
+/// Per-file cap on the diff returned for the Reader's review panel.
+pub const HEAD_FILE_DIFF_CAP: usize = 200 * 1024;
+/// Most files one review request may cover.
+const HEAD_FILE_LIMIT: usize = 200;
+
+/// The pathspec and on-disk path of a repo-relative file, rejecting absolute
+/// paths, `..` and anything that resolves outside the repository.
+fn revert_target(repo_root: &Path, rel: &str) -> Result<(String, PathBuf)> {
+    if rel.is_empty() || Path::new(rel).is_absolute() || rel.starts_with('-') {
+        return Err(GitError::InvalidPath(rel.into()));
+    }
+    let resolved = resolve_within_repo(repo_root, rel)?;
+    Ok((pathspec(repo_root, &resolved), repo_root.join(rel)))
+}
+
+/// `git restore` arguments that put `spec` back to its `HEAD` version, in the
+/// index and the working tree.
+fn restore_args(spec: &str) -> Vec<OsString> {
+    ["restore", "--source=HEAD", "--staged", "--worktree", "--", spec]
+        .into_iter()
+        .map(OsString::from)
+        .collect()
+}
+
+fn exists_in_head(repo_root: &ResolvedGitDirectory, spec: &str) -> Result<bool> {
+    let object = format!("HEAD:{spec}");
+    let output = run_git(
+        &repo_root.workspace,
+        Some(&repo_root.git_path),
+        ["cat-file", "-e", object.as_str()],
+        DEFAULT_TIMEOUT_SECS,
+    )?;
+    if output.timed_out {
+        return Err(GitError::TimedOut("git cat-file timed out"));
+    }
+    Ok(output.exit_code == Some(0))
+}
+
+/// `added`, `removed` and binary-ness from one `git diff --numstat` line.
+fn parse_numstat_line(line: &str) -> Option<(u32, u32, bool)> {
+    let mut parts = line.splitn(3, '\t');
+    let added = parts.next()?;
+    let removed = parts.next()?;
+    if added == "-" && removed == "-" {
+        return Some((0, 0, true));
+    }
+    Some((added.parse().ok()?, removed.parse().ok()?, false))
+}
+
+/// Each file's change against `HEAD`: line counts and a capped unified diff.
+/// Paths that are unsafe or outside the repository are skipped.
+pub fn head_file_changes(
+    registry: &WorkspaceRegistry,
+    repo_root: &str,
+    paths: &[String],
+    workspace: &WorkspaceEnv,
+) -> Result<Vec<GitHeadFileChange>> {
+    let repo_root = authorized_repo_root(registry, repo_root, workspace)?;
+    ensure_git_available(&repo_root.workspace)?;
+    let mut changes = Vec::new();
+    for rel in paths.iter().take(HEAD_FILE_LIMIT) {
+        let Ok((spec, on_disk)) = revert_target(&repo_root.local_path, rel) else {
+            continue;
+        };
+        if !exists_in_head(&repo_root, &spec)? {
+            let added = std::fs::read_to_string(&on_disk)
+                .map(|text| text.lines().count() as u32)
+                .unwrap_or(0);
+            changes.push(GitHeadFileChange {
+                path: rel.clone(),
+                in_head: false,
+                added,
+                removed: 0,
+                binary: false,
+                diff_text: String::new(),
+                truncated: false,
+            });
+            continue;
+        }
+        let numstat = run_git(
+            &repo_root.workspace,
+            Some(&repo_root.git_path),
+            ["diff", "--no-ext-diff", "--numstat", "HEAD", "--", spec.as_str()],
+            DEFAULT_TIMEOUT_SECS,
+        )?;
+        ensure_success(&numstat, "git diff --numstat failed")?;
+        let (added, removed, binary) = String::from_utf8_lossy(&numstat.stdout)
+            .lines()
+            .find_map(parse_numstat_line)
+            .unwrap_or((0, 0, false));
+        let diff = run_git_capped(
+            &repo_root.workspace,
+            Some(&repo_root.git_path),
+            ["diff", "--no-ext-diff", "HEAD", "--", spec.as_str()],
+            DEFAULT_TIMEOUT_SECS,
+            HEAD_FILE_DIFF_CAP,
+        )?;
+        if !diff.truncated {
+            ensure_success(&diff, "git diff failed")?;
+        }
+        changes.push(GitHeadFileChange {
+            path: rel.clone(),
+            in_head: true,
+            added,
+            removed,
+            binary,
+            diff_text: String::from_utf8_lossy(&diff.stdout).into_owned(),
+            truncated: diff.truncated,
+        });
+    }
+    Ok(changes)
+}
+
+/// Discards the working-tree and staged changes to one file: a file in `HEAD`
+/// is restored from it; a file that is new since `HEAD` is unstaged and
+/// deleted, but only when `delete_new` confirms that. Returns "restored" or
+/// "deleted".
+pub fn revert_file(
+    registry: &WorkspaceRegistry,
+    repo_root: &str,
+    rel: &str,
+    delete_new: bool,
+    workspace: &WorkspaceEnv,
+) -> Result<&'static str> {
+    let repo_root = authorized_repo_root(registry, repo_root, workspace)?;
+    ensure_git_available(&repo_root.workspace)?;
+    let (spec, on_disk) = revert_target(&repo_root.local_path, rel)?;
+    if exists_in_head(&repo_root, &spec)? {
+        let output = run_git(
+            &repo_root.workspace,
+            Some(&repo_root.git_path),
+            restore_args(&spec),
+            DEFAULT_TIMEOUT_SECS,
+        )?;
+        ensure_success(&output, "git restore failed")?;
+        return Ok("restored");
+    }
+    if !delete_new {
+        return Err(GitError::command(
+            "the file is new since HEAD; confirm deleting it",
+            rel,
+        ));
+    }
+    let output = run_git(
+        &repo_root.workspace,
+        Some(&repo_root.git_path),
+        ["rm", "--cached", "--quiet", "--ignore-unmatch", "--", spec.as_str()],
+        DEFAULT_TIMEOUT_SECS,
+    )?;
+    ensure_success(&output, "git rm --cached failed")?;
+    // Remove the entry itself: a symlink is unlinked, never followed.
+    match std::fs::symlink_metadata(&on_disk) {
+        Ok(meta) if meta.is_dir() => Err(GitError::InvalidPath(rel.into())),
+        Ok(_) => {
+            std::fs::remove_file(&on_disk).map_err(GitError::Io)?;
+            Ok("deleted")
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok("deleted"),
+        Err(e) => Err(GitError::Io(e)),
+    }
+}
+
+/// Splits text sources into the optional strings the full-file diff wants.
+fn file_versions_from(head: TextSource, working: TextSource) -> GitFileVersions {
+    let binary = matches!(head, TextSource::Binary) || matches!(working, TextSource::Binary);
+    let text = |source: TextSource| match source {
+        TextSource::Text(text) => Some(text),
+        TextSource::Missing | TextSource::Binary => None,
+    };
+    GitFileVersions {
+        head: text(head),
+        working: text(working),
+        binary,
+    }
+}
+
+/// One repo-relative file at `HEAD` and in the working tree. Uses the same
+/// path checks as [`revert_file`], so nothing outside the repository is read.
+pub fn file_versions(
+    registry: &WorkspaceRegistry,
+    repo_root: &str,
+    rel: &str,
+    workspace: &WorkspaceEnv,
+) -> Result<GitFileVersions> {
+    let repo_root = authorized_repo_root(registry, repo_root, workspace)?;
+    ensure_git_available(&repo_root.workspace)?;
+    let (spec, on_disk) = revert_target(&repo_root.local_path, rel)?;
+    let head = git_show_text(
+        &repo_root.workspace,
+        &repo_root.git_path,
+        &format!("HEAD:{spec}"),
+    )?;
+    let working = read_text_file(&on_disk)?;
+    Ok(file_versions_from(head, working))
+}
+
+/// `origin/HEAD`'s target, else a local `main` or `master`.
+fn default_branch(workspace: &WorkspaceEnv, git_path: &str) -> Result<Option<String>> {
+    if let Some(remote) = git_stdout_line_opt(
+        workspace,
+        git_path,
+        ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"],
+    )? {
+        if !remote.is_empty() {
+            return Ok(Some(remote));
+        }
+    }
+    for candidate in ["main", "master"] {
+        if git_stdout_line_opt(
+            workspace,
+            git_path,
+            ["rev-parse", "--verify", "--quiet", candidate],
+        )?
+        .is_some()
+        {
+            return Ok(Some(candidate.to_string()));
+        }
+    }
+    Ok(None)
 }
 
 fn diff_inner(
@@ -1234,6 +1509,92 @@ pub fn checkout_branch(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn repo_dir() -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(root.join("src/a.ts"), "x\n").unwrap();
+        (dir, root)
+    }
+
+    #[test]
+    fn revert_target_accepts_files_inside_the_repo() {
+        let (_dir, root) = repo_dir();
+        let (spec, on_disk) = revert_target(&root, "src/a.ts").unwrap();
+        assert_eq!(spec, "src/a.ts");
+        assert_eq!(on_disk, root.join("src/a.ts"));
+        // A deleted file still resolves, through its existing parent.
+        let (spec, _) = revert_target(&root, "src/gone.ts").unwrap();
+        assert_eq!(spec, "src/gone.ts");
+    }
+
+    #[test]
+    fn file_versions_keep_text_and_flag_binary_or_missing_sides() {
+        let both = file_versions_from(
+            TextSource::Text("old\n".into()),
+            TextSource::Text("new\n".into()),
+        );
+        assert_eq!(both.head.as_deref(), Some("old\n"));
+        assert_eq!(both.working.as_deref(), Some("new\n"));
+        assert!(!both.binary);
+
+        let created = file_versions_from(TextSource::Missing, TextSource::Text("x".into()));
+        assert!(created.head.is_none());
+        assert_eq!(created.working.as_deref(), Some("x"));
+
+        let deleted = file_versions_from(TextSource::Text("x".into()), TextSource::Missing);
+        assert!(deleted.working.is_none());
+
+        let binary = file_versions_from(TextSource::Binary, TextSource::Text("x".into()));
+        assert!(binary.binary);
+        assert!(binary.head.is_none());
+    }
+
+    #[test]
+    fn revert_target_rejects_paths_outside_the_repo() {
+        let (_dir, root) = repo_dir();
+        for rel in [
+            "",
+            "../outside.txt",
+            "src/../../outside.txt",
+            "/etc/passwd",
+            "-rf",
+            "src/a.ts:evil",
+            "src/\0a",
+        ] {
+            assert!(revert_target(&root, rel).is_err(), "{rel:?} must be rejected");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn revert_target_rejects_a_symlink_that_escapes_the_repo() {
+        let (_dir, root) = repo_dir();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("secret"), "s").unwrap();
+        std::os::unix::fs::symlink(outside.path().join("secret"), root.join("link")).unwrap();
+        assert!(revert_target(&root, "link").is_err());
+    }
+
+    #[test]
+    fn restore_args_restore_index_and_worktree_from_head() {
+        let args: Vec<String> = restore_args("src/a.ts")
+            .into_iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            args,
+            ["restore", "--source=HEAD", "--staged", "--worktree", "--", "src/a.ts"]
+        );
+    }
+
+    #[test]
+    fn numstat_lines_parse_counts_and_binary() {
+        assert_eq!(parse_numstat_line("12\t3\tsrc/a.ts"), Some((12, 3, false)));
+        assert_eq!(parse_numstat_line("-\t-\timg.png"), Some((0, 0, true)));
+        assert_eq!(parse_numstat_line("garbage"), None);
+    }
 
     #[test]
     fn set_upstream_push_ends_option_parsing_before_the_names() {

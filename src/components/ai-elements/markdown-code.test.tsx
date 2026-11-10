@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { markdownCodeText } from "./markdown-code";
+import { MarkdownCode, markdownCodeText } from "./markdown-code";
 
 describe("markdownCodeText", () => {
   it("preserves text nested inside React children for HTML-wrapped code blocks", async () => {
@@ -17,5 +17,27 @@ describe("markdownCodeText", () => {
     expect(text).toBe(
       '\nconst client = createClient("");\nawait client.send({ id: "example" });\n',
     );
+  });
+});
+
+describe("MarkdownCode", () => {
+  const render = async (props: Record<string, unknown>) => {
+    const React = await import("react");
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    return renderToStaticMarkup(React.createElement(MarkdownCode, props));
+  };
+
+  it("renders a fence without a language as a block that keeps its grid", async () => {
+    const diagram = " ┌──┐\n │  │ ──► x\n";
+    const html = await render({ "data-block": "true", node: {}, children: diagram });
+    expect(html).toContain("<pre");
+    expect(html).toContain("terax-code-diagram");
+    expect(html).toContain(" │  │ ──► x");
+    expect(html).not.toContain("data-block");
+  });
+
+  it("keeps inline code inline", async () => {
+    const html = await render({ children: "npm test" });
+    expect(html).toMatch(/^<code/);
   });
 });

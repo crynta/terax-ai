@@ -699,7 +699,7 @@ mod tests {
         assert_eq!(events[1].facts.message.as_deref(), Some("done"));
         assert_eq!(
             *host.signals.lock().unwrap(),
-            vec!["started:claude", "finished:"]
+            vec!["started:claude", "working:", "finished:"]
         );
     }
 
@@ -1300,7 +1300,7 @@ mod tests {
         }
         assert_eq!(
             *host.signals.lock().unwrap(),
-            vec!["started:claude", "attention:"]
+            vec!["started:claude", "working:", "attention:"]
         );
         assert_eq!(host.events.lock().unwrap().len(), 4);
     }

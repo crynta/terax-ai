@@ -1,15 +1,22 @@
+import { subscribeAgentEvents } from "@/modules/control/lib/agentEvents";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { Tab } from "@/modules/tabs";
 import {
   hasLeaf,
   leafIdForPty,
   subscribeAgentSignals,
+  useAgentActivityStore,
 } from "@/modules/terminal";
 import { useEffect, useRef } from "react";
+import { shouldOpenInChat } from "../lib/chatDefault";
 import { displayAgent } from "../lib/format";
+import { usePhaseReconciler } from "../lib/phaseReconciler";
 import { maybeTriggerManagedReview } from "../lib/review";
 import { routeAgentNotification } from "../lib/route";
+import { claudeSessionOf } from "../lib/sessionLink";
 import type { AgentSession, AgentSignal } from "../lib/types";
 import { useWindowFocus } from "../lib/useWindowFocus";
+import { openReader } from "../reader/readerStore";
 import { useAgentStore } from "../store/agentStore";
 import { useManagedAgentsStore } from "../store/managedAgentsStore";
 
@@ -68,7 +75,17 @@ function handleSignal(sig: AgentSignal, ctx: Ctx): void {
     case "started": {
       const info = tabInfo(ctx.tabs, leafId);
       if (!info) return;
+      const tracked = store.sessions[leafId] !== undefined;
       store.start(leafId, info.tabId, sig.agent ?? "agent");
+      if (
+        shouldOpenInChat(
+          sig.agent,
+          usePreferencesStore.getState().agentOpenInChat,
+          tracked,
+        )
+      ) {
+        openReader(leafId);
+      }
       return;
     }
     case "working":
@@ -81,12 +98,15 @@ function handleSignal(sig: AgentSignal, ctx: Ctx): void {
       return;
     }
     case "finished": {
-      store.setStatus(leafId, "waiting");
+      store.setStatus(leafId, "done");
       const session = store.sessions[leafId];
       if (session) route(session, "finished", ctx);
       maybeTriggerManagedReview(leafId);
       return;
     }
+    case "linked":
+      if (sig.session) store.setClaudeSession(leafId, sig.session);
+      return;
     case "exited":
       store.finish(leafId);
       useManagedAgentsStore.getState().remove(leafId);
@@ -104,8 +124,25 @@ export function AgentNotificationsBridge({
   onActivate: Activate;
 }) {
   const focused = useWindowFocus();
+  usePhaseReconciler();
   const ctxRef = useRef<Ctx>({ tabs, activeId, focused, onActivate });
   ctxRef.current = { tabs, activeId, focused, onActivate };
+
+  // Structured hooks name the agent's session (Claude's transcript id),
+  // which the legacy signals no longer carry: link each pane to it.
+  useEffect(
+    () =>
+      subscribeAgentEvents((event) => {
+        const sessionId = claudeSessionOf(event);
+        if (!sessionId) return;
+        useAgentActivityStore.getState().setSessionId(event.ptyId, sessionId);
+        const leafId = leafIdForPty(event.ptyId);
+        if (leafId !== null) {
+          useAgentStore.getState().setClaudeSession(leafId, sessionId);
+        }
+      }),
+    [],
+  );
 
   // Shares the terminal module's single `terax:agent-signal` listener.
   useEffect(

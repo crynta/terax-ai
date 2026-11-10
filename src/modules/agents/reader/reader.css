@@ -1,0 +1,632 @@
+/* Session Reader: a Claude Code transcript laid out as a readable document. */
+
+/* Defined on :root so every Reader surface (slide-overs, dialogs, the full
+   view) resolves them, not only the document's scroll container. */
+:root,
+.terax-reader {
+  --reader-red: var(--terminal-ansi-red);
+  --reader-green: var(--terminal-ansi-green);
+  --reader-code-bg: color-mix(in oklab, var(--background) 82%, black);
+}
+.terax-reader {
+  scroll-behavior: smooth;
+}
+
+/* A folder path that keeps its end visible: the ellipsis eats the start. */
+.terax-left-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.terax-reader-mono {
+  font-family:
+    "Terax Box", "Red Hat Mono", "JetBrains Mono", ui-monospace, SFMono-Regular,
+    Menlo, monospace;
+  font-variant-ligatures: none;
+}
+
+/* Timeline rail that threads each turn's cards together. */
+.terax-reader-turn::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 24px;
+  bottom: -14px;
+  width: 1px;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in oklab, var(--border) 100%, transparent),
+    color-mix(in oklab, var(--border) 40%, transparent)
+  );
+}
+.terax-reader-turn:last-child::before {
+  bottom: 8px;
+}
+
+.terax-reader-in {
+  animation: terax-reader-in var(--dur-base, 180ms)
+    var(--ease-premium, cubic-bezier(0.2, 0.8, 0.2, 1)) both;
+}
+@keyframes terax-reader-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* While a chat is first drawn or restored, cards appear in place; only cards
+   that arrive afterwards (live) get the entrance animation. */
+[data-reader-settling] .terax-reader-in {
+  animation: none;
+}
+
+/* Loading skeleton: a soft light sweep across placeholder cards. Stepped
+   (like the app's other repeating animations) so it never redraws every frame. */
+.terax-reader-skeleton {
+  background: linear-gradient(
+      100deg,
+      transparent 20%,
+      color-mix(in oklab, var(--foreground) 7%, transparent) 50%,
+      transparent 80%
+    ),
+    color-mix(in oklab, var(--foreground) 5%, transparent);
+  background-size:
+    200% 100%,
+    100% 100%;
+  background-repeat: no-repeat;
+  animation: terax-reader-skeleton 1.4s steps(24, end) infinite;
+}
+@keyframes terax-reader-skeleton {
+  from {
+    background-position:
+      150% 0,
+      0 0;
+  }
+  to {
+    background-position:
+      -50% 0,
+      0 0;
+  }
+}
+
+.terax-reader-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--agent-working) 0%,
+    color-mix(in oklab, var(--agent-working) 40%, var(--foreground)) 50%,
+    var(--agent-working) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: terax-reader-shimmer 1.6s linear infinite;
+}
+@keyframes terax-reader-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* Live activity row: a softly pulsing dot while Claude works, a fade once done. */
+.terax-reader-activity-dot {
+  animation: terax-reader-pulse 1.4s ease-in-out infinite;
+}
+@keyframes terax-reader-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.terax-reader-activity-fade {
+  animation: terax-reader-fade 6s ease-in forwards;
+}
+@keyframes terax-reader-fade {
+  0%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Slow spin for in-progress icons (live card, to-dos). */
+.terax-reader-spin {
+  animation: terax-reader-spin 1.4s linear infinite;
+}
+@keyframes terax-reader-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* The live card's accent edge breathes while Claude works. */
+.terax-reader-live {
+  animation: terax-reader-live 2.4s ease-in-out infinite;
+}
+@keyframes terax-reader-live {
+  50% {
+    box-shadow: 0 0 0 3px
+      color-mix(in oklab, var(--agent-working) 14%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terax-reader {
+    scroll-behavior: auto;
+  }
+  .terax-reader-in,
+  .terax-reader-shimmer,
+  .terax-reader-skeleton,
+  .terax-reader-activity-dot,
+  .terax-reader-activity-fade,
+  .terax-reader-spin,
+  .terax-reader-live {
+    animation: none;
+  }
+  .terax-reader-shimmer {
+    color: var(--agent-working);
+  }
+}
+
+/* Diff rows. */
+.terax-reader-diff-add {
+  background: color-mix(in oklab, var(--reader-green) 13%, transparent);
+}
+.terax-reader-diff-add .terax-reader-diff-sign {
+  color: var(--reader-green);
+}
+.terax-reader-diff-remove {
+  background: color-mix(in oklab, var(--reader-red) 13%, transparent);
+}
+.terax-reader-diff-remove .terax-reader-diff-sign {
+  color: var(--reader-red);
+}
+/* A stronger tint on the line numbers and sign, as in code review tools. */
+.terax-reader-diff-add :is(.terax-reader-diff-gutter, .terax-reader-diff-sign) {
+  background: color-mix(in oklab, var(--reader-green) 22%, transparent);
+}
+.terax-reader-diff-remove
+  :is(.terax-reader-diff-gutter, .terax-reader-diff-sign) {
+  background: color-mix(in oklab, var(--reader-red) 22%, transparent);
+}
+/* The change the full-file dialog moved to. */
+.terax-reader-diff-current > td:first-child {
+  box-shadow: inset 3px 0 0 var(--terminal-ansi-blue, var(--primary));
+}
+
+/* Assistant prose: document typography for Streamdown output. Prose fills the
+   whole card (no character cap), so lines only break at the card's edge;
+   code, tables and diffs scroll sideways inside the card. */
+.terax-reader-prose {
+  --reader-measure: none;
+  --reader-accent: var(--terminal-ansi-blue, var(--primary));
+  font-family: "Inter Variable", Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--foreground);
+  overflow-wrap: break-word;
+  font-feature-settings: "cv11", "ss01";
+}
+.terax-reader-prose :is(p, ul, ol, h1, h2, h3, h4, h5, blockquote, dl) {
+  max-width: var(--reader-measure);
+}
+.terax-reader-prose > :first-child,
+.terax-reader-prose > * > :first-child {
+  margin-top: 0;
+}
+.terax-reader-prose > :last-child,
+.terax-reader-prose > * > :last-child {
+  margin-bottom: 0;
+}
+.terax-reader-prose p {
+  margin: 0 0 0.75em;
+}
+.terax-reader-prose :is(h1, h2, h3, h4) {
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.012em;
+  color: var(--foreground);
+  margin: 1.5em 0 0.55em;
+}
+.terax-reader-prose h1 {
+  font-size: 19px;
+}
+.terax-reader-prose :is(h1, h2, h3) {
+  padding-top: 0.85em;
+  border-top: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+}
+.terax-reader-prose h2 {
+  font-size: 17px;
+}
+.terax-reader-prose h3 {
+  font-size: 15px;
+}
+.terax-reader-prose h4 {
+  font-size: 14px;
+  color: color-mix(in oklab, var(--foreground) 82%, var(--muted-foreground));
+}
+/* A heading that opens the reply needs no divider above it. */
+.terax-reader-prose > div > :is(h1, h2, h3):first-child,
+.terax-reader-prose > :is(h1, h2, h3):first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.terax-reader-prose :is(ul, ol) {
+  margin: 0.2em 0 0.6em;
+  padding-left: 1.45em;
+}
+.terax-reader-prose ul {
+  list-style: disc;
+}
+.terax-reader-prose ol {
+  list-style: decimal;
+}
+.terax-reader-prose li {
+  margin: 0.18em 0;
+  padding-left: 0.2em;
+  line-height: 1.6;
+}
+.terax-reader-prose li > p {
+  margin: 0.1em 0;
+}
+.terax-reader-prose li::marker {
+  color: var(--reader-accent);
+  font-weight: 600;
+}
+.terax-reader-prose li :is(ul, ol) {
+  margin: 0.15em 0 0.2em;
+  padding-left: 1.3em;
+}
+.terax-reader-prose li ul {
+  list-style: circle;
+}
+.terax-reader-prose strong {
+  font-weight: 620;
+  color: var(--foreground);
+}
+.terax-reader-prose :not(pre) > code {
+  font-family:
+    "Red Hat Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo,
+    monospace;
+  font-size: 0.86em;
+  padding: 0.12em 0.42em;
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--reader-accent) 11%, var(--muted));
+  border: 1px solid color-mix(in oklab, var(--reader-accent) 16%, transparent);
+  color: color-mix(in oklab, var(--foreground) 92%, var(--reader-accent));
+  overflow-wrap: anywhere;
+}
+.terax-reader-prose a {
+  color: var(--reader-accent);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--dur-fast, 120ms);
+}
+.terax-reader-prose a:hover {
+  border-bottom-color: currentColor;
+}
+/* Quotes and notes as callout cards. */
+.terax-reader-prose blockquote {
+  position: relative;
+  margin: 1em 0;
+  padding: 0.75em 1em 0.75em 2.6em;
+  border: 1px solid color-mix(in oklab, var(--reader-accent) 26%, transparent);
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--reader-accent) 8%, transparent);
+  color: color-mix(in oklab, var(--foreground) 88%, var(--muted-foreground));
+}
+.terax-reader-prose blockquote::before {
+  content: "i";
+  position: absolute;
+  left: 0.85em;
+  top: 0.95em;
+  display: grid;
+  place-items: center;
+  width: 1.15em;
+  height: 1.15em;
+  border-radius: 999px;
+  font: italic 600 0.78em/1 Georgia, serif;
+  color: var(--background);
+  background: var(--reader-accent);
+}
+.terax-reader-prose blockquote > :last-child {
+  margin-bottom: 0;
+}
+.terax-reader-prose hr {
+  margin: 1.4em 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+.terax-reader-prose table {
+  width: 100%;
+  margin: 1em 0;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.terax-reader-prose th {
+  text-align: left;
+  font-weight: 600;
+  background: color-mix(in oklab, var(--muted) 70%, transparent);
+}
+.terax-reader-prose :is(th, td) {
+  padding: 0.55em 0.85em;
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+  vertical-align: top;
+}
+.terax-reader-prose tr:last-child td {
+  border-bottom: 0;
+}
+.terax-reader-prose tbody tr:nth-child(even) td {
+  background: color-mix(in oklab, var(--muted) 28%, transparent);
+}
+.terax-reader-prose pre {
+  font-size: 12px;
+  line-height: 1.6;
+}
+.terax-reader-prose pre.terax-code-diagram {
+  line-height: 1.25;
+}
+/* Pre-formatted text holding a box diagram (a pasted one, tool output):
+   kept on its grid, scrolling sideways instead of wrapping. */
+.terax-reader-diagram {
+  line-height: 1.25;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+  overflow-x: auto;
+}
+
+/* A reply with several headings: each heading and its content as a block
+   on a slim accent rail. */
+.terax-reader-section {
+  position: relative;
+  margin: 1em 0 0;
+  padding: 0.1em 0 0.2em 14px;
+}
+.terax-reader-section::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.35em;
+  bottom: 0.35em;
+  width: 2px;
+  border-radius: 2px;
+  background: color-mix(in oklab, var(--reader-accent) 75%, transparent);
+}
+.terax-reader-section :is(h2, h3):first-child {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+/* Expanded thinking: the same Markdown, quieter. */
+.terax-reader-thinking {
+  border-left: 2px solid color-mix(in oklab, var(--muted-foreground) 35%, transparent);
+  margin-left: 0.9rem;
+  padding-left: 0.9rem;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--muted-foreground);
+}
+.terax-reader-thinking :is(p, ul, ol) {
+  margin: 0 0 0.7em;
+}
+.terax-reader-thinking :is(ul, ol) {
+  padding-left: 1.3em;
+  list-style: disc;
+}
+.terax-reader-thinking strong {
+  color: color-mix(in oklab, var(--foreground) 80%, var(--muted-foreground));
+  font-weight: 600;
+}
+.terax-reader-thinking :not(pre) > code {
+  font-size: 0.88em;
+  padding: 0.08em 0.36em;
+  border-radius: 5px;
+  background: color-mix(in oklab, var(--muted) 80%, transparent);
+}
+
+.terax-reader-outline-item[aria-current="true"] {
+  background: color-mix(in oklab, var(--primary) 14%, transparent);
+  color: var(--foreground);
+}
+.terax-reader-outline-item[aria-current="true"]::before {
+  opacity: 1;
+}
+
+/* Wide content stays inside its card and scrolls sideways. */
+.terax-reader-prose :is(pre, table) {
+  max-width: 100%;
+  overflow-x: auto;
+}
+/* Jump targets (outline, search) land below the pinned turn header. */
+.terax-reader [data-turn-id],
+.terax-reader [data-turn-id] * {
+  scroll-margin-top: 44px;
+}
+/* One centred column for the document, its banners and the dock, so every
+   card, the composer and the turn headers share the same edges. It fills
+   the pane minus small gutters and only caps on very wide panes. */
+.terax-reader-column {
+  width: 100%;
+  max-width: 1280px;
+  margin-inline: auto;
+  padding-inline: clamp(16px, 2vw, 24px);
+}
+
+/* Tables: the copy / download / fullscreen controls sit inside the table's
+   own frame as a slim strip that appears on hover, never floating above it. */
+.terax-reader-prose [data-streamdown="table-wrapper"] {
+  position: relative;
+  gap: 0;
+  padding: 0;
+  margin: 1em 0;
+  border: 0;
+  background: transparent;
+}
+.terax-reader-prose [data-streamdown="table-wrapper"] > div:first-child:not(:has(table)) {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--popover);
+  opacity: 0;
+  transition: opacity var(--dur-fast, 120ms) ease;
+}
+.terax-reader-prose [data-streamdown="table-wrapper"]:is(:hover, :focus-within)
+  > div:first-child:not(:has(table)) {
+  opacity: 1;
+}
+.terax-reader-prose [data-streamdown="table-wrapper"] table {
+  margin: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .terax-reader-prose [data-streamdown="table-wrapper"] > div:first-child:not(:has(table)) {
+    transition: none;
+  }
+}
+
+/* Card actions (copy, read time, prompt actions) float over the card's
+   top-right corner instead of taking a header row; shown on hover/focus. */
+.terax-reader-card-tools {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: calc(100% - 16px);
+  border-radius: 8px;
+  padding: 1px 2px;
+  background: transparent;
+  transition: background-color var(--dur-fast, 120ms) ease;
+}
+:is(.group\/prose, .group\/prompt):is(:hover, :focus-within) > .terax-reader-card-tools {
+  background: color-mix(in oklab, var(--card) 92%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--border) 70%, transparent);
+}
+
+/* Composer: the text uses the full width; the controls sit at the right end of
+   its row (one line) or right-aligned under it (multi-line). Model and mode
+   chips drop their labels when the composer is narrow. */
+.terax-composer-row {
+  container-type: inline-size;
+}
+@container (max-width: 640px) {
+  .terax-composer-label {
+    display: none;
+  }
+}
+.terax-composer-controls {
+  animation: terax-composer-controls-in var(--dur-base, 160ms)
+    var(--ease-soft, ease-out);
+}
+@keyframes terax-composer-controls-in {
+  from {
+    opacity: 0.4;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* "Ask Claude" pill over a selection in the document. */
+.terax-ask-pill {
+  animation: terax-ask-pill-in var(--dur-fast, 120ms) var(--ease-soft, ease-out);
+}
+@keyframes terax-ask-pill-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terax-composer-controls,
+  .terax-ask-pill {
+    animation: none;
+  }
+}
+
+/* File review: Keep / Undo on each change (CodeMirror merge controls; scoped
+   past the merge view's own `.cm-deletedChunk button` rule). */
+.cm-editor .cm-deletedChunk button.terax-review-chunk-button {
+  font: 500 11px/1 "Inter Variable", Inter, ui-sans-serif, system-ui, sans-serif;
+  margin: 0;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  cursor: pointer;
+  box-shadow: 0 2px 8px -4px rgba(0, 0, 0, 0.5);
+}
+.cm-editor .cm-deletedChunk button.terax-review-chunk-button.is-keep {
+  border-color: color-mix(in oklab, var(--reader-green) 55%, transparent);
+  background: color-mix(in oklab, var(--reader-green) 18%, var(--card));
+}
+.cm-editor .cm-deletedChunk button.terax-review-chunk-button.is-keep:hover {
+  background: color-mix(in oklab, var(--reader-green) 30%, var(--card));
+}
+.cm-editor .cm-deletedChunk button.terax-review-chunk-button.is-undo:hover {
+  border-color: color-mix(in oklab, var(--reader-red) 60%, transparent);
+  color: var(--reader-red);
+}
+
+/* A turn just jumped to from the prompt search. */
+@keyframes terax-reader-turn-flash {
+  0%,
+  40% {
+    background: color-mix(in oklab, var(--primary) 14%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+.terax-reader-turn-flash {
+  border-radius: 14px;
+  animation: terax-reader-turn-flash 1.4s ease-out;
+}
+
+/* A pinned turn: an accent rail and an outlined prompt card. */
+.terax-reader-turn[data-pinned]::before {
+  width: 2px;
+  left: 3.5px;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in oklab, var(--primary) 85%, transparent),
+    color-mix(in oklab, var(--primary) 25%, transparent)
+  );
+}
+.terax-reader-turn[data-pinned] section[aria-label="Your prompt"] {
+  box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--primary) 70%, transparent);
+}

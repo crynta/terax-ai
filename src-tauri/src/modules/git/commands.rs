@@ -3,7 +3,8 @@ use tauri::{AppHandle, Manager};
 use crate::modules::git::operations;
 use crate::modules::git::types::{
     DiscardEntry, GitBranchListResult, GitCommitFileChange, GitCommitResult, GitDiffContentResult,
-    GitDiffResult, GitLogEntry, GitPanelSnapshot, GitPushResult, GitRepoInfo, GitStatusSnapshot,
+    GitDiffResult, GitFileVersions, GitHeadFileChange, GitLogEntry, GitPanelSnapshot,
+    GitPushResult, GitRepoInfo, GitStatusSnapshot,
 };
 use crate::modules::workspace::{WorkspaceEnv, WorkspaceRegistry};
 
@@ -70,6 +71,69 @@ pub async fn git_diff(
     let workspace = WorkspaceEnv::from_option(workspace);
     blocking(app, move |r| {
         operations::diff(r, &repo_root, path.as_deref(), staged, &workspace).map_err(Into::into)
+    })
+    .await
+}
+
+/// A capped diff for attaching to a chat prompt: `kind` is `working` or `branch`.
+#[tauri::command]
+pub async fn git_context_diff(
+    repo_root: String,
+    kind: String,
+    workspace: Option<WorkspaceEnv>,
+    app: AppHandle,
+) -> Result<GitDiffResult, String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    blocking(app, move |r| {
+        operations::context_diff(r, &repo_root, &kind, &workspace).map_err(Into::into)
+    })
+    .await
+}
+
+/// Each repo-relative file's change against `HEAD`, for reviewing an agent's edits.
+#[tauri::command]
+pub async fn git_head_file_changes(
+    repo_root: String,
+    paths: Vec<String>,
+    workspace: Option<WorkspaceEnv>,
+    app: AppHandle,
+) -> Result<Vec<GitHeadFileChange>, String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    blocking(app, move |r| {
+        operations::head_file_changes(r, &repo_root, &paths, &workspace).map_err(Into::into)
+    })
+    .await
+}
+
+/// One repo-relative file at `HEAD` and in the working tree, for the Reader's full-file diff.
+#[tauri::command]
+pub async fn git_file_versions(
+    repo_root: String,
+    path: String,
+    workspace: Option<WorkspaceEnv>,
+    app: AppHandle,
+) -> Result<GitFileVersions, String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    blocking(app, move |r| {
+        operations::file_versions(r, &repo_root, &path, &workspace).map_err(Into::into)
+    })
+    .await
+}
+
+/// Puts one file back to `HEAD`; a file new since `HEAD` is deleted only with `delete_new`.
+#[tauri::command]
+pub async fn git_revert_file(
+    repo_root: String,
+    path: String,
+    delete_new: bool,
+    workspace: Option<WorkspaceEnv>,
+    app: AppHandle,
+) -> Result<String, String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    blocking(app, move |r| {
+        operations::revert_file(r, &repo_root, &path, delete_new, &workspace)
+            .map(String::from)
+            .map_err(Into::into)
     })
     .await
 }

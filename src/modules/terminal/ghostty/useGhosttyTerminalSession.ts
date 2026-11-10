@@ -156,18 +156,19 @@ export function useGhosttyTerminalSession({
   const letterSpacing = usePreferencesStore(
     (state) => state.terminalLetterSpacing,
   );
+  const lineHeight = usePreferencesStore((state) => state.terminalLineHeight);
   const zoomLevel = usePreferencesStore((state) => state.zoomLevel);
   const symbols = useSyncExternalStore(subscribeSymbolFonts, symbolFontEpoch);
   const font = useMemo<TerminalFontSpec>(
     () => ({
       family: resolveFontFamily(fontFamily),
       size: Math.max(4, Math.round(fontSize * zoomLevel)),
-      lineHeight: 1.2,
+      lineHeight,
       letterSpacing,
       weight: fontWeight,
       symbols,
     }),
-    [fontFamily, fontSize, fontWeight, letterSpacing, zoomLevel, symbols],
+    [fontFamily, fontSize, fontWeight, letterSpacing, lineHeight, zoomLevel, symbols],
   );
   const fontRef = useRef(font);
   fontRef.current = font;
@@ -398,6 +399,31 @@ export function ghosttySelectionForLeaf(leafId: number): string | null {
   return sessions.get(leafId)?.surface?.getSelection() ?? null;
 }
 
+/** Whether the pane's app asked for bracketed paste (DECSET 2004). */
+export function ghosttyBracketedPasteForLeaf(leafId: number): boolean {
+  return sessions.get(leafId)?.model?.modes().bracketedPaste ?? false;
+}
+
+/** The bottom screenful of the pane's text, or null without a live model. */
+export function ghosttyScreenTextForLeaf(leafId: number): string | null {
+  const model = sessions.get(leafId)?.model;
+  return model ? model.readText(model.rows) : null;
+}
+
+/** The last `lines` lines of the pane, scrollback included. */
+export function ghosttyTailTextForLeaf(
+  leafId: number,
+  lines: number,
+): string | null {
+  const model = sessions.get(leafId)?.model;
+  return model ? model.readText(lines) : null;
+}
+
+/** Leaves with a live terminal session. */
+export function ghosttyLiveLeafIds(): number[] {
+  return [...sessions.keys()];
+}
+
 export function ghosttyCwdForLeaf(leafId: number): string | null {
   return sessions.get(leafId)?.lastCwd ?? null;
 }
@@ -567,7 +593,7 @@ function ensureSession(
       ({
         family: "monospace",
         size: 14,
-        lineHeight: 1.2,
+        lineHeight: usePreferencesStore.getState().terminalLineHeight,
         letterSpacing: 0,
         weight: "400",
       } satisfies TerminalFontSpec),

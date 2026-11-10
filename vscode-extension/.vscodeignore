@@ -1,0 +1,7 @@
+**
+!dist/**
+!media/**
+!package.json
+!LICENSE
+!README.md
+!themes/**

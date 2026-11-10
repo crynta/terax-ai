@@ -15,11 +15,11 @@ describe("agent session store", () => {
     vi.useRealTimers();
   });
 
-  it("starts a session in the working state", () => {
+  it("starts a session idle at its prompt", () => {
     useAgentStore.getState().start(7, 3, "claude");
     const s = useAgentStore.getState().sessions[7];
 
-    expect(s).toMatchObject({ leafId: 7, tabId: 3, agent: "claude", status: "working" });
+    expect(s).toMatchObject({ leafId: 7, tabId: 3, agent: "claude", status: "idle" });
     expect(s.attentionSince).toBeNull();
   });
 
@@ -28,7 +28,7 @@ describe("agent session store", () => {
     useAgentStore.getState().start(7, 3, "codex");
     const before = useAgentStore.getState().sessions[7];
 
-    useAgentStore.getState().setStatus(7, "working");
+    useAgentStore.getState().setStatus(7, "idle");
 
     expect(useAgentStore.getState().sessions[7]).toBe(before);
   });
@@ -42,6 +42,23 @@ describe("agent session store", () => {
 
     useAgentStore.getState().setStatus(7, "working");
     expect(useAgentStore.getState().sessions[7].attentionSince).toBeNull();
+  });
+
+  it("links a Claude session id and drops it when the agent restarts", () => {
+    const store = useAgentStore.getState();
+    store.setClaudeSession(7, "0b5f4c2e-9a1d-4e3b-8c7f-1234567890ab");
+    expect(useAgentStore.getState().sessions[7]).toBeUndefined();
+
+    store.start(7, 3, "claude");
+    expect(useAgentStore.getState().sessions[7].claudeSessionId).toBeNull();
+    store.setClaudeSession(7, "0b5f4c2e-9a1d-4e3b-8c7f-1234567890ab");
+    const linked = useAgentStore.getState().sessions[7];
+    expect(linked.claudeSessionId).toBe("0b5f4c2e-9a1d-4e3b-8c7f-1234567890ab");
+    store.setClaudeSession(7, "0b5f4c2e-9a1d-4e3b-8c7f-1234567890ab");
+    expect(useAgentStore.getState().sessions[7]).toBe(linked);
+
+    store.start(7, 3, "claude");
+    expect(useAgentStore.getState().sessions[7].claudeSessionId).toBeNull();
   });
 
   it("removes the session on finish", () => {

@@ -46,6 +46,7 @@ export type ShortcutId =
   | "ai.toggleMini"
   | "ai.askSelection"
   | "agent.focusAttention"
+  | "agent.toggleReader"
   | "settings.open"
   | "sidebar.toggle"
   | "editor.undo"
@@ -262,6 +263,11 @@ const SHORTCUT_META: Omit<Shortcut, "defaultBindings">[] = [
   {
     id: "agent.focusAttention",
     label: "Jump to agent needing attention",
+    group: "AI",
+  },
+  {
+    id: "agent.toggleReader",
+    label: "Toggle Session Reader",
     group: "AI",
   },
   {

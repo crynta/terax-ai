@@ -7,6 +7,8 @@ type AgentSignal = {
   id: number;
   kind: string;
   agent?: string | null;
+  /** The agent's own session id (UUID), on `linked` signals only. */
+  session?: string | null;
 };
 
 type AgentActivityStore = {
@@ -14,8 +16,11 @@ type AgentActivityStore = {
   // pty -> agent name, learned from the `started` signal and kept until exit so
   // the tab can show that agent's brand icon while it runs.
   agents: Record<number, string>;
+  // pty -> the agent's session id (Claude's transcript), learned from `linked`.
+  sessionIds: Record<number, string>;
   setPhase: (id: number, phase: AgentPhase) => void;
   setAgent: (id: number, agent: string) => void;
+  setSessionId: (id: number, sessionId: string) => void;
   acknowledgeAttention: (ids: readonly number[]) => void;
   clear: (id: number) => void;
 };
@@ -23,6 +28,7 @@ type AgentActivityStore = {
 export const useAgentActivityStore = create<AgentActivityStore>((set) => ({
   phases: {},
   agents: {},
+  sessionIds: {},
   setPhase: (id, phase) =>
     set((s) => {
       if (s.phases[id] === phase) return s;
@@ -32,6 +38,11 @@ export const useAgentActivityStore = create<AgentActivityStore>((set) => ({
     set((s) => {
       if (s.agents[id] === agent) return s;
       return { agents: { ...s.agents, [id]: agent } };
+    }),
+  setSessionId: (id, sessionId) =>
+    set((s) => {
+      if (s.sessionIds[id] === sessionId) return s;
+      return { sessionIds: { ...s.sessionIds, [id]: sessionId } };
     }),
   acknowledgeAttention: (ids) =>
     set((s) => {
@@ -45,12 +56,16 @@ export const useAgentActivityStore = create<AgentActivityStore>((set) => ({
     }),
   clear: (id) =>
     set((s) => {
-      if (!(id in s.phases) && !(id in s.agents)) return s;
+      if (!(id in s.phases) && !(id in s.agents) && !(id in s.sessionIds)) {
+        return s;
+      }
       const phases = { ...s.phases };
       const agents = { ...s.agents };
+      const sessionIds = { ...s.sessionIds };
       delete phases[id];
       delete agents[id];
-      return { phases, agents };
+      delete sessionIds[id];
+      return { phases, agents, sessionIds };
     }),
 }));
 
@@ -73,12 +88,14 @@ export function clearAgentActivity(id: number): void {
 }
 
 /** Maps a raw detector signal to the phase it drives, `"exited"` to drop the
- * pty, or `null` to ignore. Pure so the mapping stays unit-testable. */
+ * pty, or `null` to ignore. Pure so the mapping stays unit-testable. An agent
+ * that has just started sits at its prompt: idle until a prompt is sent. */
 export function phaseForSignal(
   kind: string,
-): Exclude<AgentPhase, "idle"> | "exited" | null {
+): AgentPhase | "exited" | null {
   switch (kind) {
     case "started":
+      return "idle";
     case "working":
       return "working";
     case "attention":
@@ -111,6 +128,12 @@ export function subscribeAgentSignals(handler: AgentSignalHandler): () => void {
 
 function applySignal(payload: AgentSignal): void {
   const { id, agent } = payload;
+  if (payload.kind === "linked") {
+    if (payload.session) {
+      useAgentActivityStore.getState().setSessionId(id, payload.session);
+    }
+    return;
+  }
   const action = phaseForSignal(payload.kind);
   if (action === null) return;
   clearFinishedTimer(id);
@@ -121,17 +144,25 @@ function applySignal(payload: AgentSignal): void {
   }
   // The agent name only rides the `started` signal (incl. self-arm).
   if (agent) store.setAgent(id, agent);
-  store.setPhase(id, action);
-  if (action === "finished") {
-    finishedTimers.set(
-      id,
-      setTimeout(() => {
-        finishedTimers.delete(id);
-        const s = useAgentActivityStore.getState();
-        if (s.phases[id] === "finished") s.setPhase(id, "idle");
-      }, FINISHED_TTL_MS),
-    );
-  }
+  settlePhase(id, action);
+}
+
+/**
+ * Sets a pty's phase from outside the detector (what the agent's screen
+ * shows); a finished turn fades to idle as one reported by a hook does.
+ */
+export function settlePhase(id: number, phase: AgentPhase): void {
+  clearFinishedTimer(id);
+  useAgentActivityStore.getState().setPhase(id, phase);
+  if (phase !== "finished") return;
+  finishedTimers.set(
+    id,
+    setTimeout(() => {
+      finishedTimers.delete(id);
+      const s = useAgentActivityStore.getState();
+      if (s.phases[id] === "finished") s.setPhase(id, "idle");
+    }, FINISHED_TTL_MS),
+  );
 }
 
 // The Rust detector arms via the Claude Code / Codex / Gemini OSC 777 marker and

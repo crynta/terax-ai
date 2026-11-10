@@ -1,4 +1,9 @@
 import {
+  type AgentLaunchCommands,
+  DEFAULT_AGENT_LAUNCH_COMMANDS,
+  normalizeAgentLaunchCommands,
+} from "@/modules/agents/lib/launcher";
+import {
   type AutocompleteProviderId,
   type CustomEndpoint,
   DEFAULT_AUTOCOMPLETE_MODEL,
@@ -14,11 +19,6 @@ import {
   type SttProvider,
   WHISPERCPP_DEFAULT_BASE_URL,
 } from "@/modules/ai/config";
-import {
-  type AgentLaunchCommands,
-  DEFAULT_AGENT_LAUNCH_COMMANDS,
-  normalizeAgentLaunchCommands,
-} from "@/modules/agents/lib/launcher";
 import type { KeyBinding, ShortcutId } from "@/modules/shortcuts/shortcuts";
 import {
   coerceMacOptionAsAlt,
@@ -175,6 +175,10 @@ export type Preferences = {
   terminalShell: string;
   terminalLetterSpacing: number;
   terminalFontSize: number;
+  /** Space between a pane's edge and its terminal grid, in CSS pixels. */
+  terminalPanePadding: number;
+  /** Row height as a multiple of the font size. */
+  terminalLineHeight: number;
   terminalScrollback: number;
   terminalScrollSpeed: number;
   terminalMacOptionAsAlt: MacOptionAsAlt;
@@ -183,6 +187,8 @@ export type Preferences = {
   zoomLevel: number;
   agentNotifications: boolean;
   agentNotificationSound: boolean;
+  /** Claude panes open in the Reader's chat view instead of the terminal. */
+  agentOpenInChat: boolean;
   agentLaunchCommands: AgentLaunchCommands;
   defaultWorkspaceEnv: string;
   shortcuts: Record<ShortcutId, KeyBinding[]>;
@@ -273,6 +279,8 @@ const KEY_TERMINAL_FONT_WEIGHT = "terminalFontWeight";
 const KEY_TERMINAL_SHELL = "terminalShell";
 const KEY_TERMINAL_LETTER_SPACING = "terminalLetterSpacing";
 const KEY_TERMINAL_FONT_SIZE = "terminalFontSize";
+const KEY_TERMINAL_PANE_PADDING = "terminalPanePadding";
+const KEY_TERMINAL_LINE_HEIGHT = "terminalLineHeight";
 const KEY_TERMINAL_SCROLLBACK = "terminalScrollback";
 const KEY_TERMINAL_SCROLL_SPEED = "terminalScrollSpeed";
 const KEY_TERMINAL_MAC_OPTION_AS_ALT = "terminalMacOptionAsAlt";
@@ -281,6 +289,7 @@ const KEY_LAST_WSL_DISTRO = "lastWslDistro";
 const KEY_ZOOM_LEVEL = "zoomLevel";
 const KEY_AGENT_NOTIFICATIONS = "agentNotifications";
 const KEY_AGENT_NOTIFICATION_SOUND = "agentNotificationSound";
+const KEY_AGENT_OPEN_IN_CHAT = "agentOpenInChat";
 const KEY_AGENT_LAUNCH_COMMANDS = "agentLaunchCommands";
 const KEY_DEFAULT_WORKSPACE_ENV = "defaultWorkspaceEnv";
 const KEY_SHORTCUTS = "shortcuts";
@@ -296,6 +305,12 @@ const KEY_LSP_CUSTOM_SERVERS = "lspCustomServers";
 const TERMINAL_FONT_SIZE_DEFAULT = 14;
 const TERMINAL_FONT_SIZE_MIN = 8;
 const TERMINAL_FONT_SIZE_MAX = 32;
+
+export const TERMINAL_PANE_PADDING_MIN = 0;
+export const TERMINAL_PANE_PADDING_MAX = 24;
+export const TERMINAL_LINE_HEIGHT_DEFAULT = 1.2;
+export const TERMINAL_LINE_HEIGHT_MIN = 1;
+export const TERMINAL_LINE_HEIGHT_MAX = 1.6;
 
 export const TERMINAL_FONT_SIZES = [
   10, 12, 13, 14, 15, 16, 18, 20, 22, 24,
@@ -365,11 +380,13 @@ export const DEFAULT_PREFERENCES: Preferences = {
   terminalScreenReader: false,
   terminalCursorBlink: false,
   terminalCursorStyle: "bar",
-  terminalFontFamily: "",
+  terminalFontFamily: "Red Hat Mono",
   terminalFontWeight: "normal",
   terminalShell: "",
   terminalLetterSpacing: 0,
   terminalFontSize: TERMINAL_FONT_SIZE_DEFAULT,
+  terminalPanePadding: 0,
+  terminalLineHeight: TERMINAL_LINE_HEIGHT_DEFAULT,
   terminalScrollback: TERMINAL_SCROLLBACK_DEFAULT,
   terminalScrollSpeed: DEFAULT_SCROLL_SPEED,
   terminalMacOptionAsAlt: DEFAULT_MAC_OPTION_AS_ALT,
@@ -378,6 +395,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   zoomLevel: 1.0,
   agentNotifications: true,
   agentNotificationSound: true,
+  agentOpenInChat: true,
   agentLaunchCommands: DEFAULT_AGENT_LAUNCH_COMMANDS,
   defaultWorkspaceEnv: "local",
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
@@ -543,6 +561,14 @@ export async function loadPreferences(): Promise<Preferences> {
     terminalFontSize:
       get<number>(KEY_TERMINAL_FONT_SIZE) ??
       DEFAULT_PREFERENCES.terminalFontSize,
+    terminalPanePadding: clampTerminalPanePadding(
+      get<number>(KEY_TERMINAL_PANE_PADDING) ??
+        DEFAULT_PREFERENCES.terminalPanePadding,
+    ),
+    terminalLineHeight: clampTerminalLineHeight(
+      get<number>(KEY_TERMINAL_LINE_HEIGHT) ??
+        DEFAULT_PREFERENCES.terminalLineHeight,
+    ),
     terminalScrollback: clampScrollback(
       get<number>(KEY_TERMINAL_SCROLLBACK) ??
         DEFAULT_PREFERENCES.terminalScrollback,
@@ -566,6 +592,9 @@ export async function loadPreferences(): Promise<Preferences> {
     agentNotificationSound:
       get<boolean>(KEY_AGENT_NOTIFICATION_SOUND) ??
       DEFAULT_PREFERENCES.agentNotificationSound,
+    agentOpenInChat:
+      get<boolean>(KEY_AGENT_OPEN_IN_CHAT) ??
+      DEFAULT_PREFERENCES.agentOpenInChat,
     agentLaunchCommands: normalizeAgentLaunchCommands(
       get<unknown>(KEY_AGENT_LAUNCH_COMMANDS),
     ),
@@ -896,6 +925,32 @@ export async function setTerminalFontSize(value: number): Promise<void> {
   await writePref(KEY_TERMINAL_FONT_SIZE, clamped);
 }
 
+export function clampTerminalPanePadding(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(
+    TERMINAL_PANE_PADDING_MIN,
+    Math.min(TERMINAL_PANE_PADDING_MAX, Math.round(value)),
+  );
+}
+
+export async function setTerminalPanePadding(value: number): Promise<void> {
+  await writePref(KEY_TERMINAL_PANE_PADDING, clampTerminalPanePadding(value));
+}
+
+/** Rounded to 0.05 so the cell height stays stable across sessions. */
+export function clampTerminalLineHeight(value: number): number {
+  if (!Number.isFinite(value)) return TERMINAL_LINE_HEIGHT_DEFAULT;
+  const stepped = Math.round(value * 20) / 20;
+  return Math.max(
+    TERMINAL_LINE_HEIGHT_MIN,
+    Math.min(TERMINAL_LINE_HEIGHT_MAX, stepped),
+  );
+}
+
+export async function setTerminalLineHeight(value: number): Promise<void> {
+  await writePref(KEY_TERMINAL_LINE_HEIGHT, clampTerminalLineHeight(value));
+}
+
 function clampScrollback(value: number): number {
   if (!Number.isFinite(value)) return TERMINAL_SCROLLBACK_DEFAULT;
   return Math.min(
@@ -971,6 +1026,10 @@ export async function setAgentNotificationSound(value: boolean): Promise<void> {
   await writePref(KEY_AGENT_NOTIFICATION_SOUND, value);
 }
 
+export async function setAgentOpenInChat(value: boolean): Promise<void> {
+  await writePref(KEY_AGENT_OPEN_IN_CHAT, value);
+}
+
 export async function setAgentLaunchCommands(
   value: AgentLaunchCommands,
 ): Promise<void> {
@@ -1044,6 +1103,8 @@ export async function onPreferencesChange(
     [KEY_TERMINAL_SHELL]: "terminalShell",
     [KEY_TERMINAL_LETTER_SPACING]: "terminalLetterSpacing",
     [KEY_TERMINAL_FONT_SIZE]: "terminalFontSize",
+    [KEY_TERMINAL_PANE_PADDING]: "terminalPanePadding",
+    [KEY_TERMINAL_LINE_HEIGHT]: "terminalLineHeight",
     [KEY_TERMINAL_SCROLLBACK]: "terminalScrollback",
     [KEY_TERMINAL_SCROLL_SPEED]: "terminalScrollSpeed",
     [KEY_TERMINAL_MAC_OPTION_AS_ALT]: "terminalMacOptionAsAlt",
@@ -1052,6 +1113,7 @@ export async function onPreferencesChange(
     [KEY_ZOOM_LEVEL]: "zoomLevel",
     [KEY_AGENT_NOTIFICATIONS]: "agentNotifications",
     [KEY_AGENT_NOTIFICATION_SOUND]: "agentNotificationSound",
+    [KEY_AGENT_OPEN_IN_CHAT]: "agentOpenInChat",
     [KEY_AGENT_LAUNCH_COMMANDS]: "agentLaunchCommands",
     [KEY_DEFAULT_WORKSPACE_ENV]: "defaultWorkspaceEnv",
     [KEY_SHORTCUTS]: "shortcuts",

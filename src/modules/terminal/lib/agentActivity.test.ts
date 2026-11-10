@@ -8,7 +8,7 @@ import {
 
 describe("phaseForSignal", () => {
   it("maps lifecycle kinds to phases", () => {
-    expect(phaseForSignal("started")).toBe("working");
+    expect(phaseForSignal("started")).toBe("idle");
     expect(phaseForSignal("working")).toBe("working");
     expect(phaseForSignal("attention")).toBe("attention");
     expect(phaseForSignal("finished")).toBe("finished");
@@ -76,7 +76,9 @@ describe("tabAgentStatus", () => {
 });
 
 describe("useAgentActivityStore", () => {
-  beforeEach(() => useAgentActivityStore.setState({ phases: {}, agents: {} }));
+  beforeEach(() =>
+    useAgentActivityStore.setState({ phases: {}, agents: {}, sessionIds: {} }),
+  );
 
   it("keeps a stable reference when the phase is unchanged", () => {
     const { setPhase } = useAgentActivityStore.getState();
@@ -95,6 +97,16 @@ describe("useAgentActivityStore", () => {
     const state = useAgentActivityStore.getState();
     expect(1 in state.phases).toBe(false);
     expect(1 in state.agents).toBe(false);
+  });
+
+  it("keeps a session id per pty until the pty is cleared", () => {
+    const { setSessionId, clear } = useAgentActivityStore.getState();
+    setSessionId(1, "0b5f4c2e-9a1d-4e3b-8c7f-1234567890ab");
+    const first = useAgentActivityStore.getState().sessionIds;
+    setSessionId(1, "0b5f4c2e-9a1d-4e3b-8c7f-1234567890ab");
+    expect(useAgentActivityStore.getState().sessionIds).toBe(first);
+    clear(1);
+    expect(useAgentActivityStore.getState().sessionIds).toEqual({});
   });
 
   it("acknowledges attention without losing active agent state", () => {

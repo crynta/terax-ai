@@ -1,14 +1,23 @@
 import type { BlockMode } from "@/modules/terminal/block/lib/modeMachine";
 import {
+  disposeGhosttyBlocks,
+  ensureGhosttyBlocks,
+  ghosttyBlocks,
+} from "@/modules/terminal/ghostty/ghosttyBlockSessions";
+import {
   clearGhosttySession,
   disposeGhosttySession,
   focusGhosttySession,
+  ghosttyBracketedPasteForLeaf,
+  ghosttyCwdForLeaf,
   ghosttyFocusedLeaf,
   ghosttyLeafHasForegroundProcess,
   ghosttyLeafIdForPty,
-  ghosttyCwdForLeaf,
+  ghosttyLiveLeafIds,
   ghosttyPtyIdForLeaf,
+  ghosttyScreenTextForLeaf,
   ghosttySelectionForLeaf,
+  ghosttyTailTextForLeaf,
   hasGhosttySession,
   interruptGhosttySession,
   pasteIntoGhosttySession,
@@ -16,14 +25,11 @@ import {
   whenGhosttySessionReady,
   writeToGhosttySession,
 } from "@/modules/terminal/ghostty/useGhosttyTerminalSession";
-import {
-  disposeGhosttyBlocks,
-  ensureGhosttyBlocks,
-  ghosttyBlocks,
-} from "@/modules/terminal/ghostty/ghosttyBlockSessions";
+
 export type { WatermarkState } from "@/modules/terminal/ghostty/ghosttyBlockSessions";
-import { forgetLeafPresentation } from "@/modules/terminal/lib/ptyPresentation";
+
 import type { WatermarkState } from "@/modules/terminal/ghostty/ghosttyBlockSessions";
+import { forgetLeafPresentation } from "@/modules/terminal/lib/ptyPresentation";
 
 export async function whenSessionReady(
   leafId: number,
@@ -54,6 +60,24 @@ export function interruptLeaf(leafId: number): void {
 
 export function pasteIntoSession(leafId: number, text: string): boolean {
   return pasteIntoGhosttySession(leafId, text);
+}
+
+export function leafBracketedPaste(leafId: number): boolean {
+  return ghosttyBracketedPasteForLeaf(leafId);
+}
+
+/** The bottom screenful of the pane's text, for reading a dialog off it. */
+export function leafScreenText(leafId: number): string | null {
+  return ghosttyScreenTextForLeaf(leafId);
+}
+
+/** The pane's last `lines` lines, scrollback included, for attaching to a prompt. */
+export function leafTailText(leafId: number, lines: number): string | null {
+  return ghosttyTailTextForLeaf(leafId, lines);
+}
+
+export function liveLeafIds(): number[] {
+  return ghosttyLiveLeafIds();
 }
 
 export function leafCwd(leafId: number): string | null {

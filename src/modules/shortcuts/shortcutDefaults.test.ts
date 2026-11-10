@@ -54,6 +54,7 @@ ai.toggle: Cmd+i
 ai.toggleMini: Shift+Cmd+i
 ai.askSelection: Cmd+j
 agent.focusAttention: Shift+Cmd+a
+agent.toggleReader: Shift+Cmd+r
 sidebar.toggle: Cmd+b, Shift+Cmd+b
 explorer.focus: Shift+Cmd+e
 explorer.toggleHidden: Shift+Cmd+.
@@ -203,7 +204,10 @@ describe("Windows and Linux defaults", () => {
     "editor.redo",
   ]);
   /** Deliberately unbound: Ctrl+K is readline's kill-line. */
-  const UNBOUND: ReadonlySet<ShortcutId> = new Set(["terminal.clear"]);
+  const UNBOUND: ReadonlySet<ShortcutId> = new Set([
+    "terminal.clear",
+    "agent.toggleReader",
+  ]);
 
   it("covers every shortcut", () => {
     expect(Object.keys(table).sort()).toEqual([...ids].sort());

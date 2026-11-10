@@ -19,6 +19,7 @@ import type { ThemePref } from "@/modules/settings/store";
 import {
   setAgentNotificationSound,
   setAgentNotifications,
+  setAgentOpenInChat,
   setAutostart,
   setConfirmCloseRunningTerminal,
   setDefaultWorkspaceEnv,
@@ -31,13 +32,15 @@ import {
   setTerminalFontSize,
   setTerminalFontWeight,
   setTerminalLetterSpacing,
-  setTerminalScrollback,
+  setTerminalLineHeight,
+  setTerminalPanePadding,
+  coerceTerminalRenderer,
   setTerminalMacOptionAsAlt,
   setTerminalScrollSpeed,
-  setTerminalShell,
-  coerceTerminalRenderer,
   setTerminalRenderer,
   setTerminalScreenReader,
+  setTerminalScrollback,
+  setTerminalShell,
   setZoomLevel,
   TERMINAL_FONT_SIZES,
   TERMINAL_SCROLLBACK_PRESETS,
@@ -78,6 +81,8 @@ const TERMINAL_CURSOR_STYLES = [
   { value: "underline", label: "Underline" },
 ] as const;
 const LETTER_SPACINGS = [-4, -3, -2, -1, 0, 1, 2, 3, 4] as const;
+const LINE_HEIGHTS = [1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6] as const;
+const PANE_PADDINGS = [0, 4, 8, 10, 12, 16, 20, 24] as const;
 const OPTION_AS_ALT_CHOICES = [
   ["off", "Off"],
   ["left", "Left Option"],
@@ -124,6 +129,8 @@ export function GeneralSection() {
     (s) => s.terminalLetterSpacing,
   );
   const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
+  const terminalLineHeight = usePreferencesStore((s) => s.terminalLineHeight);
+  const terminalPanePadding = usePreferencesStore((s) => s.terminalPanePadding);
   const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
   const terminalScrollSpeed = usePreferencesStore((s) => s.terminalScrollSpeed);
   const terminalMacOptionAsAlt = usePreferencesStore(
@@ -137,6 +144,7 @@ export function GeneralSection() {
   const agentNotificationSound = usePreferencesStore(
     (s) => s.agentNotificationSound,
   );
+  const agentOpenInChat = usePreferencesStore((s) => s.agentOpenInChat);
   const [notificationTest, setNotificationTest] =
     useState<NotificationTestState>("idle");
   const notificationTestPending =
@@ -478,6 +486,46 @@ export function GeneralSection() {
           </Select>
         </SettingRow>
         <SettingRow
+          title="Line height"
+          description="Row height as a multiple of the font size. A little more room makes long agent output easier to read."
+        >
+          <Select
+            value={String(terminalLineHeight)}
+            onValueChange={(v) => void setTerminalLineHeight(Number(v))}
+          >
+            <SelectTrigger size="sm" className="h-8 w-28 text-[12px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {LINE_HEIGHTS.map((v) => (
+                <SelectItem key={v} value={String(v)} className="text-[12px]">
+                  {v.toFixed(1)}×
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingRow>
+        <SettingRow
+          title="Pane padding"
+          description="Space between each terminal pane's edge and its text."
+        >
+          <Select
+            value={String(terminalPanePadding)}
+            onValueChange={(v) => void setTerminalPanePadding(Number(v))}
+          >
+            <SelectTrigger size="sm" className="h-8 w-28 text-[12px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PANE_PADDINGS.map((v) => (
+                <SelectItem key={v} value={String(v)} className="text-[12px]">
+                  {v} px
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingRow>
+        <SettingRow
           title="Scrollback"
           description="Lines of history kept per terminal. Higher uses more RAM (~3 KB / line)."
         >
@@ -594,6 +642,15 @@ export function GeneralSection() {
             checked={agentNotificationSound}
             disabled={!agentNotifications || notificationTestPending}
             onCheckedChange={(v) => void setAgentNotificationSound(v)}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Open Claude sessions in Chat view"
+          description="When Claude Code starts in a pane, show it as a chat. Cmd+Shift+R switches back to the terminal."
+        >
+          <Switch
+            checked={agentOpenInChat}
+            onCheckedChange={(v) => void setAgentOpenInChat(v)}
           />
         </SettingRow>
       </div>

@@ -54,6 +54,9 @@
     --color-foreground: var(--foreground);
     --color-background: var(--background);
     --color-frame: var(--frame);
+    --color-agent-working: var(--agent-working);
+    --color-agent-attention: var(--agent-attention);
+    --color-agent-done: var(--agent-done);
     --radius-sm: calc(var(--radius) * 0.6);
     --radius-md: calc(var(--radius) * 0.8);
     --radius-lg: var(--radius);
@@ -226,6 +229,45 @@
   background: var(--background);
   box-shadow: var(--pane-shadow);
   overflow: hidden;
+}
+
+/* Coding-agent status colours, taken from the active theme's ANSI palette so
+ * every built-in and user theme gets a matching set with no new tokens. */
+:root {
+  --agent-working: var(--terminal-ansi-blue);
+  --agent-attention: var(--terminal-ansi-yellow);
+  --agent-done: var(--terminal-ansi-green);
+}
+
+/* Terminal pane decorations. Both layers sit over the pane with
+ * `pointer-events: none`, so clicks, selection and wheel still reach the
+ * terminal, and they only use opacity and inset box-shadows (no blur filter)
+ * so they never force a composited layer. */
+.terax-pane-frame,
+.terax-pane-dim {
+  position: absolute;
+  inset: 0;
+  border-radius: calc(var(--pane-radius) - 2px);
+}
+.terax-pane-frame {
+  transition: box-shadow var(--dur-base) var(--ease-soft);
+}
+/* In a split tab each pane gets its own hairline, and the focused one a ring. */
+.terax-pane-leaf[data-pane-split] > .terax-pane-frame {
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.terax-pane-leaf[data-pane-split][data-pane-focused] > .terax-pane-frame {
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--ring) 70%, transparent);
+}
+/* An agent waiting for input glows in every layout, split or not. */
+.terax-pane-leaf[data-agent-phase="attention"] > .terax-pane-frame {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--agent-attention) 85%, transparent),
+    inset 0 0 22px -8px color-mix(in oklab, var(--agent-attention) 60%, transparent);
+  animation: terax-attention 1.6s steps(8, end) 3;
+}
+.terax-pane-dim {
+  background: color-mix(in oklab, var(--terminal-background) 30%, transparent);
 }
 
 /* Window vibrancy (macOS NSVisualEffectView / Windows Mica). Only the frame
@@ -605,7 +647,19 @@ html[data-window-inactive] *::after {
     background-position: 0% center;
   }
   .terax-blink,
-  .terax-attention-pulse {
+  .terax-attention-pulse,
+  .terax-pane-leaf[data-agent-phase="attention"] > .terax-pane-frame {
     animation: none;
   }
+}
+
+/* A code block holding a box diagram: one font for letters and box glyphs,
+   rows tight enough that vertical strokes join, never wrapped. */
+.terax-code-diagram {
+  font-family:
+    "Terax Box", "Red Hat Mono", "JetBrains Mono", ui-monospace, SFMono-Regular,
+    Menlo, monospace;
+  font-variant-ligatures: none;
+  line-height: 1.25;
+  white-space: pre;
 }

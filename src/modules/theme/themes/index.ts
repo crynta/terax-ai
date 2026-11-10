@@ -14,6 +14,7 @@ import { solarized } from "./solarized";
 import { teraxDefault } from "./terax-default";
 import { tide } from "./tide";
 import { tokyoNight } from "./tokyo-night";
+import { tokyoNightSession } from "./tokyo-night-session";
 import { xcode } from "./xcode";
 
 const BUILTIN: Theme[] = [
@@ -23,6 +24,7 @@ const BUILTIN: Theme[] = [
   kanagawa,
   kanagawaDragon,
   tokyoNight,
+  tokyoNightSession,
   catppuccin,
   rosePine,
   everforest,

@@ -36,6 +36,13 @@ function relativeTime(ts: number): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+const STATUS_LABEL: Record<AgentStatus, string> = {
+  working: "working",
+  waiting: "waiting",
+  done: "done",
+  idle: "ready",
+};
+
 function StatusRow({
   agent,
   status,
@@ -46,6 +53,7 @@ function StatusRow({
   onClick: () => void;
 }) {
   const waiting = status === "waiting";
+  const label = STATUS_LABEL[status];
   return (
     <button
       type="button"
@@ -67,7 +75,7 @@ function StatusRow({
         )}
       >
         {waiting ? <span className="size-1.5 rounded-full bg-primary" /> : null}
-        {waiting ? "waiting" : "working"}
+        {label}
       </span>
     </button>
   );

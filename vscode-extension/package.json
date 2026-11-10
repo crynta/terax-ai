@@ -1,0 +1,173 @@
+{
+  "name": "terax-claude-reader",
+  "displayName": "Terax Reader for Claude Code",
+  "description": "Terax's chat view for Claude Code sessions running in the VS Code terminal: cards, permission prompts, a prompt box, Stop, modes, changes and history.",
+  "version": "0.3.1",
+  "publisher": "local",
+  "license": "Apache-2.0",
+  "private": true,
+  "icon": "media/icon.png",
+  "engines": {
+    "vscode": "^1.93.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "teraxReader.open",
+        "title": "Open Claude Reader",
+        "category": "Claude Reader",
+        "icon": {
+          "light": "media/terax-mark-light.png",
+          "dark": "media/terax-mark-dark.png"
+        }
+      },
+      {
+        "command": "teraxReader.pick",
+        "title": "Open Reader for Terminal…",
+        "category": "Claude Reader"
+      },
+      {
+        "command": "teraxReader.showTerminal",
+        "title": "Show Terminal",
+        "category": "Claude Reader"
+      }
+    ],
+    "menus": {
+      "terminal/title/context": [
+        {
+          "command": "teraxReader.open"
+        }
+      ],
+      "terminal/context": [
+        {
+          "command": "teraxReader.open"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "teraxReader.open",
+          "when": "view == terminal",
+          "group": "navigation"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "teraxReader.open",
+          "group": "navigation@-10",
+          "when": "activeWebviewPanelId != teraxReader"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Claude Reader",
+      "properties": {
+        "teraxReader.location": {
+          "type": "string",
+          "enum": [
+            "editor",
+            "editorBeside",
+            "panel"
+          ],
+          "enumDescriptions": [
+            "An editor tab among your open files, one per Claude terminal (like Terax's Claude tab).",
+            "An editor tab in a split beside your files, one per Claude terminal.",
+            "A CLAUDE tab beside TERMINAL in the bottom panel; switch between the Reader and the raw terminal in the same spot."
+          ],
+          "default": "editor",
+          "description": "Where the Reader opens."
+        },
+        "teraxReader.theme": {
+          "type": "string",
+          "enum": [
+            "tokyo-night",
+            "vscode"
+          ],
+          "enumDescriptions": [
+            "Terax's Tokyo Night Session look (the default). Click the Claude icon in the Reader header to switch.",
+            "Follow the active VS Code color theme (light, dark or high contrast)."
+          ],
+          "default": "tokyo-night",
+          "description": "Colours of the Claude Reader."
+        },
+        "teraxReader.accent": {
+          "type": "string",
+          "enum": [
+            "neutral",
+            "theme"
+          ],
+          "enumDescriptions": [
+            "Light grey from the theme's text colour: no blue cast on black or grey themes.",
+            "The VS Code theme's button colour (often blue)."
+          ],
+          "default": "neutral",
+          "description": "Accent for prompt cards, selections, focus rings and quote bars when following the VS Code theme."
+        },
+        "teraxReader.fontSize": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 32,
+          "description": "Size of Claude's replies in the Reader, in px. 0 follows VS Code: the chat font size (`chat.fontSize`), else the editor font size + 1. Code blocks always use `editor.fontSize`; labels and chips scale along."
+        },
+        "teraxReader.autoOpen": {
+          "type": "boolean",
+          "default": true,
+          "description": "Open the Reader beside the terminal when `claude` starts in it."
+        },
+        "teraxReader.claudeCommand": {
+          "type": "string",
+          "default": "claude",
+          "description": "Command used to resume or fork a Claude session from the Reader."
+        }
+      }
+    },
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "teraxReaderPanel",
+          "title": "Claude",
+          "icon": "media/claude.svg"
+        }
+      ]
+    },
+    "views": {
+      "teraxReaderPanel": [
+        {
+          "type": "webview",
+          "id": "teraxReader.view",
+          "name": "Reader",
+          "icon": "media/claude.svg",
+          "when": "config.teraxReader.location == panel"
+        }
+      ]
+    },
+    "themes": [
+      {
+        "label": "Terax Tokyo Night Session",
+        "uiTheme": "vs-dark",
+        "path": "./themes/terax-tokyo-night-session.json"
+      }
+    ]
+  },
+  "scripts": {
+    "build:host": "node build.mjs",
+    "build:webview": "cd .. && node_modules/.bin/vite build --config vscode-extension/webview/vite.config.ts",
+    "build": "npm run build:host && npm run build:webview",
+    "test": "cd .. && node_modules/.bin/vitest run --config vscode-extension/vitest.config.ts",
+    "check-types": "../node_modules/.bin/tsc -p tsconfig.json --noEmit",
+    "package": "npm run build && vsce package --no-dependencies --allow-missing-repository --out terax-claude-reader.vsix"
+  },
+  "devDependencies": {
+    "@types/vscode": "1.93.0",
+    "@vscode/vsce": "4.1.0",
+    "@xterm/headless": "6.0.0",
+    "esbuild": "0.28.2"
+  }
+}
