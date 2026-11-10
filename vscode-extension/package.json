@@ -2,7 +2,7 @@
   "name": "terax-claude-reader",
   "displayName": "Terax Reader for Claude Code",
   "description": "Terax's chat view for Claude Code sessions running in the VS Code terminal: cards, permission prompts, a prompt box, Stop, modes, changes and history.",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "publisher": "local",
   "license": "Apache-2.0",
   "private": true,
@@ -54,14 +54,16 @@
         "teraxReader.location": {
           "type": "string",
           "enum": [
-            "panel",
-            "editor"
+            "editor",
+            "editorBeside",
+            "panel"
           ],
           "enumDescriptions": [
-            "A CLAUDE tab beside TERMINAL in the bottom panel; switch between the Reader and the raw terminal in the same spot.",
-            "An editor tab beside your files, one per Claude terminal."
+            "An editor tab among your open files, one per Claude terminal (like Terax's Claude tab).",
+            "An editor tab in a split beside your files, one per Claude terminal.",
+            "A CLAUDE tab beside TERMINAL in the bottom panel; switch between the Reader and the raw terminal in the same spot."
           ],
-          "default": "panel",
+          "default": "editor",
           "description": "Where the Reader opens."
         },
         "teraxReader.theme": {

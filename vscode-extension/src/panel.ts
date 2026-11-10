@@ -75,8 +75,9 @@ export class ReaderHost implements vscode.Disposable, vscode.WebviewViewProvider
 
   /** Shows the Reader for `leaf` where the user wants it (panel tab or editor tab). */
   show(leaf: Leaf, preserveFocus = false): void {
-    if (readerLocation() === "editor") {
-      this.openTab(leaf, preserveFocus);
+    const location = readerLocation();
+    if (location !== "panel") {
+      this.openTab(leaf, preserveFocus, location === "editorBeside");
       return;
     }
     this.follow(leaf);
@@ -122,7 +123,8 @@ export class ReaderHost implements vscode.Disposable, vscode.WebviewViewProvider
 
   // ---------------------------------------------------------------- editor tabs
 
-  private openTab(leaf: Leaf, preserveFocus: boolean): void {
+  /** An editor tab for `leaf`: among the files open now, or in a split beside them. */
+  private openTab(leaf: Leaf, preserveFocus: boolean, beside: boolean): void {
     const existing = this.tabs.get(leaf.leafId);
     if (existing) {
       existing.reveal(undefined, preserveFocus);
@@ -131,7 +133,10 @@ export class ReaderHost implements vscode.Disposable, vscode.WebviewViewProvider
     const panel = vscode.window.createWebviewPanel(
       "teraxReader",
       `Claude · ${describe(leaf)}`,
-      { viewColumn: vscode.ViewColumn.Beside, preserveFocus },
+      {
+        viewColumn: beside ? vscode.ViewColumn.Beside : vscode.ViewColumn.Active,
+        preserveFocus,
+      },
       { retainContextWhenHidden: true },
     );
     panel.iconPath = vscode.Uri.joinPath(this.context.extensionUri, "media", "icon.png");
@@ -245,9 +250,11 @@ function phaseDot(leaf: Leaf): string {
   return leaf.phase === "attention" ? "● " : leaf.phase === "working" ? "◌ " : "";
 }
 
-function readerLocation(): "panel" | "editor" {
+type ReaderLocation = "editor" | "editorBeside" | "panel";
+
+function readerLocation(): ReaderLocation {
   const value = vscode.workspace.getConfiguration("teraxReader").get<string>("location");
-  return value === "editor" ? "editor" : "panel";
+  return value === "panel" || value === "editorBeside" ? value : "editor";
 }
 
 function readerTheme(): ReaderTheme {
