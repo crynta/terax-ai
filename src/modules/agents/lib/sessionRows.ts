@@ -1,8 +1,4 @@
-import {
-  DEFAULT_SPACE_ID,
-  type Tab,
-  type TerminalTab,
-} from "@/modules/tabs/lib/useTabs";
+import type { Tab, TerminalTab } from "@/modules/tabs/lib/useTabs";
 import type { AgentPhase } from "@/modules/terminal/lib/agentActivity";
 import { findLeafCwd, hasLeaf, leafIds } from "@/modules/terminal/lib/panes";
 import type {
@@ -91,7 +87,7 @@ export function selectSessionRows(input: SessionRowsInput): SessionRow[] {
     rows.push({
       leafId: session.leafId,
       tabId: session.tabId,
-      spaceId: tab.spaceId || DEFAULT_SPACE_ID,
+      spaceId: tab.spaceId,
       agent: session.agent,
       phase,
       title:
@@ -157,7 +153,6 @@ export function groupRowsBySpace(
   spaces: readonly SpaceInfo[],
   activeId: string | null,
 ): SpaceGroup[] {
-  const current = activeId ?? DEFAULT_SPACE_ID;
   const known = new Map(spaces.map((space) => [space.id, space]));
   const groups = new Map<string, SpaceGroup>();
   for (const row of rows) {
@@ -168,7 +163,7 @@ export function groupRowsBySpace(
         spaceId: row.spaceId,
         name: space?.name ?? "Other",
         color: space?.color,
-        current: row.spaceId === current,
+        current: row.spaceId === activeId,
         rows: [],
         attention: 0,
         working: 0,
