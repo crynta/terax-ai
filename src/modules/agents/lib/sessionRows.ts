@@ -4,7 +4,7 @@ import {
   type TerminalTab,
 } from "@/modules/tabs/lib/useTabs";
 import type { AgentPhase } from "@/modules/terminal/lib/agentActivity";
-import { findLeafCwd, leafIds } from "@/modules/terminal/lib/panes";
+import { findLeafCwd, hasLeaf, leafIds } from "@/modules/terminal/lib/panes";
 import type {
   AgentNotification,
   AgentSession,
@@ -76,11 +76,14 @@ export function selectSessionRows(input: SessionRowsInput): SessionRow[] {
   const rows: SessionRow[] = [];
   for (const session of Object.values(input.sessions)) {
     const tab = terminalTabs.get(session.tabId);
-    if (!tab) continue;
+    // A closed pane of a tab that is still open leaves no row behind.
+    if (!tab || !hasLeaf(tab.paneTree, session.leafId)) continue;
     const ptyId = input.ptyIdForLeaf(session.leafId);
+    // Without a live phase nothing tracks the agent any more, so it is never
+    // shown as working.
     const phase =
       (ptyId !== null ? input.phases[ptyId] : undefined) ??
-      (session.status === "working" ? "working" : "attention");
+      (session.status === "waiting" ? "attention" : "idle");
     const cwd = findLeafCwd(tab.paneTree, session.leafId) ?? tab.cwd ?? null;
     const leaves = leafIds(tab.paneTree);
     const index = leaves.indexOf(session.leafId);

@@ -15,11 +15,11 @@ describe("agent session store", () => {
     vi.useRealTimers();
   });
 
-  it("starts a session in the working state", () => {
+  it("starts a session idle at its prompt", () => {
     useAgentStore.getState().start(7, 3, "claude");
     const s = useAgentStore.getState().sessions[7];
 
-    expect(s).toMatchObject({ leafId: 7, tabId: 3, agent: "claude", status: "working" });
+    expect(s).toMatchObject({ leafId: 7, tabId: 3, agent: "claude", status: "idle" });
     expect(s.attentionSince).toBeNull();
   });
 
@@ -28,7 +28,7 @@ describe("agent session store", () => {
     useAgentStore.getState().start(7, 3, "codex");
     const before = useAgentStore.getState().sessions[7];
 
-    useAgentStore.getState().setStatus(7, "working");
+    useAgentStore.getState().setStatus(7, "idle");
 
     expect(useAgentStore.getState().sessions[7]).toBe(before);
   });

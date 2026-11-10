@@ -1,4 +1,5 @@
-export type AgentStatus = "working" | "waiting";
+/** Working on a turn, waiting on the user, turn done, or idle at its prompt. */
+export type AgentStatus = "working" | "waiting" | "done" | "idle";
 
 export type AgentSource = "terminal" | "local";
 

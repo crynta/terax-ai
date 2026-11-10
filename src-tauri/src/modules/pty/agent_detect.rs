@@ -297,7 +297,9 @@ impl AgentDetector {
                 let cmd = pt.strip_prefix(b"C;").unwrap_or(b"");
                 if let Some(agent) = self.match_agent(cmd) {
                     self.armed = true;
-                    self.status = Status::Working;
+                    // A fresh agent sits at its prompt: the first prompt's
+                    // `working` marker is what starts work.
+                    self.status = Status::Waiting;
                     emit(Transition::Started { agent });
                 }
             }
@@ -321,7 +323,7 @@ impl AgentDetector {
     fn ensure_armed<F: FnMut(Transition)>(&mut self, agent: &str, emit: &mut F) {
         if !self.armed {
             self.armed = true;
-            self.status = Status::Working;
+            self.status = Status::Waiting;
             emit(Transition::Started { agent: agent.to_string() });
         }
     }
@@ -470,9 +472,12 @@ mod tests {
 
     #[test]
     fn four_field_marker_self_arms_named_agent() {
-        // Fresh arm already implies Working, so `working` emits only Started.
+        // A fresh arm sits at the prompt, so `working` follows Started.
         let mut d = AgentDetector::new();
-        assert_eq!(run(&mut d, &osc("777;notify;Terax;codex;working")), vec![started("codex")]);
+        assert_eq!(
+            run(&mut d, &osc("777;notify;Terax;codex;working")),
+            vec![started("codex"), Transition::Working]
+        );
         let mut g = AgentDetector::new();
         assert_eq!(
             run(&mut g, &osc("777;notify;Terax;gemini;finished")),
@@ -485,7 +490,7 @@ mod tests {
         let mut d = AgentDetector::new();
         assert_eq!(
             run(&mut d, &osc("777;notify;Terax;pi;working")),
-            vec![started("pi")]
+            vec![started("pi"), Transition::Working]
         );
         assert_eq!(
             run(&mut d, &osc("777;notify;Terax;pi;finished")),
@@ -524,7 +529,7 @@ mod tests {
         let mut d = AgentDetector::new();
         assert_eq!(
             run(&mut d, &osc(&format!("777;notify;Terax;claude;working;{SESSION}"))),
-            vec![started("claude"), linked(SESSION)]
+            vec![started("claude"), linked(SESSION), Transition::Working]
         );
         // The same id on later events is not re-reported.
         assert_eq!(

@@ -8,7 +8,7 @@ import {
 
 describe("phaseForSignal", () => {
   it("maps lifecycle kinds to phases", () => {
-    expect(phaseForSignal("started")).toBe("working");
+    expect(phaseForSignal("started")).toBe("idle");
     expect(phaseForSignal("working")).toBe("working");
     expect(phaseForSignal("attention")).toBe("attention");
     expect(phaseForSignal("finished")).toBe("finished");

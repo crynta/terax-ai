@@ -185,3 +185,37 @@ describe("groupRowsBySpace", () => {
     expect(rows[0].spaceId).toBe("sp-a");
   });
 });
+
+describe("stale sessions", () => {
+  it("drops a session whose pane closed while its tab stayed open", () => {
+    const rows = selectSessionRows({
+      sessions: { 10: session(10, 1), 99: session(99, 1) },
+      phases: { 110: "working", 199: "working" },
+      sessionIds: {},
+      notifications: [],
+      tabs,
+      ptyIdForLeaf,
+    });
+    expect(rows.map((r) => r.leafId)).toEqual([10]);
+  });
+
+  it("never shows a session nothing tracks as working, nor a done one as needing you", () => {
+    const rows = selectSessionRows({
+      sessions: {
+        10: session(10, 1, { status: "working" }),
+        20: session(20, 2, { status: "done" }),
+        21: session(21, 2, { status: "waiting" }),
+      },
+      phases: {},
+      sessionIds: {},
+      notifications: [],
+      tabs,
+      ptyIdForLeaf,
+    });
+    expect(Object.fromEntries(rows.map((r) => [r.leafId, r.phase]))).toEqual({
+      10: "idle",
+      20: "idle",
+      21: "attention",
+    });
+  });
+});

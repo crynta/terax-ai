@@ -41,7 +41,8 @@ export const useAgentStore = create<AgentStoreState>((set) => ({
             leafId,
             tabId,
             agent,
-            status: "working",
+            // At its prompt until the first prompt is sent.
+            status: "idle",
             startedAt: now,
             lastActivityAt: now,
             attentionSince: null,

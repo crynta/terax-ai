@@ -88,12 +88,14 @@ export function clearAgentActivity(id: number): void {
 }
 
 /** Maps a raw detector signal to the phase it drives, `"exited"` to drop the
- * pty, or `null` to ignore. Pure so the mapping stays unit-testable. */
+ * pty, or `null` to ignore. Pure so the mapping stays unit-testable. An agent
+ * that has just started sits at its prompt: idle until a prompt is sent. */
 export function phaseForSignal(
   kind: string,
-): Exclude<AgentPhase, "idle"> | "exited" | null {
+): AgentPhase | "exited" | null {
   switch (kind) {
     case "started":
+      return "idle";
     case "working":
       return "working";
     case "attention":
@@ -142,17 +144,25 @@ function applySignal(payload: AgentSignal): void {
   }
   // The agent name only rides the `started` signal (incl. self-arm).
   if (agent) store.setAgent(id, agent);
-  store.setPhase(id, action);
-  if (action === "finished") {
-    finishedTimers.set(
-      id,
-      setTimeout(() => {
-        finishedTimers.delete(id);
-        const s = useAgentActivityStore.getState();
-        if (s.phases[id] === "finished") s.setPhase(id, "idle");
-      }, FINISHED_TTL_MS),
-    );
-  }
+  settlePhase(id, action);
+}
+
+/**
+ * Sets a pty's phase from outside the detector (what the agent's screen
+ * shows); a finished turn fades to idle as one reported by a hook does.
+ */
+export function settlePhase(id: number, phase: AgentPhase): void {
+  clearFinishedTimer(id);
+  useAgentActivityStore.getState().setPhase(id, phase);
+  if (phase !== "finished") return;
+  finishedTimers.set(
+    id,
+    setTimeout(() => {
+      finishedTimers.delete(id);
+      const s = useAgentActivityStore.getState();
+      if (s.phases[id] === "finished") s.setPhase(id, "idle");
+    }, FINISHED_TTL_MS),
+  );
 }
 
 // The Rust detector arms via the Claude Code / Codex / Gemini OSC 777 marker and

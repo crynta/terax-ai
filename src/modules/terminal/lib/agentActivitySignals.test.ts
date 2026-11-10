@@ -31,7 +31,7 @@ describe("agent signal listener", () => {
     emit({ id: 4, kind: "linked", agent: null, session: SESSION });
     const state = useAgentActivityStore.getState();
     expect(state.sessionIds).toEqual({ 4: SESSION });
-    expect(state.phases).toEqual({ 4: "working" });
+    expect(state.phases).toEqual({ 4: "idle" });
   });
 
   it("ignores a linked signal without a session and forgets it on exit", () => {

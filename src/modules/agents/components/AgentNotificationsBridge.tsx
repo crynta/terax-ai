@@ -8,6 +8,7 @@ import {
 import { useEffect, useRef } from "react";
 import { shouldOpenInChat } from "../lib/chatDefault";
 import { displayAgent } from "../lib/format";
+import { usePhaseReconciler } from "../lib/phaseReconciler";
 import { maybeTriggerManagedReview } from "../lib/review";
 import { routeAgentNotification } from "../lib/route";
 import type { AgentSession, AgentSignal } from "../lib/types";
@@ -94,7 +95,7 @@ function handleSignal(sig: AgentSignal, ctx: Ctx): void {
       return;
     }
     case "finished": {
-      store.setStatus(leafId, "waiting");
+      store.setStatus(leafId, "done");
       const session = store.sessions[leafId];
       if (session) route(session, "finished", ctx);
       maybeTriggerManagedReview(leafId);
@@ -120,6 +121,7 @@ export function AgentNotificationsBridge({
   onActivate: Activate;
 }) {
   const focused = useWindowFocus();
+  usePhaseReconciler();
   const ctxRef = useRef<Ctx>({ tabs, activeId, focused, onActivate });
   ctxRef.current = { tabs, activeId, focused, onActivate };
 
