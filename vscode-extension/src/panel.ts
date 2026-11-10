@@ -252,7 +252,7 @@ function phaseDot(leaf: Leaf): string {
 
 type ReaderLocation = "editor" | "editorBeside" | "panel";
 
-function readerLocation(): ReaderLocation {
+export function readerLocation(): ReaderLocation {
   const value = vscode.workspace.getConfiguration("teraxReader").get<string>("location");
   return value === "panel" || value === "editorBeside" ? value : "editor";
 }

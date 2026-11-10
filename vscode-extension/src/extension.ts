@@ -1,7 +1,7 @@
 import { appendFileSync } from "node:fs";
 import path from "node:path";
 import * as vscode from "vscode";
-import { ReaderHost } from "./panel";
+import { ReaderHost, readerLocation } from "./panel";
 import { type Leaf, SessionTracker } from "./sessions";
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -39,13 +39,45 @@ export function activate(context: vscode.ExtensionContext): void {
     status.show();
   };
 
-  context.subscriptions.push(
-    tracker.onChange(refreshStatus),
-    tracker.onGone(refreshStatus),
-    tracker.onClaudeStart((leaf) => {
-      if (vscode.workspace.getConfiguration("teraxReader").get("autoOpen", true)) {
-        reader.show(leaf, true);
+  // In an editor tab the Reader has no always-visible home (the panel tab is
+  // hidden), so each Claude terminal opens its tab once by itself: when
+  // `claude` starts, when a running one links its session, or (at startup)
+  // when a terminal is already running Claude. Closing the tab sticks.
+  const autoOpened = new Set<number>();
+  const autoOpen = (leaf: Leaf) => {
+    if (!vscode.workspace.getConfiguration("teraxReader").get("autoOpen", true)) return;
+    if (autoOpened.has(leaf.leafId)) return;
+    autoOpened.add(leaf.leafId);
+    reader.show(leaf, true);
+  };
+  const openRunning = () => {
+    if (readerLocation() === "panel") return;
+    for (const terminal of vscode.window.terminals) {
+      const known = tracker.known(terminal);
+      if (known?.alive || /\bclaude\b/i.test(terminal.name)) {
+        autoOpen(known ?? tracker.leafFor(terminal));
       }
+    }
+  };
+  openRunning();
+
+  context.subscriptions.push(
+    tracker.onChange((leaf) => {
+      refreshStatus();
+      if (readerLocation() !== "panel" && leaf.alive && leaf.sessionId) autoOpen(leaf);
+    }),
+    tracker.onGone((leafId) => {
+      autoOpened.delete(leafId);
+      refreshStatus();
+    }),
+    tracker.onClaudeStart((leaf) => {
+      // A new run of `claude` in the same terminal opens it again.
+      autoOpened.delete(leaf.leafId);
+      autoOpen(leaf);
+    }),
+    vscode.window.onDidOpenTerminal(() => setTimeout(openRunning, 1500)),
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration("teraxReader.location")) openRunning();
     }),
     vscode.commands.registerCommand("teraxReader.open", (arg?: unknown) => {
       const terminal = isTerminal(arg) ? arg : vscode.window.activeTerminal;
