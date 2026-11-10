@@ -1,36 +1,37 @@
 import { terminalWindowFocused } from "@/modules/terminal/ghostty/renderScheduling";
 import { bindTerminalInteraction } from "@/modules/terminal/ghostty/input/terminalInteraction";
-import {
-  isClampedScrollEcho,
-  TerminalScrollbarSync,
-} from "@/modules/terminal/ghostty/gpu/terminalScrollbar";
+import { isClampedScrollEcho, TerminalScrollbarSync } from "@/modules/terminal/ghostty/gpu/terminalScrollbar";
 import { terminalWindowPresentation } from "@/modules/terminal/ghostty/windowPresentation";
 import type { TerminalSurface } from "@/modules/terminal/backend/contracts";
 import { smoothHooks } from "@/bench/smoothHooks";
+import { isPrimaryModifierPressed } from "@/lib/platform";
 import { noteTerminalHostResize } from "@/modules/terminal/lib/terminalResizeGesture";
 import {
   subscribeTerminalResizeInteraction,
   terminalResizeInteractionActive,
 } from "@/modules/terminal/lib/terminalResizeInteraction";
 import { TerminalResizeSync } from "@/modules/terminal/lib/terminalResizeSync";
+import {
+  type DeferredTerminalLinks,
+  deferTerminalLinks,
+} from "../core/terminalLinksLoader";
 import type { Rgb } from "../core/packedCells";
+import type { TerminalLinkHit } from "../core/terminalLinks";
 import type {
   GhosttyGpuFrame,
   GhosttyTerminalModelApi,
 } from "../GhosttyTerminalModel";
 import { GhosttySearchController } from "../search/GhosttySearchController";
 import { TerminalSelectionController } from "../selection/TerminalSelectionController";
-import {
-  TerminalLinkHover,
-  type TerminalLinkHoverInfo,
-} from "../TerminalLinkHover";
-import { TerminalLinkUnderlines } from "../TerminalLinkUnderlines";
 import { DevicePixelRatioMonitor } from "./DevicePixelRatioMonitor";
 import { TerminalGlyphMap, type RasterBudget } from "./GlyphMap";
 import { type DeviceRect, deviceRectsEqual } from "./PaneRects";
 import { ScreenUniform, type ScreenUniformState } from "./ScreenUniform";
 import { SCREEN_UNIFORM_BYTES } from "./shaders";
-import { fitTerminalViewport } from "./TerminalFit";
+import {
+  fitTerminalViewport,
+  TERMINAL_RIGHT_GUTTER_CSS_PX,
+} from "./TerminalFit";
 import {
   TerminalFitQueue,
   type TerminalFitBounds,
@@ -51,11 +52,7 @@ import {
   type TerminalFontMetrics,
   type TerminalGpuTheme,
 } from "./terminalVisuals";
-import {
-  detectPlatform,
-  textContrastFor,
-  type TextContrast,
-} from "./textContrast";
+import { currentTextContrast, type TextContrast } from "./textContrast";
 import {
   CELL_RECORD_BYTES,
   compactWebGpuCellCapacity,
@@ -77,9 +74,6 @@ import type { PaneBinding } from "./WebGpuWindowCanvas";
 
 const CURSOR_BLINK_MS = 600;
 const TEXT_BLINK_MS = 600;
-const TEXT_CONTRAST_STORAGE_KEY = "terax:terminal-text-contrast";
-/** word0 underline style 1 (single), for link cells the app left undecorated. */
-const LINK_UNDERLINE_BITS = 1 << 24;
 
 export type WebGpuTerminalSurfaceOptions = {
   readonly model: GhosttyTerminalModelApi;
@@ -92,8 +86,7 @@ export type WebGpuTerminalSurfaceOptions = {
   readonly onFirstFrame?: () => void;
   readonly onFrame?: () => void;
   readonly onRequestFocus?: () => void;
-  readonly onOpenLink?: (uri: string) => void;
-  readonly onLinkHover?: (link: TerminalLinkHoverInfo | null) => void;
+  readonly onOpenLink?: (link: TerminalLinkHit) => void;
 };
 
 export type WebGpuTerminalSurfaceStats = {
@@ -195,11 +188,7 @@ export class WebGpuTerminalSurface
   private uploadCount = 0;
   private uploadedBytes = 0;
   private contentRevision: number;
-  private readonly linkHover: TerminalLinkHover;
-  private readonly linkUnderlines = new TerminalLinkUnderlines();
-  /** CPU copy of the uploaded records, so link rows can be re-patched without the borrowed frame. */
-  private cellMirror = new Uint8Array(0);
-  private linkRowScratch = new Uint8Array(0);
+  private readonly links: DeferredTerminalLinks;
   private applyingFit = false;
   private disposed = false;
   /** The window canvas has shown this pane's first frame; until then its DOM covers the canvas. */
@@ -216,7 +205,7 @@ export class WebGpuTerminalSurface
     private readonly options: WebGpuTerminalSurfaceOptions,
   ) {
     this.metrics = metricsForScale(options.metrics, devicePixelScale());
-    this.contrast = currentTextContrast(this.metrics.scale);
+    this.contrast = currentTextContrast();
     this.pixelRatioMonitor = new DevicePixelRatioMonitor(() =>
       this.resizeToHost(),
     );
@@ -278,6 +267,21 @@ export class WebGpuTerminalSurface
         this.runtime.schedule(this);
       },
     });
+    this.root.style.cursor = "text";
+    this.links = deferTerminalLinks({
+      target: this.root,
+      keyTarget: window,
+      isModifier: isPrimaryModifierPressed,
+      model: options.model,
+      scrollbar: this.scrollbar,
+      geometry: () => ({
+        cellWidth: this.metrics.cellWidth,
+        cellHeight: this.metrics.cellHeight,
+        shiftY: this.gridShiftY(),
+        color: rgbToCss(this.theme.foreground),
+      }),
+      onActivate: (hit) => options.onOpenLink?.(hit),
+    });
     this.search = new GhosttySearchController(options.model, () => {
       if (this.applyingFit) return;
       this.runtime.schedule(this);
@@ -295,6 +299,7 @@ export class WebGpuTerminalSurface
       if (!this.visible || this.documentSuspended || !this.host) return;
       this.cursorVisible = true;
       this.textBlinkVisible = true;
+      this.links.invalidate();
       this.search.invalidate();
       if (!this.applyingFit) this.runtime.schedule(this);
       this.armCursorBlink();
@@ -312,17 +317,6 @@ export class WebGpuTerminalSurface
       },
     );
     this.root.addEventListener("pointerdown", this.handlePointerDown);
-    this.linkHover = new TerminalLinkHover({
-      root: this.root,
-      model: options.model,
-      cellSize: () => this.cellSize(),
-      gridShiftY: () => this.gridShiftY(),
-      active: () => this.host !== null,
-      ignoreTarget: (target) => this.scrollbar.contains(target as Node),
-      underlineColor: () => rgbToCss(this.theme.foreground),
-      onOpenLink: options.onOpenLink,
-      onHoverChange: options.onLinkHover,
-    });
     this.scrollbar.addEventListener("scroll", this.handleScroll);
   }
 
@@ -598,7 +592,7 @@ export class WebGpuTerminalSurface
     const revision = model.revision();
     if (revision !== this.contentRevision) {
       this.contentRevision = revision;
-      this.linkHover.refresh();
+      this.links.invalidate();
     }
     this.selection.reconcile();
     this.search.refreshOverlay();
@@ -632,12 +626,6 @@ export class WebGpuTerminalSurface
       budget,
       device,
     );
-    // Reads the screen, so it runs after the last use of the borrowed `frame.cells`.
-    const linksUploaded = this.uploadLinkUnderlines(
-      frame,
-      bufferReplaced || resync,
-      device,
-    );
 
     const cursor = model.cursor();
     const viewportOrigin = model.viewportOriginLine();
@@ -654,7 +642,6 @@ export class WebGpuTerminalSurface
     const redraw =
       frame.damage.kind !== "none" ||
       cellsUploaded ||
-      linksUploaded ||
       glyphsChanged ||
       searchChanged ||
       uniformChanged ||
@@ -821,7 +808,7 @@ export class WebGpuTerminalSurface
     this.scrollbarSync.dispose();
     this.unsubscribeInteraction();
     this.root.removeEventListener("pointerdown", this.handlePointerDown);
-    this.linkHover.dispose();
+    this.links.dispose();
     this.scrollbar.removeEventListener("scroll", this.handleScroll);
   }
 
@@ -872,7 +859,7 @@ export class WebGpuTerminalSurface
     if (!this.host) return;
     try {
       this.metrics = metricsForScale(this.metrics, devicePixelScale());
-      this.contrast = currentTextContrast(this.metrics.scale);
+      this.contrast = currentTextContrast();
       this.atlasLease = this.runtime.acquireGlyphAtlas(this.metrics, this);
       this.glyphMap = new TerminalGlyphMap();
       this.atlasBlocked = false;
@@ -946,9 +933,6 @@ export class WebGpuTerminalSurface
     this.bindGroupDirty = true;
     this.searchRevision = -1;
     this.searchScratch = new Uint8Array(0);
-    this.cellMirror = new Uint8Array(0);
-    this.linkRowScratch = new Uint8Array(0);
-    this.linkUnderlines.reset();
     this.atlasLease?.release();
     this.atlasLease = null;
     this.glyphMap = new TerminalGlyphMap();
@@ -989,6 +973,7 @@ export class WebGpuTerminalSurface
       bounds.height,
       this.metrics,
       bounds.device,
+      TERMINAL_RIGHT_GUTTER_CSS_PX,
     );
     if (fit)
       smoothHooks()?.want(this.benchId, performance.now(), fit.cols, fit.rows);
@@ -1081,6 +1066,7 @@ export class WebGpuTerminalSurface
       bounds.height,
       this.metrics,
       bounds.device,
+      TERMINAL_RIGHT_GUTTER_CSS_PX,
     );
     if (!fit || !this.binding) return;
     const { cols, rows, pixelWidth, pixelHeight } = fit;
@@ -1185,78 +1171,14 @@ export class WebGpuTerminalSurface
     const ranges = everything
       ? [{ start: 0, end: frame.rows - 1 }]
       : frame.dirtyRanges;
-    const mirrorStale = this.cellMirror.length !== frame.cells.length;
-    if (mirrorStale) this.cellMirror = new Uint8Array(frame.cells);
     for (const range of ranges) {
       const offset = range.start * rowBytes;
       const length = (range.end - range.start + 1) * rowBytes;
       device.queue.writeBuffer(buffer, offset, frame.cells, offset, length);
-      if (!mirrorStale && offset < this.cellMirror.length) {
-        this.cellMirror.set(
-          frame.cells.subarray(offset, offset + length),
-          offset,
-        );
-      }
       this.uploadCount += 1;
       this.uploadedBytes += length;
     }
     return ranges.length > 0;
-  }
-
-  /**
-   * Underlines every link cell: rows uploaded raw this frame and rows whose
-   * link cells changed are re-sent from the mirror with a single underline on
-   * link cells the app did not already decorate.
-   */
-  private uploadLinkUnderlines(
-    frame: GhosttyGpuFrame,
-    everything: boolean,
-    device: GPUDevice,
-  ): boolean {
-    const buffer = this.cellsBuffer;
-    if (!buffer || frame.rows === 0 || frame.cols === 0) return false;
-    const ranges = everything
-      ? [{ start: 0, end: frame.rows - 1 }]
-      : frame.dirtyRanges;
-    const changed = this.linkUnderlines.update(
-      this.options.model,
-      frame.rows,
-      frame.cols,
-      ranges,
-    );
-    const rows = new Set<number>();
-    for (const range of ranges) {
-      for (let row = range.start; row <= range.end; row++) {
-        if (this.linkUnderlines.rowHasLinks(row)) rows.add(row);
-      }
-    }
-    // Includes rows whose last link vanished: they go back to their plain records.
-    for (const range of changed) {
-      for (let row = range.start; row <= range.end; row++) rows.add(row);
-    }
-    if (rows.size === 0) return false;
-    const rowBytes = frame.cols * CELL_RECORD_BYTES;
-    if (this.linkRowScratch.length !== rowBytes) {
-      this.linkRowScratch = new Uint8Array(rowBytes);
-    }
-    const scratch = this.linkRowScratch;
-    const words = new Uint32Array(scratch.buffer, 0, rowBytes / 4);
-    for (const row of rows) {
-      const offset = row * rowBytes;
-      if (offset + rowBytes > this.cellMirror.length) continue;
-      scratch.set(this.cellMirror.subarray(offset, offset + rowBytes));
-      for (let column = 0; column < frame.cols; column++) {
-        if (!this.linkUnderlines.isLink(row, column)) continue;
-        const word = column * 4;
-        if (((words[word] >>> 24) & 7) === 0) {
-          words[word] = (words[word] | LINK_UNDERLINE_BITS) >>> 0;
-        }
-      }
-      device.queue.writeBuffer(buffer, offset, scratch, 0, rowBytes);
-      this.uploadCount += 1;
-      this.uploadedBytes += rowBytes;
-    }
-    return true;
   }
 
   /**
@@ -1435,6 +1357,8 @@ export class WebGpuTerminalSurface
         ? cursorRect(cursor, cursor.style, this.metrics)
         : null,
       cursorColor: theme.cursor,
+      cursorBlock: cursor.style === "block",
+      cursorText: theme.cursorText,
       background: theme.background,
       selection: bounds
         ? selectionUniform(bounds, viewportOriginLine, frame.rows)
@@ -1565,22 +1489,6 @@ export class WebGpuTerminalSurface
   private assertLive(): void {
     if (this.disposed) throw new Error("WebGPU terminal surface is disposed");
   }
-}
-
-function currentTextContrast(scale: number): TextContrast {
-  let override: string | null = null;
-  try {
-    override = window.localStorage?.getItem(TEXT_CONTRAST_STORAGE_KEY) ?? null;
-  } catch {
-    override = null;
-  }
-  return textContrastFor({
-    platform: detectPlatform(
-      typeof navigator === "undefined" ? "" : navigator.userAgent,
-    ),
-    scale,
-    override,
-  });
 }
 
 /** Asks for the exact device-pixel box where the engine supports it. */

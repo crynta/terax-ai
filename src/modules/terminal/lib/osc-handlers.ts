@@ -6,6 +6,11 @@ export function parseOsc7(data: string): string | null {
   const m = data.match(/^file:\/\/[^/]*(\/.*)$/);
   if (!m) return null;
   let path = m[1];
+  // cmd.exe's PROMPT cannot escape or convert `$P`: its paths arrive literal,
+  // with backslashes, so a folder named `a%20b` must not be percent-decoded.
+  if (/^\/(?:[A-Za-z]:\\|\\\\)/.test(path)) {
+    return path.slice(1).replace(/\\/g, "/");
+  }
   try {
     path = decodeURIComponent(path);
   } catch {}

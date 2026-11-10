@@ -1,5 +1,5 @@
 /**
- * DirectWrite-style contrast for grayscale antialiasing. The fragment shader
+ * Optional DirectWrite-style contrast for grayscale antialiasing, in both renderers. The fragment shader
  * runs `DWrite_EnhanceContrast` (scaled by foreground lightness, as in Windows
  * Terminal's `DWrite_ApplyLightOnDarkContrastAdjustment`) and then blends
  * toward `DWrite_ApplyAlphaCorrection` with the 1.8 gamma ratios. Both stages
@@ -16,11 +16,6 @@ export type TextContrast = {
   readonly enhancedContrast: number;
   /** 0 keeps the raw coverage, 1 applies the full alpha correction. */
   readonly alphaCorrection: number;
-  /**
-   * Floor for the lightness multiplier, so light-on-dark text is thickened too
-   * (DirectWrite fades the enhancement out above 0.75 lightness). 0 by default.
-   */
-  readonly lightTextContrast?: number;
 };
 
 export const NO_TEXT_CONTRAST: TextContrast = {
@@ -34,45 +29,29 @@ const FRACTIONAL_DISPLAY_CONTRAST: TextContrast = {
 };
 
 /**
- * A 1x Mac display: macOS stopped subpixel antialiasing, and without its stem
- * darkening the grayscale GPU path leaves light-on-dark strokes thin and soft
- * at regular weight, so light text gets the enhancement as well.
+ * The contrast for the current display: none unless `localStorage["terax:terminal-text-contrast"]`
+ * (`override`: "off", "on" or a strength) asks for it, and then both renderers apply the same
+ * curve. Without it they draw identical glyph pixels at every ratio (verified at 1, 1.25, 1.5 and
+ * 2). Enabled by default the curve made WebGPU text heavier and softer than WebGL on Windows and on
+ * 1x displays, so it is a tuning aid, not a default.
  */
-const MAC_LOW_DPI_CONTRAST: TextContrast = {
-  enhancedContrast: 1,
-  alphaCorrection: 0.5,
-  lightTextContrast: 1,
-};
-
-export type TextContrastEnvironment = {
-  readonly platform: "windows" | "linux" | "mac" | "other";
-  readonly scale: number;
-  /** `localStorage["terax:terminal-text-contrast"]`: "off", "on" or a number. */
-  readonly override?: string | null;
-};
-
-/**
- * Chooses the contrast for the current display. Windows and Linux render
- * grayscale glyphs without the system's gamma-aware blending, and any display
- * below 2x leaves thin strokes that look washed out. macOS Retina stays as it
- * was unless explicitly overridden; a 1x Mac display gets its own curve.
- */
-export function textContrastFor(env: TextContrastEnvironment): TextContrast {
-  const override = parseOverride(env.override);
-  if (override) return override;
-  if (env.platform === "mac" && env.scale < 2) return MAC_LOW_DPI_CONTRAST;
-  const enabled =
-    env.platform === "windows" || env.platform === "linux" || env.scale < 2;
-  return enabled ? FRACTIONAL_DISPLAY_CONTRAST : NO_TEXT_CONTRAST;
+export function textContrastFor(
+  override: string | null | undefined,
+): TextContrast {
+  return parseOverride(override) ?? NO_TEXT_CONTRAST;
 }
 
-export function detectPlatform(
-  userAgent: string,
-): TextContrastEnvironment["platform"] {
-  if (/Windows/i.test(userAgent)) return "windows";
-  if (/Android|Linux|X11|CrOS/i.test(userAgent)) return "linux";
-  if (/Mac|iPhone|iPad/i.test(userAgent)) return "mac";
-  return "other";
+const TEXT_CONTRAST_STORAGE_KEY = "terax:terminal-text-contrast";
+
+/** The contrast the user asked for through `localStorage`; both renderers apply it alike. */
+export function currentTextContrast(): TextContrast {
+  let override: string | null = null;
+  try {
+    override = window.localStorage?.getItem(TEXT_CONTRAST_STORAGE_KEY) ?? null;
+  } catch {
+    override = null;
+  }
+  return textContrastFor(override);
 }
 
 /** CPU mirror of the shader curve, used by tests and the lab. */
@@ -86,12 +65,7 @@ export function applyTextContrast(
   }
   const [red, green, blue] = foreground;
   const lightness = red * 0.3 + green * 0.59 + blue * 0.11;
-  const k =
-    contrast.enhancedContrast *
-    Math.max(
-      contrast.lightTextContrast ?? 0,
-      saturate(4 * (0.75 - lightness)),
-    );
+  const k = contrast.enhancedContrast * saturate(4 * (0.75 - lightness));
   const enhanced = (coverage * (k + 1)) / (coverage * k + 1);
   const intensity = red * 0.25 + green * 0.5 + blue * 0.25;
   const [g0, g1, g2, g3] = DWRITE_GAMMA_RATIOS;

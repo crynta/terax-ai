@@ -59,7 +59,7 @@ pub struct LspExit {
 
 pub struct LspSession {
     #[cfg(windows)]
-    _job: Option<crate::modules::proc::job::ProcessJob>,
+    job: Mutex<Option<crate::modules::proc::job::ProcessJob>>,
     child: Arc<SharedChild>,
     stdin: Mutex<Option<ChildStdin>>,
     pub(super) exited: Arc<AtomicBool>,
@@ -79,12 +79,30 @@ impl LspSession {
     // only the leader leaves them burning CPU. Unix: signal the process
     // group. Windows: the Job Object covers the tree.
     pub fn kill(&self) {
+        let _ = self.signal_kill();
+    }
+
+    fn signal_kill(&self) -> std::io::Result<()> {
         *self.stdin.lock().unwrap() = None;
+        #[cfg(windows)]
+        drop(self.job.lock().unwrap().take());
         #[cfg(unix)]
-        unsafe {
-            libc::kill(-(self.child.id() as libc::pid_t), libc::SIGKILL);
+        if unsafe { libc::kill(-(self.child.id() as libc::pid_t), libc::SIGKILL) } != 0 {
+            let error = std::io::Error::last_os_error();
+            if error.raw_os_error() != Some(libc::ESRCH) {
+                return Err(error);
+            }
         }
-        let _ = self.child.kill();
+        self.child.kill()
+    }
+
+    pub fn kill_and_wait(&self) -> Result<(), String> {
+        self.signal_kill()
+            .map_err(|e| format!("lsp kill failed: {e}"))?;
+        self.child
+            .wait()
+            .map_err(|e| format!("lsp wait failed: {e}"))?;
+        Ok(())
     }
 }
 
@@ -156,7 +174,7 @@ pub fn spawn(
     let exited = Arc::new(AtomicBool::new(false));
     let session = Arc::new(LspSession {
         #[cfg(windows)]
-        _job: job,
+        job: Mutex::new(job),
         child: child.clone(),
         stdin: Mutex::new(Some(stdin)),
         exited: exited.clone(),
@@ -387,6 +405,17 @@ mod tests {
             assert!(Instant::now() < deadline, "grandchild survived group kill",);
             thread::sleep(Duration::from_millis(20));
         }
+    }
+
+    #[test]
+    fn explicit_shutdown_confirms_exit_before_returning() {
+        let mut cmd = Command::new("/bin/cat");
+        cmd.stdin(Stdio::piped()).stdout(Stdio::null());
+        let child = Arc::new(SharedChild::spawn(&mut cmd).expect("spawn"));
+        let session = dummy_session(child.clone(), child.take_stdin());
+        session.kill_and_wait().expect("shutdown");
+        assert!(child.try_wait().expect("try_wait").is_some());
+        session.kill_and_wait().expect("already exited");
     }
 
     #[test]

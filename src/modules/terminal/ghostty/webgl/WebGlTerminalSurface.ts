@@ -7,12 +7,18 @@ import {
 } from "@/modules/terminal/ghostty/windowPresentation";
 import type { WindowPresentation } from "@/modules/terminal/ghostty/WindowPresentationPolicy";
 import type { TerminalSurface } from "@/modules/terminal/backend/contracts";
+import { isPrimaryModifierPressed } from "@/lib/platform";
 import { noteTerminalHostResize } from "@/modules/terminal/lib/terminalResizeGesture";
 import {
   subscribeTerminalResizeInteraction,
   terminalResizeInteractionActive,
 } from "@/modules/terminal/lib/terminalResizeInteraction";
 import { TerminalResizeSync } from "@/modules/terminal/lib/terminalResizeSync";
+import {
+  type DeferredTerminalLinks,
+  deferTerminalLinks,
+} from "../core/terminalLinksLoader";
+import type { TerminalLinkHit } from "../core/terminalLinks";
 import type { GhosttyTerminalModelApi } from "../GhosttyTerminalModel";
 import type { GestureGrowth } from "../gpu/CanvasBackingStore";
 import { DevicePixelRatioMonitor } from "../gpu/DevicePixelRatioMonitor";
@@ -22,7 +28,10 @@ import {
   measureGestureBackingEnvironment,
   windowInnerSize,
 } from "../gpu/GestureBacking";
-import { fitTerminalViewport } from "../gpu/TerminalFit";
+import {
+  fitTerminalViewport,
+  TERMINAL_RIGHT_GUTTER_CSS_PX,
+} from "../gpu/TerminalFit";
 import {
   TerminalFitQueue,
   type TerminalFitQueueDiagnostics,
@@ -37,17 +46,10 @@ import {
   metricsForScale,
   rgbToCss,
 } from "../gpu/terminalVisuals";
+import { currentTextContrast } from "../gpu/textContrast";
 import { GhosttySearchController } from "../search/GhosttySearchController";
 import { TerminalSelectionController } from "../selection/TerminalSelectionController";
-import {
-  TerminalLinkHover,
-  type TerminalLinkHoverInfo,
-} from "../TerminalLinkHover";
-import {
-  damagedRows,
-  damageWithRows,
-  TerminalLinkUnderlines,
-} from "../TerminalLinkUnderlines";
+import { WebGlPoolExhaustedError } from "./WebGlPoolExhaustedError";
 import {
   getWebGlTerminalRuntime,
   type WebGlRuntimeSurface,
@@ -75,8 +77,7 @@ export type WebGlTerminalSurfaceOptions = {
   readonly onFirstFrame?: () => void;
   readonly onFrame?: () => void;
   readonly onRequestFocus?: () => void;
-  readonly onOpenLink?: (uri: string) => void;
-  readonly onLinkHover?: (link: TerminalLinkHoverInfo | null) => void;
+  readonly onOpenLink?: (link: TerminalLinkHit) => void;
 };
 
 export type WebGlTerminalSurfaceStats = {
@@ -138,8 +139,7 @@ export class WebGlTerminalSurface
   private consecutiveRendererErrors = 0;
   private recoveringRenderer = false;
   private contentRevision: number;
-  private readonly linkHover: TerminalLinkHover;
-  private readonly linkUnderlines = new TerminalLinkUnderlines();
+  private readonly links: DeferredTerminalLinks;
   private applyingFit = false;
   private readonly unsubscribePresentation: () => void;
   private disposed = false;
@@ -211,6 +211,21 @@ export class WebGlTerminalSurface
         this.runtime.schedule(this);
       },
     });
+    this.root.style.cursor = "text";
+    this.links = deferTerminalLinks({
+      target: this.root,
+      keyTarget: window,
+      isModifier: isPrimaryModifierPressed,
+      model: options.model,
+      scrollbar: this.scrollbar,
+      geometry: () => ({
+        cellWidth: this.metrics.cellWidth,
+        cellHeight: this.metrics.cellHeight,
+        shiftY: 0,
+        color: rgbToCss(this.theme.foreground),
+      }),
+      onActivate: (hit) => options.onOpenLink?.(hit),
+    });
     this.search = new GhosttySearchController(options.model, () => {
       if (this.applyingFit) return;
       this.renderer?.resetModel();
@@ -226,6 +241,7 @@ export class WebGlTerminalSurface
       if (!this.visible || this.documentSuspended || !this.host) return;
       this.cursorVisible = true;
       this.textBlinkVisible = true;
+      this.links.invalidate();
       this.search.invalidate();
       if (!this.applyingFit) this.runtime.schedule(this);
       this.armCursorBlink();
@@ -245,17 +261,6 @@ export class WebGlTerminalSurface
       },
     );
     this.root.addEventListener("pointerdown", this.handlePointerDown);
-    this.linkHover = new TerminalLinkHover({
-      root: this.root,
-      model: options.model,
-      cellSize: () => this.cellSize(),
-      gridShiftY: () => this.gridShiftY(),
-      active: () => this.host !== null,
-      ignoreTarget: (target) => this.scrollbar.contains(target as Node),
-      underlineColor: () => rgbToCss(this.theme.foreground),
-      onOpenLink: options.onOpenLink,
-      onHoverChange: options.onLinkHover,
-    });
     this.scrollbar.addEventListener("scroll", this.handleScroll);
     this.unsubscribePresentation = subscribeWindowPresentation(
       this.handleVisibilityChange,
@@ -273,8 +278,13 @@ export class WebGlTerminalSurface
     this.pixelRatioMonitor.start();
     this.resizeObserver.observe(container);
     if (this.visible && !this.documentSuspended) {
-      this.acquireRenderer();
-      this.resizeToHost();
+      try {
+        this.acquireRenderer();
+        this.resizeToHost();
+      } catch (error) {
+        this.handleRendererError(toError(error));
+        return;
+      }
     }
     this.updateScrollbar();
     if (this.visible && !this.documentSuspended) this.runtime.schedule(this);
@@ -447,7 +457,7 @@ export class WebGlTerminalSurface
     const revision = this.options.model.revision();
     if (revision !== this.contentRevision) {
       this.contentRevision = revision;
-      this.linkHover.refresh();
+      this.links.invalidate();
     }
     this.selection.reconcile();
     this.search.refreshOverlay();
@@ -461,23 +471,13 @@ export class WebGlTerminalSurface
       cursor.y < this.options.model.rows;
     this.cursorBlinking = cursor.blinking;
     this.armCursorBlink();
-    const model = this.options.model;
-    const damage = model.consumeDamage();
-    // Before `render` borrows the cell reader: finding links reads the screen.
-    const linkRows = this.linkUnderlines.update(
-      model,
-      model.rows,
-      model.cols,
-      damagedRows(damage, model.rows),
-    );
     const rendered = renderer.render({
-      model,
-      damage: damageWithRows(damage, linkRows),
+      model: this.options.model,
+      damage: this.options.model.consumeDamage(),
       cursorVisible: this.cursorEnabled && this.cursorVisible,
       textBlinkVisible: this.textBlinkVisible,
       selection: this.selection.normalizedBounds(),
       searchMatchAt: (row, column) => this.search.matchAt(row, column),
-      linkAt: (row, column) => this.linkUnderlines.isLink(row, column),
     });
     this.hasBlinkingCells = renderer.hasBlinkingCells;
     this.syncTextBlink();
@@ -499,6 +499,7 @@ export class WebGlTerminalSurface
     this.clearTextBlinkTimer();
     if (this.documentSuspended) return;
     if (
+      error instanceof WebGlPoolExhaustedError ||
       this.recoveringRenderer ||
       this.consecutiveRendererErrors > 0 ||
       !this.visible ||
@@ -553,7 +554,7 @@ export class WebGlTerminalSurface
     this.scrollbarSync.dispose();
     this.unsubscribeInteraction();
     this.root.removeEventListener("pointerdown", this.handlePointerDown);
-    this.linkHover.dispose();
+    this.links.dispose();
     this.scrollbar.removeEventListener("scroll", this.handleScroll);
     this.unsubscribePresentation();
   }
@@ -633,6 +634,7 @@ export class WebGlTerminalSurface
       metrics: this.metrics,
       theme: this.theme,
       scale: this.scale,
+      contrast: currentTextContrast(),
     } as const;
   }
 
@@ -673,13 +675,24 @@ export class WebGlTerminalSurface
     if (devicePixelScale() !== this.scale) {
       this.syncScale();
       this.runtime.release(this);
-      this.acquireRenderer();
+      try {
+        this.acquireRenderer();
+      } catch (error) {
+        this.handleRendererError(toError(error));
+        return;
+      }
     }
 
     const bounds = measuredBounds ?? this.host.getBoundingClientRect();
     this.scrollbarSync.invalidate();
     this.scrollbarViewportHeight = Math.round(bounds.height);
-    const fit = fitTerminalViewport(bounds.width, bounds.height, this.metrics);
+    const fit = fitTerminalViewport(
+      bounds.width,
+      bounds.height,
+      this.metrics,
+      undefined,
+      TERMINAL_RIGHT_GUTTER_CSS_PX,
+    );
     if (!fit) return;
     const { cols, rows, pixelWidth, pixelHeight } = fit;
     if (cols * rows > MAX_SURFACE_CELLS) {

@@ -14,31 +14,6 @@ export function setTerminalFileOpener(next: TerminalFileOpener | null): void {
   opener = next;
 }
 
-/** A link under the pointer in some pane, for the floating link chip. */
-export type TerminalLinkHoverEvent = {
-  uri: string;
-  rect: { left: number; top: number; right: number; bottom: number };
-  leafId: number;
-  cwd: string | null;
-};
-
-type TerminalLinkHoverListener = (event: TerminalLinkHoverEvent | null) => void;
-
-let hoverListener: TerminalLinkHoverListener | null = null;
-
-/** The link chip registers here; a terminal surface only ever calls {@link emitTerminalLinkHover}. */
-export function setTerminalLinkHoverListener(
-  next: TerminalLinkHoverListener | null,
-): void {
-  hoverListener = next;
-}
-
-export function emitTerminalLinkHover(
-  event: TerminalLinkHoverEvent | null,
-): void {
-  hoverListener?.(event);
-}
-
 /** The file a link points at, resolved like a click would, or null for URLs and unknown bases. */
 export function resolveTerminalFileLink(
   uri: string,

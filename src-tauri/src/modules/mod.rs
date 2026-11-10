@@ -1,6 +1,8 @@
 pub mod agent;
 pub mod agent_commands;
 pub mod agent_transcript;
+pub mod agent_events;
+pub mod agent_json;
 pub mod ai_sessions;
 #[cfg(target_os = "macos")]
 pub mod app_menu;

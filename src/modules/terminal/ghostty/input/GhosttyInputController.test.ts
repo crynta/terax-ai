@@ -1,12 +1,12 @@
-import type { GhosttyTerminalModelApi } from "@/modules/terminal/ghostty/GhosttyTerminalModel";
 import { readFile } from "node:fs/promises";
+import type { GhosttyTerminalModelApi } from "@/modules/terminal/ghostty/GhosttyTerminalModel";
+import { Key, Mods } from "@terax/ghostty-core";
 import { TeraxGhostty } from "@terax/ghostty-core/adapted";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeElement, FakeTextArea } from "./fakeTextArea";
-import {
-  GhosttyInputController,
-  terminalMouseModifiers,
-} from "./GhosttyInputController";
+import { GhosttyInputController } from "./GhosttyInputController";
+import { terminalMouseModifiers } from "./TerminalMouse";
+import { MAX_WHEEL_REPORTS_PER_EVENT } from "./terminalWheel";
 
 describe("terminalMouseModifiers", () => {
   it("encodes xterm Shift, Alt, and Control bits", () => {
@@ -27,6 +27,455 @@ describe("terminalMouseModifiers", () => {
 });
 
 describe("GhosttyInputController", () => {
+  describe("mouse wheel", () => {
+    let h: ReturnType<typeof wheelHarness>;
+    const UP = "\x1b[<64;1;1M";
+    const DOWN = "\x1b[<65;1;1M";
+
+    beforeEach(async () => {
+      h = wheelHarness();
+      await vi.dynamicImportSettled();
+    });
+
+    afterEach(() => {
+      h.controller.dispose();
+    });
+
+    it("accumulates small pixels without layout reads or input until a report is due", () => {
+      for (let i = 0; i < 11; i++) {
+        expect(h.wheel(5).defaultPrevented).toBe(true);
+      }
+      expect(h.onData).not.toHaveBeenCalled();
+      expect(h.bounds).not.toHaveBeenCalled();
+      h.wheel(5);
+      expect(h.reports()).toEqual([DOWN]);
+      expect(h.bounds).toHaveBeenCalledTimes(1);
+      expect(h.scrollBy).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [0, 60, 1],
+      [0, 120, 2],
+      [0, 170, 2],
+      [1, 3, 1],
+      [1, 6, 2],
+      [2, 0.25, 2],
+    ])(
+      "reports one notch per three lines, in one write (mode %s, delta %s -> %s)",
+      (mode, delta, reports) => {
+        h.wheel(delta, mode);
+        expect(h.reports()).toEqual([DOWN.repeat(reports)]);
+        h.wheel(-delta, mode);
+        expect(h.reports()).toEqual([DOWN.repeat(reports), UP.repeat(reports)]);
+      },
+    );
+
+    it.each([
+      [0, 2000],
+      [0, Number.MAX_VALUE],
+      [1, 1000],
+      [2, 40],
+    ])(
+      "caps a runaway event (mode %s, delta %s) and queues no excess",
+      (mode, delta) => {
+        h.wheel(delta, mode);
+        expect(h.reports()).toEqual([DOWN.repeat(MAX_WHEEL_REPORTS_PER_EVENT)]);
+        h.onData.mockClear();
+        h.wheel(-30);
+        expect(h.onData).not.toHaveBeenCalled();
+        h.wheel(-30);
+        expect(h.reports()).toEqual([UP]);
+      },
+    );
+
+    it("keeps the fraction between events and drops it on reversal", () => {
+      h.wheel(45);
+      expect(h.onData).not.toHaveBeenCalled();
+      h.wheel(45);
+      expect(h.reports()).toEqual([DOWN]);
+      h.onData.mockClear();
+      h.wheel(15);
+      h.wheel(-15);
+      expect(h.onData).not.toHaveBeenCalled();
+      h.wheel(-45);
+      expect(h.reports()).toEqual([UP]);
+    });
+
+    it("ignores zero, horizontal-only and non-finite motion without poisoning the remainder", () => {
+      h.wheel(30);
+      for (const delta of [0, Number.NaN, Infinity, -Infinity]) {
+        expect(h.wheel(delta, 0, { deltaX: 100 }).defaultPrevented).toBe(false);
+      }
+      expect(h.onData).not.toHaveBeenCalled();
+      expect(h.bounds).not.toHaveBeenCalled();
+      h.wheel(30);
+      expect(h.reports()).toEqual([DOWN]);
+    });
+
+    it("scales the distance by the scroll speed preference at once", () => {
+      h.speed.value = 0.5;
+      h.wheel(120);
+      expect(h.reports()).toEqual([DOWN]);
+      h.speed.value = 3;
+      h.onData.mockClear();
+      h.wheel(40);
+      expect(h.reports()).toEqual([DOWN.repeat(2)]);
+    });
+
+    it.each([true, false])(
+      "keeps encoding and modifiers intact (SGR: %s)",
+      (sgr) => {
+        h.state.sgr = sgr;
+        h.wheel(60, 0, { ctrlKey: true, altKey: true });
+        expect(h.reports()).toEqual([sgr ? "\x1b[<89;1;1M" : "\x1b[My!!"]);
+      },
+    );
+
+    it.each(["shift", "tracking"] as const)(
+      "clears the remainder when switching through %s scrollback",
+      (route) => {
+        const options = route === "shift" ? { shiftKey: true } : {};
+        h.wheel(30);
+        if (route === "tracking") h.state.mouseTracking = false;
+        h.wheel(10, 0, options);
+        expect(h.scrollBy).not.toHaveBeenCalled();
+        h.state.mouseTracking = true;
+        h.wheel(30);
+        expect(h.onData).not.toHaveBeenCalled();
+        if (route === "tracking") h.state.mouseTracking = false;
+        h.wheel(10, 0, options);
+        expect(h.scrollBy).not.toHaveBeenCalled();
+        h.wheel(10, 0, options);
+        expect(h.scrollBy).toHaveBeenCalledExactlyOnceWith(1);
+      },
+    );
+
+    it("clears mouse motion even when the scrollback route has no history", () => {
+      h.wheel(30);
+      h.state.history = 0;
+      h.wheel(10, 0, { shiftKey: true });
+      h.wheel(30);
+      expect(h.onData).not.toHaveBeenCalled();
+    });
+
+    it("preserves pixel, line and page distances in ordinary scrollback", () => {
+      h.state.mouseTracking = false;
+      h.wheel(40);
+      h.wheel(-3, 1);
+      h.wheel(1, 2);
+      expect(h.scrollBy.mock.calls).toEqual([[2], [-3], [24]]);
+      expect(h.onData).not.toHaveBeenCalled();
+      expect(h.bounds).not.toHaveBeenCalled();
+    });
+
+    describe("alternate scroll (DEC 1007)", () => {
+      beforeEach(() => {
+        h.state.mouseTracking = false;
+        h.state.alternateScreen = true;
+        h.state.history = 0;
+      });
+
+      it("sends cursor keys, one per line, on the alternate screen", () => {
+        const event = h.wheel(60);
+        expect(event.defaultPrevented).toBe(true);
+        h.wheel(-40);
+        expect(h.reports()).toEqual(["\x1b[B".repeat(3), "\x1b[A".repeat(2)]);
+        expect(h.scrollBy).not.toHaveBeenCalled();
+        expect(h.bounds).not.toHaveBeenCalled();
+      });
+
+      it("honours application cursor keys", () => {
+        h.state.applicationCursor = true;
+        h.wheel(20);
+        h.wheel(-20);
+        expect(h.reports()).toEqual(["\x1bOB", "\x1bOA"]);
+      });
+
+      it("leaves the wheel alone when the application turned alternate scroll off", () => {
+        h.state.alternateScroll = false;
+        const event = h.wheel(60);
+        expect(event.defaultPrevented).toBe(false);
+        expect(h.onData).not.toHaveBeenCalled();
+        expect(h.scrollBy).not.toHaveBeenCalled();
+      });
+
+      it("does not apply on the primary screen", () => {
+        h.state.alternateScreen = false;
+        h.state.history = 100;
+        h.wheel(60);
+        expect(h.onData).not.toHaveBeenCalled();
+        expect(h.scrollBy).toHaveBeenCalledExactlyOnceWith(3);
+      });
+
+      it("mouse tracking wins over alternate scroll, Shift hands the wheel back", () => {
+        h.state.mouseTracking = true;
+        h.wheel(60);
+        expect(h.reports()).toEqual([DOWN]);
+        h.onData.mockClear();
+        h.wheel(20, 0, { shiftKey: true });
+        expect(h.reports()).toEqual(["\x1b[B"]);
+      });
+
+      it("caps the burst like mouse reports", () => {
+        h.wheel(5000);
+        expect(h.reports()).toEqual([
+          "\x1b[B".repeat(MAX_WHEEL_REPORTS_PER_EVENT),
+        ]);
+      });
+    });
+
+    it("stops handling wheel input after disposal", () => {
+      h.controller.dispose();
+      h.wheel(100);
+      expect(h.onData).not.toHaveBeenCalled();
+      expect(h.bounds).not.toHaveBeenCalled();
+    });
+  });
+
+  it.each([false, true])(
+    "routes macOS Option arrows tagged 229 (alternate: %s)",
+    (alternateScreen) => {
+      const input = new FakeTextArea();
+      const onData = vi.fn();
+      const base = inputModel();
+      const encodeKey = vi.fn<GhosttyTerminalModelApi["encodeKey"]>((event) =>
+        new TextEncoder().encode(
+          event.key === Key.LEFT ? "\x1b[1;3D" : "\x1b[1;3C",
+        ),
+      );
+      const controller = new GhosttyInputController({
+        model: {
+          ...base,
+          modes: () => ({ ...base.modes(), alternateScreen }),
+          encodeKey,
+        },
+        input: input as unknown as HTMLTextAreaElement,
+        pointerTarget: new FakeElement() as unknown as HTMLElement,
+        cellSize: () => ({ width: 10, height: 20 }),
+        isMac: true,
+        onCopy: () => false,
+        onData,
+      });
+      try {
+        for (const [key, sequence, encodedKey, alternateSequence] of [
+          ["ArrowLeft", "\x1bb", Key.LEFT, "\x1b[1;3D"],
+          ["ArrowRight", "\x1bf", Key.RIGHT, "\x1b[1;3C"],
+        ] as const) {
+          const event = keyboardEvent({
+            key,
+            code: key,
+            altKey: true,
+            keyCode: 229,
+          });
+          input.dispatchEvent(event);
+          expect(event.defaultPrevented).toBe(true);
+          expect(new TextDecoder().decode(onData.mock.lastCall?.[0])).toBe(
+            alternateScreen ? alternateSequence : sequence,
+          );
+          if (alternateScreen)
+            expect(encodeKey).toHaveBeenLastCalledWith(
+              expect.objectContaining({ key: encodedKey, mods: Mods.ALT }),
+            );
+        }
+        expect(encodeKey).toHaveBeenCalledTimes(alternateScreen ? 2 : 0);
+        onData.mockClear();
+        for (const values of [
+          { key: "a", code: "KeyA" },
+          { key: "Process", code: "ArrowLeft" },
+          { key: "ArrowLeft", code: "ArrowLeft", isComposing: true },
+        ])
+          input.dispatchEvent(
+            keyboardEvent({ ...values, altKey: true, keyCode: 229 }),
+          );
+        input.dispatchEvent(new Event("compositionstart"));
+        input.dispatchEvent(
+          keyboardEvent({
+            key: "ArrowLeft",
+            code: "ArrowLeft",
+            altKey: true,
+            keyCode: 229,
+          }),
+        );
+        expect(onData).not.toHaveBeenCalled();
+      } finally {
+        controller.dispose();
+      }
+    },
+  );
+
+  it.each(["ghostty-vt.wasm", "ghostty-vt-scalar.wasm"])(
+    "encodes both Option-arrow directions with the shipped core (%s)",
+    async (artifact) => {
+      const bytes = await readFile(
+        new URL(
+          `../../../../../packages/ghostty-core/adapted/${artifact}`,
+          import.meta.url,
+        ),
+      );
+      const core = await TeraxGhostty.loadBytes(Uint8Array.from(bytes).buffer);
+      const terminal = core.createTerminal(80, 24);
+      const input = new FakeTextArea();
+      const onData = vi.fn();
+      const controller = new GhosttyInputController({
+        model: {
+          ...inputModel(),
+          modes: () => terminal.modes(),
+          encodeKey: (event) => terminal.encodeKey(event),
+          kittyKeyboardFlags: () => terminal.kittyKeyboardFlags(),
+        },
+        input: input as unknown as HTMLTextAreaElement,
+        pointerTarget: new FakeElement() as unknown as HTMLElement,
+        cellSize: () => ({ width: 10, height: 20 }),
+        isMac: true,
+        onCopy: () => false,
+        onData,
+      });
+      try {
+        for (const alternateScreen of [false, true]) {
+          terminal.write(
+            new TextEncoder().encode(
+              alternateScreen ? "\x1b[?1049h" : "\x1b[?1049l",
+            ),
+          );
+          for (const [mode, eventType] of [
+            [0, ""],
+            [1, ""],
+            [11, ""],
+            [31, ""],
+          ] as const) {
+            terminal.write(new TextEncoder().encode(`\x1b[=${mode}u`));
+            for (const [key, normal, suffix] of [
+              ["ArrowLeft", "\x1bb", "D"],
+              ["ArrowRight", "\x1bf", "C"],
+            ]) {
+              onData.mockClear();
+              const event = keyboardEvent({
+                key,
+                code: key,
+                altKey: true,
+                keyCode: 229,
+              });
+              input.dispatchEvent(event);
+              expect(event.defaultPrevented).toBe(true);
+              expect(onData).toHaveBeenCalledOnce();
+              expect(new TextDecoder().decode(onData.mock.calls[0][0])).toBe(
+                alternateScreen ? `\x1b[1;3${eventType}${suffix}` : normal,
+              );
+            }
+          }
+        }
+      } finally {
+        controller.dispose();
+        terminal.dispose();
+      }
+    },
+  );
+
+  it.each([
+    { key: "Dead", code: "Quote" },
+    { key: "Process", code: "ArrowLeft" },
+    { isComposing: true },
+    { key: "Enter", code: "Enter", altKey: false },
+    { key: "Backspace", code: "Backspace", altKey: false },
+    { key: "Escape", code: "Escape", altKey: false },
+    { key: "a", code: "KeyA", altKey: false },
+    { key: " ", code: "Space", altKey: false },
+  ])("retains the 229 guard for %j", ({ ...values }) => {
+    const input = new FakeTextArea();
+    const onData = vi.fn();
+    const encodeKey = vi.fn(() => Uint8Array.of(27, 91, 68));
+    const controller = new GhosttyInputController({
+      model: { ...inputModel(), encodeKey },
+      input: input as unknown as HTMLTextAreaElement,
+      pointerTarget: new FakeElement() as unknown as HTMLElement,
+      cellSize: () => ({ width: 10, height: 20 }),
+      isMac: true,
+      onCopy: () => false,
+      onData,
+    });
+    try {
+      const event = keyboardEvent({
+        key: "ArrowLeft",
+        code: "ArrowLeft",
+        altKey: true,
+        keyCode: 229,
+        ...values,
+      });
+      input.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+      expect(onData).not.toHaveBeenCalled();
+      expect(encodeKey).not.toHaveBeenCalled();
+    } finally {
+      controller.dispose();
+    }
+  });
+
+  it("deletes a word for Option+Backspace even when WebKit tags it 229", () => {
+    const input = new FakeTextArea();
+    const onData = vi.fn();
+    const controller = new GhosttyInputController({
+      model: inputModel(),
+      input: input as unknown as HTMLTextAreaElement,
+      pointerTarget: new FakeElement() as unknown as HTMLElement,
+      cellSize: () => ({ width: 10, height: 20 }),
+      isMac: true,
+      onCopy: () => false,
+      onData,
+    });
+    try {
+      const event = keyboardEvent({
+        key: "Backspace",
+        code: "Backspace",
+        altKey: true,
+        keyCode: 229,
+      });
+      input.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(true);
+      expect(new TextDecoder().decode(onData.mock.lastCall?.[0])).toBe("\x17");
+    } finally {
+      controller.dispose();
+    }
+  });
+
+  it.each([
+    { isMac: false, altKey: false, key: "ArrowUp", code: "ArrowUp" },
+    { isMac: false, altKey: false, key: "ArrowDown", code: "ArrowDown" },
+    { isMac: false, altKey: false, key: "Home", code: "Home" },
+    { isMac: false, ctrlKey: true, key: "ArrowRight", code: "ArrowRight" },
+    { isMac: true, altKey: true, key: "ArrowUp", code: "ArrowUp" },
+    { isMac: true, altKey: false, key: "End", code: "End" },
+    { isMac: false, altKey: false, key: "F5", code: "F5" },
+    { isMac: false, altKey: false, key: "PageDown", code: "PageDown" },
+  ])(
+    "delivers navigation keys an IME tagged 229 when nothing is composed (%j)",
+    ({ isMac, ...values }) => {
+      const input = new FakeTextArea();
+      const onData = vi.fn();
+      const encodeKey = vi.fn(() => Uint8Array.of(27, 91, 65));
+      const controller = new GhosttyInputController({
+        model: { ...inputModel(), encodeKey },
+        input: input as unknown as HTMLTextAreaElement,
+        pointerTarget: new FakeElement() as unknown as HTMLElement,
+        cellSize: () => ({ width: 10, height: 20 }),
+        isMac,
+        onCopy: () => false,
+        onData,
+      });
+      try {
+        const event = keyboardEvent({ keyCode: 229, ...values });
+        input.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(true);
+        expect(onData).toHaveBeenCalledWith(Uint8Array.of(27, 91, 65));
+        input.dispatchEvent(new Event("compositionstart"));
+        onData.mockClear();
+        input.dispatchEvent(keyboardEvent({ keyCode: 229, ...values }));
+        expect(onData).not.toHaveBeenCalled();
+      } finally {
+        controller.dispose();
+      }
+    },
+  );
+
   it.each(["ghostty-vt.wasm", "ghostty-vt-scalar.wasm"])(
     "leaves macOS Command shortcuts to the application in legacy and Kitty modes (%s)",
     async (artifact) => {
@@ -149,6 +598,7 @@ describe("GhosttyInputController", () => {
         model: {
           ...inputModel(),
           encodeKey: (event) => terminal.encodeKey(event),
+          kittyKeyboardFlags: () => terminal.kittyKeyboardFlags(),
         },
         input: input as unknown as HTMLTextAreaElement,
         pointerTarget: new FakeElement() as unknown as HTMLElement,
@@ -196,6 +646,54 @@ describe("GhosttyInputController", () => {
     },
   );
 
+  it.each(["ghostty-vt.wasm", "ghostty-vt-scalar.wasm"])(
+    "types the shifted character under Kitty flags 3 (%s)",
+    async (artifact) => {
+      const bytes = await readFile(
+        new URL(
+          `../../../../../packages/ghostty-core/adapted/${artifact}`,
+          import.meta.url,
+        ),
+      );
+      const core = await TeraxGhostty.loadBytes(Uint8Array.from(bytes).buffer);
+      const terminal = core.createTerminal(80, 24);
+      const input = new FakeTextArea();
+      const onData = vi.fn();
+      const controller = new GhosttyInputController({
+        model: {
+          ...inputModel(),
+          encodeKey: (event) => terminal.encodeKey(event),
+          kittyKeyboardFlags: () => terminal.kittyKeyboardFlags(),
+        },
+        input: input as unknown as HTMLTextAreaElement,
+        pointerTarget: new FakeElement() as unknown as HTMLElement,
+        cellSize: () => ({ width: 10, height: 20 }),
+        isMac: true,
+        onCopy: () => false,
+        onData,
+      });
+      try {
+        // Disambiguate escape codes + report event types, as Neovim pushes.
+        terminal.write(new TextEncoder().encode("\x1b[>3u"));
+        const sent = (values: Partial<KeyboardEvent>): string => {
+          onData.mockClear();
+          input.dispatchEvent(keyboardEvent(values));
+          return new TextDecoder().decode(onData.mock.calls[0]?.[0]);
+        };
+        expect(sent({ key: ":", code: "Semicolon", shiftKey: true })).toBe(":");
+        expect(sent({ key: "!", code: "Digit1", shiftKey: true })).toBe("!");
+        expect(sent({ key: "A", code: "KeyA", shiftKey: true })).toBe("A");
+        expect(sent({ key: "a", code: "KeyA" })).toBe("a");
+        expect(
+          sent({ key: "A", code: "KeyA", shiftKey: true, ctrlKey: true }),
+        ).toBe("\x1b[97;6u");
+      } finally {
+        controller.dispose();
+        terminal.dispose();
+      }
+    },
+  );
+
   it("routes prompt paste to the command editor without also sending PTY bytes", () => {
     const model = inputModel();
     const onData = vi.fn();
@@ -218,87 +716,6 @@ describe("GhosttyInputController", () => {
     expect(new TextDecoder().decode(onData.mock.calls[0][0])).toBe(
       "process input",
     );
-    controller.dispose();
-  });
-
-  it("reports one mouse wheel step per line of trackpad travel, not per event", () => {
-    vi.stubGlobal("WheelEvent", {
-      DOM_DELTA_PIXEL: 0,
-      DOM_DELTA_LINE: 1,
-      DOM_DELTA_PAGE: 2,
-    });
-    const pointerTarget = new FakeElement();
-    const onData = vi.fn();
-    const controller = new GhosttyInputController({
-      model: inputModel((mode) => mode === 1006),
-      input: new FakeTextArea() as unknown as HTMLTextAreaElement,
-      pointerTarget: pointerTarget as unknown as HTMLElement,
-      cellSize: () => ({ width: 10, height: 20 }),
-      isMac: true,
-      onCopy: () => false,
-      onData,
-    });
-    const wheel = (deltaY: number) =>
-      pointerTarget.dispatchEvent(
-        Object.assign(new Event("wheel", { cancelable: true }), {
-          deltaY,
-          deltaMode: 0,
-          clientX: 5,
-          clientY: 5,
-          shiftKey: false,
-          altKey: false,
-          ctrlKey: false,
-          metaKey: false,
-        }),
-      );
-    const reports = () =>
-      onData.mock.calls.map(([bytes]) => new TextDecoder().decode(bytes));
-    try {
-      wheel(0);
-      for (let i = 0; i < 4; i++) wheel(4);
-      expect(onData).not.toHaveBeenCalled();
-      wheel(4);
-      expect(reports()).toEqual(["\x1b[<65;1;1M"]);
-      wheel(-25);
-      expect(reports()).toEqual(["\x1b[<65;1;1M", "\x1b[<64;1;1M"]);
-    } finally {
-      controller.dispose();
-      vi.unstubAllGlobals();
-    }
-  });
-
-  it("keeps Cmd-clicks from a mouse-tracking app but still releases a press it saw", () => {
-    const pointerTarget = new FakeElement();
-    const onData = vi.fn();
-    const controller = new GhosttyInputController({
-      model: inputModel((mode) => mode === 1006),
-      input: new FakeTextArea() as unknown as HTMLTextAreaElement,
-      pointerTarget: pointerTarget as unknown as HTMLElement,
-      cellSize: () => ({ width: 10, height: 20 }),
-      isMac: true,
-      onCopy: () => false,
-      onData,
-    });
-    const mouse = (type: string, metaKey: boolean) =>
-      pointerTarget.dispatchEvent(
-        Object.assign(new Event(type, { cancelable: true }), {
-          button: 0,
-          clientX: 5,
-          clientY: 5,
-          metaKey,
-          shiftKey: false,
-          altKey: false,
-          ctrlKey: false,
-        }),
-      );
-    const reports = () =>
-      onData.mock.calls.map(([bytes]) => new TextDecoder().decode(bytes));
-    mouse("mousedown", true);
-    mouse("mouseup", true);
-    expect(onData).not.toHaveBeenCalled();
-    mouse("mousedown", false);
-    mouse("mouseup", true);
-    expect(reports()).toEqual(["\x1b[<0;1;1M", "\x1b[<0;1;1m"]);
     controller.dispose();
   });
 
@@ -490,7 +907,40 @@ describe("GhosttyInputController", () => {
     controller.dispose();
   });
 
-  it("reports the cell that is drawn under the pointer while the grid is shifted up", () => {
+  it.each([
+    [0, [27, 91, 77, 32, 128, 128]],
+    [1005, [27, 91, 77, 32, 194, 128, 194, 128]],
+    [1006, Array.from(new TextEncoder().encode("\x1b[<0;96;96M"))],
+  ])(
+    "preserves the mouse wire encoding for mode %s",
+    async (mode, expected) => {
+      const pointerTarget = new FakeElement();
+      const onData = vi.fn();
+      const controller = new GhosttyInputController({
+        model: {
+          ...inputModel((value) => value === mode),
+          cols: 300,
+          rows: 300,
+        },
+        input: new FakeTextArea() as unknown as HTMLTextAreaElement,
+        pointerTarget: pointerTarget as unknown as HTMLElement,
+        cellSize: () => ({ width: 10, height: 20 }),
+        onData,
+        onCopy: () => false,
+        isMac: false,
+      });
+      await vi.dynamicImportSettled();
+      pointerTarget.dispatchEvent(
+        mouseEvent("mousedown", { clientX: 955, clientY: 1910 }),
+      );
+      expect(Array.from(onData.mock.calls[0][0] as Uint8Array)).toEqual(
+        expected,
+      );
+      controller.dispose();
+    },
+  );
+
+  it("reports the cell that is drawn under the pointer while the grid is shifted up", async () => {
     const input = new FakeTextArea();
     const pointerTarget = new FakeElement();
     const onData = vi.fn();
@@ -505,6 +955,7 @@ describe("GhosttyInputController", () => {
       onCopy: () => false,
       isMac: false,
     });
+    await vi.dynamicImportSettled();
     const report = (clientY: number) => {
       onData.mockClear();
       pointerTarget.dispatchEvent(
@@ -513,13 +964,13 @@ describe("GhosttyInputController", () => {
       return new TextDecoder().decode(onData.mock.calls[0][0]);
     };
     // 25 px down with the grid moved up 40 px is 65 px into the grid: row 4 (1-based).
-    expect(report(25)).toBe("\x1b[<32;2;4M");
+    expect(report(25)).toBe("\x1b[<35;2;4M");
     shift = 0;
-    expect(report(31)).toBe("\x1b[<32;2;2M");
+    expect(report(31)).toBe("\x1b[<35;2;2M");
     controller.dispose();
   });
 
-  it("deduplicates identical mouse-motion reports within a cell", () => {
+  it("deduplicates identical mouse-motion reports within a cell", async () => {
     const input = new FakeTextArea();
     const pointerTarget = new FakeElement();
     const onData = vi.fn();
@@ -532,6 +983,7 @@ describe("GhosttyInputController", () => {
       onCopy: () => false,
       isMac: false,
     });
+    await vi.dynamicImportSettled();
 
     for (let index = 0; index < 2; index += 1) {
       pointerTarget.dispatchEvent(
@@ -544,11 +996,106 @@ describe("GhosttyInputController", () => {
 
     expect(onData).toHaveBeenCalledOnce();
     expect(new TextDecoder().decode(onData.mock.calls[0][0])).toBe(
-      "\x1b[<32;2;2M",
+      "\x1b[<35;2;2M",
     );
     controller.dispose();
   });
+
+  it("ends the press when the button is released with Shift held, so later motion is not a drag", async () => {
+    const input = new FakeTextArea();
+    const pointerTarget = new FakeElement();
+    const onData = vi.fn();
+    const controller = new GhosttyInputController({
+      model: inputModel((mode) => mode === 1002 || mode === 1006),
+      input: input as unknown as HTMLTextAreaElement,
+      pointerTarget: pointerTarget as unknown as HTMLElement,
+      cellSize: () => ({ width: 10, height: 20 }),
+      onData,
+      onCopy: () => false,
+      isMac: false,
+    });
+    await vi.dynamicImportSettled();
+    const at = { clientX: 15, clientY: 25 };
+    pointerTarget.dispatchEvent(mouseEvent("mousedown", at));
+    pointerTarget.dispatchEvent(
+      mouseEvent("mouseup", { ...at, shiftKey: true }),
+    );
+    expect(
+      onData.mock.calls.map(([bytes]) => new TextDecoder().decode(bytes)),
+    ).toEqual(["\x1b[<0;2;2M", "\x1b[<4;2;2m"]);
+    onData.mockClear();
+    pointerTarget.dispatchEvent(
+      mouseEvent("mousemove", { clientX: 35, clientY: 45 }),
+    );
+    expect(onData).not.toHaveBeenCalled();
+    controller.dispose();
+  });
 });
+
+function wheelHarness() {
+  const state = {
+    mouseTracking: true,
+    history: 100,
+    sgr: true,
+    alternateScreen: false,
+    alternateScroll: true,
+    applicationCursor: false,
+  };
+  const speed = { value: 1 };
+  const pointer = new FakeElement();
+  const bounds = vi.spyOn(pointer, "getBoundingClientRect");
+  const onData = vi.fn<(bytes: Uint8Array) => void>();
+  const scrollBy = vi.fn(() => true);
+  const base = inputModel((mode) => {
+    if (mode === 1006) return state.sgr;
+    if (mode === 1007) return state.alternateScroll;
+    if (mode === 1) return state.applicationCursor;
+    return false;
+  });
+  const controller = new GhosttyInputController({
+    model: {
+      ...base,
+      modes: () => ({
+        ...base.modes(),
+        mouseTracking: state.mouseTracking,
+        alternateScreen: state.alternateScreen,
+      }),
+      scrollPosition: () => ({ offset: 0, history: state.history }),
+      scrollBy,
+    },
+    input: new FakeTextArea() as unknown as HTMLTextAreaElement,
+    pointerTarget: pointer as unknown as HTMLElement,
+    cellSize: () => ({ width: 10, height: 20 }),
+    isMac: true,
+    onCopy: () => false,
+    onData,
+    scrollSpeed: () => speed.value,
+  });
+  return {
+    state,
+    speed,
+    controller,
+    onData,
+    scrollBy,
+    bounds,
+    reports: () =>
+      onData.mock.calls.map(([bytes]) => new TextDecoder().decode(bytes)),
+    wheel(deltaY: number, deltaMode = 0, options: Partial<WheelEvent> = {}) {
+      const event = Object.assign(new Event("wheel", { cancelable: true }), {
+        deltaY,
+        deltaMode,
+        clientX: 5,
+        clientY: 5,
+        shiftKey: false,
+        ctrlKey: false,
+        altKey: false,
+        ...options,
+      });
+      pointer.dispatchEvent(event);
+      return event;
+    },
+  };
+}
 
 function inputModel(
   mode: (value: number) => boolean = () => false,
@@ -567,7 +1114,15 @@ function inputModel(
     scrollToBottom: () => false,
     scrollPosition: () => ({ offset: 0, history: 0 }),
     scrollBy: () => false,
+    cursor: () => ({
+      x: 4,
+      y: 2,
+      visible: true,
+      blinking: false,
+      style: "block",
+    }),
     encodeKey: () => new Uint8Array(0),
+    kittyKeyboardFlags: () => 0,
   } as unknown as GhosttyTerminalModelApi;
 }
 

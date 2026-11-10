@@ -638,3 +638,128 @@ fn list_branches_keeps_current_branch_local_and_surfaces_worktrees() {
     assert!(!feature[0].is_head);
     assert!(feature[0].worktree_path.is_some());
 }
+
+#[test]
+fn passive_inspection_never_runs_repository_helpers() {
+    if skip_if_no_git() {
+        return;
+    }
+    let fx = GitRepoFixture::new();
+    fx.write_file("note.txt", "before\n");
+    fx.write_file(".gitattributes", "*.txt diff=hostile\n");
+    fx.run_git(&["add", "."]);
+    fx.run_git(&["commit", "-qm", "seed"]);
+    fx.write_file("note.txt", "staged\n");
+    fx.run_git(&["add", "note.txt"]);
+    fx.write_file("note.txt", "after\n");
+    let sha = std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(&fx.repo_path)
+        .output()
+        .unwrap();
+    let sha = String::from_utf8(sha.stdout).unwrap();
+    fx.run_git(&[
+        "config",
+        "core.fsmonitor",
+        "echo invoked > fsmonitor-marker; exit 0 #",
+    ]);
+    fx.run_git(&[
+        "config",
+        "diff.hostile.textconv",
+        "echo invoked > textconv-marker; cat",
+    ]);
+    fx.run_git(&[
+        "config",
+        "diff.external",
+        "echo invoked > extdiff-marker; exit 0 #",
+    ]);
+    operations::status(&fx.registry, &fx.repo_str(), &fx.workspace).unwrap();
+    assert!(
+        !fx.repo_path.join("fsmonitor-marker").exists(),
+        "status ran fsmonitor"
+    );
+    for staged in [false, true] {
+        operations::diff(&fx.registry, &fx.repo_str(), None, staged, &fx.workspace).unwrap();
+    }
+    operations::show_commit_diff(&fx.registry, &fx.repo_str(), sha.trim(), &fx.workspace).unwrap();
+    operations::commit_file_diff(
+        &fx.registry,
+        &fx.repo_str(),
+        sha.trim(),
+        "note.txt",
+        None,
+        &fx.workspace,
+    )
+    .unwrap();
+    for name in ["fsmonitor-marker", "textconv-marker", "extdiff-marker"] {
+        assert!(
+            !fx.repo_path.join(name).exists(),
+            "passive inspection ran {name}"
+        );
+    }
+}
+
+#[test]
+fn discovery_preserves_derived_worktree_revocation() {
+    if skip_if_no_git() {
+        return;
+    }
+    for prune in [false, true] {
+        let fx = GitRepoFixture::new();
+        fx.write_file("seed.txt", "seed\n");
+        fx.run_git(&["add", "."]);
+        fx.run_git(&["commit", "-qm", "seed"]);
+        let outside = TempDir::new().unwrap();
+        let linked = outside.path().join("linked");
+        let linked_display = to_canon(&linked);
+        fx.run_git(&["worktree", "add", "--detach", &linked_display]);
+        let linked_canonical = std::fs::canonicalize(&linked).unwrap();
+        terax_lib::modules::git::worktree::list(&fx.registry, &fx.repo_str(), &fx.workspace)
+            .unwrap();
+        assert!(fx.registry.is_authorized(&linked_canonical));
+        operations::resolve_repo(&fx.registry, &linked_display, &fx.workspace).unwrap();
+        operations::panel_snapshot(&fx.registry, &linked_display, &fx.workspace).unwrap();
+        if prune {
+            std::fs::remove_dir_all(&linked).unwrap();
+            terax_lib::modules::git::worktree::prune(&fx.registry, &fx.repo_str(), &fx.workspace)
+                .unwrap();
+        } else {
+            terax_lib::modules::git::worktree::remove(
+                &fx.registry,
+                &fx.repo_str(),
+                &linked_display,
+                false,
+                &fx.workspace,
+            )
+            .unwrap();
+        }
+        std::fs::create_dir(&linked).unwrap();
+        assert!(
+            !fx.registry
+                .is_authorized(&std::fs::canonicalize(&linked).unwrap()),
+            "discovery promoted the linked worktree"
+        );
+    }
+}
+
+#[test]
+fn discovery_does_not_expand_an_authorized_subdirectory() {
+    if skip_if_no_git() {
+        return;
+    }
+    let fx = GitRepoFixture::new();
+    let nested = fx.repo_path.join("nested");
+    std::fs::create_dir(&nested).unwrap();
+    let registry = WorkspaceRegistry::default();
+    registry.authorize(&nested).unwrap();
+    let root = std::fs::canonicalize(&fx.repo_path).unwrap();
+    assert!(matches!(
+        operations::resolve_repo(&registry, &to_canon(&nested), &fx.workspace),
+        Err(GitError::PathOutsideWorkspace(path)) if path == root
+    ));
+    assert!(matches!(
+        operations::panel_snapshot(&registry, &to_canon(&nested), &fx.workspace),
+        Err(GitError::PathOutsideWorkspace(path)) if path == root
+    ));
+    assert!(!registry.is_authorized(&fx.repo_path));
+}

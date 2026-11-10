@@ -1,9 +1,11 @@
+import { subscribeAgentEvents } from "@/modules/control/lib/agentEvents";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { Tab } from "@/modules/tabs";
 import {
   hasLeaf,
   leafIdForPty,
   subscribeAgentSignals,
+  useAgentActivityStore,
 } from "@/modules/terminal";
 import { useEffect, useRef } from "react";
 import { shouldOpenInChat } from "../lib/chatDefault";
@@ -11,6 +13,7 @@ import { displayAgent } from "../lib/format";
 import { usePhaseReconciler } from "../lib/phaseReconciler";
 import { maybeTriggerManagedReview } from "../lib/review";
 import { routeAgentNotification } from "../lib/route";
+import { claudeSessionOf } from "../lib/sessionLink";
 import type { AgentSession, AgentSignal } from "../lib/types";
 import { useWindowFocus } from "../lib/useWindowFocus";
 import { openReader } from "../reader/readerStore";
@@ -124,6 +127,22 @@ export function AgentNotificationsBridge({
   usePhaseReconciler();
   const ctxRef = useRef<Ctx>({ tabs, activeId, focused, onActivate });
   ctxRef.current = { tabs, activeId, focused, onActivate };
+
+  // Structured hooks name the agent's session (Claude's transcript id),
+  // which the legacy signals no longer carry: link each pane to it.
+  useEffect(
+    () =>
+      subscribeAgentEvents((event) => {
+        const sessionId = claudeSessionOf(event);
+        if (!sessionId) return;
+        useAgentActivityStore.getState().setSessionId(event.ptyId, sessionId);
+        const leafId = leafIdForPty(event.ptyId);
+        if (leafId !== null) {
+          useAgentStore.getState().setClaudeSession(leafId, sessionId);
+        }
+      }),
+    [],
+  );
 
   // Shares the terminal module's single `terax:agent-signal` listener.
   useEffect(

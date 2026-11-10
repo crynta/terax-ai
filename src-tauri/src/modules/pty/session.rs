@@ -8,15 +8,19 @@ use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, Pt
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{mpsc, oneshot};
 
-use super::agent_detect::{AgentDetector, AgentSignal};
+use super::agent_detect::{
+    AgentDetector, AgentLink, AgentSignal, Signal, TerminalNotificationEvent,
+};
 use super::da_filter::DaFilter;
 use super::hub::{Command, Hub};
 use super::presentation::PresentationClass;
 use super::queue::{OutputQueue, QueueDiagnostics};
 use super::shell_init;
+use super::terminal_colors::{ColorState, TerminalColors};
 use crate::modules::workspace::WorkspaceEnv;
 
 const AGENT_EVENT: &str = "terax:agent-signal";
+const NOTIFICATION_EVENT: &str = "terax:terminal-notification";
 
 const READ_BUF: usize = 16 * 1024;
 const EXIT_ACK_TIMEOUT: Duration = Duration::from_secs(30);
@@ -52,6 +56,11 @@ pub struct Session {
     _job: Option<crate::modules::proc::job::ProcessJob>,
     /// PID of the shell process. 0 means unknown; callers must skip checks when 0.
     pub shell_pid: u32,
+    pub shell_program: String,
+    /// Frontend pane (leaf) this terminal belongs to, when it reported one.
+    pub pane_id: Option<u32>,
+    /// Agent state shared with the control server's structured hooks.
+    pub link: Arc<AgentLink>,
     /// Label of the webview that opened this PTY and receives its output.
     pub owner: Arc<str>,
     pub killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
@@ -60,6 +69,8 @@ pub struct Session {
     input: mpsc::Sender<InputMessage>,
     pub master: Arc<Mutex<Option<Box<dyn MasterPty + Send>>>>,
     output: Arc<OutputQueue>,
+    /// What the reader answers colour queries from.
+    colors: Arc<ColorState>,
     // Set only after output drains, so registration cannot reap a live queue.
     pub(super) finished: Arc<AtomicBool>,
 }
@@ -96,6 +107,21 @@ impl Session {
         self.output.close();
         #[cfg(unix)]
         self.reader_control.cancel();
+    }
+
+    /// Installs the theme colour queries are answered from. A program that
+    /// asked for scheme change reports (`CSI ? 2031 h`) hears about a flip at
+    /// once, in order with every other terminal reply.
+    pub(super) fn set_colors(&self, colors: TerminalColors) {
+        if let Some(scheme) = self.colors.update(colors) {
+            let queued = self.input.try_send(InputMessage {
+                bytes: scheme.report().to_vec(),
+                done: None,
+            });
+            if queued.is_err() {
+                log::debug!("pty colour scheme report dropped: input queue is full");
+            }
+        }
     }
 
     pub(super) fn resize(&self, size: PtySize) -> Result<(), String> {
@@ -197,8 +223,14 @@ pub(super) struct Host {
     pub class: PresentationClass,
     /// Agent detector transitions (an app event in production).
     pub signal: Arc<dyn Fn(AgentSignal) + Send + Sync>,
+    /// Bell and OSC notifications from programs that are not known agents.
+    pub notify: Arc<dyn Fn(TerminalNotificationEvent) + Send + Sync>,
+    pub pane_id: Option<u32>,
+    pub link: Arc<AgentLink>,
     /// Runs on the waiter thread once the exit frame was delivered.
     pub reap: Box<dyn FnOnce() + Send>,
+    /// The theme colour queries are answered from; unknown until pushed.
+    pub colors: Option<TerminalColors>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -215,8 +247,11 @@ pub fn spawn(
     blocks: bool,
     shell: Option<String>,
     control: Option<crate::modules::control::ShellControlEnv>,
+    colors: Option<TerminalColors>,
+    pane_id: Option<u32>,
 ) -> Result<Arc<Session>, String> {
     let emitter = app.clone();
+    let notifier = app.clone();
     spawn_with(
         Host {
             id,
@@ -226,6 +261,11 @@ pub fn spawn(
             signal: Arc::new(move |signal| {
                 let _ = emitter.emit(AGENT_EVENT, signal);
             }),
+            notify: Arc::new(move |notification| {
+                let _ = notifier.emit(NOTIFICATION_EVENT, notification);
+            }),
+            pane_id,
+            link: AgentLink::new(),
             reap: Box::new(move || {
                 if let Some(state) = app.try_state::<super::PtyState>() {
                     if let Some(s) = state.take(id) {
@@ -233,6 +273,7 @@ pub fn spawn(
                     }
                 }
             }),
+            colors,
         },
         PtySize {
             rows,
@@ -258,12 +299,17 @@ pub(super) fn spawn_with(
         hub,
         class,
         signal,
+        notify,
+        pane_id,
+        link,
         reap,
+        colors,
     } = host;
     let pty_system = native_pty_system();
     let pair = pty_system.openpty(size).map_err(|e| e.to_string())?;
 
-    let cmd = build_command()?;
+    let mut cmd = build_command()?;
+    let shell_program = super::shell_init::launched_shell(&mut cmd);
     let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);
 
@@ -296,6 +342,7 @@ pub(super) fn spawn_with(
     let finished = Arc::new(AtomicBool::new(false));
     let output = Arc::new(OutputQueue::new(Some(hub.wake())));
     let (input, mut input_rx) = mpsc::channel::<InputMessage>(INPUT_QUEUE);
+    let color_state = Arc::new(ColorState::new(colors));
 
     hub.submit(Command::Register {
         id,
@@ -317,11 +364,15 @@ pub(super) fn spawn_with(
         #[cfg(windows)]
         _job: job,
         shell_pid,
+        shell_program,
+        pane_id,
+        link: link.clone(),
         owner,
         killer: Mutex::new(killer),
         input: input.clone(),
         master: Arc::new(Mutex::new(Some(pair.master))),
         output: output.clone(),
+        colors: color_state.clone(),
         finished: finished.clone(),
     });
 
@@ -354,8 +405,8 @@ pub(super) fn spawn_with(
             let mut buf = [0u8; READ_BUF];
             // Reused for every filtered read: no per-chunk allocation.
             let mut filtered: Vec<u8> = Vec::with_capacity(READ_BUF);
-            let mut da_filter = DaFilter::new();
-            let mut agent_detect = AgentDetector::new();
+            let mut da_filter = DaFilter::with_colors(color_state);
+            let mut agent_detect = AgentDetector::with_link(link);
             let mut first_byte = false;
             loop {
                 match reader.read(&mut buf) {
@@ -375,7 +426,10 @@ pub(super) fn spawn_with(
                             );
                         }
                         let read = &buf[..n];
-                        agent_detect.process(read, |t| signal(t.into_signal(id)));
+                        agent_detect.process(read, |event| match event {
+                            Signal::Transition(t) => signal(t.into_signal(id)),
+                            Signal::Notification(n) => notify(n.into_event(id)),
+                        });
                         let chunk: &[u8] = if da_filter.passes_through(read) {
                             read
                         } else {
@@ -417,7 +471,11 @@ pub(super) fn spawn_with(
                     }
                 }
             }
-            agent_detect.finish(|t| signal(t.into_signal(id)));
+            agent_detect.finish(|event| {
+                if let Signal::Transition(t) = event {
+                    signal(t.into_signal(id));
+                }
+            });
             output_r.finish_reading();
         })
         .map_err(|e| spawn_error("reader", e))?;
@@ -598,9 +656,13 @@ mod tests {
                 hub: hub.clone(),
                 class: PresentationClass::Focused,
                 signal: Arc::new(|_| {}),
+                notify: Arc::new(|_| {}),
+                pane_id: None,
+                link: AgentLink::new(),
                 reap: Box::new(move || {
                     let _ = reaped.send(());
                 }),
+                colors: None,
             },
             reaped_rx,
         )
@@ -619,6 +681,33 @@ mod tests {
         let (host, reaped) = host(1, &hub);
         let session = spawn_with(host, PtySize::default(), || Ok(sh(script))).unwrap();
         (hub, session, frontend, reaped)
+    }
+
+    #[test]
+    fn spawned_wsl_session_stores_the_login_shell_instead_of_the_launcher() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let launcher = directory.path().join("wsl.exe");
+        std::fs::write(&launcher, "#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::set_permissions(&launcher, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        for shell in ["/usr/bin/pwsh", "/bin/bash", "/usr/bin/fish"] {
+            let hub = Hub::new();
+            let mut frontend = Frontend::open(&hub, "main");
+            let (host, reaped) = host(1, &hub);
+            let session = spawn_with(host, PtySize::default(), || {
+                let mut command = CommandBuilder::new("wsl.exe");
+                command.env("PATH", directory.path());
+                command.env("TERAX_WSL_LOGIN_SHELL", shell);
+                Ok(command)
+            })
+            .unwrap();
+            frontend.run_until_exit(1, &session);
+            reaped.recv_timeout(Duration::from_secs(5)).unwrap();
+            assert_eq!(frontend.exit, Some(0));
+            assert_eq!(session.shell_program, shell);
+        }
     }
 
     #[test]
@@ -729,13 +818,56 @@ mod tests {
     #[test]
     fn terminal_replies_use_the_ordered_input_queue() {
         let (_hub, session, mut frontend, reaped) = start(
-            "stty raw -echo; printf '\\033[c'; dd bs=1 count=7 2>/dev/null | od -An -c; exit 0",
+            "stty raw -echo; printf '\\033[c'; dd bs=1 count=12 2>/dev/null | od -An -c; exit 0",
         );
         frontend.run_until_exit(1, &session);
         let text = String::from_utf8_lossy(&frontend.received).to_string();
         // The DA1 query is answered, not displayed; the reply reached stdin.
         assert!(!text.contains('\u{1b}'), "{text:?}");
         assert!(text.contains('?') && text.contains('c'), "{text:?}");
+        reaped.recv_timeout(Duration::from_secs(5)).unwrap();
+    }
+
+    fn theme(background: [u8; 3]) -> TerminalColors {
+        TerminalColors {
+            foreground: [0xfb, 0xfb, 0xfb],
+            background,
+            cursor: [0xff, 0xff, 0xff],
+            palette: [[0; 3]; 16],
+        }
+    }
+
+    #[test]
+    fn colour_queries_get_the_live_theme_before_the_program_gives_up() {
+        let hub = Hub::new();
+        let mut frontend = Frontend::open(&hub, "main");
+        let (mut host, reaped) = host(1, &hub);
+        host.colors = Some(theme([0x09, 0x0b, 0x0c]));
+        // Two background queries each followed by DA1, the way agent CLIs
+        // probe; the theme changes between them (36 + 37 bytes of reply).
+        let script = "stty raw -echo; \
+            printf '\\033]11;?\\007\\033[c'; \
+            dd bs=1 count=36 2>/dev/null | cat -v; \
+            dd bs=1 count=1 of=/dev/null 2>/dev/null; \
+            printf '\\033]11;?\\033\\\\\\033[c'; \
+            dd bs=1 count=37 2>/dev/null | cat -v; exit 0";
+        let session = spawn_with(host, PtySize::default(), || Ok(sh(script))).unwrap();
+        let first = "^[]11;rgb:0909/0b0b/0c0c^G^[[?62;22;52c";
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while frontend.received.len() < first.len() && Instant::now() < deadline {
+            frontend.poll_once(1, vec![Ack { id: 1, bytes: 0 }]);
+        }
+        assert_eq!(String::from_utf8_lossy(&frontend.received), first);
+        session.set_colors(theme([0xff, 0xff, 0xff]));
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        runtime.block_on(session.write(vec![b'!'])).unwrap();
+        frontend.run_until_exit(1, &session);
+        let text = String::from_utf8_lossy(&frontend.received).to_string();
+        assert!(!text.contains('\u{1b}'), "a query leaked as text: {text:?}");
+        let second = "^[]11;rgb:ffff/ffff/ffff^[\\^[[?62;22;52c";
+        assert_eq!(text.trim(), format!("{first}{second}"));
         reaped.recv_timeout(Duration::from_secs(5)).unwrap();
     }
 

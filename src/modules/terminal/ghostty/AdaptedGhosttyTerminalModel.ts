@@ -1,7 +1,4 @@
-import {
-  detectTerminalLinks,
-  type TerminalTextLink,
-} from "@/modules/terminal/ghostty/core/terminalLinks";
+import type { ViewportLinkSource } from "@/modules/terminal/ghostty/core/ViewportLinkResolver";
 import type {
   PackedTerminalViewport,
   TerminalCursor,
@@ -41,7 +38,6 @@ import type {
   GhosttyGpuFrame,
   GhosttyGpuFrameOptions,
   GhosttyGpuGlyph,
-  GhosttyLinkCells,
   GhosttyRenderFormat,
   GhosttySearchStatus,
   GhosttySearchViewportSpan,
@@ -96,15 +92,6 @@ export class AdaptedGhosttyTerminalModel implements GhosttyTerminalModelApi {
   readonly requestedScrollbackBytes: number;
 
   private readonly terminal: TeraxGhosttyTerminal;
-  private plainLinks: {
-    revision: number;
-    origin: number;
-    cols: number;
-    startRow: number;
-    endRow: number;
-    offsets: number[];
-    links: TerminalTextLink[];
-  } | null = null;
   private blockMatch: { line: number; col: number; len: number } | null = null;
   private readonly directCellReader = new GhosttyRenderCellView();
   private readonly damageListeners = new Set<() => void>();
@@ -258,7 +245,6 @@ export class AdaptedGhosttyTerminalModel implements GhosttyTerminalModelApi {
   releasePresentationResources(): void {
     this.assertLive();
     if (this.presentationResourcesReleased) return;
-    this.plainLinks = null;
     this.renderState = null;
     this.gpuState = null;
     this.directCellReader.clear();
@@ -306,6 +292,15 @@ export class AdaptedGhosttyTerminalModel implements GhosttyTerminalModelApi {
     if (bytes.byteLength === 0) return;
 
     this.blockMatch = null;
+    this.feed(bytes);
+    this.synchronizedOutputPresentation.observe(
+      this.modesValue.synchronizedOutput,
+    );
+    this.requestPresentation();
+  }
+
+  private feed(bytes: Uint8Array): void {
+    if (bytes.byteLength === 0) return;
     this.terminal.write(bytes);
     this.writeCount += 1;
     this.contentRevision += 1;
@@ -315,10 +310,6 @@ export class AdaptedGhosttyTerminalModel implements GhosttyTerminalModelApi {
     this.refreshModes();
     this.drainReplies();
     this.drainEvents();
-    this.synchronizedOutputPresentation.observe(
-      this.modesValue.synchronizedOutput,
-    );
-    this.requestPresentation();
   }
 
   resize(cols: number, rows: number): void {
@@ -514,136 +505,24 @@ export class AdaptedGhosttyTerminalModel implements GhosttyTerminalModelApi {
     return this.terminal.graphemeAt(state, row * state.cols + column);
   }
 
-  hyperlinkAtViewportCell(row: number, column: number): string | null {
-    this.assertLive();
-    if (
-      row < 0 ||
-      row >= this.rowsValue ||
-      column < 0 ||
-      column >= this.colsValue
-    ) {
-      return null;
-    }
-    const state = this.ensureCurrentState();
-    const explicit = this.terminal.hyperlinkAt(
-      state,
-      row * state.cols + column,
-    );
-    if (explicit) return explicit;
-    const origin = this.viewportOriginLine();
-    let cache = this.plainLinks;
-    if (
-      !cache ||
-      cache.revision !== this.contentRevision ||
-      cache.origin !== origin ||
-      cache.cols !== state.cols ||
-      row < cache.startRow ||
-      row > cache.endRow
-    ) {
-      let startRow = row;
-      let endRow = row;
-      while (startRow > 0 && row - startRow < 8 && state.rowWrapped[startRow])
-        startRow--;
-      while (
-        endRow + 1 < state.rows &&
-        endRow - startRow < 8 &&
-        state.rowWrapped[endRow + 1]
-      )
-        endRow++;
-      let text = "";
-      const offsets: number[] = [];
-      const lines = this.readBufferLines(origin + startRow, origin + endRow);
-      for (let y = startRow; y <= endRow; y++) {
-        const cells = lines.get(origin + y)?.cells;
-        for (let x = 0; x < state.cols; x++) {
-          offsets.push(text.length);
-          // Wide-character spacers read as "" and contribute no text.
-          text += cells?.[x] ?? " ";
-        }
-      }
-      cache = {
-        revision: this.contentRevision,
-        origin,
-        cols: state.cols,
-        startRow,
-        endRow,
-        offsets,
-        links: detectTerminalLinks(text),
-      };
-      this.plainLinks = cache;
-    }
-    const offset = cache.offsets[(row - cache.startRow) * state.cols + column];
-    return (
-      cache.links.find((link) => offset >= link.start && offset < link.end)
-        ?.uri ?? null
-    );
-  }
-
-  linkCellsInRows(firstRow: number, lastRow: number): GhosttyLinkCells {
+  /**
+   * The cell data link lookups read. Scanning for links lives in the chunk that
+   * loads on the first hover with the modifier held, not in this model.
+   */
+  linkSource(): ViewportLinkSource {
     this.assertLive();
     const state = this.ensureCurrentState();
-    const cols = state.cols;
-    if (state.rows === 0 || cols === 0) return { start: 0, end: -1, spans: [] };
-    let start = clampInteger(firstRow, 0, state.rows - 1);
-    let end = clampInteger(lastRow, start, state.rows - 1);
-    while (start > 0 && state.rowWrapped[start]) start--;
-    while (end + 1 < state.rows && state.rowWrapped[end + 1]) end++;
-    // Copy everything borrowed from the render state before reading lines:
-    // `readLines` may allocate and replace the views.
-    const lineStarts: number[] = [];
-    const spans: { row: number; start: number; end: number }[] = [];
-    for (let row = start; row <= end; row++) {
-      if (row === start || !state.rowWrapped[row]) lineStarts.push(row);
-      let column = 0;
-      while (column < cols) {
-        if (state.linkIds[row * cols + column] === 0) {
-          column++;
-          continue;
-        }
-        const first = column;
-        while (column < cols && state.linkIds[row * cols + column] !== 0)
-          column++;
-        spans.push({ row, start: first, end: column - 1 });
-      }
-    }
-    lineStarts.push(end + 1);
-    const origin = this.viewportOriginLine();
-    const lines = this.readBufferLines(origin + start, origin + end);
-    for (let index = 0; index + 1 < lineStarts.length; index++) {
-      const lineStart = lineStarts[index];
-      const lineEnd = lineStarts[index + 1] - 1;
-      let text = "";
-      // Text offset -> cell index within the wrapped line.
-      const cellAt: number[] = [];
-      for (let row = lineStart; row <= lineEnd; row++) {
-        const cells = lines.get(origin + row)?.cells;
-        for (let x = 0; x < cols; x++) {
-          const grapheme = cells?.[x] ?? " ";
-          for (let unit = 0; unit < grapheme.length; unit++)
-            cellAt.push((row - lineStart) * cols + x);
-          text += grapheme;
-        }
-      }
-      if (!/[/:@]/.test(text)) continue;
-      for (const link of detectTerminalLinks(text)) {
-        const firstCell = cellAt[link.start];
-        const lastCell = cellAt[link.end - 1];
-        if (firstCell === undefined || lastCell === undefined) continue;
-        for (
-          let row = Math.floor(firstCell / cols);
-          row <= Math.floor(lastCell / cols);
-          row++
-        ) {
-          spans.push({
-            row: lineStart + row,
-            start: row === Math.floor(firstCell / cols) ? firstCell % cols : 0,
-            end:
-              row === Math.floor(lastCell / cols) ? lastCell % cols : cols - 1,
-          });
-        }
-      }
-    }
-    return { start, end, spans };
+    return {
+      cols: state.cols,
+      rows: state.rows,
+      revision: this.contentRevision,
+      origin: this.viewportOriginLine(),
+      cellCount: state.cellCount,
+      linkIds: state.linkIds,
+      rowWrapped: state.rowWrapped,
+      hyperlinkAt: (index) => this.terminal.hyperlinkAt(state, index),
+      readLines: (first, last) => this.readBufferLines(first, last),
+    };
   }
 
   scrollPosition(): ScrollPosition {
@@ -753,6 +632,11 @@ export class AdaptedGhosttyTerminalModel implements GhosttyTerminalModelApi {
     return this.terminal.bufferCursorLine();
   }
 
+  bufferCursorColumn(): number {
+    this.assertLive();
+    return this.terminal.bufferCursorColumn();
+  }
+
   wordRangeAt(point: TerminalBufferPoint): {
     readonly start: number;
     readonly end: number;
@@ -849,6 +733,11 @@ export class AdaptedGhosttyTerminalModel implements GhosttyTerminalModelApi {
     return this.terminal.encodeKey(event);
   }
 
+  kittyKeyboardFlags(): number {
+    this.assertLive();
+    return this.terminal.kittyKeyboardFlags();
+  }
+
   mode(mode: number, isAnsi = false): boolean {
     this.assertLive();
     return this.terminal.mode(mode, isAnsi);
@@ -918,7 +807,6 @@ export class AdaptedGhosttyTerminalModel implements GhosttyTerminalModelApi {
     this.renderState = null;
     this.gpuState = null;
     this.directCellReader.clear();
-    this.plainLinks = null;
     this.blockMatch = null;
     this.packedViewport = new Uint8Array(0);
     this.promptPresentation.dispose();
@@ -1111,6 +999,8 @@ export class AdaptedGhosttyTerminalModel implements GhosttyTerminalModelApi {
   private drainEvents(): void {
     const events = this.terminal.drainEvents();
     for (const event of events) {
+      if (event.type === "synchronized-output-reset")
+        this.synchronizedOutputPresentation.observe(false);
       this.promptPresentation.observe(event);
       this.resizePromptHold.observe(event);
       this.eventSink?.(event);

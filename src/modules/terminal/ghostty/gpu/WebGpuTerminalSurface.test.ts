@@ -13,6 +13,7 @@ import {
   SCREEN_OFFSET,
   SCREEN_UNIFORM_BYTES,
 } from "@/modules/terminal/ghostty/gpu/shaders";
+import { TERMINAL_RIGHT_GUTTER_CSS_PX } from "@/modules/terminal/ghostty/gpu/TerminalFit";
 import { WebGpuTerminalSurface } from "@/modules/terminal/ghostty/gpu/WebGpuTerminalSurface";
 import { deriveFontMetrics } from "@/modules/terminal/ghostty/gpu/terminalVisuals";
 import { resetTerminalResizeGestureForTest } from "@/modules/terminal/lib/terminalResizeGesture";
@@ -79,57 +80,6 @@ describe("WebGPU surface data path", () => {
       "writeBuffer:cells",
       "writeBuffer:cells",
     ]);
-  });
-
-  it("re-uploads link rows with a single underline on link cells the app left plain", async () => {
-    const h = await harness();
-    expect(h.render()).toBe(true);
-    const links = { row: 2, start: 3, end: 5 };
-    const linkCellsInRows = vi.fn((start: number, end: number) => ({
-      start,
-      end,
-      spans: start <= links.row && links.row <= end ? [links] : [],
-    }));
-    Object.assign(h.model, { linkCellsInRows });
-    const words = new Uint32Array(h.gpu.cells.buffer);
-    // Cell 4 already carries the app's own curly underline.
-    words[(2 * 120 + 4) * 4] = (3 << 24) | 7;
-    h.writeBuffer.mockClear();
-    h.calls.length = 0;
-
-    h.gpu.dirty([{ start: 2, end: 2 }]);
-    expect(h.render()).toBe(true);
-    const uploads = h.writeBuffer.mock.calls.filter(
-      ([buffer]) => buffer === h.lastCellsBuffer(),
-    );
-    expect(uploads).toHaveLength(2);
-    // Raw records first, straight from the borrowed view; links are read afterwards.
-    expect(uploads[0][2]).toBe(h.gpu.cells);
-    expect(h.calls.indexOf("writeBuffer:cells")).toBe(
-      h.calls.indexOf("consumeGpuFrame") + 1,
-    );
-    const [, offset, data, dataOffset, size] = uploads[1];
-    expect([offset, dataOffset, size]).toEqual([2 * 120 * CELL, 0, 120 * CELL]);
-    const patched = new Uint32Array((data as Uint8Array).buffer, 0, 120 * 4);
-    const style = (column: number) => (patched[column * 4] >>> 24) & 7;
-    expect([2, 3, 4, 5, 6].map(style)).toEqual([0, 1, 3, 1, 0]);
-    expect(patched[4 * 4] & 0xff_ffff).toBe(7);
-
-    // The link disappears: its row goes back to the plain records.
-    links.row = -1;
-    h.writeBuffer.mockClear();
-    h.gpu.dirty([{ start: 2, end: 2 }]);
-    expect(h.render()).toBe(true);
-    const restored = h.writeBuffer.mock.calls.filter(
-      ([buffer]) => buffer === h.lastCellsBuffer(),
-    );
-    expect(restored).toHaveLength(2);
-    const plain = new Uint32Array(
-      (restored[1][2] as Uint8Array).buffer,
-      0,
-      120 * 4,
-    );
-    expect((plain[3 * 4] >>> 24) & 7).toBe(0);
   });
 
   it("does not upload, draw or touch the DOM for unchanged output", async () => {
@@ -434,7 +384,10 @@ describe("pixel-exact geometry", () => {
     const h = await harness({ scale: 1.25 });
     h.render();
     const before = h.surface.diagnostics().cols;
-    const deviceWidth = before * h.surface.diagnostics().deviceCellWidth - 1;
+    const deviceWidth =
+      before * h.surface.diagnostics().deviceCellWidth +
+      Math.round(TERMINAL_RIGHT_GUTTER_CSS_PX * 1.25) -
+      1;
     h.observe({
       width: 700,
       height: 500,
@@ -452,7 +405,7 @@ describe("pixel-exact geometry", () => {
     expect(h.setBounds).toHaveBeenLastCalledWith({
       left: 0,
       top: 0,
-      width: 960,
+      width: 960 + TERMINAL_RIGHT_GUTTER_CSS_PX,
       height: 640,
     });
     h.observe({ width: 700, height: 500, left: 100.4, top: 20 });
@@ -520,7 +473,7 @@ describe("pixel-exact geometry", () => {
 describe("resizing the host", () => {
   const ORIGIN = { left: 0, top: 0 };
   const hostSize = (width: number, height = 640) => ({
-    width,
+    width: width + TERMINAL_RIGHT_GUTTER_CSS_PX,
     height,
     ...ORIGIN,
   });
@@ -544,7 +497,9 @@ describe("resizing the host", () => {
       h.render();
       // The pane's rectangle follows the host at once ...
       expect(h.setBounds).toHaveBeenLastCalledWith(
-        expect.objectContaining({ width: 960 - step * 8 }),
+        expect.objectContaining({
+          width: 960 - step * 8 + TERMINAL_RIGHT_GUTTER_CSS_PX,
+        }),
       );
     }
     // ... while neither the grid nor the shell heard about any of it.
@@ -1030,7 +985,7 @@ describe("shared atlas growth", () => {
 
 describe("a resize gesture ending in a prompt redraw hold", () => {
   const hostSize = (width: number, height = 640) => ({
-    width,
+    width: width + TERMINAL_RIGHT_GUTTER_CSS_PX,
     height,
     left: 0,
     top: 0,
@@ -1245,7 +1200,12 @@ async function harness(options: { scale?: number } = {}) {
       getBoundingClientRect: () => {
         rectReads();
         domWork();
-        return { width: 960, height: 640, left: 0, top: 0 };
+        return {
+          width: 960 + TERMINAL_RIGHT_GUTTER_CSS_PX,
+          height: 640,
+          left: 0,
+          top: 0,
+        };
       },
     });
     return value;
@@ -1467,6 +1427,7 @@ async function harness(options: { scale?: number } = {}) {
       background: [0, 0, 0],
       foreground: [255, 255, 255],
       cursor: [255, 255, 255],
+      cursorText: [0, 0, 0],
       selection: { color: [50, 50, 50], alpha: 0.5 },
       palette: [],
     },

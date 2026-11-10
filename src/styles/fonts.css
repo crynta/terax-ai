@@ -83,3 +83,21 @@
   src: local('Menlo'), local('Menlo-Regular');
   unicode-range: U+2190-21FF, U+2500-25FF;
 }
+
+@font-face {
+  font-family: 'Terax Terminal Symbols';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('../assets/fonts/terax-terminal-symbols.woff2') format('woff2');
+  unicode-range: U+E000-F8FF;
+}
+
+@font-face {
+  font-family: 'Terax Terminal Symbols MDI';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('../assets/fonts/terax-terminal-symbols-mdi.woff2') format('woff2');
+  unicode-range: U+F0000-FFFFD;
+}

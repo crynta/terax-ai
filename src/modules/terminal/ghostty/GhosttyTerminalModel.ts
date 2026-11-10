@@ -11,6 +11,7 @@ import type {
   KeyEvent,
 } from "@terax/ghostty-core/protocol";
 import type { TerminalCellReader } from "@/modules/terminal/ghostty/core/packedCells";
+import type { ViewportLinkSource } from "@/modules/terminal/ghostty/core/ViewportLinkResolver";
 
 export type GhosttyTerminalModelOptions = {
   readonly backend: Extract<TerminalBackendKind, `ghostty-${string}`>;
@@ -114,19 +115,6 @@ export type GhosttyGpuFrame = {
   readonly newGlyphs: readonly GhosttyGpuGlyph[];
 };
 
-/** Link cells of whole soft-wrapped viewport lines, as column spans per row. */
-export type GhosttyLinkCells = {
-  /** First and last viewport rows scanned: the request widened to whole wrapped lines. */
-  readonly start: number;
-  readonly end: number;
-  /** Inclusive column spans of OSC 8 and detected plain-text links. */
-  readonly spans: readonly {
-    readonly row: number;
-    readonly start: number;
-    readonly end: number;
-  }[];
-};
-
 export interface GhosttyTerminalModelApi extends TerminalModel {
   isDisposed?(): boolean;
   /**
@@ -169,12 +157,7 @@ export interface GhosttyTerminalModelApi extends TerminalModel {
     blinking: boolean,
   ): void;
   grapheme(row: number, column: number): string;
-  hyperlinkAtViewportCell(row: number, column: number): string | null;
-  /**
-   * Link cells in viewport rows `firstRow..lastRow`, widened to whole wrapped lines. Reads the
-   * screen, so call it only when no borrowed frame or cell reader is still in use.
-   */
-  linkCellsInRows?(firstRow: number, lastRow: number): GhosttyLinkCells;
+  linkSource(): ViewportLinkSource;
   scrollPosition(): { readonly offset: number; readonly history: number };
   scrollBy(lines: number): boolean;
   scrollTo(offset: number): boolean;
@@ -193,6 +176,7 @@ export interface GhosttyTerminalModelApi extends TerminalModel {
   trackedSelection?(): TerminalBufferSelection | null;
   encodeKey(event: KeyEvent): Uint8Array;
   mode(mode: number, isAnsi?: boolean): boolean;
+  kittyKeyboardFlags?(): number;
   setReplySink(sink: ((bytes: Uint8Array) => void) | null): void;
   enableSemanticMarkers?(enabled: boolean): void;
   semanticMarkerColumn?(id: number): number | null;
@@ -204,6 +188,7 @@ export interface GhosttyTerminalModelApi extends TerminalModel {
     endCol?: number,
   ): string;
   bufferCursorLine?(): number;
+  bufferCursorColumn?(): number;
   readCellLine?(line: number): readonly string[];
   blockSearchActive?(): boolean;
   setBlockSearchMatch?(

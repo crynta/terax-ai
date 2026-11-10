@@ -8,10 +8,10 @@ import { Spinner } from "@/components/ui/spinner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
-  native,
+  git,
   type GitCommitFileChange,
   type GitLogEntry,
-} from "@/modules/ai/lib/native";
+} from "@/modules/git";
 import { FileIcon } from "@/modules/explorer/FileIcon";
 import {
   Copy01Icon,
@@ -320,7 +320,7 @@ export function GitHistoryPane({
     setError(null);
     setEndReached(false);
     try {
-      const entries = await native.gitLog(repoRoot, { limit: PAGE_SIZE });
+      const entries = await git.log(repoRoot, { limit: PAGE_SIZE });
       if (requestId !== requestIdRef.current) return;
       setCommits(entries);
       setLoadStatus("idle");
@@ -340,7 +340,7 @@ export function GitHistoryPane({
     inflightMoreRef.current = true;
     setLoadStatus("more");
     try {
-      const entries = await native.gitLog(repoRoot, {
+      const entries = await git.log(repoRoot, {
         limit: PAGE_SIZE,
         beforeSha: last.sha,
       });
@@ -371,8 +371,8 @@ export function GitHistoryPane({
 
   useEffect(() => {
     let cancelled = false;
-    native
-      .gitRemoteUrl(repoRoot)
+    git
+      .remoteUrl(repoRoot)
       .then((url) => {
         if (cancelled) return;
         setRemoteWeb(parseRemoteWebUrl(url));
@@ -432,7 +432,7 @@ export function GitHistoryPane({
       cache.set(sha, { state: "loading" });
       bumpFiles();
       try {
-        const files = await native.gitCommitFiles(repoRoot, sha);
+        const files = await git.commitFiles(repoRoot, sha);
         cache.set(sha, { state: "loaded", files });
         while (cache.size > FILES_CACHE_LIMIT) {
           const oldest = cache.keys().next().value;

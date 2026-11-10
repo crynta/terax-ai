@@ -37,7 +37,7 @@ import {
 } from "@/components/ui/tooltip";
 import { IS_MAC } from "@/lib/platform";
 import { cn } from "@/lib/utils";
-import { type GitBranchEntry, native } from "@/modules/ai/lib/native";
+import { type GitBranchEntry, git } from "@/modules/git";
 import {
   copyToClipboard,
   revealInFinder,
@@ -199,7 +199,7 @@ function BranchDropdown({
     setLoading(true);
     setError(null);
     try {
-      const result = await native.gitListBranches(repoRoot);
+      const result = await git.listBranches(repoRoot);
       if (id !== requestRef.current) return;
       setBranches(result.branches);
     } catch (e) {
@@ -225,7 +225,7 @@ function BranchDropdown({
       checkoutInFlight.current = true;
       setCheckingOut(true);
       try {
-        await native.gitCheckoutBranch(repoRoot, branch);
+        await git.checkoutBranch(repoRoot, branch);
         setBranches([]);
         setOpen(false);
         onRefresh();

@@ -1,7 +1,6 @@
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
-import { fmtShortcut } from "@/lib/platform";
 import type { PresenceState } from "@/lib/usePresence";
-import { useShortcutLabel } from "@/modules/shortcuts";
+import { useShortcutHint } from "@/modules/shortcuts";
 import { useEffect, useRef } from "react";
 
 export type SelectionAskAiProps = {
@@ -24,9 +23,7 @@ export function SelectionAskAi({
 }: SelectionAskAiProps) {
   const pos = useRef({ top: 0, left: 0 });
   const open = state === "open";
-  const shortcut = fmtShortcut(
-    ...useShortcutLabel("ai.askSelection").split(" ").filter(Boolean),
-  );
+  const shortcut = useShortcutHint("ai.askSelection");
 
   useEffect(() => {
     if (!open) return;

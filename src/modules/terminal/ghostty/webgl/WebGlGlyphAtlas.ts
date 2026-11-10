@@ -3,13 +3,22 @@
  * Copyright (c) 2017-2019 The xterm.js authors. MIT licensed.
  */
 
+import { extendedSymbolsPending } from "@/lib/fonts";
 import { CellFlags } from "@terax/ghostty-core/protocol";
 import {
   BuiltinGlyphRenderer,
+  builtinGlyphPending,
   builtinLineThickness,
   isBuiltinGlyph,
 } from "../gpu/BuiltinGlyphs";
 import { hasIntrinsicColor } from "../gpu/glyphColor";
+import {
+  drawGlyph,
+  isExtendedSymbol,
+  isNeighbourAware,
+  layoutGlyph,
+  placeGlyph,
+} from "../gpu/GlyphPlacement";
 import { SkylineAtlasAllocator } from "../gpu/SkylineAtlasAllocator";
 import { fontCss, type TerminalFontMetrics } from "../gpu/terminalVisuals";
 
@@ -28,6 +37,8 @@ export type WebGlGlyphEntry = {
   readonly uvMaxX: number;
   readonly uvMaxY: number;
   readonly intrinsicColor: boolean;
+  /** Coverage is final (cell-exact shapes): no text contrast may reshape it. */
+  readonly exact: boolean;
 };
 
 type DirtyRectangle = {
@@ -47,6 +58,7 @@ const NULL_GLYPH: WebGlGlyphEntry = {
   uvMaxX: 0,
   uvMaxY: 0,
   intrinsicColor: false,
+  exact: false,
 };
 
 /**
@@ -180,10 +192,15 @@ export class WebGlGlyphAtlas {
     return this.uploadedBytesValue;
   }
 
+  /**
+   * `roomy`: a glyph that may take two cells has its second cell free, so it is drawn in its
+   * roomy form (see `GlyphPlacement`); it only matters for such glyphs.
+   */
   glyph(
     codepoint: number,
     grapheme: string | null,
     flags: number,
+    roomy = true,
   ): WebGlGlyphEntry {
     this.assertLive();
     if (codepoint === 0 || codepoint === 32) return NULL_GLYPH;
@@ -191,6 +208,8 @@ export class WebGlGlyphAtlas {
       const key = codepoint * 4;
       const cached = this.simpleGlyphs.get(key);
       if (cached) return cached;
+      // Blank until the drawing code has loaded; the atlas is rebuilt when it does.
+      if (builtinGlyphPending(codepoint)) return NULL_GLYPH;
       const entry = this.rasterizeBuiltin(codepoint);
       if (entry) {
         this.simpleGlyphs.set(key, entry);
@@ -199,10 +218,16 @@ export class WebGlGlyphAtlas {
     }
     const style = flags & (CellFlags.BOLD | CellFlags.ITALIC);
     if (grapheme === null) {
-      const key = codepoint * 4 + style;
+      const constrained = !roomy && isNeighbourAware(codepoint);
+      // Constrained forms live under negative keys beside the roomy ones.
+      const key = constrained ? -(codepoint * 4 + style) - 1 : codepoint * 4 + style;
       const cached = this.simpleGlyphs.get(key);
       if (cached) return cached;
-      const entry = this.rasterize(String.fromCodePoint(codepoint), flags);
+      const entry = this.rasterize(
+        String.fromCodePoint(codepoint),
+        flags,
+        !constrained,
+      );
       this.simpleGlyphs.set(key, entry);
       return entry;
     }
@@ -295,7 +320,14 @@ export class WebGlGlyphAtlas {
     this.colorDirty = null;
   }
 
-  private rasterize(text: string, flags: number): WebGlGlyphEntry {
+  private rasterize(
+    text: string,
+    flags: number,
+    roomy = true,
+  ): WebGlGlyphEntry {
+    if (isExtendedSymbol(text.codePointAt(0) ?? 0) && extendedSymbolsPending()) {
+      return NULL_GLYPH;
+    }
     const context = this.rasterContext;
     const bold = (flags & CellFlags.BOLD) !== 0;
     const italic = (flags & CellFlags.ITALIC) !== 0;
@@ -313,26 +345,34 @@ export class WebGlGlyphAtlas {
     context.fillStyle = "white";
 
     const measurement = context.measureText(text);
-    const left = Math.max(0, Math.ceil(measurement.actualBoundingBoxLeft || 0));
-    const right = Math.ceil(
-      measurement.actualBoundingBoxRight || this.metrics.deviceCellWidth,
+    const measure = {
+      advance: measurement.width,
+      left: measurement.actualBoundingBoxLeft || 0,
+      right: measurement.actualBoundingBoxRight || 0,
+      ascent: measurement.actualBoundingBoxAscent || 0,
+      descent: measurement.actualBoundingBoxDescent || 0,
+    };
+    const { deviceCellWidth, deviceCellHeight, deviceBaseline } = this.metrics;
+    const placement = placeGlyph(
+      text,
+      measure,
+      deviceCellWidth,
+      deviceCellHeight,
+      roomy,
     );
-    const ascent = Math.ceil(
-      measurement.actualBoundingBoxAscent || this.metrics.deviceBaseline,
-    );
-    const descent = Math.ceil(
-      measurement.actualBoundingBoxDescent ||
-        this.metrics.deviceCellHeight - this.metrics.deviceBaseline,
-    );
-    const width = Math.min(
+    const layout = layoutGlyph(
+      measure,
+      placement,
+      {
+        width: deviceCellWidth,
+        height: deviceCellHeight,
+        baseline: deviceBaseline,
+      },
+      GLYPH_PADDING,
       RASTER_SIZE,
-      Math.max(1, left + right + GLYPH_PADDING * 2),
     );
-    const height = Math.min(
-      RASTER_SIZE,
-      Math.max(1, ascent + descent + GLYPH_PADDING * 2),
-    );
-    context.fillText(text, GLYPH_PADDING + left, GLYPH_PADDING + ascent);
+    const { width, height } = layout;
+    drawGlyph(context, text, layout);
 
     const rgba = context.getImageData(0, 0, width, height).data;
     const intrinsicColor = hasIntrinsicColor(rgba);
@@ -387,8 +427,8 @@ export class WebGlGlyphAtlas {
     const atlasSize = intrinsicColor ? COLOR_ATLAS_SIZE : ATLAS_SIZE;
 
     return {
-      originOffsetX: -left - GLYPH_PADDING,
-      originOffsetY: this.metrics.deviceBaseline - ascent - GLYPH_PADDING,
+      originOffsetX: layout.bearingX,
+      originOffsetY: layout.bearingY,
       width,
       height,
       uvMinX: region.x / atlasSize,
@@ -396,6 +436,7 @@ export class WebGlGlyphAtlas {
       uvMaxX: (region.x + width) / atlasSize,
       uvMaxY: (region.y + height) / atlasSize,
       intrinsicColor,
+      exact: layout.exact,
     };
   }
 
@@ -441,6 +482,7 @@ export class WebGlGlyphAtlas {
       uvMaxX: (region.x + width) / ATLAS_SIZE,
       uvMaxY: (region.y + height) / ATLAS_SIZE,
       intrinsicColor: false,
+      exact: true,
     };
   }
 

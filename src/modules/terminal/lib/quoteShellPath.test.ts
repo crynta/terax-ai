@@ -1,7 +1,9 @@
+import { execFileSync, spawnSync } from "node:child_process";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/platform", () => ({ IS_WINDOWS: false }));
 
+import { quoteShellArg, unescapeForShell } from "@/lib/shellQuote";
 import { formatDroppedPaths, quoteShellPath } from "./quoteShellPath";
 
 describe("quoteShellPath", () => {
@@ -20,7 +22,7 @@ describe("quoteShellPath", () => {
   });
 
   it("leaves a clean Windows drive path unquoted", () => {
-    expect(quoteShellPath("C:\\Users\\me\\img.png")).toBe(
+    expect(quoteShellPath("C:\\Users\\me\\img.png", true)).toBe(
       "C:\\Users\\me\\img.png",
     );
   });
@@ -34,4 +36,63 @@ describe("quoteShellPath", () => {
       "/a/b.png /c/d.png ",
     );
   });
+});
+
+describe("literal drop arguments", () => {
+  it.each([
+    "$(Get-Date).txt",
+    "$variable.txt",
+    "tick`name.txt",
+    "with space.txt",
+    "it's.txt",
+    "it‘s.txt",
+    "it’s.txt",
+  ])("keeps PowerShell %s literal", (name) => {
+    const path = `C:\\Downloads\\${name}`;
+    expect(quoteShellPath(path, true)).toBe(quoteShellArg(path, true));
+    expect(unescapeForShell(quoteShellPath(path, true), true)).toBe(path);
+  });
+
+  it("quotes literal POSIX backslashes, including a Windows-hosted WSL path", () => {
+    const path = "/mnt/c/Downloads/literal\\name.txt";
+    expect(unescapeForShell(quoteShellPath(path, false), false)).toBe(path);
+    expect(formatDroppedPaths([path], false)).toBe("'/mnt/c/Downloads/literal'\\\\'name.txt' ");
+  });
+});
+
+it("round trips literal paths through the platform shell", () => {
+  const windows = process.platform === "win32";
+  const paths = [
+    "/tmp/$(echo expanded).txt",
+    "/tmp/$variable",
+    "/tmp/tick`name",
+    "/tmp/it’s.txt",
+    "/tmp/it's file.txt",
+    "/tmp/literal\\name",
+    "/tmp/a\\'b.txt",
+  ];
+  const quoted = paths.map((path) => quoteShellPath(path, windows));
+  // PowerShell startup can exceed the default Vitest timeout on Windows CI.
+  const options = { encoding: "utf8" as const, timeout: 15_000 };
+  const output = windows
+    ? execFileSync(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          `[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); function Capture([string]$value) { [Console]::Write($value); [Console]::Write([char]0) }; ${quoted.map((path) => `Capture ${path}`).join("; ")}`,
+        ],
+        options,
+      )
+    : execFileSync("/bin/sh", ["-c", `printf '%s\\0' ${quoted.join(" ")}`], options);
+  expect(output).toBe(`${paths.join("\0")}\0`);
+}, 20_000);
+
+const fishProgram = process.platform === "win32" ? "" : spawnSync("/bin/sh", ["-c", "command -v fish"], { encoding: "utf8" }).stdout.trim();
+it.runIf(Boolean(fishProgram))("round trips backslashes and apostrophes through fish", () => {
+  for (const path of ["/tmp/a\\'b.txt", "/tmp/a\\\\b.txt", "/tmp/a\\", "/tmp/$(echo expanded)"]) {
+    const output = execFileSync(fishProgram, ["--no-config", "-c", `printf '%s' ${quoteShellPath(path, false)}`], { encoding: "utf8" });
+    expect(output).toBe(path);
+  }
 });

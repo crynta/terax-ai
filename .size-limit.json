@@ -34,7 +34,7 @@
       "dist/assets/WebGlTerminalSurface-*.js",
       "dist/assets/WebGlTerminalRuntime-*.js"
     ],
-    "limit": "15 KB",
+    "limit": "16 KB",
     "gzip": true
   },
   {
@@ -44,5 +44,14 @@
     ],
     "limit": "450 KB",
     "gzip": true
+  },
+  {
+    "name": "terminal private-use symbol faces (the second loads only on use)",
+    "path": [
+      "dist/assets/terax-terminal-symbols-*.woff2"
+    ],
+    "limit": "730 KB",
+    "gzip": false,
+    "brotli": false
   }
 ]

@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GhosttyTerminalModelApi } from "@/modules/terminal/ghostty/GhosttyTerminalModel";
 import type { WindowPresentation } from "@/modules/terminal/ghostty/WindowPresentationPolicy";
 import type { WebGlCellRenderer } from "@/modules/terminal/ghostty/webgl/WebGlCellRenderer";
+import { TERMINAL_RIGHT_GUTTER_CSS_PX } from "@/modules/terminal/ghostty/gpu/TerminalFit";
+import { WebGlPoolExhaustedError } from "@/modules/terminal/ghostty/webgl/WebGlPoolExhaustedError";
 import { WebGlTerminalSurface } from "@/modules/terminal/ghostty/webgl/WebGlTerminalSurface";
 
 const bridge = vi.hoisted(() => ({
@@ -78,6 +80,35 @@ describe("WebGL surface renderer ownership", () => {
   });
 });
 
+describe("WebGL surface pool exhaustion", () => {
+  it("shows the error and retry state instead of throwing when no context is free", () => {
+    const h = harness();
+    h.acquire.mockImplementation(() => {
+      throw new WebGlPoolExhaustedError(12);
+    });
+    h.surface.detach();
+    h.acquire.mockClear();
+    h.onError.mockClear();
+    expect(() => h.surface.attach(h.host)).not.toThrow();
+    expect(h.onError).toHaveBeenCalledOnce();
+    expect(h.onError.mock.calls[0][0]).toBeInstanceOf(WebGlPoolExhaustedError);
+    // A retry could not succeed either, so none is attempted.
+    expect(h.acquire).toHaveBeenCalledOnce();
+    expect(h.surface.diagnostics().renderer).toBeNull();
+  });
+
+  it("does not throw when a pane that became visible finds the pool full", () => {
+    const h = harness();
+    h.surface.setVisible(false);
+    h.acquire.mockImplementation(() => {
+      throw new WebGlPoolExhaustedError(12);
+    });
+    h.onError.mockClear();
+    expect(() => h.surface.setVisible(true)).not.toThrow();
+    expect(h.onError).toHaveBeenCalledOnce();
+  });
+});
+
 describe("WebGL surface resizing", () => {
   it("keeps the model, the PTY and the renderer still during a gesture and applies the final size once", () => {
     const h = harness();
@@ -124,39 +155,6 @@ describe("WebGL surface resizing", () => {
   });
 });
 
-describe("WebGL link underlines", () => {
-  it("passes link cells to the renderer and redraws undamaged rows of a wrapped link", () => {
-    const h = harness();
-    Object.assign(h.model, {
-      consumeDamage: () => ({ kind: "rows", ranges: [{ start: 3, end: 3 }] }),
-      // Row 3 continues a wrapped link that starts on row 2.
-      linkCellsInRows: vi.fn(() => ({
-        start: 2,
-        end: 3,
-        spans: [
-          { row: 2, start: 100, end: 119 },
-          { row: 3, start: 0, end: 4 },
-        ],
-      })),
-    });
-
-    h.surface.renderFrame(h.renderer as unknown as WebGlCellRenderer);
-
-    const calls = h.renderer.render.mock.calls as unknown as unknown[][];
-    const frame = calls[calls.length - 1][0] as {
-      damage: unknown;
-      linkAt: (row: number, column: number) => boolean;
-    };
-    expect(frame.damage).toEqual({
-      kind: "rows",
-      ranges: [{ start: 2, end: 3 }],
-    });
-    expect(frame.linkAt(2, 100)).toBe(true);
-    expect(frame.linkAt(3, 4)).toBe(true);
-    expect(frame.linkAt(3, 5)).toBe(false);
-  });
-});
-
 const METRICS = {
   font: {
     family: "monospace",
@@ -177,6 +175,7 @@ const THEME = {
   background: [0, 0, 0],
   foreground: [255, 255, 255],
   cursor: [255, 255, 255],
+  cursorText: [0, 0, 0],
   selection: { color: [50, 50, 50], alpha: 0.5 },
   palette: [],
 } as const;
@@ -225,12 +224,15 @@ function harness() {
     });
   const media = new EventTarget();
   vi.stubGlobal("document", { createElement: element });
-  vi.stubGlobal("window", {
-    devicePixelRatio: 1,
-    setTimeout,
-    clearTimeout,
-    matchMedia: () => media,
-  });
+  vi.stubGlobal(
+    "window",
+    Object.assign(new EventTarget(), {
+      devicePixelRatio: 1,
+      setTimeout,
+      clearTimeout,
+      matchMedia: () => media,
+    }),
+  );
   let resize = () => {};
   vi.stubGlobal(
     "ResizeObserver",
@@ -269,6 +271,7 @@ function harness() {
     modes: () => ({ alternateScreen: false }),
     setPixelSize: vi.fn(),
     compactPresentationResources: vi.fn(),
+    releasePresentationResources: vi.fn(),
     resize: (cols: number, rows: number) => {
       model.cols = cols;
       model.rows = rows;
@@ -290,15 +293,15 @@ function harness() {
   });
   surfaces.push(surface);
   const hostElement = element();
-  const hostSize = { width: 960, height: 640 };
+  const hostSize = { width: 960 + TERMINAL_RIGHT_GUTTER_CSS_PX, height: 640 };
   hostElement.getBoundingClientRect = () => ({ ...hostSize });
   surface.attach(hostElement as unknown as HTMLElement);
   return {
     surface,
-    model,
+    host: hostElement as unknown as HTMLElement,
     onResize,
     setHost(width: number, height = 640) {
-      hostSize.width = width;
+      hostSize.width = width + TERMINAL_RIGHT_GUTTER_CSS_PX;
       hostSize.height = height;
     },
     renderer: current,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { quoteShellArg } from "./shellQuote";
+import { escapeForShell, quoteShellArg, unescapeForShell } from "./shellQuote";
 
 describe("quoteShellArg (posix)", () => {
   const q = (s: string) => quoteShellArg(s, false);
@@ -45,4 +45,198 @@ describe("quoteShellArg (windows/pwsh)", () => {
   it("quotes an empty string", () => {
     expect(q("")).toBe("''");
   });
+});
+
+describe("escapeForShell", () => {
+  it("leaves plain paths untouched", () => {
+    expect(escapeForShell("/a/b/c.ts", false)).toBe("/a/b/c.ts");
+  });
+
+  it("escapes spaces so the path stays one argument", () => {
+    expect(escapeForShell("/a/My Folder/c.ts", false)).toBe(
+      "/a/My\\ Folder/c.ts",
+    );
+  });
+
+  it("escapes shell syntax inside names", () => {
+    expect(escapeForShell("/a/b $HOME & c", false)).toBe(
+      "/a/b\\ \\$HOME\\ \\&\\ c",
+    );
+    expect(escapeForShell("/a/[draft] *", false)).toBe("/a/\\[draft\\]\\ \\*");
+  });
+
+  it("escapes a literal backslash so it is not read as an escape", () => {
+    expect(escapeForShell("/a/b\\ c", false)).toBe("/a/b\\\\\\ c");
+  });
+
+  it("quotes with a PowerShell literal on Windows, where backslash is a separator", () => {
+    expect(escapeForShell("C:\\a\\My Folder\\c.ts", true)).toBe(
+      "'C:\\a\\My Folder\\c.ts'",
+    );
+    expect(escapeForShell("C:\\a\\c.ts", true)).toBe("C:\\a\\c.ts");
+  });
+
+  it.each([
+    ["semicolon", "C:\\a\\b;c"],
+    ["dollar sign", "C:\\a\\$env:USERPROFILE"],
+    ["backtick", "C:\\a\\b`nc"],
+    ["percent sign", "C:\\a\\%TEMP%"],
+    ["command separator", "C:\\a\\b & c"],
+  ])(
+    "quotes a Windows path containing a %s so it stays literal",
+    (_label, path) => {
+      const escaped = escapeForShell(path, true);
+      expect(escaped).toBe(`'${path}'`);
+    },
+  );
+
+  it("doubles apostrophes inside a Windows literal", () => {
+    expect(escapeForShell("C:\\a\\it's here.txt", true)).toBe(
+      "'C:\\a\\it''s here.txt'",
+    );
+    expect(escapeForShell("C:\\a\\'quoted'.txt", true)).toBe(
+      "'C:\\a\\''quoted''.txt'",
+    );
+  });
+
+  it("keeps double quotes inside a Windows literal verbatim", () => {
+    expect(escapeForShell('C:\\a\\say "hi".txt', true)).toBe(
+      "'C:\\a\\say \"hi\".txt'",
+    );
+  });
+
+  it("keeps empty input empty", () => {
+    expect(escapeForShell("", false)).toBe("");
+  });
+});
+
+describe("unescapeForShell", () => {
+  it("leaves plain text untouched", () => {
+    expect(unescapeForShell("MyFolder", false)).toBe("MyFolder");
+    expect(unescapeForShell("C:\\a\\b", true)).toBe("C:\\a\\b");
+  });
+
+  it("turns backslash escapes back into the names they came from", () => {
+    expect(unescapeForShell("My\\ Folder", false)).toBe("My Folder");
+    expect(unescapeForShell("\\$HOME\\ \\&\\ c", false)).toBe("$HOME & c");
+  });
+
+  it("does not let a filename's escaped backslash eat the next character", () => {
+    expect(unescapeForShell("a\\\\b", false)).toBe("a\\b");
+    expect(unescapeForShell("b\\\\\\ c", false)).toBe("b\\ c");
+  });
+
+  it("keeps separators while unescaping every segment", () => {
+    expect(unescapeForShell("My\\ Folder/sub\\ dir/", false)).toBe(
+      "My Folder/sub dir/",
+    );
+  });
+
+  it("strips Windows single-quoted segments and undoubles apostrophes", () => {
+    expect(unescapeForShell("'My Folder'/sub", true)).toBe("My Folder/sub");
+    expect(unescapeForShell("'it''s here.txt'", true)).toBe("it's here.txt");
+    expect(unescapeForShell("C:\\a\\c.ts", true)).toBe("C:\\a\\c.ts");
+  });
+
+  it("strips the leading quote of a segment still being typed", () => {
+    expect(unescapeForShell("'My Fol", true)).toBe("My Fol");
+    expect(unescapeForShell("'My Folder'/su", true)).toBe("My Folder/su");
+  });
+
+  it("decodes quotes that span a separator before splitting", () => {
+    expect(unescapeForShell("'My Folder/sub'", true)).toBe("My Folder/sub");
+  });
+
+  it("does not leave a stray apostrophe after an appended separator", () => {
+    expect(unescapeForShell("'My Folder'/", true)).toBe("My Folder/");
+  });
+
+  it("round-trips a copied Windows quoted path followed by /fi", () => {
+    const quoted = escapeForShell("C:\\a\\My Folder\\c.ts", true);
+    expect(unescapeForShell(`${quoted}/fi`, true)).toBe(
+      "C:\\a\\My Folder\\c.ts/fi",
+    );
+  });
+
+  it("round-trips what escapeForShell writes", () => {
+    for (const name of [
+      "My Folder",
+      "it's here.txt",
+      "$HOME & c",
+      "[draft] *",
+      "b\\ c",
+      "plain.ts",
+    ]) {
+      expect(unescapeForShell(escapeForShell(name, false), false)).toBe(name);
+      expect(unescapeForShell(escapeForShell(name, true), true)).toBe(name);
+    }
+  });
+
+  it("keeps empty input empty", () => {
+    expect(unescapeForShell("", false)).toBe("");
+  });
+});
+
+describe("literal shell words", () => {
+  it.each([
+    ["'My Folder'/sub", "My Folder/sub"],
+    ['"My Folder/sub', "My Folder/sub"],
+    ["'it'\\''s here'", "it's here"],
+    ['"a\\ b"', "a\\ b"],
+    ['"a\\$b"', "a$b"],
+    ["a\\\nb", "ab"],
+    ["'a\nb'", "a\nb"],
+  ])("decodes the POSIX word %s", (token, expected) => {
+    expect(unescapeForShell(token, false)).toBe(expected);
+  });
+  it.each([
+    "$HOME",
+    '"$HOME"',
+    "$(pwd)",
+    "`pwd`",
+    "~user/a",
+    "*.txt",
+    "a\\",
+    "a b",
+  ])("does not reinterpret %s as a literal path", (token) => {
+    expect(unescapeForShell(token, false)).toBeNull();
+  });
+  it.each([
+    ["'it''s here'", "it's here"],
+    ["'it’’s here'", "it’s here"],
+    ["‘a b’", "a b"],
+    ['"a"" b"', 'a" b'],
+    ["My` Folder", "My Folder"],
+    ['"a\\b"', "a\\b"],
+  ])("decodes the PowerShell word %s", (token, expected) => {
+    expect(unescapeForShell(token, true)).toBe(expected);
+  });
+  it.each(["line\nbreak", "it's\na file", "=ls", "it’s here", "‘quoted’"])(
+    "round trips literal %s",
+    (name) => {
+      for (const windows of [false, true])
+        expect(unescapeForShell(escapeForShell(name, windows), windows)).toBe(
+          name,
+        );
+    },
+  );
+});
+
+it.each(["@args", "a,b"])("preserves PowerShell expression %s", (token) => {
+  expect(unescapeForShell(token, true)).toBeNull();
+});
+
+it("classifies the launched shell and refuses expanding Command Prompt paths", async () => {
+  const { shellDialect, quotePathArg } = await import("./shellQuote");
+  expect(shellDialect("C:\\Program Files\\Git\\bin\\bash.exe")).toBe("posix");
+  expect(shellDialect("C:\\Windows\\System32\\cmd.exe")).toBe("cmd");
+  expect(shellDialect("wsl.exe")).toBeNull();
+  expect(shellDialect("/usr/bin/pwsh")).toBe("powershell");
+  expect(shellDialect("/usr/bin/fish")).toBe("posix");
+  expect(shellDialect("pwsh.exe")).toBe("powershell");
+  expect(quotePathArg("C:\\files\\a & b.txt", "cmd")).toBe(
+    '"C:\\files\\a & b.txt"',
+  );
+  expect(() => quotePathArg("C:\\files\\%USERNAME%.txt", "cmd")).toThrow();
+  expect(() => quotePathArg("C:\\files\\!name!.txt", "cmd")).toThrow();
 });

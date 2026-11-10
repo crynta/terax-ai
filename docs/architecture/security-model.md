@@ -36,6 +36,7 @@ The comparison surface normalizes paths: backslashes to forward slashes, strips 
 - `authorize_spawn_cwd` rejects a spawn cwd outside an authorized root.
 - `authorize_user_spawn_cwd` registers the user's chosen cwd as a new root instead of rejecting it.
 - The registry is bootstrapped with the launch directory and the user's home directory (`workspace.rs:135`).
+- `authorize_derived(child, parent)` grants a linked git worktree on the strength of its parent repository: it only succeeds while the parent is authorized, stops counting if the parent is revoked, and `revoke_derived` removes it when the worktree is removed or pruned. A worktree git lists is re-granted only if its `.git` file points back into the repository's `worktrees/` directory.
 
 This is the allow side of the file-system boundary. Any new feature that spawns a shell or mutates files outside the current workspace must interact with this registry.
 

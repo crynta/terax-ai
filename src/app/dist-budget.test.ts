@@ -13,6 +13,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   analyzeDist,
   chunkName,
+  findDuplicatePackages,
+  findDuplicatePackagesInDist,
   findViolations,
   packagesFromMap,
   parseHtmlAssets,
@@ -80,6 +82,36 @@ describe("dist graph analyzer", () => {
       "zod",
     ]);
     expect(packagesFromMap(null)).toBeNull();
+  });
+
+  it("reports a package bundled in more than one version", () => {
+    const map = (...sources: string[]) => JSON.stringify({ sources });
+    const pnpm = (dir: string, pkg: string) =>
+      `../../node_modules/.pnpm/${dir}/node_modules/${pkg}/dist/index.js`;
+    expect(
+      findDuplicatePackages([
+        map(
+          pnpm(
+            "@ai-sdk+provider-utils@4.0.30_zod@4.6.5",
+            "@ai-sdk/provider-utils",
+          ),
+          pnpm("marked@17.0.6", "marked"),
+          "../../src/main.tsx",
+        ),
+        map(
+          pnpm(
+            "@ai-sdk+provider-utils@4.0.36_zod@4.6.5",
+            "@ai-sdk/provider-utils",
+          ),
+          pnpm("marked@17.0.6", "marked"),
+          pnpm("zod@4.6.5", "zod"),
+        ),
+        null,
+      ]),
+    ).toEqual([
+      { name: "@ai-sdk/provider-utils", versions: ["4.0.30", "4.0.36"] },
+    ]);
+    expect(findDuplicatePackages([])).toEqual([]);
   });
 
   it("follows transitive static imports and flags forbidden chunks with their importer", () => {
@@ -203,6 +235,9 @@ describe("built startup graph", () => {
       "streamdown",
       "codemirror",
       "iconEngine",
+      // Terminal code the primary chunk (size-limit) must not carry.
+      "legacyComputing",
+      "GhosttySearchEngine",
     ]) {
       const file = chunks.find((f) => chunkName(f) === stem);
       expect(file, `${stem} chunk should be emitted`).toBeDefined();
@@ -218,47 +253,71 @@ describe("built startup graph", () => {
     }
   });
 
-  it("refuses to build the app-lab driver without its own identifier, and under the product one", () => {
-    const build = (extra: Record<string, string>) =>
-      execFileSync(
-        process.execPath,
-        [
-          join(root, "node_modules/vite/bin/vite.js"),
-          "build",
-          "--outDir",
-          join(outDir, "guarded"),
-          "--logLevel",
-          "error",
-        ],
-        {
-          cwd: root,
-          env: {
-            ...process.env,
-            NODE_ENV: "production",
-            TERAX_BENCH: "1",
-            ...extra,
-          },
-          stdio: "pipe",
-          timeout: 60_000,
-        },
-      );
-    const failure = (extra: Record<string, string>): string => {
-      try {
-        build(extra);
-      } catch (error) {
-        return String((error as { stderr?: Buffer }).stderr ?? error);
-      }
-      return "";
-    };
-    expect(failure({ TERAX_BENCH_IDENTIFIER: "" })).toContain(
-      "TERAX_BENCH_IDENTIFIER",
-    );
-    expect(failure({ TERAX_BENCH_IDENTIFIER: "app.crynta.terax" })).toContain(
-      "not the product identifier",
-    );
-    // Nothing was emitted by either attempt.
-    expect(existsSync(join(outDir, "guarded"))).toBe(false);
+  it("bundles one version of every npm package", () => {
+    // A second copy is pure download and parse cost. Typical causes: an @ai-sdk
+    // package pinning its own provider-utils, a library pinning an old marked.
+    // Fix with `pnpm why <name>` and a pnpm override (pnpm-workspace.yaml).
+    expect(findDuplicatePackagesInDist(outDir)).toEqual([]);
   });
+
+  it("bundles one shared Lezer highlighter for parsers and themes", () => {
+    const assets = join(outDir, "assets");
+    const sources = new Set<string>();
+    for (const file of readdirSync(assets).filter((f) =>
+      f.endsWith(".js.map"),
+    )) {
+      const map = JSON.parse(readFileSync(join(assets, file), "utf8")) as {
+        sources: string[];
+      };
+      for (const source of map.sources) {
+        if (source.includes("/node_modules/@lezer/highlight/")) {
+          sources.add(source);
+        }
+      }
+    }
+    expect([...sources]).toHaveLength(1);
+  });
+
+  it.each([
+    ["missing", "", "TERAX_BENCH_IDENTIFIER"],
+    ["product", "app.crynta.terax", "not the product identifier"],
+  ])(
+    "refuses an app-lab build with the %s identifier",
+    (label, identifier, expected) => {
+      const guarded = join(outDir, `guarded-${label}`);
+      let stderr = "";
+      // This launches Vite in a separate process; its startup time depends on CI load.
+      try {
+        execFileSync(
+          process.execPath,
+          [
+            join(root, "node_modules/vite/bin/vite.js"),
+            "build",
+            "--outDir",
+            guarded,
+            "--logLevel",
+            "error",
+          ],
+          {
+            cwd: root,
+            env: {
+              ...process.env,
+              NODE_ENV: "production",
+              TERAX_BENCH: "1",
+              TERAX_BENCH_IDENTIFIER: identifier,
+            },
+            stdio: "pipe",
+            timeout: 30_000,
+          },
+        );
+      } catch (error) {
+        stderr = String((error as { stderr?: Buffer }).stderr ?? error);
+      }
+      expect(stderr).toContain(expected);
+      expect(existsSync(guarded)).toBe(false);
+    },
+    35_000,
+  );
 
   it("contains none of the app-lab benchmark driver (TERAX_BENCH is off)", () => {
     // The driver (src/bench) and its Tauri commands exist only in builds made with

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   applyTextContrast,
-  detectPlatform,
   DWRITE_GAMMA_RATIOS,
   NO_TEXT_CONTRAST,
   textContrastFor,
@@ -12,68 +11,26 @@ const BLACK = [0, 0, 0] as const;
 const ACTIVE = { enhancedContrast: 0.5, alphaCorrection: 0.5 };
 
 describe("text contrast policy", () => {
-  it("leaves macOS Retina unchanged by default", () => {
-    expect(textContrastFor({ platform: "mac", scale: 2 })).toBe(
-      NO_TEXT_CONTRAST,
-    );
-    expect(textContrastFor({ platform: "mac", scale: 3 })).toBe(
-      NO_TEXT_CONTRAST,
-    );
-  });
-
-  it("thickens light text too on a 1x or fractional Mac display", () => {
-    const macLowDpi = {
-      enhancedContrast: 1,
-      alphaCorrection: 0.5,
-      lightTextContrast: 1,
-    };
-    expect(textContrastFor({ platform: "mac", scale: 1 })).toEqual(macLowDpi);
-    expect(textContrastFor({ platform: "mac", scale: 1.5 })).toEqual(
-      macLowDpi,
-    );
-    expect(applyTextContrast(0.5, WHITE, macLowDpi)).toBeGreaterThan(
-      applyTextContrast(0.5, WHITE, ACTIVE),
-    );
-  });
-
-  it("enables on low or fractional ratios and always on Windows and Linux", () => {
-    expect(textContrastFor({ platform: "windows", scale: 1 })).toEqual(ACTIVE);
-    expect(textContrastFor({ platform: "windows", scale: 1.25 })).toEqual(
-      ACTIVE,
-    );
-    expect(textContrastFor({ platform: "windows", scale: 2 })).toEqual(ACTIVE);
-    expect(textContrastFor({ platform: "linux", scale: 2 })).toEqual(ACTIVE);
+  it("is off by default so both renderers draw the same glyph pixels", () => {
+    expect(textContrastFor(undefined)).toBe(NO_TEXT_CONTRAST);
+    expect(textContrastFor(null)).toBe(NO_TEXT_CONTRAST);
+    expect(textContrastFor("")).toBe(NO_TEXT_CONTRAST);
   });
 
   it("honours an explicit override and ignores nonsense", () => {
-    expect(
-      textContrastFor({ platform: "windows", scale: 1, override: "off" }),
-    ).toBe(NO_TEXT_CONTRAST);
-    expect(
-      textContrastFor({ platform: "mac", scale: 2, override: "on" }),
-    ).toEqual(ACTIVE);
-    expect(
-      textContrastFor({ platform: "mac", scale: 2, override: "1.5" }),
-    ).toEqual({ enhancedContrast: 1.5, alphaCorrection: 0.5 });
-    expect(
-      textContrastFor({ platform: "windows", scale: 1, override: "banana" }),
-    ).toEqual(ACTIVE);
-    expect(
-      textContrastFor({ platform: "linux", scale: 1, override: "-3" }),
-    ).toEqual(ACTIVE);
-  });
-
-  it("detects the platform from the user agent", () => {
-    expect(detectPlatform("Mozilla/5.0 (Windows NT 10.0; Win64; x64)")).toBe(
-      "windows",
-    );
-    expect(detectPlatform("Mozilla/5.0 (X11; Linux x86_64) WebKitGTK")).toBe(
-      "linux",
-    );
-    expect(
-      detectPlatform("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"),
-    ).toBe("mac");
-    expect(detectPlatform("")).toBe("other");
+    expect(textContrastFor("off")).toBe(NO_TEXT_CONTRAST);
+    expect(textContrastFor("0")).toBe(NO_TEXT_CONTRAST);
+    expect(textContrastFor("on")).toEqual(ACTIVE);
+    expect(textContrastFor("1.5")).toEqual({
+      enhancedContrast: 1.5,
+      alphaCorrection: 0.5,
+    });
+    expect(textContrastFor("9")).toEqual({
+      enhancedContrast: 4,
+      alphaCorrection: 0.5,
+    });
+    expect(textContrastFor("banana")).toBe(NO_TEXT_CONTRAST);
+    expect(textContrastFor("-3")).toBe(NO_TEXT_CONTRAST);
   });
 });
 

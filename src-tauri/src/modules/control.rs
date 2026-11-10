@@ -1,10 +1,10 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, SyncSender};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, SystemTime};
 
@@ -12,10 +12,11 @@ use serde_json::{json, Value};
 use tauri::{Emitter, Manager};
 use terax_control_protocol::{
     ControlDescriptor, ControlRequest, ControlResponse, FrontendRequest, FrontendResponse,
-    OpenParams, MAX_MESSAGE_BYTES, METHODS, METHOD_CAPABILITIES, METHOD_IDENTIFY, METHOD_OPEN,
-    METHOD_PING, PROTOCOL_VERSION, SERVER_RESPONSE_ID,
+    OpenParams, MAX_MESSAGE_BYTES, METHODS, METHOD_CAPABILITIES, METHOD_HOOK, METHOD_IDENTIFY,
+    METHOD_OPEN, METHOD_PING, PROTOCOL_VERSION, SERVER_RESPONSE_ID,
 };
 
+use crate::modules::agent_events::{self, AgentHost, HookState, TauriAgentHost};
 use crate::modules::{fs, workspace};
 
 const CONTROL_EVENT: &str = "terax:control-request";
@@ -36,12 +37,25 @@ struct RuntimeInfo {
     launcher_dir: Option<PathBuf>,
 }
 
+const RECENT_HOOK_IDS: usize = 4096;
+
+struct PaneCredential {
+    token: String,
+    pty_id: u32,
+    seen: HashSet<String>,
+    order: VecDeque<String>,
+}
+
 struct ControlCore {
     runtime: OnceLock<RuntimeInfo>,
     frontend_ready: AtomicBool,
     shutting_down: AtomicBool,
     active_connections: AtomicUsize,
     pending: Mutex<HashMap<String, SyncSender<FrontendResponse>>>,
+    hooks: HookState,
+    panes: Mutex<HashMap<u32, PaneCredential>>,
+    starting: Mutex<HashSet<String>>,
+    started: Condvar,
 }
 
 #[derive(Clone)]
@@ -55,6 +69,10 @@ impl Default for ControlState {
             shutting_down: AtomicBool::new(false),
             active_connections: AtomicUsize::new(0),
             pending: Mutex::new(HashMap::new()),
+            hooks: HookState::default(),
+            panes: Mutex::new(HashMap::new()),
+            starting: Mutex::new(HashSet::new()),
+            started: Condvar::new(),
         }))
     }
 }
@@ -68,6 +86,23 @@ pub struct ShellControlEnv {
     pub cli_bin_dir: Option<PathBuf>,
 }
 
+pub struct PendingShell {
+    state: ControlState,
+    token: String,
+}
+
+impl Drop for PendingShell {
+    fn drop(&mut self) {
+        self.state
+            .0
+            .starting
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&self.token);
+        self.state.0.started.notify_all();
+    }
+}
+
 impl ControlState {
     pub fn shell_env(&self, pane_id: u32) -> Option<ShellControlEnv> {
         if self.0.shutting_down.load(Ordering::Acquire) {
@@ -79,16 +114,68 @@ impl ControlState {
         }
         Some(ShellControlEnv {
             address: runtime.address.clone(),
-            token: runtime.token.clone(),
+            token: generate_token().ok()?,
             pane_id,
             cli_path: runtime.cli_path.as_ref().map(fs::to_canon),
             cli_bin_dir: runtime.launcher_dir.clone(),
         })
     }
 
+    pub fn pending_shell(&self, env: &ShellControlEnv) -> PendingShell {
+        self.0
+            .starting
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(env.token.clone());
+        PendingShell {
+            state: self.clone(),
+            token: env.token.clone(),
+        }
+    }
+
+    pub fn activate_shell(&self, env: &ShellControlEnv, pty_id: u32, host: &dyn AgentHost) {
+        let mut panes = self.0.panes.lock().unwrap_or_else(|e| e.into_inner());
+        if self.0.shutting_down.load(Ordering::Acquire) {
+            return;
+        }
+        // Pending spawns have no registered credential yet. Prune closed and
+        // superseded generations when another terminal becomes live.
+        panes.retain(|pane, credential| {
+            host.pane(*pane)
+                .is_some_and(|p| p.pty_id == credential.pty_id)
+        });
+        if host.pane(env.pane_id).is_some_and(|p| p.pty_id == pty_id) {
+            panes.insert(
+                env.pane_id,
+                PaneCredential {
+                    token: env.token.clone(),
+                    pty_id,
+                    seen: HashSet::new(),
+                    order: VecDeque::new(),
+                },
+            );
+        }
+    }
+
+    pub fn hooks(&self) -> &HookState {
+        &self.0.hooks
+    }
+
     pub fn shutdown(&self) {
         self.0.shutting_down.store(true, Ordering::Release);
         self.0.frontend_ready.store(false, Ordering::Release);
+        self.0.hooks.broker.reset_all();
+        self.0
+            .panes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+        self.0
+            .starting
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+        self.0.started.notify_all();
         if let Some(runtime) = self.0.runtime.get() {
             remove_own_descriptor(&runtime.descriptor_path, &runtime.token);
             if let Some(dir) = &runtime.launcher_dir {
@@ -222,21 +309,44 @@ impl Drop for ConnectionGuard {
 }
 
 fn handle_connection(mut stream: TcpStream, app: &tauri::AppHandle, state: &ControlState) {
+    serve_connection(&mut stream, state, &TauriAgentHost(app), |request| {
+        route_request(request, app, state)
+    });
+}
+
+/// Reads one request and answers it. Hooks are served here, off the UI path,
+/// because they may hold the connection while a decision is pending.
+fn serve_connection(
+    stream: &mut TcpStream,
+    state: &ControlState,
+    host: &dyn AgentHost,
+    route: impl FnOnce(ControlRequest) -> ControlResponse,
+) {
     let _ = stream.set_read_timeout(Some(IO_TIMEOUT));
     let _ = stream.set_write_timeout(Some(IO_TIMEOUT));
 
-    let request = match read_request(&mut BufReader::new(&mut stream)) {
+    let request = match read_request(&mut BufReader::new(&mut *stream)) {
         Ok(request) => request,
         Err(error) => {
             let _ = write_response(
-                &mut stream,
+                stream,
                 &ControlResponse::failure(error.response_id, error.code, error.message),
             );
             return;
         }
     };
-    let response = route_request(request, app, state);
-    let _ = write_response(&mut stream, &response);
+    let response = if request.method == METHOD_HOOK {
+        match authenticate(&request, state, host) {
+            Ok(Some(pty_id)) => {
+                agent_events::handle_bound(stream, &request, state.hooks(), host, pty_id)
+            }
+            Ok(None) => unreachable!("hook authentication requires a pane credential"),
+            Err(response) => response,
+        }
+    } else {
+        route(request)
+    };
+    let _ = write_response(stream, &response);
 }
 
 struct ReadRequestError {
@@ -288,37 +398,113 @@ fn read_request(reader: &mut impl BufRead) -> Result<ControlRequest, ReadRequest
     })
 }
 
-fn route_request(
-    mut request: ControlRequest,
-    app: &tauri::AppHandle,
+fn authenticate(
+    request: &ControlRequest,
     state: &ControlState,
-) -> ControlResponse {
+    host: &dyn AgentHost,
+) -> Result<Option<u32>, ControlResponse> {
     if !valid_request_id(&request.id) {
-        return ControlResponse::failure(
+        return Err(ControlResponse::failure(
             SERVER_RESPONSE_ID,
             "invalid_request",
             "request id must be 1-128 safe ASCII characters",
-        );
+        ));
     }
     if request.protocol != PROTOCOL_VERSION {
-        return ControlResponse::failure(
-            request.id,
+        return Err(ControlResponse::failure(
+            request.id.clone(),
             "unsupported_protocol",
             format!(
                 "protocol {} is unsupported; expected {PROTOCOL_VERSION}",
                 request.protocol
             ),
-        );
+        ));
     }
     let Some(runtime) = state.0.runtime.get() else {
-        return ControlResponse::failure(
-            request.id,
+        return Err(ControlResponse::failure(
+            request.id.clone(),
             "server_unavailable",
             "control server is not initialized",
-        );
+        ));
     };
-    if !constant_time_eq(request.token.as_bytes(), runtime.token.as_bytes()) {
-        return ControlResponse::failure(request.id, "unauthorized", "invalid control token");
+    let unauthorized = || {
+        ControlResponse::failure(
+            request.id.clone(),
+            "unauthorized",
+            "invalid or expired control credential",
+        )
+    };
+    if state.0.shutting_down.load(Ordering::Acquire) {
+        return Err(unauthorized());
+    }
+    if constant_time_eq(request.token.as_bytes(), runtime.token.as_bytes()) {
+        return if request.method == METHOD_HOOK {
+            Err(unauthorized())
+        } else {
+            Ok(None)
+        };
+    }
+    // Shell startup files may call the CLI before spawn returns. Wait for
+    // publication (or failed-spawn cleanup), without admitting a pending token.
+    let starting = state.0.starting.lock().unwrap_or_else(|e| e.into_inner());
+    let (starting, timeout) = state
+        .0
+        .started
+        .wait_timeout_while(starting, FRONTEND_TIMEOUT, |tokens| {
+            tokens.contains(&request.token)
+        })
+        .unwrap_or_else(|e| e.into_inner());
+    if timeout.timed_out() && starting.contains(&request.token) {
+        return Err(ControlResponse::failure(
+            request.id.clone(),
+            "server_unavailable",
+            "terminal is still starting",
+        ));
+    }
+    drop(starting);
+    if state.0.shutting_down.load(Ordering::Acquire) {
+        return Err(unauthorized());
+    }
+    let pane = request.caller.pane_id.ok_or_else(unauthorized)?;
+    let mut panes = state.0.panes.lock().unwrap_or_else(|e| e.into_inner());
+    let credential = panes.get_mut(&pane).ok_or_else(unauthorized)?;
+    if !constant_time_eq(request.token.as_bytes(), credential.token.as_bytes())
+        || !METHODS.contains(&request.method.as_str())
+    {
+        return Err(unauthorized());
+    }
+    if host
+        .pane(pane)
+        .is_none_or(|p| p.pty_id != credential.pty_id)
+    {
+        panes.remove(&pane);
+        return Err(unauthorized());
+    }
+    if request.method == METHOD_HOOK {
+        if !credential.seen.insert(request.id.clone()) {
+            return Err(ControlResponse::failure(
+                request.id.clone(),
+                "duplicate_request",
+                "hook request was already handled",
+            ));
+        }
+        credential.order.push_back(request.id.clone());
+        if credential.order.len() > RECENT_HOOK_IDS {
+            if let Some(oldest) = credential.order.pop_front() {
+                credential.seen.remove(&oldest);
+            }
+        }
+    }
+    Ok(Some(credential.pty_id))
+}
+
+fn route_request(
+    mut request: ControlRequest,
+    app: &tauri::AppHandle,
+    state: &ControlState,
+) -> ControlResponse {
+    if let Err(response) = authenticate(&request, state, &TauriAgentHost(app)) {
+        return response;
     }
 
     match request.method.as_str() {
@@ -953,6 +1139,372 @@ mod tests {
 
         remove_own_descriptor(&path, &descriptor.token);
         assert!(!path.exists());
+    }
+
+    mod hook_end_to_end {
+        use super::*;
+        use crate::modules::agent_events::test_host::FakeHost;
+        use serde_json::json;
+        use std::ffi::OsString;
+        use std::sync::Arc;
+        use terax_cli::hook::{run, HookEnvironment};
+        use terax_control_protocol::hook::{HookDecision, HookKind};
+
+        const TOKEN: &str = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90";
+
+        struct Server {
+            state: ControlState,
+            host: Arc<FakeHost>,
+            address: String,
+            token: String,
+        }
+
+        fn serve() -> Server {
+            let state = ControlState::default();
+            assert!(state
+                .0
+                .runtime
+                .set(RuntimeInfo {
+                    address: "127.0.0.1:0".into(),
+                    token: TOKEN.into(),
+                    descriptor_path: PathBuf::from("unused-control.json"),
+                    cli_path: None,
+                    launcher_dir: None,
+                })
+                .is_ok());
+            let host = FakeHost::new(true);
+            let env = state.shell_env(3).unwrap();
+            state.activate_shell(&env, 9, host.as_ref());
+            let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind");
+            let address = listener.local_addr().expect("address").to_string();
+            let (accept_state, accept_host) = (state.clone(), host.clone());
+            thread::spawn(move || {
+                for stream in listener.incoming() {
+                    let Ok(mut stream) = stream else { break };
+                    let (state, host) = (accept_state.clone(), accept_host.clone());
+                    thread::spawn(move || {
+                        serve_connection(&mut stream, &state, host.as_ref(), |request| {
+                            ControlResponse::failure(request.id, "unknown_method", "unknown")
+                        });
+                    });
+                }
+            });
+            Server {
+                state,
+                host,
+                address,
+                token: env.token,
+            }
+        }
+
+        fn environment(server: &Server, token: &str) -> HookEnvironment {
+            HookEnvironment {
+                pane_id: 3,
+                address: server.address.clone(),
+                token: token.into(),
+                decision_secs: 30,
+                wait_enabled: true,
+                debug: false,
+            }
+        }
+
+        fn invoke(
+            environment: &HookEnvironment,
+            agent: &str,
+            event: &str,
+            payload: Value,
+        ) -> String {
+            let args: Vec<OsString> = vec![agent.into(), event.into()];
+            let mut out = Vec::new();
+            run(
+                &args,
+                Some(environment),
+                Box::new(Cursor::new(payload.to_string().into_bytes())),
+                &mut out,
+            );
+            String::from_utf8(out).expect("utf-8 output")
+        }
+
+        #[test]
+        fn desktop_credentials_cannot_impersonate_a_pane_hook() {
+            let server = serve();
+            let request = ControlRequest {
+                protocol: PROTOCOL_VERSION,
+                id: "desktop-hook".into(),
+                token: TOKEN.into(),
+                method: METHOD_HOOK.into(),
+                params: json!({}),
+                caller: terax_control_protocol::CallerContext { pane_id: Some(3) },
+            };
+            assert!(authenticate(&request, &server.state, server.host.as_ref()).is_err());
+        }
+
+        #[test]
+        fn pane_credentials_bind_generation_caller_methods_and_recent_request_ids() {
+            let server = serve();
+            let mut request = ControlRequest {
+                protocol: PROTOCOL_VERSION,
+                id: "hook-1".into(),
+                token: server.token.clone(),
+                method: METHOD_HOOK.into(),
+                params: json!({}),
+                caller: terax_control_protocol::CallerContext { pane_id: Some(3) },
+            };
+            request.caller.pane_id = Some(4);
+            assert!(authenticate(&request, &server.state, server.host.as_ref()).is_err());
+            request.caller.pane_id = Some(3);
+            request.method = "future_privileged_method".into();
+            assert!(authenticate(&request, &server.state, server.host.as_ref()).is_err());
+            request.method = METHOD_HOOK.into();
+            assert_eq!(
+                authenticate(&request, &server.state, server.host.as_ref()).unwrap(),
+                Some(9)
+            );
+            assert_eq!(
+                authenticate(&request, &server.state, server.host.as_ref())
+                    .unwrap_err()
+                    .error
+                    .unwrap()
+                    .code,
+                "duplicate_request"
+            );
+            request.id = "hook-2".into();
+            server.host.live.lock().unwrap().as_mut().unwrap().pty_id = 10;
+            assert!(authenticate(&request, &server.state, server.host.as_ref()).is_err());
+            let fresh = server.state.shell_env(3).unwrap();
+            assert_ne!(fresh.token, server.token);
+            server
+                .state
+                .activate_shell(&fresh, 10, server.host.as_ref());
+            request.token = fresh.token;
+            assert_eq!(
+                authenticate(&request, &server.state, server.host.as_ref()).unwrap(),
+                Some(10)
+            );
+            request.id = "hook-3".into();
+            *server.host.live.lock().unwrap() = None;
+            assert!(authenticate(&request, &server.state, server.host.as_ref()).is_err());
+            request.token = TOKEN.into();
+            request.method = METHOD_PING.into();
+            assert_eq!(
+                authenticate(&request, &server.state, server.host.as_ref()).unwrap(),
+                None
+            );
+        }
+
+        #[test]
+        fn a_live_pane_retains_cli_access_and_replay_storage_is_bounded() {
+            let server = serve();
+            let mut request = ControlRequest {
+                protocol: PROTOCOL_VERSION,
+                id: "cli".into(),
+                token: server.token.clone(),
+                method: METHOD_OPEN.into(),
+                params: json!({}),
+                caller: terax_control_protocol::CallerContext { pane_id: Some(3) },
+            };
+            for method in [
+                METHOD_OPEN,
+                METHOD_IDENTIFY,
+                METHOD_PING,
+                METHOD_CAPABILITIES,
+            ] {
+                request.method = method.into();
+                assert!(authenticate(&request, &server.state, server.host.as_ref()).is_ok());
+            }
+            request.method = METHOD_HOOK.into();
+            for id in 0..RECENT_HOOK_IDS + 2 {
+                request.id = format!("hook-{id}");
+                assert!(authenticate(&request, &server.state, server.host.as_ref()).is_ok());
+            }
+            let panes = server.state.0.panes.lock().unwrap();
+            let credential = panes.get(&3).unwrap();
+            assert_eq!(credential.seen.len(), RECENT_HOOK_IDS);
+            assert_eq!(credential.order.len(), RECENT_HOOK_IDS);
+        }
+
+        #[test]
+        fn startup_cli_waits_for_publication_and_failed_spawns_never_authenticate() {
+            for succeeds in [true, false] {
+                let server = serve();
+                let env = server.state.shell_env(3).unwrap();
+                let pending = server.state.pending_shell(&env);
+                let request = ControlRequest {
+                    protocol: PROTOCOL_VERSION,
+                    id: "startup".into(),
+                    token: env.token.clone(),
+                    method: METHOD_PING.into(),
+                    params: json!({}),
+                    caller: terax_control_protocol::CallerContext { pane_id: Some(3) },
+                };
+                let (began_tx, began_rx) = mpsc::channel();
+                let (done_tx, done_rx) = mpsc::channel();
+                let (state, host) = (server.state.clone(), server.host.clone());
+                let worker = thread::spawn(move || {
+                    began_tx.send(()).unwrap();
+                    done_tx
+                        .send(authenticate(&request, &state, host.as_ref()))
+                        .unwrap();
+                });
+                began_rx.recv().unwrap();
+                assert!(done_rx.recv_timeout(Duration::from_millis(100)).is_err());
+                if succeeds {
+                    server.state.activate_shell(&env, 9, server.host.as_ref());
+                }
+                drop(pending);
+                assert_eq!(done_rx.recv().unwrap().is_ok(), succeeds);
+                worker.join().unwrap();
+                assert!(server.state.0.starting.lock().unwrap().is_empty());
+            }
+        }
+
+        #[test]
+        fn a_generation_change_after_authentication_cannot_emit_or_register_a_decision() {
+            let server = serve();
+            server.state.hooks().broker.set_window_ready("main", true);
+            let request = ControlRequest {
+                protocol: PROTOCOL_VERSION,
+                id: "generation-race".into(),
+                token: server.token.clone(),
+                method: METHOD_HOOK.into(),
+                params: json!({"agent":"claude", "event":"PermissionRequest", "payload":{}, "wait_secs":1}),
+                caller: terax_control_protocol::CallerContext { pane_id: Some(3) },
+            };
+            let pty = authenticate(&request, &server.state, server.host.as_ref())
+                .unwrap()
+                .unwrap();
+            assert_eq!(pty, 9);
+            server.host.live.lock().unwrap().as_mut().unwrap().pty_id = 10;
+            let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            let _client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+            let (stream, _) = listener.accept().unwrap();
+            let response = agent_events::handle_bound(
+                &stream,
+                &request,
+                server.state.hooks(),
+                server.host.as_ref(),
+                pty,
+            );
+            assert_eq!(response.error.unwrap().code, "unauthorized");
+            assert!(server.host.events.lock().unwrap().is_empty());
+            assert!(server.host.signals.lock().unwrap().is_empty());
+            assert_eq!(server.state.hooks().broker.pending_count(), 0);
+        }
+
+        #[test]
+        fn a_cli_hook_becomes_a_structured_event() {
+            let server = serve();
+            let output = invoke(
+                &environment(&server, &server.token),
+                "codex",
+                "Stop",
+                json!({
+                    "session_id": "sess-1",
+                    "transcript_path": null,
+                    "cwd": "/repo",
+                    "last_assistant_message": "All done",
+                    "tool_response": "x".repeat(300_000),
+                }),
+            );
+            assert_eq!(output, "{}\n");
+
+            let events = server.host.events.lock().unwrap();
+            assert_eq!(events.len(), 1);
+            assert_eq!((events[0].pane_id, events[0].pty_id), (3, 9));
+            assert_eq!(events[0].facts.kind, HookKind::Stop);
+            assert_eq!(events[0].facts.session_id.as_deref(), Some("sess-1"));
+            assert_eq!(events[0].facts.cwd.as_deref(), Some("/repo"));
+            assert_eq!(events[0].facts.message.as_deref(), Some("All done"));
+            assert_eq!(
+                *server.host.signals.lock().unwrap(),
+                vec!["started:codex", "finished:"]
+            );
+        }
+
+        #[test]
+        fn a_wrong_token_is_rejected_without_an_event() {
+            let server = serve();
+            let output = invoke(
+                &environment(&server, &"b".repeat(64)),
+                "claude",
+                "Stop",
+                json!({ "session_id": "s" }),
+            );
+            assert_eq!(output, "{}\n");
+            assert!(server.host.events.lock().unwrap().is_empty());
+        }
+
+        #[test]
+        fn a_pane_without_a_terminal_is_rejected() {
+            let server = serve();
+            let mut environment = environment(&server, &server.token);
+            environment.pane_id = 99;
+            invoke(&environment, "claude", "Stop", json!({}));
+            assert!(server.host.events.lock().unwrap().is_empty());
+        }
+
+        #[test]
+        fn a_permission_round_trip_returns_the_agent_decision_json() {
+            let server = serve();
+            server.state.hooks().broker.set_window_ready("main", true);
+            let (state, host) = (server.state.clone(), server.host.clone());
+            let ui = thread::spawn(move || {
+                let id =
+                    loop {
+                        let id =
+                            host.events.lock().unwrap().iter().find_map(|event| {
+                                event.facts.permission.as_ref()?.request_id.clone()
+                            });
+                        if let Some(id) = id {
+                            break id;
+                        }
+                        thread::sleep(Duration::from_millis(5));
+                    };
+                let decision = HookDecision::Allow { remember: Some(0) };
+                assert!(state.hooks().broker.resolve(&id, decision));
+            });
+            let output = invoke(
+                &environment(&server, &server.token),
+                "claude",
+                "PermissionRequest",
+                json!({
+                    "session_id": "s",
+                    "tool_name": "Bash",
+                    "tool_input": { "command": "npm test" },
+                    "permission_suggestions": [
+                        { "type": "addRules", "behavior": "allow", "destination": "session",
+                          "rules": [{ "toolName": "Bash", "ruleContent": "npm test" }] }
+                    ],
+                }),
+            );
+            ui.join().unwrap();
+            let value: Value = serde_json::from_str(output.trim()).expect("decision json");
+            let decision = &value["hookSpecificOutput"]["decision"];
+            assert_eq!(
+                value["hookSpecificOutput"]["hookEventName"],
+                "PermissionRequest"
+            );
+            assert_eq!(decision["behavior"], "allow");
+            assert_eq!(decision["updatedPermissions"][0]["destination"], "session");
+            assert_eq!(
+                server.host.kinds(),
+                vec![HookKind::PermissionRequest, HookKind::PermissionResolved]
+            );
+        }
+
+        #[test]
+        fn a_permission_with_no_ui_falls_back_to_the_agent_prompt() {
+            let server = serve();
+            let started = std::time::Instant::now();
+            let output = invoke(
+                &environment(&server, &server.token),
+                "claude",
+                "PermissionRequest",
+                json!({ "tool_name": "Bash" }),
+            );
+            assert_eq!(output, "{}\n");
+            assert!(started.elapsed() < Duration::from_secs(5));
+        }
     }
 
     #[cfg(unix)]

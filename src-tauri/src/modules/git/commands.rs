@@ -247,12 +247,14 @@ pub async fn git_pull_ff_only(
 #[tauri::command]
 pub async fn git_push(
     repo_root: String,
+    set_upstream: Option<bool>,
     workspace: Option<WorkspaceEnv>,
     app: AppHandle,
 ) -> Result<GitPushResult, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
     blocking(app, move |r| {
-        operations::push(r, &repo_root, &workspace).map_err(Into::into)
+        operations::push(r, &repo_root, set_upstream.unwrap_or(false), &workspace)
+            .map_err(Into::into)
     })
     .await
 }

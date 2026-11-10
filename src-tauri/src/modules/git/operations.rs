@@ -46,7 +46,9 @@ fn resolve_repo_in_authorized(
         return Ok(None);
     };
     let canonical_root = canonical_dir(registry, &root_line, &cwd.workspace)?;
-    let _ = registry.authorize(&canonical_root.local_path);
+    if !registry.is_authorized(&canonical_root.local_path) {
+        return Err(GitError::PathOutsideWorkspace(canonical_root.local_path));
+    }
 
     let head = match git_stdout_lines(
         &canonical_root.workspace,
@@ -104,7 +106,9 @@ pub fn panel_snapshot(
         });
     };
     let canonical_root = canonical_dir(registry, &root_line, &cwd.workspace)?;
-    let _ = registry.authorize(&canonical_root.local_path);
+    if !registry.is_authorized(&canonical_root.local_path) {
+        return Err(GitError::PathOutsideWorkspace(canonical_root.local_path));
+    }
 
     let status = status_inner(&canonical_root)?;
     let repo = GitRepoInfo {
@@ -745,6 +749,7 @@ pub fn commit(
 pub fn push(
     registry: &WorkspaceRegistry,
     repo_root: &str,
+    set_upstream: bool,
     workspace: &WorkspaceEnv,
 ) -> Result<GitPushResult> {
     let repo_root = authorized_repo_root(registry, repo_root, workspace)?;
@@ -756,7 +761,10 @@ pub fn push(
         ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
     )?;
     if upstream.is_none() {
-        return Err(GitError::NoUpstream);
+        if !set_upstream {
+            return Err(GitError::NoUpstream);
+        }
+        return push_set_upstream(&repo_root);
     }
 
     let output = run_git(
@@ -774,6 +782,50 @@ pub fn push(
         branch,
         pushed: true,
     })
+}
+
+/// First push of a branch that has no upstream: `git push -u <remote> <branch>`
+/// to the remote git is configured to push the branch to (`pushRemote`, then
+/// `remote.pushDefault`), else `origin`, else the only remote.
+fn push_set_upstream(repo_root: &ResolvedGitDirectory) -> Result<GitPushResult> {
+    let branch = crate::modules::git::branch::current_branch(repo_root)?
+        .ok_or_else(|| GitError::command("git push", "HEAD is detached; check out a branch first"))?;
+    let remotes = crate::modules::git::branch::list_remotes(repo_root)?;
+    let remote = crate::modules::git::branch::push_remote_for(repo_root, &branch, &remotes)?
+        .ok_or_else(|| {
+            GitError::command(
+                "git push",
+                if remotes.is_empty() {
+                    "no remote is configured"
+                } else {
+                    "no usable push remote: check branch.<name>.pushRemote and remote.pushDefault, or push once from the terminal"
+                },
+            )
+        })?;
+    crate::modules::git::plumbing::check_branch_name(repo_root, &branch)?;
+    let output = run_git(
+        &repo_root.workspace,
+        Some(&repo_root.git_path),
+        set_upstream_args(&remote, &branch),
+        NETWORK_TIMEOUT_SECS,
+    )?;
+    ensure_success(&output, "git push failed")?;
+    Ok(GitPushResult {
+        remote: Some(remote),
+        branch: Some(branch),
+        pushed: true,
+    })
+}
+
+/// `--` ends option parsing, so neither name can ever be read as a flag, and the
+/// branch is a fully qualified refspec: a tag of the same name would otherwise
+/// make a short `<branch>` ambiguous and the push fail.
+fn set_upstream_args(remote: &str, branch: &str) -> Vec<String> {
+    let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");
+    ["push", "--set-upstream", "--", remote, refspec.as_str()]
+        .into_iter()
+        .map(str::to_string)
+        .collect()
 }
 
 const LOG_FORMAT: &str = "%H%x1f%an%x1f%ae%x1f%at%x1f%P%x1f%s";
@@ -1542,6 +1594,26 @@ mod tests {
         assert_eq!(parse_numstat_line("12\t3\tsrc/a.ts"), Some((12, 3, false)));
         assert_eq!(parse_numstat_line("-\t-\timg.png"), Some((0, 0, true)));
         assert_eq!(parse_numstat_line("garbage"), None);
+    }
+
+    #[test]
+    fn set_upstream_push_ends_option_parsing_before_the_names() {
+        let args = set_upstream_args("origin", "feature/x");
+        assert_eq!(
+            args,
+            [
+                "push",
+                "--set-upstream",
+                "--",
+                "origin",
+                "refs/heads/feature/x:refs/heads/feature/x"
+            ]
+        );
+        let dashes = args.iter().position(|a| a == "--").unwrap();
+        assert!(args[..dashes]
+            .iter()
+            .all(|a| a == "push" || a.starts_with("--")));
+        assert!(args[dashes + 1..].iter().all(|a| !a.starts_with("--")));
     }
 
     #[test]

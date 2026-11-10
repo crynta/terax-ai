@@ -69,6 +69,47 @@ pub fn build_command(
     }
 }
 
+/// Preserve the shell behind the WSL launcher for shell-specific input quoting.
+pub fn launched_shell(cmd: &mut CommandBuilder) -> String {
+    let program = cmd
+        .get_argv()
+        .first()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    if program.eq_ignore_ascii_case("wsl.exe") {
+        let shell = cmd
+            .get_env("TERAX_WSL_LOGIN_SHELL")
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        cmd.env_remove("TERAX_WSL_LOGIN_SHELL");
+        shell
+    } else {
+        program
+    }
+}
+
+#[cfg(test)]
+mod launched_shell_tests {
+    use super::*;
+
+    #[test]
+    fn wsl_preserves_the_resolved_shell_instead_of_the_launcher() {
+        for shell in [
+            "/usr/bin/pwsh",
+            "/bin/bash",
+            "/usr/bin/fish",
+            "/usr/bin/unknown",
+        ] {
+            let mut cmd = CommandBuilder::new("wsl.exe");
+            cmd.env("TERAX_WSL_LOGIN_SHELL", shell);
+            assert_eq!(launched_shell(&mut cmd), shell);
+            assert!(cmd.get_env("TERAX_WSL_LOGIN_SHELL").is_none());
+        }
+        let mut direct = CommandBuilder::new("powershell.exe");
+        assert_eq!(launched_shell(&mut direct), "powershell.exe");
+    }
+}
+
 // Honor the override only if it matches an enumerated shell, so a tampered
 // setting can't spawn an arbitrary binary across the IPC boundary.
 fn sanitize_shell_override(shell: Option<String>) -> Option<String> {
@@ -342,15 +383,40 @@ mod unix {
         Ok(cmd)
     }
 
+    /// What the child zsh gets as `TERAX_USER_ZDOTDIR`.
+    #[derive(Debug, PartialEq, Eq)]
+    enum UserZdotdir {
+        /// The inherited `ZDOTDIR` is the user's own.
+        Set(String),
+        /// This app was started from a zsh that Terax integrated: `ZDOTDIR` is
+        /// the integration directory and the inherited variable still names
+        /// the user's.
+        Keep,
+        /// No `ZDOTDIR`: a left-over value must not outlive what it described.
+        Clear,
+    }
+
+    fn user_zdotdir_for(inherited_zdotdir: Option<&str>, integration: &Path) -> UserZdotdir {
+        match inherited_zdotdir.filter(|value| !value.is_empty()) {
+            Some(user) if Path::new(user) != integration => UserZdotdir::Set(user.to_string()),
+            Some(_) => UserZdotdir::Keep,
+            None => UserZdotdir::Clear,
+        }
+    }
+
     fn apply_shell_init(cmd: &mut CommandBuilder, shell: &Shell, shell_path: &str) {
         match shell {
             Shell::Zsh => {
                 match prepare_zdotdir() {
                     Ok(zdotdir) => {
                         // Guard against Terax-in-Terax :)
-                        if let Ok(user_zd) = std::env::var("ZDOTDIR") {
-                            if Path::new(&user_zd) != zdotdir.as_path() {
-                                cmd.env("TERAX_USER_ZDOTDIR", user_zd);
+                        match user_zdotdir_for(std::env::var("ZDOTDIR").ok().as_deref(), &zdotdir) {
+                            UserZdotdir::Set(user) => {
+                                cmd.env("TERAX_USER_ZDOTDIR", user);
+                            }
+                            UserZdotdir::Keep => {}
+                            UserZdotdir::Clear => {
+                                cmd.env_remove("TERAX_USER_ZDOTDIR");
                             }
                         }
                         cmd.env("ZDOTDIR", &zdotdir);
@@ -488,6 +554,45 @@ mod unix {
         }
 
         #[test]
+        fn the_users_zdotdir_survives_a_terax_started_from_an_integrated_zsh() {
+            let integration = Path::new("/cache/terax/shell-integration/zsh");
+            assert_eq!(
+                user_zdotdir_for(Some("/home/me/.config/zsh"), integration),
+                UserZdotdir::Set("/home/me/.config/zsh".into())
+            );
+            // Launched by a command in another Terax terminal: keep the
+            // TERAX_USER_ZDOTDIR it inherited.
+            assert_eq!(
+                user_zdotdir_for(Some("/cache/terax/shell-integration/zsh"), integration),
+                UserZdotdir::Keep
+            );
+            assert_eq!(user_zdotdir_for(None, integration), UserZdotdir::Clear);
+            assert_eq!(user_zdotdir_for(Some(""), integration), UserZdotdir::Clear);
+        }
+
+        #[test]
+        fn zsh_starts_from_the_integration_dir_and_forgets_a_stale_user_zdotdir() {
+            let mut cmd = CommandBuilder::new("/bin/zsh");
+            cmd.env("TERAX_USER_ZDOTDIR", "/left/over/from/a/parent/terminal");
+            apply_shell_init(&mut cmd, &Shell::Zsh, "/bin/zsh");
+            let zdotdir = cmd.get_env("ZDOTDIR").expect("ZDOTDIR is set");
+            assert!(Path::new(zdotdir).ends_with("shell-integration/zsh"));
+            assert!(cmd.get_argv().iter().any(|arg| arg == "-l"));
+            match std::env::var("ZDOTDIR") {
+                Ok(user) if !user.is_empty() && Path::new(&user) != Path::new(zdotdir) => {
+                    assert_eq!(
+                        cmd.get_env("TERAX_USER_ZDOTDIR"),
+                        Some(std::ffi::OsStr::new(&user))
+                    );
+                }
+                _ => assert_eq!(cmd.get_env("TERAX_USER_ZDOTDIR"), None),
+            }
+            for file in [".zshenv", ".zprofile", ".zshrc", ".zlogin"] {
+                assert!(Path::new(zdotdir).join(file).is_file(), "{file}");
+            }
+        }
+
+        #[test]
         fn builds_unix_fish_launch_with_post_config_rewrap() {
             let mut cmd = CommandBuilder::new("/usr/bin/fish");
             apply_shell_init(&mut cmd, &Shell::Fish, "/usr/bin/fish");
@@ -581,9 +686,16 @@ mod windows {
             .unwrap_or_default();
         let is_powershell = shell_name == "pwsh.exe" || shell_name == "powershell.exe";
         let is_bash = shell_name == "bash.exe";
+        let is_cmd = shell_name == "cmd.exe";
 
         let mut cmd = CommandBuilder::new(&shell_path);
         super::apply_common(&mut cmd, cwd, blocks, control.as_ref());
+
+        if is_cmd {
+            let host = std::env::var("COMPUTERNAME").unwrap_or_default();
+            let existing = std::env::var("PROMPT").ok();
+            cmd.env("PROMPT", super::cmd_prompt(&host, existing.as_deref()));
+        }
 
         if is_powershell {
             match prepare_ps_profile() {
@@ -678,6 +790,7 @@ mod windows {
             integration,
         );
         let mut cmd = CommandBuilder::new("wsl.exe");
+        cmd.env("TERAX_WSL_LOGIN_SHELL", &shell_path);
         for arg in &spec.args {
             cmd.arg(arg);
         }
@@ -1078,6 +1191,25 @@ mod windows {
     }
 }
 
+/// `PROMPT` for `cmd.exe`, which has no prompt hook but expands `$E` (escape)
+/// and `$P` (drive and path) each time it prints one. The OSC 7 it emits ahead
+/// of the user's own prompt is what keeps the explorer and breadcrumb on the
+/// shell's directory; the path arrives with backslashes and is not escaped, so
+/// the frontend reads it leniently.
+#[cfg(any(windows, test))]
+fn cmd_prompt(host: &str, existing: Option<&str>) -> String {
+    const REPORT_CWD: &str = "$E]7;file://";
+    let existing = existing.map(str::trim).filter(|p| !p.is_empty());
+    if existing.is_some_and(|p| p.contains(REPORT_CWD)) {
+        return existing.unwrap_or_default().to_string();
+    }
+    let host: String = host
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
+        .collect();
+    format!("{REPORT_CWD}{host}/$P$E\\{}", existing.unwrap_or("$P$G"))
+}
+
 #[cfg(windows)]
 pub fn windows_shell_path() -> PathBuf {
     if let Some(p) = which_in_path("pwsh.exe") {
@@ -1124,7 +1256,31 @@ mod tests {
 
     use portable_pty::CommandBuilder;
 
-    use super::{apply_common, sanitize_shell_override, ShellControlEnv};
+    use super::{apply_common, cmd_prompt, sanitize_shell_override, ShellControlEnv};
+
+    #[test]
+    fn cmd_prompt_reports_the_cwd_before_the_users_own_prompt() {
+        assert_eq!(
+            cmd_prompt("BOX-1", None),
+            "$E]7;file://BOX-1/$P$E\\$P$G".to_string()
+        );
+        assert_eq!(
+            cmd_prompt("BOX-1", Some("  [$P] $G ")),
+            "$E]7;file://BOX-1/$P$E\\[$P] $G".to_string()
+        );
+        assert_eq!(cmd_prompt("", Some("")), "$E]7;file:///$P$E\\$P$G");
+    }
+
+    #[test]
+    fn cmd_prompt_is_not_stacked_and_keeps_the_host_inert() {
+        let once = cmd_prompt("BOX", None);
+        assert_eq!(cmd_prompt("BOX", Some(&once)), once);
+        // The host is spliced into an escape sequence: nothing but a name survives.
+        assert_eq!(
+            cmd_prompt("a$E]52;c;x$E\\b", None),
+            "$E]7;file://aE52cxEb/$P$E\\$P$G"
+        );
+    }
 
     #[test]
     fn rejects_non_enumerated_override() {

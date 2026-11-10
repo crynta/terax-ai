@@ -11,10 +11,17 @@ import {
   CanvasBackingStore,
   type GestureGrowth,
 } from "../gpu/CanvasBackingStore";
+import { blockCursorSpan } from "../gpu/cursorText";
+import {
+  isNeighbourAware,
+  isNonGraphicsSymbol,
+  roomyAt,
+} from "../gpu/GlyphPlacement";
 import type {
   TerminalFontMetrics,
   TerminalGpuTheme,
 } from "../gpu/terminalVisuals";
+import { DWRITE_GAMMA_RATIOS, type TextContrast } from "../gpu/textContrast";
 import {
   selectionBoundsContain,
   type TerminalSelectionBounds,
@@ -40,6 +47,7 @@ export type WebGlRendererProfile = {
   readonly metrics: TerminalFontMetrics;
   readonly theme: TerminalGpuTheme;
   readonly scale: number;
+  readonly contrast: TextContrast;
 };
 
 export type WebGlRendererFrame = {
@@ -49,8 +57,6 @@ export type WebGlRendererFrame = {
   readonly textBlinkVisible: boolean;
   readonly selection: TerminalSelectionBounds | null;
   readonly searchMatchAt: (row: number, column: number) => 0 | 1 | 2;
-  /** Link cells get a single underline unless the app decorated them itself. */
-  readonly linkAt?: (row: number, column: number) => boolean;
 };
 
 export type WebGlCellRendererStats = {
@@ -81,6 +87,12 @@ type GlyphProgram = Program & {
   readonly atlas: WebGLUniformLocation;
   readonly colorAtlas: WebGLUniformLocation;
   readonly textBlinkVisible: WebGLUniformLocation;
+  readonly cursor: WebGLUniformLocation;
+  readonly cursorText: WebGLUniformLocation;
+  readonly cursorBox: WebGLUniformLocation;
+  readonly cells: WebGLUniformLocation;
+  readonly contrast: WebGLUniformLocation;
+  readonly gamma: WebGLUniformLocation;
 };
 
 type RectangleVertices = {
@@ -115,8 +127,13 @@ export class WebGlCellRenderer {
   private foregrounds = new Uint32Array(0);
   private underlineColors = new Uint32Array(0);
   private flags = new Uint8Array(0);
+  private widths = new Uint8Array(0);
   private decorations = new Uint8Array(0);
   private blinkingRows = new Uint8Array(0);
+  /** The cells a drawn block cursor covers (count 0: none); their glyphs take the cursor text colour. */
+  private blockColumn = 0;
+  private blockRow = 0;
+  private blockCount = 0;
   private readonly backgroundVertices: RectangleVertices = {
     attributes: new Float32Array(INITIAL_RECTANGLE_CAPACITY * RECTANGLE_FLOATS),
     count: 0,
@@ -305,6 +322,7 @@ export class WebGlCellRenderer {
     this.foregrounds.fill(0, 0, cells);
     this.underlineColors.fill(0, 0, cells);
     this.flags.fill(0, 0, cells);
+    this.widths.fill(1, 0, cells);
     this.decorations.fill(0, 0, cells);
     this.blinkingRows.fill(0, 0, this.rows);
     this.blinkingRowCount = 0;
@@ -328,6 +346,7 @@ export class WebGlCellRenderer {
         this.foregrounds.byteLength +
         this.underlineColors.byteLength +
         this.flags.byteLength +
+        this.widths.byteLength +
         this.decorations.byteLength +
         this.backgroundVertices.attributes.byteLength +
         this.rectangleRows.byteLength +
@@ -373,6 +392,7 @@ export class WebGlCellRenderer {
     this.foregrounds = new Uint32Array(0);
     this.underlineColors = new Uint32Array(0);
     this.flags = new Uint8Array(0);
+    this.widths = new Uint8Array(0);
     this.decorations = new Uint8Array(0);
     this.blinkingRows = new Uint8Array(0);
     this.backgroundVertices.attributes = new Float32Array(0);
@@ -477,6 +497,7 @@ export class WebGlCellRenderer {
         const cellIndex = row * this.cols + column;
         const glyphIndex = cellIndex * GLYPH_FLOATS;
         const width = cells.width(cellIndex);
+        this.widths[cellIndex] = width;
         this.clearGlyph(glyphIndex);
         if (width === 0) {
           rowRectanglesChanged ||=
@@ -517,13 +538,9 @@ export class WebGlCellRenderer {
             this.profile.theme.selection.alpha,
           );
         }
-        let underlineColor = cells.underlineColorPacked(cellIndex);
-        let underlineStyle = cells.underlineStyle(cellIndex);
-        if (underlineStyle === 0 && frame.linkAt?.(row, column)) {
-          underlineStyle = 1;
-          underlineColor = foreground;
-        }
-        const decoration = underlineStyle | (cells.overline(cellIndex) ? 8 : 0);
+        const underlineColor = cells.underlineColorPacked(cellIndex);
+        const decoration =
+          cells.underlineStyle(cellIndex) | (cells.overline(cellIndex) ? 8 : 0);
         rowRectanglesChanged ||=
           this.backgrounds[cellIndex] !== background ||
           this.decorations[cellIndex] !== decoration ||
@@ -548,7 +565,19 @@ export class WebGlCellRenderer {
             cells.graphemeLength(cellIndex) > 0
               ? frame.model.grapheme(row, column)
               : null;
-          const glyph = this.atlas.glyph(codepoint, grapheme, flags);
+          const glyph = this.atlas.glyph(
+            codepoint,
+            grapheme,
+            flags,
+            grapheme !== null ||
+              !isNeighbourAware(codepoint) ||
+              roomyAt(
+                column,
+                this.cols,
+                column + 1 < this.cols && cellIsBlank(cells, cellIndex + 1),
+                column > 0 && cellIsSymbol(cells, cellIndex - 1),
+              ),
+          );
           this.writeGlyph(
             glyphIndex,
             glyph,
@@ -616,7 +645,11 @@ export class WebGlCellRenderer {
       foreground,
       alpha,
     );
-    this.glyphAttributes[index + 12] = glyph.intrinsicColor ? 1 : 0;
+    this.glyphAttributes[index + 12] = glyph.intrinsicColor
+      ? 1
+      : glyph.exact
+        ? 2
+        : 0;
   }
 
   private clearGlyph(index: number): void {
@@ -767,6 +800,7 @@ export class WebGlCellRenderer {
   private updateCursor(frame: WebGlRendererFrame): boolean {
     const vertices = this.cursorVertices;
     vertices.count = 0;
+    this.blockCount = 0;
     if (!this.profile || !frame.cursorVisible) {
       return this.uploadCursor();
     }
@@ -796,7 +830,26 @@ export class WebGlCellRenderer {
         1,
       );
     } else {
-      this.writeRectangle(vertices, 0, cursor.x, cursor.y, 1, 1, color, 1);
+      const at = cursor.y * this.cols + cursor.x;
+      const span = blockCursorSpan(
+        cursor.x,
+        this.widths[at],
+        this.cols,
+        cursor.x > 0 ? this.widths[at - 1] : 1,
+      );
+      this.writeRectangle(
+        vertices,
+        0,
+        span.start,
+        cursor.y,
+        span.count,
+        1,
+        color,
+        1,
+      );
+      this.blockColumn = span.start;
+      this.blockRow = cursor.y;
+      this.blockCount = span.count;
     }
     vertices.count = 1;
     return this.uploadCursor();
@@ -914,6 +967,36 @@ export class WebGlCellRenderer {
       resources.glyphProgram.textBlinkVisible,
       textBlinkVisible ? 1 : 0,
     );
+    gl.uniform4f(
+      resources.glyphProgram.cursor,
+      this.blockColumn,
+      this.blockRow,
+      this.blockCount,
+      this.blockCount > 0 ? 1 : 0,
+    );
+    const text = profile.theme.cursorText;
+    gl.uniform3f(
+      resources.glyphProgram.cursorText,
+      text[0] / 255,
+      text[1] / 255,
+      text[2] / 255,
+    );
+    const { deviceCellWidth: cellWidth, deviceCellHeight: cellHeight } =
+      profile.metrics;
+    gl.uniform4f(
+      resources.glyphProgram.cursorBox,
+      this.blockColumn * cellWidth,
+      this.blockRow * cellHeight,
+      (this.blockColumn + this.blockCount) * cellWidth,
+      (this.blockRow + 1) * cellHeight,
+    );
+    gl.uniform2f(resources.glyphProgram.cells, this.cols, this.rows);
+    gl.uniform2f(
+      resources.glyphProgram.contrast,
+      profile.contrast.enhancedContrast,
+      profile.contrast.alphaCorrection,
+    );
+    gl.uniform4fv(resources.glyphProgram.gamma, DWRITE_GAMMA_RATIOS);
     gl.drawElementsInstanced(
       gl.TRIANGLE_STRIP,
       4,
@@ -972,6 +1055,7 @@ export class WebGlCellRenderer {
       this.foregrounds = new Uint32Array(this.cellCapacity);
       this.underlineColors = new Uint32Array(this.cellCapacity);
       this.flags = new Uint8Array(this.cellCapacity);
+      this.widths = new Uint8Array(this.cellCapacity);
       this.decorations = new Uint8Array(this.cellCapacity);
       this.ensureGlyphGpuCapacity();
     }
@@ -1002,6 +1086,7 @@ export class WebGlCellRenderer {
       this.foregrounds = new Uint32Array(this.cellCapacity);
       this.underlineColors = new Uint32Array(this.cellCapacity);
       this.flags = new Uint8Array(this.cellCapacity);
+      this.widths = new Uint8Array(this.cellCapacity);
       this.decorations = new Uint8Array(this.cellCapacity);
       this.ensureGlyphGpuCapacity(true);
     }
@@ -1066,6 +1151,20 @@ export class WebGlCellRenderer {
       glyphProgramValue,
       "u_text_blink_visible",
     );
+    const glyphCursor = requiredUniform(gl, glyphProgramValue, "u_cursor");
+    const glyphCursorText = requiredUniform(
+      gl,
+      glyphProgramValue,
+      "u_cursor_text",
+    );
+    const glyphCursorBox = requiredUniform(
+      gl,
+      glyphProgramValue,
+      "u_cursor_box",
+    );
+    const glyphCells = requiredUniform(gl, glyphProgramValue, "u_cells");
+    const glyphContrast = requiredUniform(gl, glyphProgramValue, "u_contrast");
+    const glyphGamma = requiredUniform(gl, glyphProgramValue, "u_gamma");
 
     const backgroundBuffer = requiredBuffer(gl);
     const cursorBuffer = requiredBuffer(gl);
@@ -1115,6 +1214,12 @@ export class WebGlCellRenderer {
         atlas: glyphAtlas,
         colorAtlas: glyphColorAtlas,
         textBlinkVisible: glyphTextBlinkVisible,
+        cursor: glyphCursor,
+        cursorText: glyphCursorText,
+        cursorBox: glyphCursorBox,
+        cells: glyphCells,
+        contrast: glyphContrast,
+        gamma: glyphGamma,
       },
       backgroundVao,
       cursorVao,
@@ -1160,6 +1265,24 @@ export class WebGlCellRenderer {
   }
 }
 
+/** No glyph is drawn in the cell: empty, a space or invisible text (the WebGPU glyph id 0). */
+function cellIsBlank(cells: TerminalCellReader, index: number): boolean {
+  const codepoint = cells.codepoint(index);
+  return (
+    codepoint === 0 ||
+    codepoint === 32 ||
+    (cells.flags(index) & CellFlags.INVISIBLE) !== 0
+  );
+}
+
+function cellIsSymbol(cells: TerminalCellReader, index: number): boolean {
+  return (
+    cells.graphemeLength(index) === 0 &&
+    (cells.flags(index) & CellFlags.INVISIBLE) === 0 &&
+    isNonGraphicsSymbol(cells.codepoint(index))
+  );
+}
+
 export function rendererProfileKey(profile: WebGlRendererProfile): string {
   const font = profile.metrics.font;
   return [
@@ -1168,6 +1291,7 @@ export function rendererProfileKey(profile: WebGlRendererProfile): string {
     font.weight,
     font.lineHeight,
     font.letterSpacing,
+    font.symbols ?? 0,
     profile.metrics.deviceCellWidth,
     profile.metrics.deviceCellHeight,
     profile.metrics.deviceBaseline,
@@ -1389,7 +1513,7 @@ export function nextWebGlCellCapacity(
   );
 }
 
-const COLOR_VERTEX_SHADER = `#version 300 es
+export const COLOR_VERTEX_SHADER = `#version 300 es
 layout(location = 0) in vec2 a_position;
 layout(location = 1) in vec2 a_size;
 layout(location = 2) in vec4 a_color;
@@ -1407,8 +1531,8 @@ void main() {
   v_decoration = a_decoration;
 }`;
 
-const COLOR_FRAGMENT_SHADER = `#version 300 es
-precision mediump float;
+export const COLOR_FRAGMENT_SHADER = `#version 300 es
+precision highp float;
 in vec4 v_color;
 in vec2 v_unitquad;
 flat in float v_decoration;
@@ -1425,7 +1549,7 @@ void main() {
   outColor = v_color;
 }`;
 
-const GLYPH_VERTEX_SHADER = `#version 300 es
+export const GLYPH_VERTEX_SHADER = `#version 300 es
 layout(location = 0) in vec2 a_unitquad;
 layout(location = 1) in vec2 a_offset;
 layout(location = 2) in vec2 a_size;
@@ -1436,34 +1560,70 @@ layout(location = 6) in float a_intrinsic_color;
 layout(location = 7) in vec2 a_cellpos;
 uniform mat4 u_projection;
 uniform vec2 u_resolution;
+uniform vec4 u_cursor;
+uniform vec2 u_cells;
 out vec2 v_texcoord;
 out vec4 v_color;
 flat out float v_intrinsic_color;
+flat out float v_cursor_on;
 void main() {
   vec2 zeroToOne = (a_offset / u_resolution) + a_cellpos + a_unitquad * a_size;
   gl_Position = u_projection * vec4(zeroToOne, 0.0, 1.0);
   v_texcoord = a_texcoord + a_unitquad * a_texsize;
   v_color = a_color;
+  vec2 cell = floor(a_cellpos * u_cells + 0.5);
+  v_cursor_on = 0.0;
+  if (u_cursor.w > 0.5 && cell.y == u_cursor.y && cell.x >= u_cursor.x &&
+      cell.x < u_cursor.x + u_cursor.z) {
+    v_cursor_on = 1.0;
+  }
   v_intrinsic_color = a_intrinsic_color;
 }`;
 
-const GLYPH_FRAGMENT_SHADER = `#version 300 es
-precision lowp float;
+export const GLYPH_FRAGMENT_SHADER = `#version 300 es
+precision highp float;
+precision highp sampler2D;
 uniform sampler2D u_atlas;
 uniform sampler2D u_color_atlas;
 uniform bool u_text_blink_visible;
+uniform vec2 u_contrast;
+uniform vec4 u_gamma;
+uniform vec2 u_resolution;
+uniform vec4 u_cursor_box;
+uniform vec3 u_cursor_text;
 in vec2 v_texcoord;
 in vec4 v_color;
 flat in float v_intrinsic_color;
+flat in float v_cursor_on;
 out vec4 outColor;
+float applyContrast(float coverage, vec3 foreground) {
+  float lightness = dot(foreground, vec3(0.30, 0.59, 0.11));
+  float k = u_contrast.x * clamp(4.0 * (0.75 - lightness), 0.0, 1.0);
+  float enhanced = coverage * (k + 1.0) / (coverage * k + 1.0);
+  float intensity = dot(foreground, vec3(0.25, 0.5, 0.25));
+  float corrected = enhanced + enhanced * (1.0 - enhanced) *
+    ((u_gamma.x * intensity + u_gamma.y) * enhanced + (u_gamma.z * intensity + u_gamma.w));
+  return clamp(mix(enhanced, corrected, u_contrast.y), 0.0, 1.0);
+}
 void main() {
+  vec3 rgb = v_color.rgb;
   float alpha = abs(v_color.a);
+  if (v_cursor_on > 0.5) {
+    vec2 at = vec2(gl_FragCoord.x, u_resolution.y - gl_FragCoord.y);
+    if (at.x >= u_cursor_box.x && at.y >= u_cursor_box.y && at.x < u_cursor_box.z && at.y < u_cursor_box.w) {
+      rgb = u_cursor_text;
+      alpha = 1.0;
+    }
+  }
   if (v_color.a < 0.0 && !u_text_blink_visible) alpha = 0.0;
-  if (v_intrinsic_color > 0.5) {
+  if (v_intrinsic_color > 0.5 && v_intrinsic_color < 1.5) {
     vec4 color = texture(u_color_atlas, v_texcoord);
     outColor = vec4(color.rgb, alpha * color.a);
   } else {
     float coverage = texture(u_atlas, v_texcoord).r;
-    outColor = vec4(v_color.rgb, alpha * coverage);
+    if (v_intrinsic_color < 1.5 && (u_contrast.x > 0.0 || u_contrast.y > 0.0)) {
+      coverage = applyContrast(coverage, rgb);
+    }
+    outColor = vec4(rgb, alpha * coverage);
   }
 }`;

@@ -1,9 +1,15 @@
+pub mod ai;
+pub mod assets;
 pub mod clipboard;
 pub mod copy;
 pub mod file;
 pub mod grep;
 pub mod index;
+#[cfg(windows)]
+mod local_file;
 pub mod mutate;
+pub mod project_memory;
+mod read_policy;
 pub mod search;
 pub mod supersede;
 pub mod tree;

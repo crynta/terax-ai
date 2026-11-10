@@ -1,4 +1,5 @@
 import {
+  SCREEN_FLAG_CURSOR_BLOCK,
   SCREEN_FLAG_SEARCH_ACTIVE,
   SCREEN_FLAG_SELECTION_ACTIVE,
   SCREEN_FLAG_SELECTION_RECTANGULAR,
@@ -37,6 +38,9 @@ export type ScreenUniformState = {
   readonly searchActive: boolean;
   readonly cursor: CursorRect | null;
   readonly cursorColor: readonly [number, number, number];
+  /** The cursor is a solid block: the character under it takes `cursorText`. */
+  readonly cursorBlock: boolean;
+  readonly cursorText: readonly [number, number, number];
   readonly background: readonly [number, number, number];
   readonly selection: SelectionUniform;
   readonly selectionColor: readonly [number, number, number];
@@ -81,6 +85,7 @@ export class ScreenUniform {
     if (state.searchActive) flags |= SCREEN_FLAG_SEARCH_ACTIVE;
     if (state.selection.active) flags |= SCREEN_FLAG_SELECTION_ACTIVE;
     if (state.selection.rectangular) flags |= SCREEN_FLAG_SELECTION_RECTANGULAR;
+    if (state.cursor && state.cursorBlock) flags |= SCREEN_FLAG_CURSOR_BLOCK;
     uints[SCREEN_OFFSET.flags / 4] = flags;
     uints[SCREEN_OFFSET.shiftY / 4] = Math.max(0, Math.round(state.shiftY));
     if (state.cursor) {
@@ -90,6 +95,7 @@ export class ScreenUniform {
       floats[SCREEN_OFFSET.cursorSize / 4 + 1] = state.cursor.height;
     }
     writeColor(floats, SCREEN_OFFSET.cursorColor / 4, state.cursorColor, 1);
+    writeColor(floats, SCREEN_OFFSET.cursorText / 4, state.cursorText, 1);
     writeColor(floats, SCREEN_OFFSET.themeBackground / 4, state.background, 1);
     writeColor(
       floats,
@@ -110,8 +116,6 @@ export class ScreenUniform {
     uints[SCREEN_OFFSET.decoration / 4 + 3] = state.leftOverhangPadding;
     floats[SCREEN_OFFSET.contrast / 4] = state.contrast.enhancedContrast;
     floats[SCREEN_OFFSET.contrast / 4 + 1] = state.contrast.alphaCorrection;
-    floats[SCREEN_OFFSET.contrast / 4 + 2] =
-      state.contrast.lightTextContrast ?? 0;
     for (let index = 0; index < DWRITE_GAMMA_RATIOS.length; index += 1) {
       floats[SCREEN_OFFSET.gamma / 4 + index] = DWRITE_GAMMA_RATIOS[index];
     }

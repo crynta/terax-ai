@@ -20,6 +20,15 @@ import {
   WHISPERCPP_DEFAULT_BASE_URL,
 } from "@/modules/ai/config";
 import type { KeyBinding, ShortcutId } from "@/modules/shortcuts/shortcuts";
+import {
+  coerceMacOptionAsAlt,
+  DEFAULT_MAC_OPTION_AS_ALT,
+  type MacOptionAsAlt,
+} from "@/modules/terminal/ghostty/input/macOptionAsAlt";
+import {
+  clampScrollSpeed,
+  DEFAULT_SCROLL_SPEED,
+} from "@/modules/terminal/ghostty/input/terminalWheel";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { LazyStore } from "@tauri-apps/plugin-store";
 
@@ -157,7 +166,7 @@ export type Preferences = {
   editorWordWrapColumn: number;
   showHidden: boolean;
   explorerGitDecorations: boolean;
-  terminalRenderer: "auto" | "webgl";
+  terminalRenderer: TerminalRendererSetting;
   terminalScreenReader: boolean;
   terminalCursorBlink: boolean;
   terminalCursorStyle: TerminalCursorStyle;
@@ -171,6 +180,8 @@ export type Preferences = {
   /** Row height as a multiple of the font size. */
   terminalLineHeight: number;
   terminalScrollback: number;
+  terminalScrollSpeed: number;
+  terminalMacOptionAsAlt: MacOptionAsAlt;
   confirmCloseRunningTerminal: boolean;
   lastWslDistro: string | null;
   zoomLevel: number;
@@ -271,6 +282,8 @@ const KEY_TERMINAL_FONT_SIZE = "terminalFontSize";
 const KEY_TERMINAL_PANE_PADDING = "terminalPanePadding";
 const KEY_TERMINAL_LINE_HEIGHT = "terminalLineHeight";
 const KEY_TERMINAL_SCROLLBACK = "terminalScrollback";
+const KEY_TERMINAL_SCROLL_SPEED = "terminalScrollSpeed";
+const KEY_TERMINAL_MAC_OPTION_AS_ALT = "terminalMacOptionAsAlt";
 const KEY_CONFIRM_CLOSE_RUNNING_TERMINAL = "confirmCloseRunningTerminal";
 const KEY_LAST_WSL_DISTRO = "lastWslDistro";
 const KEY_ZOOM_LEVEL = "zoomLevel";
@@ -375,6 +388,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   terminalPanePadding: 0,
   terminalLineHeight: TERMINAL_LINE_HEIGHT_DEFAULT,
   terminalScrollback: TERMINAL_SCROLLBACK_DEFAULT,
+  terminalScrollSpeed: DEFAULT_SCROLL_SPEED,
+  terminalMacOptionAsAlt: DEFAULT_MAC_OPTION_AS_ALT,
   confirmCloseRunningTerminal: true,
   lastWslDistro: null,
   zoomLevel: 1.0,
@@ -523,8 +538,7 @@ export async function loadPreferences(): Promise<Preferences> {
     explorerGitDecorations:
       get<boolean>(KEY_EXPLORER_GIT_DECORATIONS) ??
       DEFAULT_PREFERENCES.explorerGitDecorations,
-    terminalRenderer:
-      get<string>(KEY_TERMINAL_RENDERER) === "webgl" ? "webgl" : "auto",
+    terminalRenderer: coerceTerminalRenderer(get<string>(KEY_TERMINAL_RENDERER)),
     terminalScreenReader: get<boolean>(KEY_TERMINAL_SCREEN_READER) === true,
     terminalCursorBlink:
       get<boolean>(KEY_TERMINAL_CURSOR_BLINK) ??
@@ -558,6 +572,12 @@ export async function loadPreferences(): Promise<Preferences> {
     terminalScrollback: clampScrollback(
       get<number>(KEY_TERMINAL_SCROLLBACK) ??
         DEFAULT_PREFERENCES.terminalScrollback,
+    ),
+    terminalScrollSpeed: clampScrollSpeed(
+      get<number>(KEY_TERMINAL_SCROLL_SPEED),
+    ),
+    terminalMacOptionAsAlt: coerceMacOptionAsAlt(
+      get<unknown>(KEY_TERMINAL_MAC_OPTION_AS_ALT),
     ),
     confirmCloseRunningTerminal:
       get<boolean>(KEY_CONFIRM_CLOSE_RUNNING_TERMINAL) ??
@@ -829,9 +849,9 @@ export async function setExplorerGitDecorations(value: boolean): Promise<void> {
 }
 
 export async function setTerminalRenderer(
-  value: "auto" | "webgl",
+  value: TerminalRendererSetting,
 ): Promise<void> {
-  await writePref(KEY_TERMINAL_RENDERER, value === "webgl" ? "webgl" : "auto");
+  await writePref(KEY_TERMINAL_RENDERER, coerceTerminalRenderer(value));
 }
 
 export async function setTerminalScreenReader(value: boolean): Promise<void> {
@@ -858,6 +878,13 @@ export async function setTerminalFontFamily(value: string): Promise<void> {
 
 const TERMINAL_FONT_WEIGHT_VALUES = new Set(["normal", "500", "600", "bold"]);
 
+/** Renderer for new terminals: WebGPU with WebGL fallback, WebGPU, or WebGL. */
+export type TerminalRendererSetting = "auto" | "webgpu" | "webgl";
+
+export function coerceTerminalRenderer(value: unknown): TerminalRendererSetting {
+  return value === "webgl" || value === "webgpu" ? value : "auto";
+}
+
 export function coerceFontWeight(value: string): string {
   const v = value.trim();
   return TERMINAL_FONT_WEIGHT_VALUES.has(v) ? v : "normal";
@@ -869,6 +896,16 @@ export async function setTerminalFontWeight(value: string): Promise<void> {
 
 export async function setTerminalShell(value: string): Promise<void> {
   await writePref(KEY_TERMINAL_SHELL, value.trim());
+}
+
+export async function setTerminalMacOptionAsAlt(
+  value: MacOptionAsAlt,
+): Promise<void> {
+  await writePref(KEY_TERMINAL_MAC_OPTION_AS_ALT, coerceMacOptionAsAlt(value));
+}
+
+export async function setTerminalScrollSpeed(value: number): Promise<void> {
+  await writePref(KEY_TERMINAL_SCROLL_SPEED, clampScrollSpeed(value));
 }
 
 export async function setTerminalLetterSpacing(value: number): Promise<void> {
@@ -1069,6 +1106,8 @@ export async function onPreferencesChange(
     [KEY_TERMINAL_PANE_PADDING]: "terminalPanePadding",
     [KEY_TERMINAL_LINE_HEIGHT]: "terminalLineHeight",
     [KEY_TERMINAL_SCROLLBACK]: "terminalScrollback",
+    [KEY_TERMINAL_SCROLL_SPEED]: "terminalScrollSpeed",
+    [KEY_TERMINAL_MAC_OPTION_AS_ALT]: "terminalMacOptionAsAlt",
     [KEY_CONFIRM_CLOSE_RUNNING_TERMINAL]: "confirmCloseRunningTerminal",
     [KEY_LAST_WSL_DISTRO]: "lastWslDistro",
     [KEY_ZOOM_LEVEL]: "zoomLevel",

@@ -1,4 +1,5 @@
-import { IS_MAC, MOD_PROP } from "@/lib/platform";
+import { IS_MAC } from "@/lib/platform";
+import { MAC_DEFAULTS, WIN_LINUX_DEFAULTS } from "./shortcutDefaults";
 
 /**
  * Single source of truth for keyboard shortcuts.
@@ -6,6 +7,7 @@ import { IS_MAC, MOD_PROP } from "@/lib/platform";
 
 export type ShortcutId =
   | "commandPalette.open"
+  | "commandPalette.files"
   | "commandPalette.content"
   | "tab.new"
   | "tab.newBlock"
@@ -80,324 +82,267 @@ export type Shortcut = {
   allowRepeat?: boolean;
 };
 
-export const SHORTCUTS: Shortcut[] = [
+// Matching walks this list in order and skips a shortcut its host disables, so
+// terminal.clear stays ahead of commandPalette.open: on macOS ⌘K clears a
+// focused terminal and opens the palette everywhere else.
+const SHORTCUT_META: Omit<Shortcut, "defaultBindings">[] = [
+  {
+    id: "terminal.clear",
+    label: "Clear terminal",
+    group: "Terminal",
+  },
   {
     id: "commandPalette.open",
     label: "Open command palette",
     group: "General",
-    defaultBindings: [{ [MOD_PROP]: true, key: "p" }],
+  },
+  {
+    id: "commandPalette.files",
+    label: "Go to file",
+    group: "General",
   },
   {
     id: "commandPalette.content",
     label: "Find in files",
     group: "General",
-    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "p" }],
   },
   {
     id: "settings.open",
     label: "Open settings",
     group: "General",
-    defaultBindings: [{ [MOD_PROP]: true, key: "," }],
   },
   {
     id: "tab.new",
     label: "New tab",
     group: "Tabs",
-    defaultBindings: [{ [MOD_PROP]: true, key: "t" }],
   },
   {
     id: "tab.newBlock",
     label: "New Blocks terminal",
     group: "Tabs",
-    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "t" }],
   },
   {
     id: "tab.newPrivate",
     label: "New private terminal",
     group: "Tabs",
-    defaultBindings: [{ [MOD_PROP]: true, key: "r" }],
   },
   {
     id: "tab.newPreview",
     label: "New web preview",
     group: "Tabs",
-    // Cmd/Ctrl+P now opens the command palette, so web preview moves here.
-    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "o" }],
   },
   {
     id: "tab.newEditor",
     label: "New editor tab",
     group: "Tabs",
-    defaultBindings: [{ [MOD_PROP]: true, key: "e" }],
   },
   {
     id: "tab.close",
     label: "Close tab or pane",
     group: "Tabs",
-    defaultBindings: [{ [MOD_PROP]: true, key: "w" }],
   },
   {
     id: "pane.splitRight",
     label: "Split pane right",
     group: "Panes",
-    defaultBindings: [{ [MOD_PROP]: true, key: "d" }],
   },
   {
     id: "pane.splitDown",
     label: "Split pane down",
     group: "Panes",
-    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "d" }],
   },
   {
     id: "pane.focusNext",
     label: "Focus next pane",
     group: "Panes",
-    defaultBindings: [{ [MOD_PROP]: true, key: "]" }],
   },
   {
     id: "pane.focusPrev",
     label: "Focus previous pane",
     group: "Panes",
-    defaultBindings: [{ [MOD_PROP]: true, key: "[" }],
   },
   {
     id: "pane.swapLeft",
     label: "Swap pane left",
     group: "Panes",
-    defaultBindings: [{ [MOD_PROP]: true, alt: true, key: "ArrowLeft" }],
   },
   {
     id: "pane.swapRight",
     label: "Swap pane right",
     group: "Panes",
-    defaultBindings: [{ [MOD_PROP]: true, alt: true, key: "ArrowRight" }],
   },
   {
     id: "pane.swapUp",
     label: "Swap pane up",
     group: "Panes",
-    defaultBindings: [{ [MOD_PROP]: true, alt: true, key: "ArrowUp" }],
   },
   {
     id: "pane.swapDown",
     label: "Swap pane down",
     group: "Panes",
-    defaultBindings: [{ [MOD_PROP]: true, alt: true, key: "ArrowDown" }],
   },
   {
     id: "pane.source",
     label: "Toggle source panel",
     group: "Panes",
-    defaultBindings: [{ [MOD_PROP]: true, key: "g" }],
-  },
-  {
-    id: "terminal.clear",
-    label: "Clear terminal",
-    group: "Terminal",
-    // macOS Terminal's ⌘K (clear scrollback, keep the prompt). Default only on
-    // macOS — on other platforms Ctrl+K is readline's kill-line, so we leave it
-    // unbound and let users assign their own in settings.
-    defaultBindings: IS_MAC ? [{ meta: true, key: "k" }] : [],
   },
   {
     id: "terminal.toggleInput",
     label: "Toggle Shell / AI input",
     group: "Terminal",
-    defaultBindings: [{ [MOD_PROP]: true, key: "u" }],
   },
   {
     id: "blocks.prev",
     label: "Previous command block",
     group: "Terminal",
-    defaultBindings: [{ [MOD_PROP]: true, key: "ArrowUp" }],
     allowRepeat: true,
   },
   {
     id: "blocks.next",
     label: "Next command block",
     group: "Terminal",
-    defaultBindings: [{ [MOD_PROP]: true, key: "ArrowDown" }],
     allowRepeat: true,
   },
   {
     id: "tab.next",
     label: "Next tab",
     group: "Tabs",
-    defaultBindings: [{ ctrl: true, key: "Tab" }],
     allowRepeat: true,
   },
   {
     id: "tab.prev",
     label: "Previous tab",
     group: "Tabs",
-    defaultBindings: [{ ctrl: true, shift: true, key: "Tab" }],
     allowRepeat: true,
   },
   {
     id: "tab.selectByIndex",
-    label: "Jump to tab 1–9",
+    label: "Jump to tab 1\u20139",
     group: "Tabs",
-    defaultBindings: [{ [MOD_PROP]: true, key: "1" }],
   },
   {
     id: "space.next",
     label: "Next space",
     group: "Spaces",
-    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "]" }],
   },
   {
     id: "space.prev",
     label: "Previous space",
     group: "Spaces",
-    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "[" }],
   },
   {
     id: "space.overview",
     label: "Open spaces",
     group: "Spaces",
-    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "s" }],
   },
   {
     id: "explorer.search",
     label: "Search files",
     group: "Search",
-    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "f" }],
   },
   {
     id: "search.focus",
     label: "Find in tab",
     group: "Search",
-    defaultBindings: [{ [MOD_PROP]: true, key: "f" }],
   },
   {
     id: "ai.toggle",
     label: "Toggle AI agent",
     group: "AI",
-    defaultBindings: [{ [MOD_PROP]: true, key: "i" }],
   },
   {
     id: "ai.toggleMini",
     label: "Toggle AI chat window",
     group: "AI",
-    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "i" }],
   },
   {
     id: "ai.askSelection",
     label: "Ask AI about selection",
     group: "AI",
-    // Keep Mod+L available to the shell for clear-screen, including when
-    // terminal text is selected and this shortcut is otherwise eligible.
-    defaultBindings: [{ [MOD_PROP]: true, key: "j" }],
   },
   {
     id: "agent.focusAttention",
     label: "Jump to agent needing attention",
     group: "AI",
-    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "a" }],
   },
   {
     id: "agent.toggleReader",
     label: "Toggle Session Reader",
     group: "AI",
-    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "r" }],
   },
   {
     id: "sidebar.toggle",
     label: "Toggle file explorer",
     group: "View",
-    // Plain Mod+B toggles the sidebar everywhere EXCEPT a focused terminal,
-    // where it's handed to the shell / Claude Code (its "run in background"
-    // key). Mod+Shift+B always toggles, including from inside a terminal.
-    defaultBindings: [
-      { [MOD_PROP]: true, key: "b" },
-      { [MOD_PROP]: true, shift: true, key: "b" },
-    ],
   },
   {
     id: "explorer.focus",
     label: "Toggle file explorer focus",
     group: "View",
-    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "e" }],
   },
   {
     id: "explorer.toggleHidden",
     label: "Toggle hidden files",
     group: "View",
-    // Finder's toggle. The binding is on the physical Period key, so it holds
-    // on layouts where Shift+. types something else.
-    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "." }],
   },
   {
     id: "view.zoomIn",
     label: "Zoom in",
     group: "View",
-    defaultBindings: [
-      { [MOD_PROP]: true, key: "=" },
-      { [MOD_PROP]: true, shift: true, key: "+" },
-    ],
     allowRepeat: true,
   },
   {
     id: "view.zoomOut",
     label: "Zoom out",
     group: "View",
-    defaultBindings: [
-      { [MOD_PROP]: true, key: "-" },
-      { [MOD_PROP]: true, shift: true, key: "_" },
-    ],
     allowRepeat: true,
   },
   {
     id: "view.zoomReset",
     label: "Reset zoom",
     group: "View",
-    defaultBindings: [{ [MOD_PROP]: true, key: "0" }],
   },
   {
     id: "view.zenMode",
     label: "Toggle zen mode",
     group: "View",
-    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "'" }],
   },
-  // Editor undo/redo: App.tsx registers handlers and useGlobalShortcuts
-  // preventDefaults on match. Keep Mod+Y and add macOS Mod+Shift+Z (#941).
-  // Still excluded from the customization UI in ShortcutsSection.
   {
     id: "editor.undo",
     label: "Undo",
     group: "Editor",
-    defaultBindings: [{ [MOD_PROP]: true, key: "z" }],
   },
   {
     id: "editor.redo",
     label: "Redo",
     group: "Editor",
-    defaultBindings: [
-      { [MOD_PROP]: true, key: "y" },
-      { [MOD_PROP]: true, shift: true, key: "z" },
-    ],
   },
-  // Mod+S at the app layer so WKWebView cannot steal "Save Page" (#969).
-  // CodeMirror also binds Mod-s; the global handler preventDefaults first.
   {
     id: "editor.save",
     label: "Save file",
     group: "Editor",
-    defaultBindings: [{ [MOD_PROP]: true, key: "s" }],
   },
   {
     id: "editor.aiComplete",
     label: "Trigger AI completion",
     group: "Editor",
-    defaultBindings: [{ alt: true, key: "\\" }],
   },
   {
     id: "editor.codeComplete",
     label: "Trigger code completion",
     group: "Editor",
-    defaultBindings: [{ ctrl: true, key: " " }],
   },
 ];
+
+export function buildShortcuts(isMac: boolean): Shortcut[] {
+  const defaults = isMac ? MAC_DEFAULTS : WIN_LINUX_DEFAULTS;
+  return SHORTCUT_META.map((meta) => ({
+    ...meta,
+    defaultBindings: [...defaults[meta.id]],
+  }));
+}
+
+export const SHORTCUTS: Shortcut[] = buildShortcuts(IS_MAC);
 
 export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   "General",
@@ -428,6 +373,21 @@ const CODE_TO_KEY: Record<string, string> = {
   Space: " ",
 };
 
+const UNSHIFTED_PUNCTUATION: Record<string, string> = {
+  "~": "`",
+  _: "-",
+  "+": "=",
+  "{": "[",
+  "}": "]",
+  "|": "\\",
+  ":": ";",
+  '"': "'",
+  "<": ",",
+  ">": ".",
+  "?": "/",
+};
+const PUNCTUATION_BASE_KEYS = new Set(Object.values(UNSHIFTED_PUNCTUATION));
+
 // Option and Shift combinations rewrite e.key (macOS Option gives "«", "…",
 // dead keys; Shift turns "." into ">"); the physical key survives in e.code.
 function keyFromCode(code: string): string | null {
@@ -436,19 +396,57 @@ function keyFromCode(code: string): string | null {
   return CODE_TO_KEY[code] ?? null;
 }
 
+/**
+ * The digit 1 to 9 a Jump to tab press names. Under Shift the key is a symbol
+ * (`!`, `@`), so the physical digit key is read instead.
+ */
+export function tabDigit(
+  e: Pick<KeyboardEvent, "key" | "code">,
+  byCode: boolean,
+): number | null {
+  const digit = byCode
+    ? /^Digit([1-9])$/.exec(e.code)?.[1]
+    : /^[1-9]$/.exec(e.key)?.[0];
+  return digit === undefined ? null : Number(digit);
+}
+
 export function matchBinding(
   e: KeyboardEvent,
   binding: KeyBinding,
   id?: ShortcutId,
+  recorded = false,
 ): boolean {
   const eventKey = e.key.toLowerCase();
   const bindingKey = binding.key.toLowerCase();
 
   // Special case for Jump to Tab 1-9
   if (id === "tab.selectByIndex") {
-    if (!/^[1-9]$/.test(e.key)) return false;
-  } else if (eventKey !== bindingKey) {
+    if (tabDigit(e, !!binding.shift) === null) return false;
+  } else if (recorded) {
+    // The recorder stores KeyboardEvent.key verbatim, including layout symbols.
+    if (eventKey !== bindingKey) return false;
+  } else if (binding.shift && !binding.alt && UNSHIFTED_PUNCTUATION[eventKey]) {
+    // Recognized shifted punctuation names its logical key, even on Dvorak.
+    if (
+      UNSHIFTED_PUNCTUATION[eventKey] !==
+      (UNSHIFTED_PUNCTUATION[bindingKey] ?? bindingKey)
+    )
+      return false;
+  } else if (
+    eventKey !== bindingKey ||
+    (binding.shift && !binding.alt && PUNCTUATION_BASE_KEYS.has(bindingKey))
+  ) {
     if (!binding.alt && !binding.shift) return false;
+    // A Latin letter is the layout's own answer (Dvorak, Colemak).
+    if (/^[a-z]$/.test(eventKey)) return false;
+    // Shift alone cannot turn punctuation into a letter shortcut.
+    if (
+      !binding.alt &&
+      /^[a-z]$/.test(bindingKey) &&
+      eventKey.length === 1 &&
+      !/^\p{L}$/u.test(eventKey)
+    )
+      return false;
     if (keyFromCode(e.code) !== bindingKey) return false;
   }
 

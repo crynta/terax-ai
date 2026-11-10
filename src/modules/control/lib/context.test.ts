@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import type { Tab } from "@/modules/tabs/lib/useTabs";
+import { describe, expect, it } from "vitest";
 import { resolveControlContext } from "./context";
 
 const tabs: Tab[] = [
