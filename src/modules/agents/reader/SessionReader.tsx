@@ -1282,6 +1282,16 @@ export default function SessionReader({
                 const pin = pins.find((p) => p.id === id);
                 if (activeId && pin) togglePin(activeId, pin);
               }}
+              onTogglePin={
+                activeId
+                  ? (item) =>
+                      togglePin(activeId, {
+                        id: item.id,
+                        summary: item.summary,
+                        at: item.at,
+                      })
+                  : undefined
+              }
             />
             <div className="flex min-w-0 flex-1 flex-col">
               {documentBody}
@@ -1604,10 +1614,16 @@ function TurnView({
   const tools = useMemo(() => turnCalls(turn).length, [turn]);
   const time = formatClock(turn.promptAt);
   const pinned = usePinnedHeader();
+  const isPinned = usePinnedTurns(
+    (s) =>
+      !!ctx.sessionId &&
+      (s.pins[ctx.sessionId]?.some((p) => p.id === turn.id) ?? false),
+  );
   return (
     <section
       ref={pinned.section}
       data-turn-id={turn.id}
+      data-pinned={isPinned ? "" : undefined}
       className="terax-reader-turn group/turn relative pl-5"
     >
       <span
@@ -1622,7 +1638,7 @@ function TurnView({
           never covers the card. */}
       <div
         className={cn(
-          "z-[2] -mx-1 mb-1.5 flex h-7 items-center gap-1.5 bg-background px-1 text-[11px] text-muted-foreground",
+          "z-[2] -mx-1 mb-1.5 flex h-8 items-center gap-1.5 bg-background px-1 text-[11px] text-muted-foreground",
           pinned.on
             ? "sticky top-0 border-b border-border/60 shadow-[0_6px_14px_-12px_rgba(0,0,0,0.8)]"
             : "relative",
@@ -1709,15 +1725,25 @@ function PinTurnButton({
         })
       }
       aria-label={pinned ? "Unpin turn" : "Pin turn"}
-      title={pinned ? "Unpin turn" : "Pin turn (listed under Pinned in the full view)"}
-      className={cn(
-        "grid size-6 place-items-center rounded-md outline-none transition-[opacity,color] hover:bg-foreground/[0.06] focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-primary/40",
+      title={
         pinned
-          ? "text-primary opacity-100"
-          : "text-muted-foreground opacity-0 hover:text-foreground group-hover/turn:opacity-100",
+          ? "Pinned: listed under Pinned in the full view. Click to unpin."
+          : "Pin this turn to find it under Pinned in the full view"
+      }
+      className={cn(
+        "flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-[12px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary/40",
+        pinned
+          ? "border-primary/60 bg-primary/20 text-primary hover:bg-primary/30"
+          : "border-border/70 bg-background/60 text-muted-foreground hover:border-primary/50 hover:text-foreground",
       )}
     >
-      <HugeiconsIcon icon={PinIcon} size={13} strokeWidth={2} />
+      <HugeiconsIcon
+        icon={PinIcon}
+        size={14}
+        strokeWidth={pinned ? 2.6 : 2}
+        className={pinned ? "rotate-[-30deg]" : undefined}
+      />
+      {pinned ? "Pinned" : "Pin"}
     </button>
   );
 }

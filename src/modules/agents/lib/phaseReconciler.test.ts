@@ -3,6 +3,7 @@ import {
   DONE_READS,
   GONE_READS,
   readScreen,
+  SETTLED_MS,
   reconcilePhase,
   type ScreenRead,
 } from "./phaseReconciler";
@@ -42,10 +43,15 @@ const PERMISSION = [
 const SHELL = "~/repo main ❯ ls\nREADME.md  src\n~/repo main ❯ ";
 
 /** Feeds the same screen `n` times from `phase`, as the timer would. */
-function settle(phase: "working" | "attention" | "idle", read: ScreenRead, n: number) {
+function settle(
+  phase: "working" | "attention" | "idle",
+  read: ScreenRead,
+  n: number,
+  ageMs?: number,
+) {
   let quiet = 0;
   for (let i = 0; i < n; i++) {
-    const next = reconcilePhase(phase, read, quiet);
+    const next = reconcilePhase(phase, read, quiet, ageMs);
     if (next.phase) return { phase: next.phase, reads: i + 1 };
     quiet = next.quietReads;
   }
@@ -63,8 +69,13 @@ describe("readScreen", () => {
 });
 
 describe("reconcilePhase", () => {
-  it("drops 'working' once a finished turn shows twice in a row", () => {
-    expect(settle("working", readScreen(COOKED), 5)).toEqual({ phase: "finished", reads: DONE_READS });
+  it("drops 'working' on a young turn once a finished turn shows twice in a row", () => {
+    expect(settle("working", readScreen(COOKED), 5, 500)).toEqual({ phase: "finished", reads: DONE_READS });
+  });
+
+  it("settles a session that was already working when first seen on the first read", () => {
+    expect(settle("working", readScreen(COOKED), 5)).toEqual({ phase: "finished", reads: 1 });
+    expect(settle("working", readScreen(INTERRUPTED), 5, SETTLED_MS)).toEqual({ phase: "finished", reads: 1 });
   });
 
   it("drops 'working' after an Esc interrupt, which fires no hook", () => {
@@ -75,8 +86,8 @@ describe("reconcilePhase", () => {
     expect(settle("working", readScreen(SHELL), 10)).toEqual({ phase: "finished", reads: GONE_READS });
   });
 
-  it("does not flip on a single quiet read", () => {
-    const first = reconcilePhase("working", readScreen(COOKED), 0);
+  it("does not flip a young turn on a single quiet read", () => {
+    const first = reconcilePhase("working", readScreen(COOKED), 0, 200);
     expect(first.phase).toBeNull();
     // Work shows again: the count starts over.
     const busy = reconcilePhase("working", readScreen(WORKING), first.quietReads);

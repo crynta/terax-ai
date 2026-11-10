@@ -631,3 +631,17 @@
   border-radius: 14px;
   animation: terax-reader-turn-flash 1.4s ease-out;
 }
+
+/* A pinned turn: an accent rail and an outlined prompt card. */
+.terax-reader-turn[data-pinned]::before {
+  width: 2px;
+  left: 3.5px;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in oklab, var(--primary) 85%, transparent),
+    color-mix(in oklab, var(--primary) 25%, transparent)
+  );
+}
+.terax-reader-turn[data-pinned] section[aria-label="Your prompt"] {
+  box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--primary) 70%, transparent);
+}

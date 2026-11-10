@@ -313,6 +313,7 @@ export function OutlinePanel({
   pins,
   onPickPin,
   onUnpin,
+  onTogglePin,
 }: {
   items: readonly OutlineItem[];
   current: string | null;
@@ -321,6 +322,8 @@ export function OutlinePanel({
   /** Jumps to a pinned turn, paging back to it if it isn't loaded. */
   onPickPin: (id: string) => void;
   onUnpin: (id: string) => void;
+  /** Pins or unpins a turn from the "All" list; absent when it can't be pinned. */
+  onTogglePin?: (item: OutlineItem) => void;
 }) {
   const list = useRef<HTMLOListElement | null>(null);
   const [chosen, setChosen] = useState<OutlineTab | null>(null);
@@ -384,7 +387,7 @@ export function OutlinePanel({
                     data-outline-id={pin.id}
                     aria-current={pin.id === current}
                     onClick={() => onPickPin(pin.id)}
-                    className="terax-reader-outline-item flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-2 pr-8 text-left text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40"
+                    className="terax-reader-outline-item flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-2 pr-9 text-left text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40"
                   >
                     <span className="flex items-center gap-1.5 text-[10.5px] tabular-nums">
                       <HugeiconsIcon
@@ -407,9 +410,9 @@ export function OutlinePanel({
                     onClick={() => onUnpin(pin.id)}
                     aria-label="Unpin"
                     title="Unpin"
-                    className="absolute top-1.5 right-1.5 grid size-6 place-items-center rounded-md text-muted-foreground opacity-0 outline-none transition-opacity hover:bg-foreground/10 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-primary/40 group-hover/pin:opacity-100"
+                    className="absolute top-1.5 right-1.5 grid size-7 place-items-center rounded-md text-muted-foreground opacity-0 outline-none transition-opacity hover:bg-foreground/10 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-primary/40 group-hover/pin:opacity-100"
                   >
-                    <HugeiconsIcon icon={PinOffIcon} size={12} strokeWidth={2} />
+                    <HugeiconsIcon icon={PinOffIcon} size={14} strokeWidth={2} />
                   </button>
                 </li>
               );
@@ -417,13 +420,16 @@ export function OutlinePanel({
           )
         ) : (
           items.map((item, n) => (
-            <li key={item.id}>
+            <li key={item.id} className="group/pin relative">
               <button
                 type="button"
                 data-outline-id={item.id}
                 aria-current={item.id === current}
                 onClick={() => onPick(item.id)}
-                className="terax-reader-outline-item group flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-2 text-left text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40"
+                className={cn(
+                  "terax-reader-outline-item group flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-2 text-left text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40",
+                  onTogglePin && "pr-9",
+                )}
               >
                 <span className="flex items-center gap-1.5 text-[10.5px] tabular-nums">
                   <span className="font-semibold text-primary/90">{n + 1}</span>
@@ -450,6 +456,27 @@ export function OutlinePanel({
                   {item.summary}
                 </span>
               </button>
+              {onTogglePin && item.pinnable && (
+                <button
+                  type="button"
+                  onClick={() => onTogglePin(item)}
+                  aria-pressed={pinnedIds.has(item.id)}
+                  aria-label={pinnedIds.has(item.id) ? "Unpin" : "Pin"}
+                  title={pinnedIds.has(item.id) ? "Unpin" : "Pin"}
+                  className={cn(
+                    "absolute top-1.5 right-1.5 grid size-7 place-items-center rounded-md outline-none transition-[opacity,color,background-color] focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-primary/40",
+                    pinnedIds.has(item.id)
+                      ? "bg-primary/15 text-primary hover:bg-primary/25"
+                      : "text-muted-foreground opacity-0 hover:bg-foreground/10 hover:text-foreground group-hover/pin:opacity-100",
+                  )}
+                >
+                  <HugeiconsIcon
+                    icon={pinnedIds.has(item.id) ? PinOffIcon : PinIcon}
+                    size={14}
+                    strokeWidth={2}
+                  />
+                </button>
+              )}
             </li>
           ))
         )}

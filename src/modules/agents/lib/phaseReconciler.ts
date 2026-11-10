@@ -43,8 +43,17 @@ export function readScreen(text: string): ScreenRead {
   };
 }
 
-/** Reads in a row showing a finished turn before "working" is dropped. */
+/**
+ * Reads in a row showing a finished turn before "working" is dropped, while
+ * the turn is young: the spinner can lag the prompt by a moment.
+ */
 export const DONE_READS = 2;
+/**
+ * After this long in "working" (or when the session was already working
+ * before Terax first looked at it), one read showing a finished turn is
+ * enough.
+ */
+export const SETTLED_MS = 3000;
 /** Reads in a row without any of Claude's screen (it exited, or a full-screen
  *  panel is up) before "working" is dropped. */
 export const GONE_READS = 5;
@@ -57,6 +66,8 @@ export function reconcilePhase(
   phase: AgentPhase | undefined,
   read: ScreenRead,
   quietReads: number,
+  /** How long the phase has been what it is; Infinity when unknown. */
+  phaseAgeMs = Number.POSITIVE_INFINITY,
 ): { phase: AgentPhase | null; quietReads: number } {
   if (read.dialog) {
     return { phase: phase === "working" ? "attention" : null, quietReads: 0 };
@@ -66,7 +77,12 @@ export function reconcilePhase(
   }
   if (phase !== "working") return { phase: null, quietReads: 0 };
   const quiet = quietReads + 1;
-  const needed = read.done || read.footer ? DONE_READS : GONE_READS;
+  const needed =
+    read.done || read.footer
+      ? phaseAgeMs >= SETTLED_MS
+        ? 1
+        : DONE_READS
+      : GONE_READS;
   return quiet >= needed
     ? { phase: "finished", quietReads: 0 }
     : { phase: null, quietReads: quiet };
@@ -80,7 +96,7 @@ const STATUS_FOR: Record<AgentPhase, AgentStatus> = {
 };
 
 /** How often every Claude pane's screen is read. */
-export const RECONCILE_MS = 2000;
+export const RECONCILE_MS = 1500;
 /** Reads in a row a session's pane is gone before the session is dropped. */
 const ORPHAN_READS = 2;
 
@@ -89,7 +105,10 @@ export function usePhaseReconciler(): void {
   useEffect(() => {
     const quiet = new Map<number, number>();
     const orphans = new Map<number, number>();
+    /** Each leaf's last seen phase and when it was first seen. */
+    const seen = new Map<number, { phase: AgentPhase; since: number }>();
     const tick = () => {
+      const now = Date.now();
       const agents = useAgentStore.getState();
       const phases = useAgentActivityStore.getState().phases;
       for (const session of Object.values(agents.sessions)) {
@@ -110,19 +129,30 @@ export function usePhaseReconciler(): void {
         orphans.delete(leafId);
         const phase = phases[ptyId];
         if (phase === undefined) continue;
+        const last = seen.get(leafId);
+        // A phase already set before Terax first looked counts as old: an
+        // existing session that finished long ago settles on the first read.
+        const since =
+          last === undefined ? 0 : last.phase === phase ? last.since : now;
+        seen.set(leafId, { phase, since });
         const text = leafScreenText(leafId);
         if (!text) continue;
         const next = reconcilePhase(
           phase,
           readScreen(text),
           quiet.get(leafId) ?? 0,
+          now - since,
         );
         quiet.set(leafId, next.quietReads);
         if (next.phase === null) continue;
         settlePhase(ptyId, next.phase);
+        seen.set(leafId, { phase: next.phase, since: now });
         agents.setStatus(leafId, STATUS_FOR[next.phase]);
       }
     };
+    // Look straight away, so a session opened after it finished never
+    // shows "Working" for a tick.
+    tick();
     const timer = setInterval(tick, RECONCILE_MS);
     return () => clearInterval(timer);
   }, []);

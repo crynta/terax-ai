@@ -130,6 +130,7 @@ describe("outline and stats", () => {
         tools: 5,
         edits: 2,
         images: 0,
+        pinnable: true,
       },
     ]);
     expect(turnSummary(turn({ prompt: null, command: "review" }))).toBe(

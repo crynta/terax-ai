@@ -91,6 +91,8 @@ export type OutlineItem = {
   tools: number;
   edits: number;
   images: number;
+  /** Has a prompt (a stable transcript id), so it can be pinned. */
+  pinnable: boolean;
 };
 
 const EDIT_KINDS = new Set(["edit", "write"]);
@@ -105,6 +107,7 @@ export function buildOutline(turns: readonly ReaderTurn[]): OutlineItem[] {
       tools: calls.length,
       edits: calls.filter((c) => EDIT_KINDS.has(toolKind(c.name))).length,
       images: turn.images.length,
+      pinnable: !!(turn.prompt || turn.command),
     };
   });
 }
