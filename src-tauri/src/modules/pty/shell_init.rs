@@ -143,12 +143,33 @@ fn ensure_utf8_locale(cmd: &mut CommandBuilder) {
     cmd.env("LANG", fallback);
 }
 
+/// Variables a running Claude Code session sets for the processes it starts.
+/// Terax inherits them when it is launched from inside such a session (a
+/// script or `pnpm tauri dev` run by Claude); passed on to every shell, they
+/// make each `claude` there a child of that session, and a child session
+/// writes no transcript of its own.
+const INHERITED_AGENT_SESSION_VARS: &[&str] = &[
+    "CLAUDECODE",
+    "CLAUDE_PID",
+    "CLAUDE_EFFORT",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN",
+    "CLAUDE_CODE_SESSION_ATTENDED",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_EXECPATH",
+];
+
 fn apply_common(
     cmd: &mut CommandBuilder,
     cwd: Option<String>,
     blocks: bool,
     control: Option<&ShellControlEnv>,
 ) {
+    for key in INHERITED_AGENT_SESSION_VARS {
+        cmd.env_remove(key);
+    }
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
     cmd.env("TERAX_TERMINAL", "1");
@@ -1118,6 +1139,25 @@ mod tests {
     fn empty_or_missing_override_is_none() {
         assert_eq!(sanitize_shell_override(Some("   ".into())), None);
         assert_eq!(sanitize_shell_override(None), None);
+    }
+
+    #[test]
+    fn shells_never_inherit_a_claude_session() {
+        let mut command = CommandBuilder::new("shell");
+        command.env("CLAUDECODE", "1");
+        command.env("CLAUDE_CODE_SESSION_ID", "0b5f4c2e-9a1d-4e3b-8c7f-1234567890ab");
+        command.env("CLAUDE_CODE_CHILD_SESSION", "1");
+        command.env("CLAUDE_CODE_ENABLE_TELEMETRY", "1");
+        apply_common(&mut command, None, false, None);
+
+        assert_eq!(command.get_env("CLAUDECODE"), None);
+        assert_eq!(command.get_env("CLAUDE_CODE_SESSION_ID"), None);
+        assert_eq!(command.get_env("CLAUDE_CODE_CHILD_SESSION"), None);
+        // The user's own settings pass through.
+        assert_eq!(
+            command.get_env("CLAUDE_CODE_ENABLE_TELEMETRY"),
+            Some(OsStr::new("1"))
+        );
     }
 
     #[test]
