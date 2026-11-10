@@ -51,6 +51,17 @@ export function sendDecision(s: {
   return "send";
 }
 
+/** Queued messages listed in full before the list folds to a summary. */
+export const QUEUE_LIST_MAX = 3;
+
+/**
+ * How the composer shows `count` queued messages: listed while there are a
+ * few (or the user opened the list), folded to "N queued" past that.
+ */
+export function queueDisplay(count: number, open: boolean): "list" | "folded" {
+  return count <= QUEUE_LIST_MAX || open ? "list" : "folded";
+}
+
 /** Claude must look idle this long before the next queued message goes. */
 export const QUEUE_SETTLE_MS = 900;
 /** An in-flight send that never started work is forgotten after this. */

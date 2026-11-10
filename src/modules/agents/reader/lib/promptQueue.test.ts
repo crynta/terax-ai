@@ -13,6 +13,7 @@ import {
   removeQueued,
   settleInFlight,
   takeNext,
+  queueDisplay,
 } from "./promptQueue";
 
 const item = (id: string) => ({ id, text: id, mentions: [], images: [] });
@@ -67,5 +68,14 @@ describe("prompt queue", () => {
     expect(settleInFlight(q, "working").inFlight).toBeNull();
     expect(settleInFlight(q, "finished")).toBe(q);
     expect(takeNext(EMPTY_QUEUE, 0).item).toBeNull();
+  });
+});
+
+describe("queueDisplay", () => {
+  it("lists up to three queued messages, then folds unless opened", () => {
+    expect(queueDisplay(1, false)).toBe("list");
+    expect(queueDisplay(3, false)).toBe("list");
+    expect(queueDisplay(4, false)).toBe("folded");
+    expect(queueDisplay(4, true)).toBe("list");
   });
 });

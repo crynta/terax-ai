@@ -20,6 +20,7 @@ import {
   GitBranchIcon,
   PencilEdit02Icon,
   Queue01Icon,
+  SentIcon,
   ShieldUserIcon,
   Tick02Icon,
 } from "@hugeicons/core-free-icons";
@@ -39,7 +40,11 @@ import {
   modeChoicesFor,
 } from "./lib/composerControls";
 import { type Mention, type MentionKind, mentionKey } from "./lib/mentions";
-import type { QueuedPrompt } from "./lib/promptQueue";
+import {
+  QUEUE_LIST_MAX,
+  type QueuedPrompt,
+  queueDisplay,
+} from "./lib/promptQueue";
 import { contextTone } from "./lib/sessionFacts";
 
 export const MENTION_ICON: Record<MentionKind, typeof File01Icon> = {
@@ -104,8 +109,9 @@ export function MentionPills({
 }
 
 /**
- * Messages waiting for Claude to go idle, inside the composer card: a compact
- * "N queued" pill that expands to the list (edit, reorder, steer, remove).
+ * Messages waiting for Claude to go idle, inside the composer card: listed
+ * while there are a few (edit, reorder, send now, remove), folded to an
+ * "N queued" pill past that.
  */
 export function QueueChips({
   items,
@@ -128,35 +134,52 @@ export function QueueChips({
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [open, setOpen] = useState(false);
+  const foldable = items.length > QUEUE_LIST_MAX;
+  // Opened past the limit, it folds again once the list is short; an empty
+  // queue starts folded next time.
+  if (open && !foldable) setOpen(false);
   if (items.length === 0) return null;
   const first = items[0];
+  const listed = queueDisplay(items.length, open) === "list";
+  const title = paused ? "Queue paused after Stop" : "Sends when Claude is idle";
   return (
     <section aria-label="Queued messages" className="flex flex-col gap-1.5">
       <div className="flex min-w-0 items-center gap-2 text-[11.5px]">
-        <button
-          type="button"
-          aria-expanded={open}
-          onClick={() => setOpen((v) => !v)}
-          className="flex shrink-0 items-center gap-1.5 rounded-full border border-border/70 bg-background/60 px-2.5 py-0.5 font-medium text-foreground/90 outline-none transition-colors hover:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/40"
-          title={
-            paused ? "Queue paused after Stop" : "Sends when Claude is idle"
-          }
-        >
-          <HugeiconsIcon icon={Queue01Icon} size={12} strokeWidth={2} />
-          {items.length} queued
-          <HugeiconsIcon
-            icon={ArrowDown01Icon}
-            size={11}
-            strokeWidth={2}
-            className={cn("transition-transform", !open && "-rotate-90")}
-          />
-        </button>
-        {!open && (
+        {foldable ? (
+          <button
+            type="button"
+            aria-expanded={open}
+            onClick={() => setOpen((v) => !v)}
+            className="flex shrink-0 items-center gap-1.5 rounded-full border border-border/70 bg-background/60 px-2.5 py-0.5 font-medium text-foreground/90 outline-none transition-colors hover:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/40"
+            title={title}
+          >
+            <HugeiconsIcon icon={Queue01Icon} size={12} strokeWidth={2} />
+            {items.length} queued
+            <HugeiconsIcon
+              icon={ArrowDown01Icon}
+              size={11}
+              strokeWidth={2}
+              className={cn("transition-transform", !open && "-rotate-90")}
+            />
+          </button>
+        ) : (
+          <span
+            className="flex shrink-0 items-center gap-1.5 px-0.5 font-medium text-muted-foreground"
+            title={title}
+          >
+            <HugeiconsIcon icon={Queue01Icon} size={12} strokeWidth={2} />
+            {items.length} queued
+          </span>
+        )}
+        {!listed && (
           <span
             className="min-w-0 flex-1 truncate text-muted-foreground"
             title={first.text}
           >
             {first.text || `${first.images.length} image(s)`}
+            <span className="ml-1.5 text-foreground/70">
+              +{items.length - 1} more
+            </span>
           </span>
         )}
         {paused && (
@@ -175,7 +198,7 @@ export function QueueChips({
           </span>
         )}
       </div>
-      {open && (
+      {listed && (
         <ol className="flex flex-col gap-1">
           {items.map((item, index) => (
             <li
@@ -248,20 +271,21 @@ export function QueueChips({
                     setEditing(item.id);
                   }}
                 />
-                <button
-                  type="button"
-                  onClick={() => onSendNow(item.id)}
-                  className="h-5 rounded px-1.5 text-[10.5px] font-medium text-primary outline-none hover:bg-primary/15 focus-visible:ring-2 focus-visible:ring-primary/50"
-                  title="Send now, even while Claude works"
-                >
-                  Steer
-                </button>
                 <QueueButton
                   label="Remove"
                   icon={Delete02Icon}
                   onClick={() => onRemove(item.id)}
                 />
               </div>
+              <button
+                type="button"
+                onClick={() => onSendNow(item.id)}
+                className="flex h-6 shrink-0 items-center gap-1 rounded-md bg-primary/15 px-2.5 text-[12px] font-medium text-primary outline-none transition-colors hover:bg-primary/25 focus-visible:ring-2 focus-visible:ring-primary/50"
+                title="Send now, even while Claude works (⌘Enter)"
+              >
+                <HugeiconsIcon icon={SentIcon} size={12} strokeWidth={2} />
+                Send now
+              </button>
             </li>
           ))}
         </ol>

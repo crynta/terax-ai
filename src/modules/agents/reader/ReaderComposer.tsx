@@ -1185,12 +1185,12 @@ export const ReaderComposer = forwardRef<
                     : panel
                       ? "Use Claude's panel above, or send a message to close it…"
                       : working
-                        ? "Queue a follow-up, or ⌘Enter to steer now…"
+                        ? "Queue a follow-up, or ⌘Enter to send now…"
                         : phase === "attention"
                           ? "Claude is waiting for your message…"
-                          : "Message Claude…"
+                          : "Ask…"
               }
-              aria-label="Message Claude"
+              aria-label="Ask"
               className={cn(
                 "min-h-[28px] min-w-0 flex-1 resize-none self-center bg-transparent px-1.5 py-1 text-[14px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/80",
                 multiline && "basis-full",
@@ -1254,7 +1254,7 @@ export const ReaderComposer = forwardRef<
                     dialog
                       ? "Queue until you answer Claude (Enter)"
                       : working
-                        ? "Queue (Enter) · ⌘Enter steers now · ⌘. stops"
+                        ? "Queue (Enter) · ⌘Enter sends now · ⌘. stops"
                         : "Send (Enter) · ⇧Enter new line · ↑ history · / commands · @ context"
                   }
                   className="grid size-8 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-primary/50 disabled:opacity-35"
