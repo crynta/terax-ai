@@ -3,6 +3,7 @@
  * session stats, in-document search, view filters, prompt payloads for the
  * composer, and per-turn Markdown for copying.
  */
+import { promptMarkdown } from "./promptSegments";
 import { toolKind } from "./readerView";
 import type { ReaderBlock, ReaderTurn, ToolCall } from "./transcript";
 
@@ -184,7 +185,8 @@ export function promptWrites(
 /** A turn as Markdown: the prompt, Claude's text, and one line per tool call. */
 export function turnMarkdown(turn: ReaderTurn): string {
   const parts: string[] = [];
-  const prompt = [turn.command, turn.prompt].filter(Boolean).join(" ");
+  const text = turn.prompt ? promptMarkdown(turn.prompt, turn.pastes) : null;
+  const prompt = [turn.command, text].filter(Boolean).join(" ");
   if (prompt) parts.push(`**You:** ${prompt}`);
   const visit = (blocks: readonly ReaderBlock[], depth: number) => {
     for (const block of blocks) {

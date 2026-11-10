@@ -652,3 +652,14 @@ html[data-window-inactive] *::after {
     animation: none;
   }
 }
+
+/* A code block holding a box diagram: one font for letters and box glyphs,
+   rows tight enough that vertical strokes join, never wrapped. */
+.terax-code-diagram {
+  font-family:
+    "Terax Box", "Red Hat Mono", "JetBrains Mono", ui-monospace, SFMono-Regular,
+    Menlo, monospace;
+  font-variant-ligatures: none;
+  line-height: 1.25;
+  white-space: pre;
+}

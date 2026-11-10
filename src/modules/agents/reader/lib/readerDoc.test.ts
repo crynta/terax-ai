@@ -197,6 +197,12 @@ describe("stripImagePlaceholders", () => {
     ).toBe("compare");
     expect(stripImagePlaceholders("[Image #3]")).toBe("");
   });
+
+  it("keeps the user's own spacing and the first line's indent", () => {
+    const diagram = "   ┌──┐   x\n   │  │   y";
+    expect(stripImagePlaceholders(`\n${diagram}\n`)).toBe(diagram);
+    expect(stripImagePlaceholders("see [Image #2] here")).toBe("see here");
+  });
 });
 
 describe("promptWrites", () => {

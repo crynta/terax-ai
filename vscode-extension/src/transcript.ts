@@ -676,7 +676,14 @@ export async function saveContext(text: string): Promise<string> {
 
 // ---------------------------------------------------------------- history
 
-function promptText(value: Json, max: number | null): string | null {
+/** `<pasted_content id="…">` and its closing tag, which wrap pasted text. */
+const PASTE_TAG = /<\/?pasted_content\b[^>]*>?/gu;
+
+/**
+ * The trimmed text of a user prompt line, pasted text unwrapped, or null for
+ * tool results, meta lines and slash-command plumbing.
+ */
+function promptBody(value: Json): string | null {
   if (!isObj(value) || value.type !== "user" || value.isMeta === true) return null;
   const content = isObj(value.message) ? value.message.content : undefined;
   let text: string;
@@ -687,8 +694,14 @@ function promptText(value: Json, max: number | null): string | null {
       .map((c) => c.text as string)
       .join(" ");
   } else return null;
-  text = text.trim();
+  text = text.replace(PASTE_TAG, "\n").trim();
   if (!text || text.startsWith("<") || text.startsWith("Caveat:")) return null;
+  return text;
+}
+
+function promptText(value: Json, max: number | null): string | null {
+  const text = promptBody(value);
+  if (text === null) return null;
   const collapsed = text.replace(/\s+/gu, " ");
   return max === null ? collapsed : [...collapsed].slice(0, max).join("");
 }

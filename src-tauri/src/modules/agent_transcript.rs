@@ -1036,14 +1036,36 @@ fn read_window(file: &mut File, start: u64, len: u64) -> Option<Vec<u8>> {
     Some(buf)
 }
 
-/// The text of a user prompt line, or None for tool results, meta lines and
-/// slash-command plumbing.
-fn prompt_text(value: &Value) -> Option<String> {
+/// `text` without the `<pasted_content id="…">` / `</pasted_content id="…">`
+/// tags Claude Code wraps around pasted text; the pasted text stays.
+fn strip_pasted_tags(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    loop {
+        let next = [rest.find("<pasted_content"), rest.find("</pasted_content")]
+            .into_iter()
+            .flatten()
+            .min();
+        let Some(at) = next else { break };
+        out.push_str(&rest[..at]);
+        out.push('\n');
+        rest = match rest[at..].find('>') {
+            Some(end) => &rest[at + end + 1..],
+            None => "",
+        };
+    }
+    out.push_str(rest);
+    out
+}
+
+/// The trimmed text of a user prompt line, or None for tool results, meta
+/// lines and slash-command plumbing. Pasted text is unwrapped, so a prompt
+/// that opens with a paste still counts.
+fn prompt_body(value: &Value) -> Option<String> {
     if value.get("type")?.as_str()? != "user" || value.get("isMeta") == Some(&Value::Bool(true)) {
         return None;
     }
-    let content = value.get("message")?.get("content")?;
-    let text = match content {
+    let text = match value.get("message")?.get("content")? {
         Value::String(s) => s.clone(),
         Value::Array(blocks) => blocks
             .iter()
@@ -1053,10 +1075,17 @@ fn prompt_text(value: &Value) -> Option<String> {
             .join(" "),
         _ => return None,
     };
+    let text = strip_pasted_tags(&text);
     let text = text.trim();
     if text.is_empty() || text.starts_with('<') || text.starts_with("Caveat:") {
         return None;
     }
+    Some(text.to_string())
+}
+
+/// A user prompt on one line, cut for a summary.
+fn prompt_text(value: &Value) -> Option<String> {
+    let text = prompt_body(value)?;
     let one_line: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
     Some(one_line.chars().take(SUMMARY_PROMPT_CHARS).collect())
 }
@@ -1144,23 +1173,7 @@ pub struct TranscriptMatch {
 
 /// A prompt's whole text on one line, without the summary's length cap.
 fn full_prompt_text(value: &Value) -> Option<String> {
-    if value.get("type")?.as_str()? != "user" || value.get("isMeta") == Some(&Value::Bool(true)) {
-        return None;
-    }
-    let text = match value.get("message")?.get("content")? {
-        Value::String(s) => s.clone(),
-        Value::Array(blocks) => blocks
-            .iter()
-            .filter(|b| b.get("type").and_then(Value::as_str) == Some("text"))
-            .filter_map(|b| b.get("text").and_then(Value::as_str))
-            .collect::<Vec<_>>()
-            .join(" "),
-        _ => return None,
-    };
-    let text = text.trim();
-    if text.is_empty() || text.starts_with('<') || text.starts_with("Caveat:") {
-        return None;
-    }
+    let text = prompt_body(value)?;
     Some(text.split_whitespace().collect::<Vec<_>>().join(" "))
 }
 
@@ -1433,6 +1446,18 @@ mod tests {
         assert!(hits[0].snippet.starts_with('…') && hits[0].snippet.ends_with('…'));
         assert!(search_in(&root, cwd, "z", 10).is_empty(), "one-letter queries are ignored");
         assert!(search_in(&root, cwd, "nothing like this", 10).is_empty());
+    }
+
+    #[test]
+    fn a_prompt_that_opens_with_a_paste_still_counts() {
+        let value: Value = serde_json::from_str(&user(
+            "u1",
+            "\n\n<pasted_content id=\"9f5a\">\n┌──┐ Fluss\n</pasted_content id=\"9f5a\">\nwhy?",
+        ))
+        .unwrap();
+        assert_eq!(prompt_text(&value).as_deref(), Some("┌──┐ Fluss why?"));
+        assert_eq!(full_prompt_text(&value).as_deref(), Some("┌──┐ Fluss why?"));
+        assert_eq!(strip_pasted_tags("a <pasted_content id=\"1\">cut"), "a \ncut");
     }
 
     #[test]

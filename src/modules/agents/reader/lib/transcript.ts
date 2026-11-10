@@ -97,6 +97,11 @@ export type ReaderTurn = {
   id: string;
   /** The user's prompt; null for a turn whose prompt is before the loaded window. */
   prompt: string | null;
+  /**
+   * Text the user pasted into the prompt (Claude Code wraps each paste in
+   * `<pasted_content>`), each found verbatim in `prompt`.
+   */
+  pastes?: string[];
   /** A slash command, or a `!` shell command, shown instead of the raw prompt markup. */
   command: string | null;
   promptAt: string | null;
@@ -166,6 +171,37 @@ export function shellOutput(raw: string): string | null {
   return parts.join("\n");
 }
 
+const PASTE_OPEN = /<pasted_content\b[^>]*>/;
+const PASTE_CLOSE = /<\/pasted_content\b[^>]*>/;
+const PASTE_TAG = /<\/?pasted_content\b[^>]*>/g;
+
+/**
+ * A prompt without the `<pasted_content id="…">…</pasted_content id="…">`
+ * wrappers Claude Code puts around pasted text, and the pasted texts. A paste
+ * whose closing tag was cut off (a long prompt is capped) runs to the end.
+ */
+export function pastedSpans(raw: string): { text: string; pastes: string[] } {
+  const pastes: string[] = [];
+  let text = "";
+  let rest = raw;
+  for (;;) {
+    const open = PASTE_OPEN.exec(rest);
+    if (!open) break;
+    text += rest.slice(0, open.index);
+    rest = rest.slice(open.index + open[0].length);
+    const close = PASTE_CLOSE.exec(rest);
+    const body = (close ? rest.slice(0, close.index) : rest)
+      .replace(/^[ \t]*\n/, "")
+      .replace(/\n[ \t]*$/, "");
+    pastes.push(body);
+    // Its own paragraph, so it never runs into the text around it.
+    text += `\n\n${body}\n\n`;
+    rest = close ? rest.slice(close.index + close[0].length) : "";
+  }
+  text += rest;
+  return { text: text.replace(PASTE_TAG, ""), pastes };
+}
+
 /** Groups transcript entries (oldest first) into turns. */
 export function buildDocument(
   entries: readonly TranscriptEntry[],
@@ -226,13 +262,18 @@ export function buildDocument(
         );
       }
       if (entry.isMeta || sidechain) continue;
-      const raw = blocks
+      const joined = blocks
         .filter((b): b is { type: "text"; text: string } => b.type === "text")
         .map((b) => b.text)
-        .join("\n")
-        .trim();
+        .join("\n");
+      const raw = joined.trim();
       const images = imageRefs(entry);
-      const text = stripImagePlaceholders(raw);
+      // Untrimmed, so a pasted diagram keeps its first line's indent.
+      const pasted = pastedSpans(joined);
+      const text = stripImagePlaceholders(pasted.text);
+      const pastes = pasted.pastes
+        .map(stripImagePlaceholders)
+        .filter((p) => p && text.includes(p));
       if (!text && images.length === 0) continue;
       const stdout = COMMAND_STDOUT.exec(raw);
       if (stdout) {
@@ -282,6 +323,7 @@ export function buildDocument(
         prompt: name
           ? (COMMAND_ARGS.exec(raw)?.[1].trim() ?? "") || null
           : text || null,
+        pastes: name ? [] : pastes,
         command: name ? name[1].trim() : null,
         promptAt: entry.timestamp ?? null,
         images,
@@ -365,7 +407,8 @@ function imageRefs(entry: TranscriptEntry): ImageRef[] {
   return refs;
 }
 
-const IMAGE_TOKEN = /\[Image #\d+\]/g;
+/** A run of `[Image #N]` tokens with the spaces around them. */
+const IMAGE_TOKENS = /[ \t]*(?:\[Image #\d+\][ \t]*)+/g;
 const IMAGE_SOURCE_LINE = /^\s*\[Image: source: [^\]\n]*\]\s*$/gm;
 
 /**
@@ -373,12 +416,22 @@ const IMAGE_SOURCE_LINE = /^\s*\[Image: source: [^\]\n]*\]\s*$/gm;
  * tokens and the `[Image: source: …]` lines it adds for pasted files.
  */
 export function stripImagePlaceholders(text: string): string {
-  return text
-    .replace(IMAGE_SOURCE_LINE, "")
-    .replace(IMAGE_TOKEN, "")
-    .replace(/[ \t]{2,}/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  return (
+    text
+      .replace(IMAGE_SOURCE_LINE, "")
+      // Only the gap a token leaves closes up: other runs of spaces are the
+      // user's own alignment (a pasted table or diagram).
+      .replace(IMAGE_TOKENS, (token, offset: number, all: string) => {
+        const lineStart = offset === 0 || all[offset - 1] === "\n";
+        const end = offset + token.length;
+        const lineEnd = end === all.length || all[end] === "\n";
+        return lineStart || lineEnd ? "" : " ";
+      })
+      .replace(/\n{3,}/g, "\n\n")
+      // Blank lines go; the first line's indent stays.
+      .replace(/^(?:[ \t]*\n)+/, "")
+      .trimEnd()
+  );
 }
 
 function applyToolUseResult(

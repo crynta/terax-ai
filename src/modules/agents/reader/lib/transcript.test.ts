@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildDocument,
   lineDiff,
+  pastedSpans,
   shellOutput,
   stripAnsi,
   TranscriptBuffer,
@@ -357,5 +358,34 @@ describe("background task notifications", () => {
       text: 'Background command "Probe search model" completed (exit code 0)',
     });
     expect(taskNotice("hello")).toBeNull();
+  });
+});
+
+describe("pasted text", () => {
+  it("drops Claude Code's <pasted_content> tags, with or without an id", () => {
+    expect(
+      pastedSpans('\n\n<pasted_content id="9f5a">\nA & B\n</pasted_content id="9f5a">\nwhy?'),
+    ).toEqual({ text: "\n\n\n\nA & B\n\n\nwhy?", pastes: ["A & B"] });
+    expect(pastedSpans("<pasted_content>x</pasted_content> y").pastes).toEqual(["x"]);
+  });
+
+  it("runs a paste whose closing tag was cut off to the end", () => {
+    expect(pastedSpans('ask <pasted_content id="1">long text')).toEqual({
+      text: "ask \n\nlong text\n\n",
+      pastes: ["long text"],
+    });
+  });
+
+  it("shows a prompt with two pastes clean, the pastes kept apart", () => {
+    const doc = buildDocument([
+      prompt(
+        "u1",
+        '<pasted_content id="a">\n  │ one\n</pasted_content id="a">\nand\n<pasted_content id="b">two</pasted_content id="b">',
+      ),
+    ]);
+    const turn = doc.turns[0];
+    expect(turn.prompt).toBe("  │ one\n\nand\n\ntwo");
+    expect(turn.prompt).not.toContain("pasted_content");
+    expect(turn.pastes).toEqual(["  │ one", "two"]);
   });
 });

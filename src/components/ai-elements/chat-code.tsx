@@ -122,11 +122,24 @@ function BlockChrome({
   );
 }
 
+/** Box-drawing, block and geometric-shape glyphs: the marks of a diagram. */
+const DIAGRAM_GLYPH = /[\u2500-\u25FF]/;
+
+/** True when a code block draws a diagram rather than holding code. */
+export function isDiagram(code: string): boolean {
+  return DIAGRAM_GLYPH.test(code);
+}
+
 function FinalizedCodeBlock({ code, lang }: { code: string; lang: string }) {
   if (!isHighlightable(lang)) {
     return (
       <BlockChrome label={lang} code={code}>
-        <pre className="m-0 px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-foreground">
+        <pre
+          className={cn(
+            "m-0 px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-foreground",
+            isDiagram(code) && "terax-code-diagram",
+          )}
+        >
           {code}
         </pre>
       </BlockChrome>

@@ -23,8 +23,8 @@
 
 .terax-reader-mono {
   font-family:
-    "Red Hat Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo,
-    monospace;
+    "Terax Box", "Red Hat Mono", "JetBrains Mono", ui-monospace, SFMono-Regular,
+    Menlo, monospace;
   font-variant-ligatures: none;
 }
 
@@ -380,6 +380,18 @@
 .terax-reader-prose pre {
   font-size: 12px;
   line-height: 1.6;
+}
+.terax-reader-prose pre.terax-code-diagram {
+  line-height: 1.25;
+}
+/* Pre-formatted text holding a box diagram (a pasted one, tool output):
+   kept on its grid, scrolling sideways instead of wrapping. */
+.terax-reader-diagram {
+  line-height: 1.25;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+  overflow-x: auto;
 }
 
 /* A reply with several headings: each heading and its content as a block

@@ -28,20 +28,29 @@ export function markdownCodeText(children?: ReactNode): string {
 
 /**
  * Streamdown `components.code` override. Handles both inline (`code`) and
- * fenced blocks (className "language-X"). Fenced blocks delegate to the
- * Lezer-based renderer; inline stays a plain pill.
+ * fenced blocks. Streamdown marks a fenced block's `code` with `data-block`
+ * (a fence without a language has no "language-X" class), and those delegate
+ * to the Lezer-based renderer; inline stays a plain pill.
  */
 export function MarkdownCode({
   className,
   children,
+  node: _node,
+  "data-block": dataBlock,
   ...rest
 }: {
   className?: string;
   children?: ReactNode;
+  node?: unknown;
+  "data-block"?: string;
 }) {
   const router = useMarkdownLinkRouter();
   const match = className?.match(/language-(\w+)/);
-  if (!match) {
+  const block =
+    !!match ||
+    dataBlock !== undefined ||
+    markdownCodeText(children).includes("\n");
+  if (!block) {
     // Inline code that is exactly a URL or a path opens on Cmd+click.
     const text = markdownCodeText(children).trim();
     const kind = classifyLinkTarget(text);
@@ -72,5 +81,5 @@ export function MarkdownCode({
   }
 
   const code = markdownCodeText(children).replace(/\n$/, "");
-  return <ChatCodeBlock code={code} lang={match[1] ?? null} />;
+  return <ChatCodeBlock code={code} lang={match?.[1] ?? null} />;
 }

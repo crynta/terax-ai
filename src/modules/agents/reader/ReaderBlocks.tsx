@@ -1,4 +1,5 @@
 import { MessageResponse } from "@/components/ai-elements/message";
+import { isDiagram } from "@/components/ai-elements/chat-code";
 import { cn } from "@/lib/utils";
 import { LinkifiedText } from "@/components/ai-elements/markdown-link";
 import { copyToClipboard } from "@/modules/explorer/lib/contextActions";
@@ -161,7 +162,12 @@ function ReaderItemView({
     case "notice":
       return (
         <NeutralCard icon={InformationCircleIcon}>
-          <pre className="terax-reader-mono whitespace-pre-wrap break-words text-[12px] leading-relaxed text-foreground/90">
+          <pre
+            className={cn(
+              "terax-reader-mono whitespace-pre-wrap break-words text-[12px] leading-relaxed text-foreground/90",
+              isDiagram(block.text) && "terax-reader-diagram",
+            )}
+          >
             {block.text}
           </pre>
         </NeutralCard>
@@ -534,6 +540,7 @@ function OutputBlock({
       <pre
         className={cn(
           "terax-reader-mono max-h-80 select-text overflow-auto whitespace-pre-wrap break-words px-3.5 py-2.5 text-[12px] leading-relaxed",
+          isDiagram(trimmed) && "terax-reader-diagram",
           tone === "error"
             ? "bg-[color-mix(in_oklab,var(--terminal-ansi-red)_9%,transparent)] text-[color-mix(in_oklab,var(--terminal-ansi-red)_70%,var(--foreground))]"
             : "text-foreground/90",

@@ -73,3 +73,13 @@
     U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
     U+2212, U+2215, U+FEFF, U+FFFD;
 }
+
+/* Box-drawing, block and arrow glyphs for diagrams. The bundled mono fonts
+   have none, so the browser took them from SF Mono, whose cells are wider
+   than Red Hat Mono's and pushed every box out of line. Menlo has all of
+   them at Red Hat Mono's width; listed first, it supplies only these. */
+@font-face {
+  font-family: 'Terax Box';
+  src: local('Menlo'), local('Menlo-Regular');
+  unicode-range: U+2190-21FF, U+2500-25FF;
+}

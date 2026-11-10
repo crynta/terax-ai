@@ -95,6 +95,11 @@ import {
 import { liveWorking } from "./lib/stopControl";
 import { buildDocument, type ReaderTurn } from "./lib/transcript";
 import {
+  clampSegments,
+  type PromptSegment,
+  promptSegments,
+} from "./lib/promptSegments";
+import {
   findTranscript,
   followTranscript,
   openTranscript,
@@ -1643,9 +1648,16 @@ function PromptCard({
 }) {
   const [expanded, setExpanded] = useState(false);
   const text = turn.prompt ?? "";
-  const long = text.length > PROMPT_CLAMP;
-  const shown =
-    long && !expanded ? `${text.slice(0, PROMPT_CLAMP).trimEnd()}…` : text;
+  const segments = useMemo(
+    () => promptSegments(text, turn.pastes),
+    [text, turn.pastes],
+  );
+  const clamp = useMemo(
+    () => clampSegments(segments, PROMPT_CLAMP),
+    [segments],
+  );
+  const long = clamp.clipped;
+  const shown = long && !expanded ? clamp.shown : segments;
   return (
     <section
       aria-label="Your prompt"
@@ -1663,11 +1675,10 @@ function PromptCard({
           {commandLabel(turn.command)}
         </span>
       )}
-      {text && (
-        <p className="select-text whitespace-pre-wrap break-words text-[14.5px] leading-relaxed text-foreground">
-          <LinkifiedText text={shown} />
-        </p>
-      )}
+      {shown.map((segment, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: segments are fixed per prompt
+        <PromptSegmentView key={i} segment={segment} />
+      ))}
       {sessionId && turn.images.length > 0 && (
         <ImageStrip sessionId={sessionId} images={turn.images} />
       )}
@@ -1681,6 +1692,42 @@ function PromptCard({
         </button>
       )}
     </section>
+  );
+}
+
+/** One part of a prompt: text, a block kept on its grid, or a paste. */
+function PromptSegmentView({ segment }: { segment: PromptSegment }) {
+  if (segment.kind === "text") {
+    return (
+      <p className="select-text whitespace-pre-wrap break-words text-[14.5px] leading-relaxed text-foreground">
+        <LinkifiedText text={segment.text} />
+      </p>
+    );
+  }
+  const pre = segment.kind === "pre" || segment.pre;
+  const body = pre ? (
+    <pre className="terax-reader-mono terax-reader-diagram m-0 select-text text-[12.5px] text-foreground">
+      {segment.text}
+    </pre>
+  ) : (
+    <p className="select-text whitespace-pre-wrap break-words text-[14px] leading-relaxed text-foreground">
+      <LinkifiedText text={segment.text} />
+    </p>
+  );
+  if (segment.kind === "pre") {
+    return (
+      <div className="rounded-lg border border-border/50 bg-background/40 px-3 py-2">
+        {body}
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-1 rounded-lg border border-border/50 bg-background/40 px-3 py-2">
+      <span className="select-none text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground">
+        Pasted
+      </span>
+      {body}
+    </div>
   );
 }
 
