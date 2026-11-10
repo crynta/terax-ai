@@ -4,10 +4,14 @@ import { AgentIcon } from "@/modules/agents/lib/agentIcon";
 import { displayAgent } from "@/modules/agents/lib/format";
 import {
   basename,
+  groupRowsBySpace,
   type SessionRow,
+  type SpaceGroup,
   selectSessionRows,
 } from "@/modules/agents/lib/sessionRows";
 import { useAgentStore } from "@/modules/agents/store/agentStore";
+import { accentFor } from "@/modules/spaces/lib/spaceColor";
+import { useSpaces } from "@/modules/spaces/lib/useSpaces";
 import type { Tab } from "@/modules/tabs/lib/useTabs";
 import { useAgentActivityStore } from "@/modules/terminal/lib/agentActivity";
 import { ptyIdForLeaf } from "@/modules/terminal/lib/terminalSessionApi";
@@ -21,7 +25,7 @@ import {
   Loading03Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, type ReactNode, useEffect, useMemo, useState } from "react";
 import { resumeChat } from "../reader/lib/conversation";
 import {
   loadSessionTitles,
@@ -88,6 +92,25 @@ export function SessionsPanel({
     [sessions, phases, sessionIds, notifications, tabs],
   );
   const now = useNow(30_000);
+  const spaces = useSpaces((s) => s.spaces);
+  const activeSpaceId = useSpaces((s) => s.activeId);
+  const groups = useMemo(
+    () => groupRowsBySpace(rows, spaces, activeSpaceId),
+    [rows, spaces, activeSpaceId],
+  );
+  const [collapsed, setCollapsed] = useState(loadCollapsedSpaces);
+  const toggleSpace = (spaceId: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(spaceId)) next.delete(spaceId);
+      else next.add(spaceId);
+      saveCollapsedSpaces(next);
+      return next;
+    });
+  const titled = (row: SessionRow): SessionRow =>
+    row.claudeSessionId && customTitles[row.claudeSessionId]
+      ? { ...row, title: customTitles[row.claudeSessionId] }
+      : row;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -111,6 +134,25 @@ export function SessionsPanel({
       <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-3">
         {rows.length === 0 ? (
           <EmptyState onLaunchClaude={onLaunchClaude} />
+        ) : spaces.length > 1 ? (
+          groups.map((group) => (
+            <SpaceSection
+              key={group.spaceId}
+              group={group}
+              collapsed={collapsed.has(group.spaceId)}
+              onToggle={() => toggleSpace(group.spaceId)}
+            >
+              {group.rows.map((row) => (
+                <SessionCard
+                  key={row.leafId}
+                  row={titled(row)}
+                  now={now}
+                  onActivate={onActivate}
+                  onOpenReader={onOpenReader}
+                />
+              ))}
+            </SpaceSection>
+          ))
         ) : (
           SECTIONS.map((section) => {
             const sectionRows = rows.filter(section.match);
@@ -127,14 +169,7 @@ export function SessionsPanel({
                   {sectionRows.map((row) => (
                     <SessionCard
                       key={row.leafId}
-                      row={
-                        row.claudeSessionId && customTitles[row.claudeSessionId]
-                          ? {
-                              ...row,
-                              title: customTitles[row.claudeSessionId],
-                            }
-                          : row
-                      }
+                      row={titled(row)}
                       now={now}
                       onActivate={onActivate}
                       onOpenReader={onOpenReader}
@@ -180,6 +215,82 @@ export function SessionsPanel({
         )}
       </div>
     </div>
+  );
+}
+
+const COLLAPSED_KEY = "terax.sessions.collapsedSpaces";
+
+function loadCollapsedSpaces(): Set<string> {
+  try {
+    const saved = JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? "[]");
+    return new Set(Array.isArray(saved) ? saved.map(String) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveCollapsedSpaces(ids: ReadonlySet<string>): void {
+  try {
+    localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...ids]));
+  } catch {
+    // Remembering folded spaces is a convenience; storage may be blocked.
+  }
+}
+
+/** One space's sessions under a foldable header with its counts. */
+function SpaceSection({
+  group,
+  collapsed,
+  onToggle,
+  children,
+}: {
+  group: SpaceGroup;
+  collapsed: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  const counts = [
+    group.attention > 0 ? `${group.attention} need you` : null,
+    group.working > 0 ? `${group.working} working` : null,
+  ].filter(Boolean);
+  return (
+    <section className="mb-3">
+      <button
+        type="button"
+        aria-expanded={!collapsed}
+        onClick={onToggle}
+        className="flex w-full items-center gap-1.5 rounded-md px-1.5 pb-1.5 pt-1 text-left outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40"
+      >
+        <HugeiconsIcon
+          icon={collapsed ? ArrowRight01Icon : ArrowDown01Icon}
+          size={11}
+          strokeWidth={2.2}
+          className="shrink-0 text-muted-foreground"
+        />
+        <span
+          aria-hidden
+          className="size-2 shrink-0 rounded-full"
+          style={{ backgroundColor: accentFor(group) }}
+        />
+        <span className="min-w-0 truncate text-[11.5px] font-semibold text-foreground/90">
+          {group.name}
+        </span>
+        {group.current && (
+          <span className="shrink-0 rounded bg-primary/12 px-1 text-[9.5px] font-medium uppercase tracking-wide text-primary">
+            current
+          </span>
+        )}
+        <span
+          className={cn(
+            "ml-auto shrink-0 text-[10.5px] tabular-nums",
+            group.attention > 0 ? "text-agent-attention" : "text-muted-foreground",
+          )}
+        >
+          {counts.length > 0 ? counts.join(" · ") : group.rows.length}
+        </span>
+      </button>
+      {!collapsed && <ul className="flex flex-col gap-1.5">{children}</ul>}
+    </section>
   );
 }
 

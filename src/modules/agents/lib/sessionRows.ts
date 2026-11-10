@@ -1,4 +1,8 @@
-import type { Tab, TerminalTab } from "@/modules/tabs/lib/useTabs";
+import {
+  DEFAULT_SPACE_ID,
+  type Tab,
+  type TerminalTab,
+} from "@/modules/tabs/lib/useTabs";
 import type { AgentPhase } from "@/modules/terminal/lib/agentActivity";
 import { findLeafCwd, leafIds } from "@/modules/terminal/lib/panes";
 import type {
@@ -13,6 +17,8 @@ export type SessionPhase = AgentPhase;
 export type SessionRow = {
   leafId: number;
   tabId: number;
+  /** The space the session's tab belongs to. */
+  spaceId: string;
   agent: string;
   phase: SessionPhase;
   /** Custom tab title, else the tab's title, else the cwd's folder name. */
@@ -82,6 +88,7 @@ export function selectSessionRows(input: SessionRowsInput): SessionRow[] {
     rows.push({
       leafId: session.leafId,
       tabId: session.tabId,
+      spaceId: tab.spaceId || DEFAULT_SPACE_ID,
       agent: session.agent,
       phase,
       title:
@@ -120,4 +127,57 @@ export function countNeedingInput(rows: readonly SessionRow[]): number {
   let count = 0;
   for (const row of rows) if (row.phase === "attention") count += 1;
   return count;
+}
+
+/** The fields of a space the sidebar groups by. */
+export type SpaceInfo = { id: string; name: string; color?: number };
+
+/** The sessions of one space, as the sidebar shows them. */
+export type SpaceGroup = {
+  spaceId: string;
+  name: string;
+  color?: number;
+  /** The space on screen now. */
+  current: boolean;
+  /** Sorted as `selectSessionRows` sorts them. */
+  rows: SessionRow[];
+  attention: number;
+  working: number;
+};
+
+/**
+ * `rows` grouped by space: the current space first, then the others in the
+ * order the space switcher lists them; spaces without sessions are left out.
+ */
+export function groupRowsBySpace(
+  rows: readonly SessionRow[],
+  spaces: readonly SpaceInfo[],
+  activeId: string | null,
+): SpaceGroup[] {
+  const current = activeId ?? DEFAULT_SPACE_ID;
+  const known = new Map(spaces.map((space) => [space.id, space]));
+  const groups = new Map<string, SpaceGroup>();
+  for (const row of rows) {
+    let group = groups.get(row.spaceId);
+    if (!group) {
+      const space = known.get(row.spaceId);
+      group = {
+        spaceId: row.spaceId,
+        name: space?.name ?? "Other",
+        color: space?.color,
+        current: row.spaceId === current,
+        rows: [],
+        attention: 0,
+        working: 0,
+      };
+      groups.set(row.spaceId, group);
+    }
+    group.rows.push(row);
+    if (row.phase === "attention") group.attention += 1;
+    if (row.phase === "working") group.working += 1;
+  }
+  const order = new Map(spaces.map((space, index) => [space.id, index]));
+  const rank = (group: SpaceGroup) =>
+    group.current ? -1 : (order.get(group.spaceId) ?? spaces.length);
+  return [...groups.values()].sort((a, b) => rank(a) - rank(b));
 }

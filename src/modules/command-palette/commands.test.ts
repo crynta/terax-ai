@@ -108,6 +108,7 @@ describe("Sessions group", () => {
   const row = (over: Partial<SessionRow>): SessionRow => ({
     leafId: 10,
     tabId: 1,
+    spaceId: "default",
     agent: "claude",
     phase: "working",
     title: "terax-ai",

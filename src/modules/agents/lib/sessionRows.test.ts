@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Tab } from "@/modules/tabs/lib/useTabs";
-import { basename, countNeedingInput, selectSessionRows } from "./sessionRows";
+import {
+  basename,
+  countNeedingInput,
+  groupRowsBySpace,
+  type SessionRow,
+  selectSessionRows,
+} from "./sessionRows";
 import type { AgentNotification, AgentSession } from "./types";
 
 const SESSION = "0b5f4c2e-9a1d-4e3b-8c7f-1234567890ab";
@@ -130,5 +136,52 @@ describe("basename", () => {
     expect(basename("/r/api/")).toBe("api");
     expect(basename("C:\\work\\repo")).toBe("repo");
     expect(basename("/")).toBe("/");
+  });
+});
+
+describe("groupRowsBySpace", () => {
+  const row = (leafId: number, spaceId: string, phase: SessionRow["phase"]) =>
+    ({ leafId, spaceId, phase }) as SessionRow;
+  const spaces = [
+    { id: "default", name: "Main" },
+    { id: "sp-a", name: "Fluss", color: 2 },
+    { id: "sp-b", name: "Infra" },
+  ];
+
+  it("puts the current space first, then the switcher order, with counts", () => {
+    const groups = groupRowsBySpace(
+      [
+        row(1, "default", "working"),
+        row(2, "sp-b", "attention"),
+        row(3, "sp-b", "working"),
+        row(4, "sp-a", "finished"),
+      ],
+      spaces,
+      "sp-b",
+    );
+    expect(groups.map((g) => [g.name, g.current, g.attention, g.working])).toEqual([
+      ["Infra", true, 1, 1],
+      ["Main", false, 0, 1],
+      ["Fluss", false, 0, 0],
+    ]);
+    expect(groups[0].rows.map((r) => r.leafId)).toEqual([2, 3]);
+    expect(groups[2].color).toBe(2);
+  });
+
+  it("keeps sessions of a space it doesn't know, last", () => {
+    const groups = groupRowsBySpace([row(1, "gone", "idle"), row(2, "default", "idle")], spaces, null);
+    expect(groups.map((g) => g.name)).toEqual(["Main", "Other"]);
+  });
+
+  it("tags each row with its tab's space", () => {
+    const rows = selectSessionRows({
+      sessions: { 10: session(10, 1) },
+      phases: {},
+      sessionIds: {},
+      notifications: [],
+      tabs: [{ ...tabs[0], spaceId: "sp-a" }] as Tab[],
+      ptyIdForLeaf,
+    });
+    expect(rows[0].spaceId).toBe("sp-a");
   });
 });
