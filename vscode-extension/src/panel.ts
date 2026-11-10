@@ -139,7 +139,10 @@ export class ReaderHost implements vscode.Disposable, vscode.WebviewViewProvider
       },
       { retainContextWhenHidden: true },
     );
-    panel.iconPath = vscode.Uri.joinPath(this.context.extensionUri, "media", "icon.png");
+    panel.iconPath = {
+      light: vscode.Uri.joinPath(this.context.extensionUri, "media", "terax-mark-light.png"),
+      dark: vscode.Uri.joinPath(this.context.extensionUri, "media", "terax-mark-dark.png"),
+    };
     const connection = this.connect(panel.webview, () => leaf.leafId, "tab");
     this.tabs.set(leaf.leafId, panel);
     panel.onDidDispose(() => {
