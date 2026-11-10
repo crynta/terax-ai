@@ -521,10 +521,6 @@ export default function SessionReader({
     customTitle ?? doc.title ?? (cwd ? basename(cwd) : displayAgent(agent));
   const dialog = useClaudeDialog(leafId);
   const footerVisible = useClaudeFooter(leafId) !== null;
-  const bodyRef = useRef<HTMLDivElement | null>(null);
-  const bodyWidth = useElementWidth(bodyRef);
-  /** Wide panes keep a side panel beside the chat instead of over it. */
-  const docked = bodyWidth >= DOCK_MIN_PANE;
   /** Read off Claude's screen when visible: an Esc interrupt fires no hook. */
   const working = liveWorking(phase, activity, footerVisible);
   const linked = liveId !== null && viewing === null;
@@ -596,7 +592,7 @@ export default function SessionReader({
 
   const onReview = (changed: ChangedFile[]) => {
     composer.current?.submit(reviewPrompt(changed, cwd, home));
-    if (!docked) setPanel(null);
+    setPanel(null);
     setFollowing(true);
     requestAnimationFrame(() => {
       const el = scroller.current;
@@ -608,6 +604,20 @@ export default function SessionReader({
     setPanel(null);
     requestAnimationFrame(focusComposer);
   };
+  // Esc closes the open panel wherever focus is (a click inside the panel
+  // can leave it on the page body), unless a dialog or menu takes the key.
+  useEffect(() => {
+    if (!panel) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (document.querySelector('[role="dialog"], [role="menu"]')) return;
+      event.preventDefault();
+      setPanel(null);
+      requestAnimationFrame(focusComposer);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [panel, focusComposer]);
 
   const startNewChat = () => {
     setConfirmNewChat(false);
@@ -1199,12 +1209,12 @@ export default function SessionReader({
       items={chats}
       current={currentTurn}
       onPick={(id) => {
+        setPanel(null);
         void jumpToPrompt(id).then((shown) => {
           if (!shown)
             setNotice(
               "That turn is too far back to show here; open it from History.",
             );
-          else if (!docked) setPanel(null);
         });
       }}
       pins={pins}
@@ -1267,23 +1277,26 @@ export default function SessionReader({
         {diffDialog}
         {header}
         {pastBanner}
-        <div ref={bodyRef} className="relative flex min-h-0 flex-1">
+        <div className="relative flex min-h-0 flex-1">
           <div className="flex min-w-0 flex-1 flex-col">
             {documentBody}
             {composerBanners}
             {composerView}
           </div>
           {sidePanel && (
-            <div
-              className={cn(
-                "terax-reader-in flex flex-col border-l border-border/60",
-                docked
-                  ? "w-[420px] shrink-0 bg-sidebar/60"
-                  : "absolute inset-y-0 right-0 z-[8] w-[min(440px,100%)] bg-background shadow-[-18px_0_40px_-28px_rgba(0,0,0,0.9)]",
-              )}
-            >
-              {sidePanel}
-            </div>
+            <>
+              {/* A click on the chat behind the panel closes it. */}
+              <button
+                type="button"
+                tabIndex={-1}
+                aria-label="Close panel"
+                onClick={closePanels}
+                className="terax-reader-in absolute inset-0 z-[7] cursor-default bg-black/30 outline-none"
+              />
+              <div className="terax-reader-in absolute inset-y-0 right-0 z-[8] flex w-[min(520px,100%)] flex-col border-l border-border/60 bg-background shadow-[-18px_0_40px_-28px_rgba(0,0,0,0.9)]">
+                {sidePanel}
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -1876,23 +1889,4 @@ function LoadingState() {
       ))}
     </div>
   );
-}
-
-/** A docked side panel still leaves the chat a comfortable reading width. */
-const DOCK_MIN_PANE = 1100;
-
-/** `ref`'s current width, kept in step with resizes. */
-function useElementWidth(ref: { current: HTMLElement | null }): number {
-  const [width, setWidth] = useState(0);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    setWidth(el.clientWidth);
-    const observer = new ResizeObserver(([entry]) => {
-      setWidth(Math.round(entry.contentRect.width));
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [ref]);
-  return width;
 }
