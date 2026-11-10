@@ -6,7 +6,7 @@ import {
   SETTLED_MS,
   reconcilePhase,
   type ScreenRead,
-} from "./phaseReconciler";
+} from "./phaseRules";
 
 const box = (...above: string[]) =>
   [

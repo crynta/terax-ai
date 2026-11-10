@@ -84,3 +84,20 @@ describe("ScreenMirror", () => {
     mirror.dispose();
   });
 });
+
+describe("ScreenMirror roomier than the real terminal", () => {
+  // Claude drew for a 240-column terminal: full-width rules and a spinner,
+  // then redrew its live area as finished.
+  const rule = "─".repeat(240);
+  const working = frame(["✶ Churning… (2s · esc to interrupt)", "", rule, "❯ ", rule, "  Opus 5.5 | Notes"]);
+  const done = frame(["✻ Churned for 3s · done 4:15 PM", "", rule, "❯ ", rule, "  Opus 5.5 | Notes"]);
+  const chunks = [working, eraseLines(6) + done];
+
+  it("ends with Claude's real bottom lines and no stale frame", async () => {
+    const text = await screenAfter(chunks, 500, 120);
+    const lines = text.split("\n");
+    expect(lines.slice(-1)[0]).toBe("  Opus 5.5 | Notes");
+    expect(lines).toContain("✻ Churned for 3s · done 4:15 PM");
+    expect(lines.join("\n")).not.toContain("Churning");
+  });
+});

@@ -2,17 +2,24 @@ import * as vscode from "vscode";
 import { isClaudeCommand, OscSignalParser } from "./osc";
 import type { LeafState, ReaderPhase } from "./protocol";
 import { ScreenMirror } from "./screen";
+import { readScreen, reconcilePhase } from "../../src/modules/agents/lib/phaseRules";
 
 const SCREEN_PUSH_MS = 80;
+/** How often each Claude's screen copy is checked against its phase. */
+const RECONCILE_MS = 1500;
 const FINISHED_TTL_MS = 6000;
 /**
  * VS Code's stable API doesn't report a terminal's size, so the mirror is
  * roomy instead: Claude wraps its own output to the real width and moves the
  * cursor relatively, so a wider, taller copy ends with the same text at the
- * bottom (plus a few older lines above it).
+ * bottom (plus a few older lines above it). A copy narrower or shorter than
+ * the real terminal is not safe: wrapped rows throw Claude's redraws off, so
+ * this stays well above any panel's size.
  */
-const MIRROR_COLS = 220;
-const MIRROR_ROWS = 60;
+const MIRROR_COLS = 500;
+const MIRROR_ROWS = 120;
+/** Scrollback kept in the copy, for `@terminal` context. */
+const MIRROR_SCROLLBACK = 1000;
 
 /** One VS Code terminal the Reader can attach to. */
 export type Leaf = {
@@ -28,6 +35,10 @@ export type Leaf = {
   alive: boolean;
   finishedTimer: ReturnType<typeof setTimeout> | null;
   screenTimer: ReturnType<typeof setTimeout> | null;
+  /** When `phase` last changed, for the screen check. */
+  phaseSince: number;
+  /** Screen checks in a row that showed no work while the phase said working. */
+  quietReads: number;
 };
 
 type Listener = (leaf: Leaf, screenChanged: boolean) => void;
@@ -51,6 +62,40 @@ export class SessionTracker implements vscode.Disposable {
       vscode.window.onDidEndTerminalShellExecution((e) => this.onEnd(e)),
       vscode.window.onDidCloseTerminal((t) => this.onClose(t)),
     );
+    const timer = setInterval(() => this.reconcile(), RECONCILE_MS);
+    this.disposables.push(new vscode.Disposable(() => clearInterval(timer)));
+  }
+
+  /**
+   * Corrects each running Claude's phase from its screen: hooks miss turns
+   * that end without a Stop (an Esc interrupt, an API error) and the work
+   * after a permission answer, so the phase alone could stay "working".
+   */
+  private reconcile(): void {
+    for (const leaf of this.leaves.values()) {
+      const mirror = leaf.mirror;
+      if (!mirror || !leaf.alive || leaf.phase === null) continue;
+      void mirror.flush().then(() => {
+        if (leaf.mirror !== mirror || leaf.phase === null) return;
+        const text = mirror.screenText();
+        const read = readScreen(text);
+        const next = reconcilePhase(
+          leaf.phase,
+          read,
+          leaf.quietReads,
+          Date.now() - leaf.phaseSince,
+        );
+        if (leaf.phase === "working" && !read.busy && !read.footer && !read.dialog && next.quietReads === 1) {
+          // Claude's screen isn't recognisable: worth seeing why.
+          this.log.info(`leaf ${leaf.leafId}: no Claude activity or footer on screen; last lines:\n${text.split("\n").slice(-12).join("\n")}`);
+        }
+        leaf.quietReads = next.quietReads;
+        if (next.phase === null) return;
+        this.log.info(`leaf ${leaf.leafId}: screen shows ${next.phase} (was ${leaf.phase})`);
+        this.setPhase(leaf, next.phase);
+        this.emit(leaf, false);
+      });
+    }
   }
 
   onChange(l: Listener): vscode.Disposable {
@@ -99,6 +144,8 @@ export class SessionTracker implements vscode.Disposable {
         alive: false,
         finishedTimer: null,
         screenTimer: null,
+        phaseSince: Date.now(),
+        quietReads: 0,
       };
       this.leaves.set(terminal, leaf);
     }
@@ -134,9 +181,12 @@ export class SessionTracker implements vscode.Disposable {
     this.log.info(`claude started in "${e.terminal.name}" (leaf ${leaf.leafId}): ${e.execution.commandLine.value}`);
     this.stopRun(leaf);
     leaf.execution = e.execution;
-    leaf.mirror = new ScreenMirror(MIRROR_COLS, MIRROR_ROWS);
+    leaf.mirror = new ScreenMirror(MIRROR_COLS, MIRROR_ROWS, MIRROR_SCROLLBACK);
     leaf.cwd = e.execution.cwd?.fsPath ?? e.shellIntegration.cwd?.fsPath ?? leaf.cwd;
-    leaf.phase = "working";
+    // At its prompt until the first prompt's hook (or the screen) says work.
+    leaf.phase = "idle";
+    leaf.phaseSince = Date.now();
+    leaf.quietReads = 0;
     leaf.sessionId = null;
     leaf.startedAt = Date.now();
     leaf.screen = null;
@@ -171,6 +221,10 @@ export class SessionTracker implements vscode.Disposable {
   private setPhase(leaf: Leaf, phase: ReaderPhase): void {
     if (leaf.finishedTimer) clearTimeout(leaf.finishedTimer);
     leaf.finishedTimer = null;
+    if (leaf.phase !== phase) {
+      leaf.phaseSince = Date.now();
+      leaf.quietReads = 0;
+    }
     leaf.phase = phase;
     if (phase === "finished") {
       leaf.finishedTimer = setTimeout(() => {

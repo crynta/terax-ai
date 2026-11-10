@@ -2,7 +2,7 @@
   "name": "terax-claude-reader",
   "displayName": "Terax Reader for Claude Code",
   "description": "Terax's chat view for Claude Code sessions running in the VS Code terminal: cards, permission prompts, a prompt box, Stop, modes, changes and history.",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "publisher": "local",
   "license": "Apache-2.0",
   "private": true,
