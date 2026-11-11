@@ -27,6 +27,7 @@ import {
   ptyIdForLeaf,
   useAgentActivityStore,
 } from "@/modules/terminal";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   ArrowRight01Icon,
   Cancel01Icon,
@@ -102,6 +103,7 @@ export function TabBar({
   onOverrideLanguage,
   compact,
 }: Props) {
+  const terminalShell = usePreferencesStore((s) => s.terminalShell);
   const scrollRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -268,7 +270,7 @@ export function TabBar({
                     >
                       <TabIcon tab={t} />
                       <TabRenameInput
-                        initial={labelFor(t)}
+                        initial={labelFor(t, terminalShell)}
                         onCommit={(value) => {
                           onRename(t.id, value);
                           setEditingId(null);
@@ -467,7 +469,7 @@ export function TabBar({
                     {/* Preview tabs use italic to signal the transient state,
                         matching the visual convention from VSCode. */}
                     <span className={cn("truncate", isPreview && "italic")}>
-                      {labelFor(t)}
+                      {labelFor(t, terminalShell)}
                     </span>
                     {t.kind === "editor" && t.dirty ? (
                       <span
