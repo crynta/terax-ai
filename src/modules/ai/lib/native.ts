@@ -40,10 +40,13 @@ export type GlobResponse = { hits: GlobHit[]; truncated: boolean };
 
 export const native = {
   workspaceCurrentDir: () => invoke<string>("workspace_current_dir"),
-  workspaceAuthorize: (path: string) =>
+  workspaceAuthorize: (
+    path: string,
+    workspace: WorkspaceEnv = currentWorkspaceEnv(),
+  ) =>
     invoke<string>("workspace_authorize", {
       path,
-      workspace: currentWorkspaceEnv(),
+      workspace,
     }),
   readProjectMemory: (root: string, checkedPath: string, workspace: WorkspaceEnv) =>
     invoke<string | null>("fs_read_project_memory", {

@@ -1,9 +1,6 @@
 import { create } from "zustand";
 import { usePreferencesStore } from "@/modules/settings/preferences";
-import {
-  parseWorkspaceScopeKey,
-  type WorkspaceEnv,
-} from "@/modules/workspace";
+import { parseWorkspaceScopeKey, type WorkspaceEnv } from "@/modules/workspace";
 import {
   deleteSpaceData,
   newSpaceId,
@@ -23,14 +20,7 @@ type State = {
   spaces: SpaceMeta[];
   activeId: string | null;
   hydrated: boolean;
-  // Per-space active tab index loaded from disk, so persistence preserves it
-  // for spaces the user never visits this session.
-  initialActiveIndex: Record<string, number>;
-  hydrate: (
-    spaces: SpaceMeta[],
-    activeId: string | null,
-    initialActiveIndex?: Record<string, number>,
-  ) => void;
+  hydrate: (spaces: SpaceMeta[], activeId: string | null) => void;
   create: (input: CreateInput) => SpaceMeta;
   rename: (id: string, name: string) => void;
   setEnv: (id: string, env: WorkspaceEnv) => void;
@@ -44,10 +34,9 @@ export const useSpaces = create<State>((set, get) => ({
   spaces: [],
   activeId: null,
   hydrated: false,
-  initialActiveIndex: {},
 
-  hydrate: (spaces, activeId, initialActiveIndex = {}) => {
-    set({ spaces, activeId, initialActiveIndex, hydrated: true });
+  hydrate: (spaces, activeId) => {
+    set({ spaces, activeId, hydrated: true });
   },
 
   create: (input) => {

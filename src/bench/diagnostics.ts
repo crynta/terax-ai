@@ -10,16 +10,8 @@ function tabSummary(tabs: Tab[], activeId: number) {
     kind: tab.kind,
     active: tab.id === activeId,
     cold: "cold" in tab ? Boolean(tab.cold) : false,
-    leaves: tab.kind === "terminal" ? countLeaves(tab.paneTree) : 0,
+    leaves: tab.kind === "terminal" ? 1 : 0,
   }));
-}
-
-function countLeaves(node: { kind: string; children?: unknown[] }): number {
-  if (node.kind === "leaf") return 1;
-  return (node.children ?? []).reduce<number>(
-    (sum, child) => sum + countLeaves(child as typeof node),
-    0,
-  );
 }
 
 /**
