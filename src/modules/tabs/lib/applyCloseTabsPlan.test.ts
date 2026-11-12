@@ -29,16 +29,20 @@ function terminal(id: number, leafId: number, spaceId = "a"): Tab {
   };
 }
 
+const noAllocation = () => {
+  throw new Error("Unexpected tab allocation");
+};
+
 describe("applyCloseTabsPlan", () => {
   it("plans single-tab cleanup before React schedules any state update", () => {
     const tabs = [terminal(1, 10), terminal(2, 20), editor(3, "b")];
-    const first = planSingleTabClose(tabs, 2, 2);
+    const first = planSingleTabClose(tabs, 2, 2, noAllocation);
     if (!first) throw new Error("Expected terminal close plan");
     expect(first?.disposeLeafIds).toEqual([20]);
     expect(first?.nextActiveId).toBe(1);
     expect(first?.tabs.map((tab) => tab.id)).toEqual([1, 3]);
-    expect(planSingleTabClose(first.tabs, 2, 1)).toBeNull();
-    expect(planSingleTabClose(first.tabs, 1, 1)).toBeNull();
+    expect(planSingleTabClose(first.tabs, 2, 1, noAllocation)).toBeNull();
+    expect(planSingleTabClose(first.tabs, 1, 1, noAllocation)).toBeNull();
     expect(tabs).toHaveLength(3);
   });
 
@@ -47,6 +51,7 @@ describe("applyCloseTabsPlan", () => {
       [terminal(1, 10), editor(2), editor(3, "b")],
       2,
       3,
+      noAllocation,
     );
     expect(result?.nextActiveId).toBe(3);
     expect(result?.disposeLeafIds).toEqual([]);
@@ -68,8 +73,32 @@ describe("applyCloseTabsPlan", () => {
       },
     };
     expect(
-      planSingleTabClose([terminal(1, 10), split], 2, 1)?.disposeLeafIds,
+      planSingleTabClose([terminal(1, 10), split], 2, 1, noAllocation)
+        ?.disposeLeafIds,
     ).toEqual([20, 21]);
+  });
+
+  it("replaces the last Git graph in a background space without stealing focus", () => {
+    const other = terminal(1, 10, "b");
+    const graph: Tab = {
+      kind: "git-history",
+      id: 2,
+      spaceId: "a",
+      title: "History",
+      repoRoot: "/repo",
+    };
+    let nextId = 3;
+    const result = planSingleTabClose([other, graph], 2, 1, () => nextId++);
+    expect(result?.nextActiveId).toBe(1);
+    expect(result?.disposeLeafIds).toEqual([]);
+    expect(result?.tabs[0]).toBe(other);
+    expect(result?.tabs[1]).toMatchObject({
+      id: 3,
+      kind: "terminal",
+      spaceId: "a",
+      cwd: "/repo",
+      cold: true,
+    });
   });
 
   it("closes exactly the planned tabs and returns terminal leaves to dispose", () => {
