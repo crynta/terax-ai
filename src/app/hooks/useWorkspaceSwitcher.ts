@@ -1,12 +1,13 @@
-import { type RefObject, useCallback, useEffect, useState } from "react";
-import { homeDir } from "@tauri-apps/api/path";
 import { native } from "@/modules/ai/lib/native";
+import { withBootTimeout } from "@/modules/spaces/lib/useSpacesBoot";
 import type { Tab } from "@/modules/tabs";
 import {
   getWslHome,
   LOCAL_WORKSPACE,
   type WorkspaceEnv,
 } from "@/modules/workspace";
+import { homeDir } from "@tauri-apps/api/path";
+import { type RefObject, useCallback, useEffect, useState } from "react";
 
 async function resolveEnvHome(env: WorkspaceEnv): Promise<string> {
   return env.kind === "wsl"
@@ -54,10 +55,15 @@ export function useWorkspaceSwitcher({
   }, []);
 
   useEffect(() => {
-    native
-      .workspaceCurrentDir()
+    void withBootTimeout(
+      native.workspaceCurrentDir().catch(() => null),
+      5000,
+      () => {
+        console.warn("[terax] workspaceCurrentDir timed out; continuing boot");
+        return null;
+      },
+    )
       .then(setLaunchCwd)
-      .catch(() => setLaunchCwd(null))
       .finally(() => setLaunchCwdResolved(true));
   }, []);
 
