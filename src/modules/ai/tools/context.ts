@@ -1,3 +1,5 @@
+import { usePreferencesStore } from "@/modules/settings/preferences";
+
 export type ToolContext = {
   /** Active terminal tab cwd, used to resolve relative paths. Null = home. */
   getCwd: () => string | null;
@@ -21,6 +23,23 @@ export type ToolContext = {
   /** Active chat session id — used by tools that persist per-session state (todos). */
   getSessionId: () => string | null;
 };
+
+/**
+ * Resolves a tool's `needsApproval` for the current invocation. Pass the
+ * tool's intended gate as `needsApproval` and wrap it in a thunk
+ * (`needsApproval: () => gateApproval(true)`) so the pref is read live on each
+ * call, not captured once at tool-definition time.
+ *
+ * Bypass on -> false (the approval prompt is skipped). Bypass off -> the
+ * tool's own `needsApproval`. Only the prompt is skipped: the fs/shell
+ * deny-lists in each tool's execute (checkWritableCanonical /
+ * checkShellCommand) still run. Agent spawn/steer are hard-pinned to
+ * `needsApproval: true` and never pass through this helper.
+ */
+export function gateApproval(needsApproval: boolean): boolean {
+  if (usePreferencesStore.getState().aiBypassPermissions) return false;
+  return needsApproval;
+}
 
 export function resolvePath(rawPath: string, cwd: string | null): string {
   if (rawPath.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(rawPath))
