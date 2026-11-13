@@ -72,6 +72,8 @@ it("round trips literal paths through the platform shell", () => {
     "/tmp/a\\'b.txt",
   ];
   const quoted = paths.map((path) => quoteShellPath(path, windows));
+  // PowerShell startup can exceed the default Vitest timeout on Windows CI.
+  const options = { encoding: "utf8" as const, timeout: 15_000 };
   const output = windows
     ? execFileSync(
         "powershell.exe",
@@ -81,13 +83,11 @@ it("round trips literal paths through the platform shell", () => {
           "-Command",
           `[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); function Capture([string]$value) { [Console]::Write($value); [Console]::Write([char]0) }; ${quoted.map((path) => `Capture ${path}`).join("; ")}`,
         ],
-        { encoding: "utf8" },
+        options,
       )
-    : execFileSync("/bin/sh", ["-c", `printf '%s\\0' ${quoted.join(" ")}`], {
-        encoding: "utf8",
-      });
+    : execFileSync("/bin/sh", ["-c", `printf '%s\\0' ${quoted.join(" ")}`], options);
   expect(output).toBe(`${paths.join("\0")}\0`);
-});
+}, 20_000);
 
 const fishProgram = process.platform === "win32" ? "" : spawnSync("/bin/sh", ["-c", "command -v fish"], { encoding: "utf8" }).stdout.trim();
 it.runIf(Boolean(fishProgram))("round trips backslashes and apostrophes through fish", () => {

@@ -62,7 +62,7 @@ function harness(flags: number) {
     isMac: false,
     isWindows: true,
   });
-  const key = (type: "keydown" | "keyup") =>
+  const key = (type: "keydown" | "keyup", repeat = false) =>
     input.dispatchEvent(
       Object.assign(new Event(type, { bubbles: true, cancelable: true }), {
         key: "v",
@@ -72,7 +72,7 @@ function harness(flags: number) {
         shiftKey: false,
         altKey: false,
         metaKey: false,
-        repeat: false,
+        repeat,
         isComposing: false,
         getModifierState: () => false,
       }),
@@ -86,6 +86,42 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("Ctrl+V forwarded as a key when the clipboard has no text", () => {
   afterEach(() => vi.restoreAllMocks());
+
+  it("does not replace a pending press when the held paste key repeats", async () => {
+    const { controller, key, sent } = harness(3);
+    try {
+      key("keydown");
+      const firstRead = clipboard.resolve;
+      key("keydown", true);
+      const repeatRead = clipboard.resolve;
+      key("keyup");
+      firstRead("");
+      await settle();
+      expect(sent()).toEqual([PRESS, RELEASE]);
+      expect(repeatRead).toBe(firstRead);
+    } finally {
+      controller.dispose();
+    }
+  });
+
+  it("still accepts a separate paste press while an earlier read is pending", async () => {
+    const { controller, key, sent } = harness(3);
+    try {
+      key("keydown");
+      const firstRead = clipboard.resolve;
+      key("keyup");
+      key("keydown");
+      const secondRead = clipboard.resolve;
+      key("keyup");
+      expect(secondRead).not.toBe(firstRead);
+      firstRead("");
+      secondRead("");
+      await settle();
+      expect(sent()).toEqual([PRESS, RELEASE, PRESS, RELEASE]);
+    } finally {
+      controller.dispose();
+    }
+  });
 
   it("sends the release with the press when the key is up before the read ends", async () => {
     const { controller, key, sent } = harness(3);
