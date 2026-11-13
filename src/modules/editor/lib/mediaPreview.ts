@@ -1,6 +1,16 @@
-export type MediaPreviewKind = "image" | "video" | "audio" | "pdf";
+export type MediaPreviewKind = "image" | "video" | "audio" | "pdf" | "docx";
 
-const IMAGE_EXT = ["png", "jpg", "jpeg", "gif", "webp", "svg", "ico"];
+const IMAGE_EXT = [
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "webp",
+  "avif",
+  "bmp",
+  "svg",
+  "ico",
+];
 const VIDEO_EXT = ["mp4", "webm", "ogg", "mov"];
 const AUDIO_EXT = ["mp3", "wav", "flac", "aac", "m4a"];
 
@@ -10,6 +20,7 @@ export function mediaPreviewKind(path: string): MediaPreviewKind | null {
   if (VIDEO_EXT.includes(ext)) return "video";
   if (AUDIO_EXT.includes(ext)) return "audio";
   if (ext === "pdf") return "pdf";
+  if (ext === "docx") return "docx";
   return null;
 }
 

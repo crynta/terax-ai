@@ -105,6 +105,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "codemirror-languageserver": "^1.22.1",
+    "mammoth": "^1.13.0",
     "radix-ui": "^1.6.7",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

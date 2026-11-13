@@ -97,6 +97,10 @@ function lazyChunk(id: string): string | null {
   const pkg = packageOf(id);
   if (!pkg) return null;
 
+  // DOCX conversion is used only by the document preview. Keep the parser and
+  // its browser bundle out of every window's startup graph.
+  if (pkg === "mammoth") return "docx-preview";
+
   // Each AI provider SDK in its own chunk so unused providers
   // don't bloat the initial load (lazy-imported in agent.ts).
   const provider = AI_PROVIDER_CHUNKS[pkg];

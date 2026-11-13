@@ -80,7 +80,7 @@ Terax is a lightweight open-source terminal-first AI-native development environm
 - Inline AI autocomplete with local model support
 - AI edit diffs, accept or reject hunk by hunk
 - Opt-in language server support with diagnostics, navigation, completion, formatting, and custom servers
-- Rendered Markdown plus image, video, audio, and PDF viewing
+- Rendered Markdown and CSV/TSV previews, with image, video, audio, PDF, and DOCX viewing
 - Vim mode
 - Built-in editor themes including Kanagawa, Catppuccin, Rosé Pine, Everforest, Dracula, Solarized, Nord, Tokyo Night, GitHub, and Xcode
 

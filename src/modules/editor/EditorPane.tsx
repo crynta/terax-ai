@@ -60,6 +60,9 @@ import { useEditorThemeExt } from "./lib/useEditorThemeExt";
 import { initVimGlobals, vimHandlersExtension } from "./lib/vim";
 import { mediaPreviewKind } from "./lib/mediaPreview";
 import { MediaPreview } from "./MediaPreview";
+import { delimitedTextKind } from "./lib/csvPreview";
+import { CsvPreview } from "./CsvPreview";
+import { DocxPreview } from "./DocxPreview";
 
 initVimGlobals();
 
@@ -125,7 +128,12 @@ export const EditorPane = memo(
         path,
         onDirtyChange,
       });
-    const assetGrant = useAssetGrant((doc.status === "binary" || doc.status === "toolarge") && mediaPreviewKind(path) ? path : null);
+    const assetGrant = useAssetGrant(
+      (doc.status === "binary" || doc.status === "toolarge") &&
+        mediaPreviewKind(path)
+        ? path
+        : null,
+    );
     const reloadRef = useRef(reload);
     reloadRef.current = reload;
     const adoptDiskTextRef = useRef(adoptDiskText);
@@ -138,6 +146,8 @@ export const EditorPane = memo(
     );
     const languageRef = useRef<string | null>(null);
     const [langId, setLangId] = useState<string | null>(null);
+    const [csvRawPath, setCsvRawPath] = useState<string | null>(null);
+    const csvRaw = csvRawPath === path;
     const apiKeyRef = useRef<string | null>(null);
 
     useEffect(() => {
@@ -451,12 +461,14 @@ export const EditorPane = memo(
       void resolveLanguage(resolvePath).catch(() => {});
     }, [path, overrideLanguage]);
 
+    const documentSize = doc.status === "ready" ? doc.size : 0;
+
     useEffect(() => {
       const ext =
         overrideLanguage || (path.split(".").pop()?.toLowerCase() ?? null);
       languageRef.current = ext;
       if (doc.status !== "ready") return;
-      if (doc.size > SYNTAX_MAX_BYTES) {
+      if (documentSize > SYNTAX_MAX_BYTES) {
         setLangId(null);
         const view = cmRef.current?.view;
         view?.dispatch({ effects: languageCompartment.reconfigure([]) });
@@ -484,7 +496,7 @@ export const EditorPane = memo(
       return () => {
         cancelled = true;
       };
-    }, [path, doc.status, overrideLanguage]);
+    }, [path, doc.status, documentSize, overrideLanguage]);
 
     useImperativeHandle(
       ref,
@@ -582,14 +594,31 @@ export const EditorPane = memo(
       const isVideo = kind === "video";
       const isAudio = kind === "audio";
       const isPdf = kind === "pdf";
+      const isDocx = kind === "docx";
 
-      if (isImage || isVideo || isAudio || isPdf) {
+      if (isImage || isVideo || isAudio || isPdf || isDocx) {
         const assetUrl = assetGrant.urlFor(path);
-        if (!assetUrl) return (
-          <div className="p-4 text-xs text-muted-foreground">
-            {assetGrant.error ? <><p role="alert">Media preview unavailable: {assetGrant.error}</p><button type="button" className="mt-2 underline" onClick={assetGrant.retry}>Retry</button></> : "Loading media preview…"}
-          </div>
-        );
+        if (!assetUrl)
+          return (
+            <div className="p-4 text-xs text-muted-foreground">
+              {assetGrant.error ? (
+                <>
+                  <p role="alert">
+                    Media preview unavailable: {assetGrant.error}
+                  </p>
+                  <button
+                    type="button"
+                    className="mt-2 underline"
+                    onClick={assetGrant.retry}
+                  >
+                    Retry
+                  </button>
+                </>
+              ) : (
+                "Loading media preview…"
+              )}
+            </div>
+          );
         return (
           <div className="flex h-full min-h-0 flex-col items-center justify-center bg-background p-4 overflow-auto">
             {isImage && (
@@ -616,6 +645,7 @@ export const EditorPane = memo(
                 title={path.split("/").pop()}
               />
             )}
+            {isDocx && <DocxPreview src={assetUrl} size={doc.size} />}
           </div>
         );
       }
@@ -641,6 +671,18 @@ export const EditorPane = memo(
             </button>
           )}
         </div>
+      );
+    }
+
+    const delimiter =
+      doc.status === "ready" ? delimitedTextKind(path, doc.content) : null;
+    if (doc.status === "ready" && delimiter && !csvRaw) {
+      return (
+        <CsvPreview
+          content={doc.content}
+          delimiter={delimiter}
+          onEdit={() => setCsvRawPath(path)}
+        />
       );
     }
 
