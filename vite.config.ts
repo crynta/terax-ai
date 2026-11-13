@@ -101,6 +101,11 @@ function lazyChunk(id: string): string | null {
   // its browser bundle out of every window's startup graph.
   if (pkg === "mammoth") return "docx-preview";
 
+  // Spreadsheet parsing is another lazy preview. Keep its ZIP/XML parsers out
+  // of the DOCX chunk so opening a Word document does not load XLSX support.
+  if (["read-excel-file", "fflate", "saxen", "worker-f"].includes(pkg))
+    return "xlsx-preview";
+
   // Each AI provider SDK in its own chunk so unused providers
   // don't bloat the initial load (lazy-imported in agent.ts).
   const provider = AI_PROVIDER_CHUNKS[pkg];

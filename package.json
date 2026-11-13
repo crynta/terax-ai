@@ -110,6 +110,7 @@
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-resizable-panels": "^4.13.2",
+    "read-excel-file": "9.3.14",
     "sonner": "^2.0.8",
     "streamdown": "^2.6.0",
     "tailwind-merge": "^3.7.0",

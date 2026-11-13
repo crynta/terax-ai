@@ -1,4 +1,10 @@
-export type MediaPreviewKind = "image" | "video" | "audio" | "pdf" | "docx";
+export type MediaPreviewKind =
+  | "image"
+  | "video"
+  | "audio"
+  | "pdf"
+  | "docx"
+  | "xlsx";
 
 const IMAGE_EXT = [
   "png",
@@ -21,6 +27,7 @@ export function mediaPreviewKind(path: string): MediaPreviewKind | null {
   if (AUDIO_EXT.includes(ext)) return "audio";
   if (ext === "pdf") return "pdf";
   if (ext === "docx") return "docx";
+  if (ext === "xlsx") return "xlsx";
   return null;
 }
 

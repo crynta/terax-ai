@@ -1,8 +1,9 @@
 import { createElement, useEffect, useState, type ReactNode } from "react";
+import {
+  MAX_OFFICE_PREVIEW_BYTES,
+  validateOfficeArchive,
+} from "./lib/officeArchive";
 
-const MAX_DOCX_BYTES = 20 * 1024 * 1024;
-const MAX_DOCX_EXPANDED_BYTES = 64 * 1024 * 1024;
-const MAX_DOCX_ENTRIES = 4096;
 const ALLOWED_TAGS = new Set([
   "a",
   "blockquote",
@@ -46,7 +47,7 @@ export function DocxPreview({ src, size }: Props) {
   useEffect(() => {
     let cancelled = false;
     setState({ src });
-    if (size > MAX_DOCX_BYTES) {
+    if (size > MAX_OFFICE_PREVIEW_BYTES) {
       setState({ src, error: "DOCX preview is limited to 20 MB." });
       return;
     }
@@ -57,10 +58,10 @@ export function DocxPreview({ src, size }: Props) {
         if (!response.ok)
           throw new Error(`Could not read document (${response.status}).`);
         const bytes = await response.arrayBuffer();
-        if (bytes.byteLength > MAX_DOCX_BYTES) {
+        if (bytes.byteLength > MAX_OFFICE_PREVIEW_BYTES) {
           throw new Error("DOCX preview is limited to 20 MB.");
         }
-        validateDocxArchive(bytes);
+        validateOfficeArchive(bytes, "DOCX");
         const mammoth = await import("mammoth");
         const converter = mammoth.default;
         const result = await converter.convertToHtml(
@@ -95,67 +96,6 @@ export function DocxPreview({ src, size }: Props) {
       </article>
     </div>
   );
-}
-
-function validateDocxArchive(bytes: ArrayBuffer): void {
-  const view = new DataView(bytes);
-  const end = view.byteLength;
-  const firstPossibleEnd = Math.max(0, end - 22 - 0xffff);
-  let endRecord = -1;
-  for (let offset = end - 22; offset >= firstPossibleEnd; offset--) {
-    if (view.getUint32(offset, true) !== 0x06054b50) continue;
-    const commentLength = view.getUint16(offset + 20, true);
-    if (offset + 22 + commentLength === end) {
-      endRecord = offset;
-      break;
-    }
-  }
-  if (endRecord < 0) throw new Error("The DOCX archive is invalid.");
-
-  const disk = view.getUint16(endRecord + 4, true);
-  const centralDisk = view.getUint16(endRecord + 6, true);
-  const entriesOnDisk = view.getUint16(endRecord + 8, true);
-  const entryCount = view.getUint16(endRecord + 10, true);
-  const centralSize = view.getUint32(endRecord + 12, true);
-  const centralOffset = view.getUint32(endRecord + 16, true);
-  if (
-    disk !== 0 ||
-    centralDisk !== 0 ||
-    entriesOnDisk !== entryCount ||
-    entryCount === 0xffff ||
-    centralSize === 0xffffffff ||
-    centralOffset === 0xffffffff ||
-    entryCount > MAX_DOCX_ENTRIES ||
-    centralOffset + centralSize > endRecord
-  ) {
-    throw new Error("This DOCX archive is unsupported or too large to preview.");
-  }
-
-  let offset = centralOffset;
-  let expandedBytes = 0;
-  for (let index = 0; index < entryCount; index++) {
-    if (offset + 46 > centralOffset + centralSize) {
-      throw new Error("The DOCX archive is invalid.");
-    }
-    if (view.getUint32(offset, true) !== 0x02014b50) {
-      throw new Error("The DOCX archive is invalid.");
-    }
-    const uncompressedSize = view.getUint32(offset + 24, true);
-    if (uncompressedSize === 0xffffffff) {
-      throw new Error("ZIP64 DOCX files cannot be previewed.");
-    }
-    expandedBytes += uncompressedSize;
-    if (expandedBytes > MAX_DOCX_EXPANDED_BYTES) {
-      throw new Error("Expanded DOCX content is limited to 64 MB.");
-    }
-    const nameLength = view.getUint16(offset + 28, true);
-    const extraLength = view.getUint16(offset + 30, true);
-    const commentLength = view.getUint16(offset + 32, true);
-    offset += 46 + nameLength + extraLength + commentLength;
-  }
-  if (offset > centralOffset + centralSize) {
-    throw new Error("The DOCX archive is invalid.");
-  }
 }
 
 function PreviewMessage({ children }: { children: ReactNode }) {

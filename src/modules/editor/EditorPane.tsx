@@ -63,6 +63,7 @@ import { MediaPreview } from "./MediaPreview";
 import { delimitedTextKind } from "./lib/csvPreview";
 import { CsvPreview } from "./CsvPreview";
 import { DocxPreview } from "./DocxPreview";
+import { SpreadsheetPreview } from "./SpreadsheetPreview";
 
 initVimGlobals();
 
@@ -595,8 +596,9 @@ export const EditorPane = memo(
       const isAudio = kind === "audio";
       const isPdf = kind === "pdf";
       const isDocx = kind === "docx";
+      const isXlsx = kind === "xlsx";
 
-      if (isImage || isVideo || isAudio || isPdf || isDocx) {
+      if (isImage || isVideo || isAudio || isPdf || isDocx || isXlsx) {
         const assetUrl = assetGrant.urlFor(path);
         if (!assetUrl)
           return (
@@ -646,6 +648,7 @@ export const EditorPane = memo(
               />
             )}
             {isDocx && <DocxPreview src={assetUrl} size={doc.size} />}
+            {isXlsx && <SpreadsheetPreview src={assetUrl} size={doc.size} />}
           </div>
         );
       }

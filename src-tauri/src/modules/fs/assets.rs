@@ -119,9 +119,41 @@ pub fn serve<R: Runtime>(
 ) {
     let app = context.app_handle().clone();
     let owner = context.webview_label().to_owned();
+    let window_origin = app
+        .get_webview_window(&owner)
+        .and_then(|webview| webview.url().ok())
+        .map(|url| {
+            let port = url
+                .port()
+                .map(|port| format!(":{port}"))
+                .unwrap_or_default();
+            format!(
+                "{}://{}{port}",
+                url.scheme(),
+                url.host_str().unwrap_or_default()
+            )
+        });
     tauri::async_runtime::spawn_blocking(move || {
-        let response = respond(&app.state::<AssetGrants>(), &owner, &request)
+        let mut response = respond(&app.state::<AssetGrants>(), &owner, &request)
             .unwrap_or_else(|_| response(403, "text/plain", Vec::new()));
+        // Office previews fetch the granted asset cross-origin. Only expose
+        // bytes to the exact origin of the owning webview.
+        if let (Some(expected), Some(origin)) = (
+            window_origin.as_deref(),
+            request
+                .headers()
+                .get("Origin")
+                .and_then(|value| value.to_str().ok()),
+        ) {
+            if origin == expected {
+                response
+                    .headers_mut()
+                    .insert("Access-Control-Allow-Origin", origin.parse().unwrap());
+                response
+                    .headers_mut()
+                    .insert("Vary", "Origin".parse().unwrap());
+            }
+        }
         responder.respond(response);
     });
 }
@@ -283,9 +315,10 @@ fn asset_type(path: &Path) -> Option<&'static str> {
             "aac" => "audio/aac",
             "m4a" => "audio/mp4",
             "pdf" => "application/pdf",
-            // DOCX is granted only as bytes fetched by the document previewer;
-            // it is never navigated to or embedded as a browser document.
+            // Office files are fetched as bytes by the previewers, never
+            // navigated to or embedded as browser documents.
             "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             _ => return None,
         },
     )
