@@ -357,7 +357,7 @@ export const MODELS = [
     provider: "google",
     label: "Gemini 4 Hydrogen",
     hint: "Flagship",
-    description: "Strong reasoning with the latest features and high speed.",
+    description: "Strong reasoning with the latest features and decent speed.",
     capabilities: { intelligence: 5, speed: 3, cost: 3 },
     tags: ["vision", "reasoning", "tools", "coding"],
   },
