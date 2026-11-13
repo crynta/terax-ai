@@ -358,7 +358,7 @@ export const MODELS = [
     label: "Gemini 4 Hydrogen",
     hint: "Flagship",
     description: "Strong reasoning with the latest features and high speed.",
-    capabilities: { intelligence: 5, speed: 3, cost: 4 },
+    capabilities: { intelligence: 5, speed: 3, cost: 3 },
     tags: ["vision", "reasoning", "tools", "coding"],
   },
   {
@@ -367,7 +367,7 @@ export const MODELS = [
     label: "Gemini 3.5 Flash-Lite",
     hint: "Lite",
     description: "Fast, cheap, and lightweight multimodal model.",
-    capabilities: { intelligence: 3, speed: 5, cost: 4 },
+    capabilities: { intelligence: 3, speed: 5, cost: 3 },
     tags: ["vision", "tools"],
   },
   {
