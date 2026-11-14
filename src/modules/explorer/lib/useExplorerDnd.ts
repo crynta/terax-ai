@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import { excludeNestedSources } from "./batchMove";
+import { parentDir } from "./pathParent";
 
 export type ExplorerPathDropTarget = {
   updateTarget: (clientX: number, clientY: number) => boolean;
@@ -24,11 +25,6 @@ type Options = {
 };
 
 const THRESHOLD = 5;
-
-function parentDir(path: string): string {
-  const i = path.lastIndexOf("/");
-  return i > 0 ? path.slice(0, i) : path;
-}
 
 export function resolveExplorerMoveTarget(
   sources: string[],
