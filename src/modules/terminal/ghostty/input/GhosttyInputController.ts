@@ -166,6 +166,15 @@ export class GhosttyInputController {
     );
   }
 
+  // A paste with no text still reaches a bracketed-paste application as an
+  // empty paste, as in xterm. TUIs such as Claude Code read the clipboard
+  // themselves on it, which is how Cmd+V pastes an image.
+  private pasteEmpty(): void {
+    if (this.disposed || !this.options.model.modes().bracketedPaste) return;
+    this.nativeSelection?.reset();
+    this.emitText(encodeTerminalPaste("", true), "paste", false);
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -293,7 +302,11 @@ export class GhosttyInputController {
         this.paste(text);
         return;
       }
-      if (!data || !encoded || encoded.byteLength === 0) return;
+      if (!data) {
+        this.pasteEmpty();
+        return;
+      }
+      if (!encoded || encoded.byteLength === 0) return;
       this.options.onData(
         (flags & KITTY_REPORT_EVENT_TYPES) !== 0
           ? canonicalKittyPress(encoded)
