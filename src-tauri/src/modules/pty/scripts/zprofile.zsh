@@ -12,4 +12,12 @@
   ZDOTDIR="$_terax_zdotdir"
   unset _terax_zdotdir _terax_user_zdotdir
 }
+
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  if [[ -x /opt/homebrew/bin/brew ]] && [[ ":$PATH:" != *":/opt/homebrew/bin:"* ]]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+  elif [[ -x /usr/local/bin/brew ]] && [[ ":$PATH:" != *":/usr/local/bin:"* ]]; then
+    eval "$(/usr/local/bin/brew shellenv)"
+  fi
+fi
 :
