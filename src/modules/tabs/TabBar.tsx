@@ -53,6 +53,7 @@ import {
 import { useShallow } from "zustand/react/shallow";
 import { selectTabAgentStatus } from "./lib/tabAgentStatus";
 import { labelFor } from "./lib/tabLabel";
+import { tabWheelPixels } from "./lib/tabWheel";
 import type { EditorTab, Tab, TerminalTab } from "./lib/useTabs";
 import { NewTabMenu } from "./NewTabMenu";
 
@@ -190,10 +191,12 @@ export function TabBar({
     const el = scrollRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
-      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
-      if (el.scrollWidth <= el.clientWidth) return;
+      if (e.defaultPrevented) return;
+      const width = el.clientWidth;
+      const pixels = tabWheelPixels(e, width);
+      if (pixels === 0 || el.scrollWidth <= width) return;
       e.preventDefault();
-      el.scrollLeft += e.deltaY;
+      el.scrollLeft += pixels;
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
