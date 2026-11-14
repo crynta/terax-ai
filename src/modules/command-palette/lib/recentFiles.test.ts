@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   MAX_RECENT_FILES,
   recentFiles,
@@ -50,4 +50,28 @@ describe("persistence without localStorage", () => {
     expect(recentFiles("/a")).toEqual([]);
     expect(() => recordRecentFile("/a", "/a/x.ts")).not.toThrow();
   });
+});
+
+it("keeps separate histories for identical roots in local and WSL workspaces", () => {
+  const root = "/repo";
+  const entries = new Map([
+    [
+      "terax-palette-recent-files",
+      JSON.stringify({ [root]: ["/repo/local.ts"] }),
+    ],
+  ]);
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => entries.get(key) ?? null,
+    setItem: (key: string, value: string) => entries.set(key, value),
+  });
+  try {
+    expect(recentFiles(root, "wsl:Ubuntu")).toEqual([]);
+    recordRecentFile(root, "/repo/ubuntu.ts", "wsl:Ubuntu");
+    recordRecentFile(root, "/repo/debian.ts", "wsl:Debian");
+    expect(recentFiles(root, "local")).toEqual(["/repo/local.ts"]);
+    expect(recentFiles(root, "wsl:Ubuntu")).toEqual(["/repo/ubuntu.ts"]);
+    expect(recentFiles(root, "wsl:Debian")).toEqual(["/repo/debian.ts"]);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
