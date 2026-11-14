@@ -50,8 +50,8 @@ impl AssetGrants {
         if directory {
             super::read_policy::readable(&root)?;
         }
-        if !directory && media_type(&root).is_none() {
-            return Err("only media files can be granted".into());
+        if !directory && asset_type(&root).is_none() {
+            return Err("only supported preview files can be granted".into());
         }
         let mut state = self.0.lock().unwrap();
         if *state.generations.get(&owner).unwrap_or(&0) != generation {
@@ -119,9 +119,41 @@ pub fn serve<R: Runtime>(
 ) {
     let app = context.app_handle().clone();
     let owner = context.webview_label().to_owned();
+    let window_origin = app
+        .get_webview_window(&owner)
+        .and_then(|webview| webview.url().ok())
+        .map(|url| {
+            let port = url
+                .port()
+                .map(|port| format!(":{port}"))
+                .unwrap_or_default();
+            format!(
+                "{}://{}{port}",
+                url.scheme(),
+                url.host_str().unwrap_or_default()
+            )
+        });
     tauri::async_runtime::spawn_blocking(move || {
-        let response = respond(&app.state::<AssetGrants>(), &owner, &request)
+        let mut response = respond(&app.state::<AssetGrants>(), &owner, &request)
             .unwrap_or_else(|_| response(403, "text/plain", Vec::new()));
+        // Office previews fetch the granted asset cross-origin. Only expose
+        // bytes to the exact origin of the owning webview.
+        if let (Some(expected), Some(origin)) = (
+            window_origin.as_deref(),
+            request
+                .headers()
+                .get("Origin")
+                .and_then(|value| value.to_str().ok()),
+        ) {
+            if origin == expected {
+                response
+                    .headers_mut()
+                    .insert("Access-Control-Allow-Origin", origin.parse().unwrap());
+                response
+                    .headers_mut()
+                    .insert("Vary", "Origin".parse().unwrap());
+            }
+        }
         responder.respond(response);
     });
 }
@@ -195,7 +227,12 @@ fn respond(
     if !within(&actual, &grant) {
         return Err("opened asset escaped its grant".into());
     }
-    let mime = media_type(&actual).ok_or("script-capable documents are not media")?;
+    let mime = asset_type(&actual).ok_or("unsupported preview asset")?;
+    if grant.directory
+        && mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    {
+        return Err("DOCX preview requires a direct file grant".into());
+    }
     let meta = file.metadata().map_err(|e| e.to_string())?;
     if !meta.is_file() {
         return Err("asset is not a regular file".into());
@@ -257,7 +294,7 @@ fn within(path: &Path, grant: &Grant) -> bool {
     }
 }
 
-fn media_type(path: &Path) -> Option<&'static str> {
+fn asset_type(path: &Path) -> Option<&'static str> {
     Some(
         match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
             "png" => "image/png",
@@ -278,6 +315,10 @@ fn media_type(path: &Path) -> Option<&'static str> {
             "aac" => "audio/aac",
             "m4a" => "audio/mp4",
             "pdf" => "application/pdf",
+            // Office files are fetched as bytes by the previewers, never
+            // navigated to or embedded as browser documents.
+            "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             _ => return None,
         },
     )

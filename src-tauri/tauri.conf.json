@@ -111,6 +111,12 @@
           "xml", "yaml", "yml", "toml", "ini", "cfg", "conf", "properties",
           "sh", "bash", "zsh", "sql", "graphql", "proto"
         ]
+      },
+      {
+        "name": "Terax Spreadsheet",
+        "role": "Editor",
+        "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "ext": ["xlsx"]
       }
     ]
   },
