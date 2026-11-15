@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   setFavoriteModelIds: vi.fn(),
   setRecentModelIds: vi.fn(),
   setOpenrouterModelId: vi.fn(),
+  setRequestyModelId: vi.fn(),
   emitKeysChanged: vi.fn(),
 }));
 vi.mock("react", async (original) => ({
@@ -38,6 +39,7 @@ vi.mock("@/modules/settings/store", async (original) => ({
   setFavoriteModelIds: state.setFavoriteModelIds,
   setRecentModelIds: state.setRecentModelIds,
   setOpenrouterModelId: state.setOpenrouterModelId,
+  setRequestyModelId: state.setRequestyModelId,
   emitKeysChanged: state.emitKeysChanged,
 }));
 vi.mock("@/modules/settings/preferences", () => {
@@ -53,6 +55,7 @@ vi.mock("@/modules/settings/preferences", () => {
         },
       ],
       openrouterModelId: "model",
+      requestyModelId: "openai/gpt-4o-mini",
       favoriteModelIds: ["compat-custom"],
       recentModelIds: [],
     },
@@ -101,7 +104,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   state.cursor = 0;
   state.slots = [
-    { openai: "stored", openrouter: "stored" },
+    { openai: "stored", openrouter: "stored", requesty: "stored" },
     { custom: "stored" },
     new Set(),
   ];
@@ -109,7 +112,7 @@ beforeEach(() => {
   state.invoke.mockRejectedValue(new Error("keychain denied"));
 });
 
-it.each(["openai", "openrouter", "custom"])(
+it.each(["openai", "openrouter", "requesty", "custom"])(
   "retains %s settings and reports a failed deletion",
   async (id) => {
     const target = card(ModelsSection(), id);
@@ -120,6 +123,7 @@ it.each(["openai", "openrouter", "custom"])(
     });
     expect(state.setCustomEndpoints).not.toHaveBeenCalled();
     expect(state.setOpenrouterModelId).not.toHaveBeenCalled();
+    expect(state.setRequestyModelId).not.toHaveBeenCalled();
     expect(state.emitKeysChanged).not.toHaveBeenCalled();
     for (const setter of state.setters) expect(setter).not.toHaveBeenCalled();
   },
@@ -166,3 +170,11 @@ it.each(["models", "general"])(
     ).toBe(true);
   },
 );
+
+it("clears the Requesty model id once its key is removed", async () => {
+  state.invoke.mockResolvedValue(undefined);
+  state.emitKeysChanged.mockResolvedValue(undefined);
+  await card(ModelsSection(), "requesty")?.onRemove();
+  expect(state.setRequestyModelId).toHaveBeenCalledWith("");
+  expect(state.setOpenrouterModelId).not.toHaveBeenCalled();
+});

@@ -68,8 +68,8 @@ import {
   setOpenaiCompatibleContextLimit,
   setOpenaiCompatibleModelId,
   setOpenrouterModelId,
-  setRequestyModelId,
   setRecentModelIds,
+  setRequestyModelId,
   setSttProvider,
   setWhispercppBaseURL,
 } from "@/modules/settings/store";
