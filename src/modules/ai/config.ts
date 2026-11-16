@@ -352,6 +352,7 @@ export const MODELS = [
   },
 
   // ── Google ────────────────────────────────────────────────────────────────
+  // -------Gemini-----
   {
     id: "gemini-4-hydrogen",
     provider: "google",
@@ -362,12 +363,30 @@ export const MODELS = [
     tags: ["vision", "reasoning", "tools", "coding"],
   },
   {
+    id: "gemini-3.8-flash",
+    provider: "google",
+    label: "Gemini 3.8 Flash",
+    hint: "Fast",
+    description: "Latest Gemini flash model with great speed and quality.",
+    capabilities: { intelligence: 4, speed: 5, cost: 4 },
+    tags: ["vision", "tools", "coding", "reasoning"],
+  },
+  {
+    id: "gemini-3.6-flash",
+    provider: "google",
+    label: "Gemini 3.6 Flash",
+    hint: "Fast",
+    description: "Fast Google multimodal model with great intelligence level.",
+    capabilities: { intelligence: 4, speed: 5, cost: 4 },
+    tags: ["vision", "tools", "coding", "reasoning"],
+  },
+  {
     id: "gemini-3.5-flash-lite",
     provider: "google",
     label: "Gemini 3.5 Flash-Lite",
     hint: "Lite",
     description: "Fast, cheap, and lightweight multimodal model.",
-    capabilities: { intelligence: 3, speed: 5, cost: 3 },
+    capabilities: { intelligence: 3, speed: 5, cost: 5 },
     tags: ["vision", "tools"],
   },
   {
@@ -424,6 +443,26 @@ export const MODELS = [
     capabilities: { intelligence: 3, speed: 5, cost: 5 },
     tags: ["vision", "tools"],
   },
+  // -------Gemma-----
+  {
+    id: "gemma-4-31b-it",
+    provider: "google",
+    label: "Gemma 4 31B",
+    hint: "Heavy",
+    description: "State-of-The-Art Google open model with great intelligence.",
+    capabilities: { intelligence: 4, speed: 2, cost: 3 },
+    tags: ["vision", "tools", "coding", "reasoning"],
+  },
+  {
+    id: "gemma-4-26b-a4b-it",
+    provider: "google",
+    label: "Gemma 4 26B",
+    hint: "Balanced",
+    description: "A lighter Gemma model with fast responses mixed with raw intelligence.",
+    capabilities: { intelligence: 3, speed: 4, cost: 4 },
+    tags: ["vision", "tools", "coding", "reasoning"],
+  },
+  
 
   // ── xAI ───────────────────────────────────────────────────────────────────
   {
@@ -764,6 +803,8 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "claude-sonnet-4-6": 1_000_000,
   "claude-haiku-4-5": 200_000,
   "claude-opus-4-6": 1_000_000,
+  "gemini-3.8-flash": 1_000_000,
+  "gemini-3.6-flash": 1_000_000,
   "gemini-3.5-flash": 1_000_000,
   "gemini-3.5-flash-lite": 1_000_000,
   "gemini-3.1-flash-lite": 1_000_000,
@@ -772,6 +813,8 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "gemini-3-flash-preview": 1_000_000,
   "gemini-2.5-pro": 1_000_000,
   "gemini-2.5-flash": 1_000_000,
+  "gemma-4-26b-a4b-it": 262_144,
+  "gemma-4-31b-it": 262_144,
   "grok-4.5": 500_000,
   "grok-4.20-reasoning": 2_000_000,
   "grok-4.20-non-reasoning": 2_000_000,
@@ -832,6 +875,8 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   "claude-opus-4-6": { input: 15, output: 75, cacheRead: 1.5 },
   "claude-sonnet-4-6": { input: 3, output: 15, cacheRead: 0.3 },
   "claude-haiku-4-5": { input: 1, output: 5, cacheRead: 0.1 },
+  "gemini-3.8-flash": { input: 0.75, output: 3.75, cacheRead: 0.075 },
+  "gemini-3.6-flash": { input: 0.75, output: 3.75, cacheRead: 0.075 },
   "gemini-3.5-flash": { input: 0.3, output: 2.5, cacheRead: 0.075 },
   "gemini-3.5-flash-lite": { input: 0.3, output: 2.5, cacheRead: 0.03 },
   "gemini-3.1-flash-lite": { input: 0.075, output: 0.3, cacheRead: 0.015 },
@@ -840,6 +885,8 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   "gemini-3-flash-preview": { input: 0.3, output: 2.5, cacheRead: 0.075 },
   "gemini-2.5-pro": { input: 1.25, output: 10, cacheRead: 0.31 },
   "gemini-2.5-flash": { input: 0.3, output: 2.5, cacheRead: 0.075 },
+  "gemma-4-26b-a4b-it":{ input: 0, output: 0, cacheRead: 0 },
+  "gemma-4-31b-a4b":{ input: 0, output: 0, cacheRead: 0 },
   "grok-4.5": { input: 2, output: 6, cacheRead: 0.5 },
   "grok-4.20-reasoning": { input: 3, output: 15 },
   "grok-4.20-non-reasoning": { input: 1, output: 5 },
