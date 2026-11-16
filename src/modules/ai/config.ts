@@ -450,7 +450,7 @@ export const MODELS = [
     label: "Gemma 4 31B",
     hint: "Heavy",
     description: "State-of-The-Art Google open model with great intelligence.",
-    capabilities: { intelligence: 4, speed: 2, cost: 3 },
+    capabilities: { intelligence: 4, speed: 2, cost: 5 },
     tags: ["vision", "tools", "coding", "reasoning"],
   },
   {
@@ -459,7 +459,7 @@ export const MODELS = [
     label: "Gemma 4 26B",
     hint: "Balanced",
     description: "A lighter Gemma model with fast responses mixed with raw intelligence.",
-    capabilities: { intelligence: 3, speed: 4, cost: 4 },
+    capabilities: { intelligence: 3, speed: 4, cost: 5 },
     tags: ["vision", "tools", "coding", "reasoning"],
   },
   
