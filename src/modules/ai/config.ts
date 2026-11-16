@@ -189,6 +189,17 @@ export type ModelInfo = {
 
 export const MODELS = [
   // ── OpenAI ────────────────────────────────────────────────────────────────
+  
+  {
+    id: "gpt-6-astra",
+    provider: "openai",
+    label: "GPT-6 Astra",
+    hint: "Flagship",
+    description: "Latest and greatest OpenAI model.",
+    capabilities: { intelligence: 5, speed: 4, cost: 1 },
+    tags: ["vision", "reasoning", "tools", "coding"],
+    supportsTemperature: false,
+  },
   {
     id: "gpt-5.6",
     provider: "openai",
@@ -805,6 +816,7 @@ export const DEFAULT_MODEL_ID: ModelId = "gpt-5.4-mini";
  *  context-usage indicator in the AI mini-window header. Conservative
  *  estimates — actual provider limits may shift. */
 export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
+  "gpt-6-astra": 1_050_000,
   "gpt-5.6": 1_050_000,
   "gpt-5.6-terra": 1_050_000,
   "gpt-5.6-luna": 1_050_000,
@@ -879,6 +891,7 @@ export type ModelPricing = {
 };
 
 export const MODEL_PRICING: Record<string, ModelPricing> = {
+  "gpt-6-astra": { input: 10, output: 50 },
   "gpt-5.6": { input: 5, output: 30, cacheRead: 0.5 },
   "gpt-5.6-terra": { input: 2.5, output: 15, cacheRead: 0.25 },
   "gpt-5.6-luna": { input: 1, output: 6, cacheRead: 0.1 },
