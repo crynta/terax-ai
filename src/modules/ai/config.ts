@@ -854,7 +854,7 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "grok-4.3": 1_000_000,
   "grok-build-0.1": 256_000,
   "deepseek-v4-pro": 1_000_000,
-  "deepseek-v4-flash": 1_000_000,
+  "deepseek-flash": 1_000_000,
   "deepseek-reasoner": 128_000,
   "gpt-oss-120b": 128_000,
   "llama3.3-70b": 128_000,
@@ -929,7 +929,7 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   "grok-4.3": { input: 1.25, output: 2.5 },
   "grok-build-0.1": { input: 1, output: 2 },
   "deepseek-v4-pro": { input: 0.28, output: 1.1, cacheRead: 0.028 },
-  "deepseek-v4-flash": { input: 0.07, output: 0.27, cacheRead: 0.007 },
+  "deepseek-flash": { input: 0.07, output: 0.27, cacheRead: 0.007 },
   "deepseek-reasoner": { input: 0.55, output: 2.19, cacheRead: 0.14 },
 };
 
@@ -987,7 +987,7 @@ export const DEFAULT_AUTOCOMPLETE_MODEL: Partial<Record<ProviderId, string>> = {
   anthropic: "claude-haiku-4-5",
   google: "gemini-2.5-flash",
   xai: "grok-4.3",
-  deepseek: "deepseek-v4-flash",
+  deepseek: "deepseek-flash",
   openrouter: "openai/gpt-5.4-mini",
   "openai-compatible": "",
 };
@@ -1086,7 +1086,7 @@ const LITE_SYSTEM_PROMPT_MODEL_IDS = new Set<string>([
   "claude-haiku-4-5",
   "gemini-2.5-flash",
   "gemini-3-flash-preview",
-  "deepseek-v4-flash",
+  "deepseek-flash",
   "gpt-oss-120b",
   "openai/gpt-oss-20b",
   "openai/gpt-oss-120b",
