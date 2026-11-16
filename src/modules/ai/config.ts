@@ -608,7 +608,7 @@ export const MODELS = [
     capabilities: { intelligence: 4, speed: 5, cost: 5 },
     tags: ["tools"],
   },
-  // deepseek-r1-distill-llama-70b is no longer avaiblable through groq api.
+  // deepseek-r1-distill-llama-70b is no longer avaiblable through Groq API.
 
   // ── OpenRouter (gateway; model id is user-supplied at runtime) ────────────
   {
