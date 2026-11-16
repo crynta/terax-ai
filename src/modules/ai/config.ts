@@ -886,7 +886,7 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   "gemini-2.5-pro": { input: 1.25, output: 10, cacheRead: 0.31 },
   "gemini-2.5-flash": { input: 0.3, output: 2.5, cacheRead: 0.075 },
   "gemma-4-26b-a4b-it":{ input: 0, output: 0, cacheRead: 0 },
-  "gemma-4-31b-a4b":{ input: 0, output: 0, cacheRead: 0 },
+  "gemma-4-31b-it":{ input: 0, output: 0, cacheRead: 0 },
   "grok-4.5": { input: 2, output: 6, cacheRead: 0.5 },
   "grok-4.20-reasoning": { input: 3, output: 15 },
   "grok-4.20-non-reasoning": { input: 1, output: 5 },
