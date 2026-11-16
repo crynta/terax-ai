@@ -241,8 +241,11 @@ html[data-vibrancy="on"] {
   --frame: color-mix(in oklab, var(--card) 55%, transparent);
 }
 
+html[data-chrome="borderless"] {
+  --window-radius: 12px;
+}
 html[data-chrome="borderless"] .terax-bg-surface {
-  border-radius: 12px;
+  border-radius: var(--window-radius);
 }
 /* Window drag (macOS WebKit): while `data-live-resize` is set (see
  * modules/theme/livePageResize) the document is given an invisible size rounded
@@ -277,13 +280,18 @@ html[data-chrome="borderless"] body {
 html[data-chrome="borderless"] #root,
 html[data-chrome="borderless"] #settings-root {
   height: 100%;
-  border-radius: 12px;
+  border-radius: var(--window-radius);
   overflow: hidden;
   border: 1px solid var(--border);
   background: var(--background);
 }
 html[data-chrome="borderless"] #root {
   background: var(--frame);
+}
+
+/* Modal backdrops are portaled to body, outside the rounded app root. */
+html[data-chrome="borderless"] :is([data-slot="dialog-overlay"], [data-slot="alert-dialog-overlay"], [data-slot="sheet-overlay"]) {
+  border-radius: var(--window-radius);
 }
 
 
