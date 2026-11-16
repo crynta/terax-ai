@@ -570,7 +570,17 @@ export const MODELS = [
     tags: ["tools", "coding"],
   },
 
-  // ── Groq (autocomplete-tier) ──────────────────────────────────────────────
+  // ── Groq ──────────────────────────────────────────────
+
+  {
+    id: "openai/gpt-oss-120b",
+    provider: "groq",
+    label: "GPT-OSS 120B",
+    hint: "Balanced",
+    description: "Deep reasoning and tool use with fast Groq inference.",
+    capabilities: { intelligence: 4, speed: 4, cost: 3 },
+    tags: ["tools", "coding", "reasoning"],
+  },
   {
     id: "openai/gpt-oss-20b",
     provider: "groq",
@@ -581,6 +591,15 @@ export const MODELS = [
     tags: ["tools", "coding"],
   },
   {
+    id: "qwen/qwen3.8-27b",
+    provider: "groq",
+    label: "Qwen 3.8 27B",
+    hint: "Fast",
+    description: "Fast open model by Alibaba.",
+    capabilities: { intelligence: 3, speed: 5, cost: 2 },
+    tags: ["tools", "coding", "vision", "reasoning"],
+  },
+  {
     id: "llama-3.3-70b-versatile",
     provider: "groq",
     label: "Llama 3.3 70B",
@@ -589,15 +608,7 @@ export const MODELS = [
     capabilities: { intelligence: 4, speed: 5, cost: 5 },
     tags: ["tools"],
   },
-  {
-    id: "deepseek-r1-distill-llama-70b",
-    provider: "groq",
-    label: "DeepSeek R1 Distill 70B",
-    hint: "Thinking",
-    description: "Reasoning-distilled Llama on Groq.",
-    capabilities: { intelligence: 4, speed: 5, cost: 5 },
-    tags: ["reasoning", "tools"],
-  },
+  // deepseek-r1-distill-llama-70b is no longer avaiblable through groq api.
 
   // ── OpenRouter (gateway; model id is user-supplied at runtime) ────────────
   {
@@ -773,9 +784,10 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "gpt-oss-120b": 128_000,
   "llama3.3-70b": 128_000,
   "qwen-3-32b": 32_000,
+  "openai/gpt-oss-120b": 131_072,
   "openai/gpt-oss-20b": 128_000,
   "llama-3.3-70b-versatile": 128_000,
-  "deepseek-r1-distill-llama-70b": 128_000,
+  "qwen/qwen3.8-27b": 131_072,
   "openrouter-custom": 256_000,
   "openai-compatible-custom": 128_000,
   "lmstudio-local": 32_000,
@@ -995,6 +1007,8 @@ const LITE_SYSTEM_PROMPT_MODEL_IDS = new Set<string>([
   "deepseek-v4-flash",
   "gpt-oss-120b",
   "openai/gpt-oss-20b",
+  "openai/gpt-oss-120b",
+  "qwen/qwen3.8-27b",
   "llama3.3-70b",
   "llama-3.3-70b-versatile",
   "qwen-3-32b",
