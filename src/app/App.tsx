@@ -41,6 +41,7 @@ import { useControlBridge } from "@/modules/control";
 import {
   type EditorPaneHandle,
   NewEditorDialog,
+  noteRetarget,
   useApplyEditorFontSize,
   useEditorFileSync,
 } from "@/modules/editor";
@@ -747,6 +748,7 @@ export default function App() {
         if (tab.kind !== "editor" && tab.kind !== "markdown") continue;
         const path = renamedPath(tab.path, from, to);
         if (path === null) continue;
+        if (tab.kind === "editor" && !tab.cold) noteRetarget(tab.path, path);
         const i = path.lastIndexOf("/");
         updateTab(tab.id, {
           path,
