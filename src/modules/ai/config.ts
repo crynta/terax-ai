@@ -551,9 +551,9 @@ export const MODELS = [
     tags: ["reasoning", "tools", "coding"],
   },
   {
-    id: "deepseek-v4-flash",
+    id: "deepseek-flash",
     provider: "deepseek",
-    label: "DeepSeek V4 Flash",
+    label: "DeepSeek V4.1 Flash",    // v4 routes to v4.1 temporarily. v4 is no longer accesible.
     hint: "Fast",
     description: "Cheap and fast everyday tier.",
     capabilities: { intelligence: 4, speed: 5, cost: 5 },
