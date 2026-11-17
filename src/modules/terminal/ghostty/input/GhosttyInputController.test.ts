@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeElement, FakeTextArea } from "./fakeTextArea";
 import { GhosttyInputController } from "./GhosttyInputController";
 import { terminalMouseModifiers } from "./TerminalMouse";
-import { MAX_WHEEL_REPORTS_PER_EVENT } from "./terminalWheel";
 
 describe("terminalMouseModifiers", () => {
   it("encodes xterm Shift, Alt, and Control bits", () => {
@@ -54,37 +53,23 @@ describe("GhosttyInputController", () => {
     });
 
     it.each([
-      [0, 60, 1],
-      [0, 120, 2],
-      [0, 170, 2],
-      [1, 3, 1],
-      [1, 6, 2],
-      [2, 0.25, 2],
-    ])(
-      "reports one notch per three lines, in one write (mode %s, delta %s -> %s)",
-      (mode, delta, reports) => {
-        h.wheel(delta, mode);
-        expect(h.reports()).toEqual([DOWN.repeat(reports)]);
-        h.wheel(-delta, mode);
-        expect(h.reports()).toEqual([DOWN.repeat(reports), UP.repeat(reports)]);
-      },
-    );
-
-    it.each([
-      [0, 2000],
+      [0, 6000],
       [0, Number.MAX_VALUE],
-      [1, 1000],
+      [1, 1200],
       [2, 40],
     ])(
-      "caps a runaway event (mode %s, delta %s) and queues no excess",
+      "sends one notch per fast wheel event (mode %s, delta %s) and queues no excess",
       (mode, delta) => {
         h.wheel(delta, mode);
-        expect(h.reports()).toEqual([DOWN.repeat(MAX_WHEEL_REPORTS_PER_EVENT)]);
+        h.wheel(delta, mode);
+        expect(h.reports()).toEqual([DOWN, DOWN]);
         h.onData.mockClear();
-        h.wheel(-30);
+        h.wheel(30);
         expect(h.onData).not.toHaveBeenCalled();
+        h.wheel(30);
         h.wheel(-30);
-        expect(h.reports()).toEqual([UP]);
+        h.wheel(-30);
+        expect(h.reports()).toEqual([DOWN, UP]);
       },
     );
 
@@ -114,12 +99,14 @@ describe("GhosttyInputController", () => {
 
     it("scales the distance by the scroll speed preference at once", () => {
       h.speed.value = 0.5;
-      h.wheel(120);
+      h.wheel(60);
+      expect(h.onData).not.toHaveBeenCalled();
+      h.wheel(60);
       expect(h.reports()).toEqual([DOWN]);
       h.speed.value = 3;
       h.onData.mockClear();
-      h.wheel(40);
-      expect(h.reports()).toEqual([DOWN.repeat(2)]);
+      h.wheel(20);
+      expect(h.reports()).toEqual([DOWN]);
     });
 
     it.each([true, false])(
@@ -216,11 +203,9 @@ describe("GhosttyInputController", () => {
         expect(h.reports()).toEqual(["\x1b[B"]);
       });
 
-      it("caps the burst like mouse reports", () => {
+      it("allows up to ten cursor keys for a large scroll", () => {
         h.wheel(5000);
-        expect(h.reports()).toEqual([
-          "\x1b[B".repeat(MAX_WHEEL_REPORTS_PER_EVENT),
-        ]);
+        expect(h.reports()).toEqual(["\x1b[B".repeat(10)]);
       });
     });
 
