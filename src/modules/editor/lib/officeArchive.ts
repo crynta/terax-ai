@@ -201,7 +201,6 @@ export async function validateOfficeArchive(
     const worksheet =
       format === "XLSX" &&
       isXml &&
-      lowerName.startsWith("xl/") &&
       !lowerName.includes("/_rels/") &&
       !isWorkbook
         ? createWorksheetDimensions()

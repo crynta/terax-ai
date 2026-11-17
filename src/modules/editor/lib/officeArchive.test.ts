@@ -71,6 +71,20 @@ describe("validateOfficeArchive", () => {
     ).rejects.toThrow("XLSX preview is limited to");
   });
 
+  it("counts worksheet XML reached through a relationship outside xl", async () => {
+    const archive = officeZip({
+      "xl/workbook.xml":
+        '<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="External path" sheetId="1" r:id="rId1"/></sheets></workbook>',
+      "xl/_rels/workbook.xml.rels":
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="/data/s1.xml"/></Relationships>',
+      "data/s1.xml":
+        '<worksheet><sheetData><row r="1048576"><c r="XFD1048576"><v>1</v></c></row></sheetData></worksheet>',
+    });
+    await expect(
+      validateOfficeArchive(asArrayBuffer(archive), "XLSX"),
+    ).rejects.toThrow("XLSX preview is limited");
+  });
+
   it("rejects workbooks with more sheets than the preview supports", async () => {
     const archive = officeZip({
       "xl/workbook.xml":

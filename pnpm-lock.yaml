@@ -218,6 +218,9 @@ importers:
       codemirror-languageserver:
         specifier: ^1.22.1
         version: 1.22.1(@codemirror/autocomplete@6.20.3)(@codemirror/lint@6.9.7)(@codemirror/state@6.7.6)(@codemirror/view@6.43.13)
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
       mammoth:
         specifier: ^1.13.0
         version: 1.13.0

@@ -1,8 +1,16 @@
-import { createElement, type ReactNode, useEffect, useState } from "react";
+import {
+  createElement,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   MAX_OFFICE_PREVIEW_BYTES,
   validateOfficeArchive,
 } from "./lib/officeArchive";
+
+export const MAX_DOCX_HTML_LENGTH = 512 * 1024;
 
 const ALLOWED_TAGS = new Set([
   "a",
@@ -72,7 +80,13 @@ export function DocxPreview({ src, size }: Props) {
           { arrayBuffer: bytes },
           { externalFileAccess: false },
         );
-        if (!cancelled) setState({ src, content: result.value });
+        if (cancelled) return;
+        const limitError = getDocxPreviewLimitError(result.value);
+        if (limitError) {
+          setState({ src, error: limitError });
+          return;
+        }
+        setState({ src, content: result.value });
       } catch (error) {
         if (!cancelled) {
           setState({
@@ -88,6 +102,12 @@ export function DocxPreview({ src, size }: Props) {
     };
   }, [src, size]);
 
+  const content = useMemo(
+    () =>
+      state.content === undefined ? null : renderDocxContent(state.content),
+    [state.content],
+  );
+
   if (state.src !== src || (state.content === undefined && !state.error)) {
     return <PreviewMessage>Loading Word document…</PreviewMessage>;
   }
@@ -96,7 +116,7 @@ export function DocxPreview({ src, size }: Props) {
   return (
     <div className="h-full overflow-auto bg-background px-8 py-6">
       <article className="mx-auto max-w-4xl space-y-3 text-sm leading-7 text-foreground [&_h1]:text-2xl [&_h1]:font-semibold [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:text-lg [&_h3]:font-semibold [&_a]:text-primary [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-4 [&_li]:ml-6 [&_ol]:list-decimal [&_p]:whitespace-pre-wrap [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-border [&_td]:p-2 [&_th]:border [&_th]:border-border [&_th]:bg-muted [&_th]:p-2 [&_ul]:list-disc">
-        {renderDocxContent(state.content ?? "")}
+        {content}
       </article>
     </div>
   );
@@ -117,7 +137,15 @@ function renderSafeHtml(html: string): ReactNode[] {
   );
 }
 
+export function getDocxPreviewLimitError(content: string): string | null {
+  return content.length > MAX_DOCX_HTML_LENGTH
+    ? "DOCX preview is limited to 512 Ki characters of converted content."
+    : null;
+}
+
 export function renderDocxContent(content: string): ReactNode {
+  const limitError = getDocxPreviewLimitError(content);
+  if (limitError) return <p>{limitError}</p>;
   return content === "" ? (
     <p>This document is empty.</p>
   ) : (
