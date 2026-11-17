@@ -61,7 +61,7 @@ export function DocxPreview({ src, size }: Props) {
         if (bytes.byteLength > MAX_OFFICE_PREVIEW_BYTES) {
           throw new Error("DOCX preview is limited to 20 MB.");
         }
-        validateOfficeArchive(bytes, "DOCX");
+        await validateOfficeArchive(bytes, "DOCX");
         const mammoth = await import("mammoth");
         const converter = mammoth.default;
         const result = await converter.convertToHtml(
@@ -84,7 +84,7 @@ export function DocxPreview({ src, size }: Props) {
     };
   }, [src, size]);
 
-  if (state.src !== src || (!state.content && !state.error)) {
+  if (state.src !== src || (state.content === undefined && !state.error)) {
     return <PreviewMessage>Loading Word document…</PreviewMessage>;
   }
   if (state.error) return <PreviewMessage>{state.error}</PreviewMessage>;
@@ -92,7 +92,7 @@ export function DocxPreview({ src, size }: Props) {
   return (
     <div className="h-full overflow-auto bg-background px-8 py-6">
       <article className="mx-auto max-w-4xl space-y-3 text-sm leading-7 text-foreground [&_h1]:text-2xl [&_h1]:font-semibold [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:text-lg [&_h3]:font-semibold [&_a]:text-primary [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-4 [&_li]:ml-6 [&_ol]:list-decimal [&_p]:whitespace-pre-wrap [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-border [&_td]:p-2 [&_th]:border [&_th]:border-border [&_th]:bg-muted [&_th]:p-2 [&_ul]:list-disc">
-        {state.content ? renderSafeHtml(state.content) : null}
+        {renderDocxContent(state.content ?? "")}
       </article>
     </div>
   );
@@ -111,6 +111,10 @@ function renderSafeHtml(html: string): ReactNode[] {
   return Array.from(doc.body.childNodes).map((node, index) =>
     renderNode(node, `docx-${index}`),
   );
+}
+
+export function renderDocxContent(content: string): ReactNode {
+  return content === "" ? <p>This document is empty.</p> : renderSafeHtml(content);
 }
 
 function renderNode(node: Node, key: string): ReactNode {
@@ -163,12 +167,14 @@ function safeLink(value: string | null): string | null {
   }
 }
 
-function createAllowedElement(
+export function createAllowedElement(
   tag: string,
   key: string,
   children: ReactNode[],
   node: Element,
 ): ReactNode {
+  if (tag === "br" || tag === "hr") return createElement(tag, { key });
+
   const props: Record<string, unknown> = { key, children };
   if (tag === "td" || tag === "th") {
     for (const name of ["colspan", "rowspan"]) {

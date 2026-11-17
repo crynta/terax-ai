@@ -12,6 +12,8 @@ export function parseDelimitedPreview(
   input: string,
   delimiter: "," | ";" | "\t" = ",",
 ): CsvPreview {
+  if (input.startsWith("\uFEFF")) input = input.slice(1);
+
   const rows: string[][] = [];
   let row: string[] = [];
   let cell = "";
@@ -59,10 +61,6 @@ export function parseDelimitedPreview(
 
   if (rows.length < MAX_ROWS && (cell.length > 0 || row.length > 0))
     finishRow();
-  if (rows[0]?.[0]?.startsWith("\uFEFF")) {
-    rows[0][0] = rows[0][0].slice(1);
-  }
-
   const columns = Math.min(
     MAX_COLUMNS,
     rows.reduce((max, current) => Math.max(max, current.length), 0),

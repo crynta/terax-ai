@@ -1,13 +1,12 @@
 import { useEffect, useState } from "react";
 import {
   MAX_OFFICE_PREVIEW_BYTES,
+  MAX_XLSX_PREVIEW_SHEETS,
   validateOfficeArchive,
 } from "./lib/officeArchive";
 
 const MAX_ROWS = 201;
 const MAX_COLUMNS = 40;
-const MAX_SHEETS = 20;
-
 type PreviewSheet = {
   name: string;
   rows: unknown[][];
@@ -51,12 +50,14 @@ export function SpreadsheetPreview({
         if (bytes.byteLength > MAX_OFFICE_PREVIEW_BYTES) {
           throw new Error("XLSX preview is limited to 20 MB.");
         }
-        validateOfficeArchive(bytes, "XLSX");
+        await validateOfficeArchive(bytes, "XLSX");
         const { default: readXlsxFile } = await import(
           "read-excel-file/browser"
         );
         const workbook = await readXlsxFile(bytes);
-        const sheets = workbook.slice(0, MAX_SHEETS).map(({ sheet, data }) => {
+        const sheets = workbook
+          .slice(0, MAX_XLSX_PREVIEW_SHEETS)
+          .map(({ sheet, data }) => {
           const rows = data
             .slice(0, MAX_ROWS)
             .map((row) => row.slice(0, MAX_COLUMNS));
@@ -71,12 +72,12 @@ export function SpreadsheetPreview({
               data.length > MAX_ROWS ||
               data.some((row) => row.length > MAX_COLUMNS),
           };
-        });
+          });
         if (!cancelled) {
           setState({
             src,
             sheets,
-            truncated: workbook.length > MAX_SHEETS,
+            truncated: workbook.length > MAX_XLSX_PREVIEW_SHEETS,
           });
         }
       } catch (error) {
