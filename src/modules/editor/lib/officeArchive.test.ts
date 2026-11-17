@@ -1,4 +1,4 @@
-import { strToU8, zipSync, type Zippable } from "fflate";
+import { strToU8, type Zippable, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { validateOfficeArchive } from "./officeArchive";
 
@@ -36,7 +36,9 @@ function lieAboutExpandedSize(archive: Uint8Array, size: number): Uint8Array {
 
 describe("validateOfficeArchive", () => {
   it("accepts a small deflated DOCX archive", async () => {
-    const archive = officeZip({ "word/document.xml": "<document>hello</document>" });
+    const archive = officeZip({
+      "word/document.xml": "<document>hello</document>",
+    });
 
     await expect(
       validateOfficeArchive(asArrayBuffer(archive), "DOCX"),
@@ -80,5 +82,41 @@ describe("validateOfficeArchive", () => {
         maxSpreadsheetSheets: 1,
       }),
     ).rejects.toThrow("limited to 1 worksheets");
+  });
+  it("counts unreferenced cells even when tags cross input chunks", async () => {
+    const xml = `<worksheet><sheetData>${" ".repeat(32768 - 24)}<c/><c/><c/></sheetData></worksheet>`;
+    const archive = zipSync({
+      "xl/worksheets/sheet1.xml": [strToU8(xml), { level: 0 }],
+    });
+    await expect(
+      validateOfficeArchive(asArrayBuffer(archive), "XLSX", {
+        maxSpreadsheetCells: 2,
+      }),
+    ).rejects.toThrow("XLSX preview is limited");
+    await expect(
+      validateOfficeArchive(asArrayBuffer(archive), "XLSX", {
+        maxSpreadsheetCells: 3,
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("ignores non-dimension ranges when estimating worksheet size", async () => {
+    const archive = officeZip({
+      "xl/worksheets/sheet1.xml":
+        '<worksheet><dimension ref="A1:A100"/><sheetData><row r="100"><c r="A100"/></row></sheetData><mergeCells><mergeCell ref="A1:XFD1"/></mergeCells><autoFilter ref="A1:XFD100"/></worksheet>',
+    });
+    await expect(
+      validateOfficeArchive(asArrayBuffer(archive), "XLSX", {
+        maxSpreadsheetCells: 100,
+      }),
+    ).resolves.toBeUndefined();
+  });
+  it("stops validation when the preview is cancelled", async () => {
+    const archive = officeZip({ "word/document.xml": "<document/>" });
+    await expect(
+      validateOfficeArchive(asArrayBuffer(archive), "DOCX", {
+        isCancelled: () => true,
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
   });
 });

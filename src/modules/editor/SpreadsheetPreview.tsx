@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import {
   MAX_OFFICE_PREVIEW_BYTES,
-  MAX_XLSX_PREVIEW_SHEETS,
   validateOfficeArchive,
 } from "./lib/officeArchive";
 
@@ -18,7 +17,6 @@ type State = {
   src: string;
   sheets?: PreviewSheet[];
   error?: string;
-  truncated?: boolean;
 };
 
 export function SpreadsheetPreview({
@@ -47,17 +45,19 @@ export function SpreadsheetPreview({
           throw new Error(`Could not read spreadsheet (${response.status}).`);
         }
         const bytes = await response.arrayBuffer();
+        if (cancelled) return;
         if (bytes.byteLength > MAX_OFFICE_PREVIEW_BYTES) {
           throw new Error("XLSX preview is limited to 20 MB.");
         }
-        await validateOfficeArchive(bytes, "XLSX");
+        await validateOfficeArchive(bytes, "XLSX", {
+          isCancelled: () => cancelled,
+        });
+        if (cancelled) return;
         const { default: readXlsxFile } = await import(
           "read-excel-file/browser"
         );
         const workbook = await readXlsxFile(bytes);
-        const sheets = workbook
-          .slice(0, MAX_XLSX_PREVIEW_SHEETS)
-          .map(({ sheet, data }) => {
+        const sheets = workbook.map(({ sheet, data }) => {
           const rows = data
             .slice(0, MAX_ROWS)
             .map((row) => row.slice(0, MAX_COLUMNS));
@@ -72,12 +72,11 @@ export function SpreadsheetPreview({
               data.length > MAX_ROWS ||
               data.some((row) => row.length > MAX_COLUMNS),
           };
-          });
+        });
         if (!cancelled) {
           setState({
             src,
             sheets,
-            truncated: workbook.length > MAX_XLSX_PREVIEW_SHEETS,
           });
         }
       } catch (error) {
@@ -105,7 +104,7 @@ export function SpreadsheetPreview({
   if (!current)
     return <PreviewMessage>This workbook has no worksheets.</PreviewMessage>;
 
-  const limited = current.truncated || state.truncated;
+  const limited = current.truncated;
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-3 py-2 text-xs text-muted-foreground">

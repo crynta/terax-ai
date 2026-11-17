@@ -12,6 +12,7 @@ export type OfficeArchiveValidationOptions = {
   maxExpandedBytes?: number;
   maxSpreadsheetSheets?: number;
   maxSpreadsheetCells?: number;
+  isCancelled?: () => boolean;
 };
 
 type ZipEntry = {
@@ -121,9 +122,8 @@ export async function validateOfficeArchive(
     if (declaredExpandedBytes > maxExpandedBytes) throw tooLarge();
 
     const nameBytes = new Uint8Array(bytes, offset + 46, nameLength);
-    const name = (flags & 0x800
-      ? archiveNames
-      : new TextDecoder("latin1")
+    const name = (
+      flags & 0x800 ? archiveNames : new TextDecoder("latin1")
     ).decode(nameBytes);
     const localHeaderEnd = localOffset + 30;
     if (
@@ -163,18 +163,36 @@ export async function validateOfficeArchive(
       throw invalid();
     }
 
-    entries.push({ name, flags, method, compressedSize, expandedSize, dataOffset });
+    entries.push({
+      name,
+      flags,
+      method,
+      compressedSize,
+      expandedSize,
+      dataOffset,
+    });
     offset = entryEnd;
   }
   if (offset > centralEnd) throw invalid();
 
   const { Inflate } = await import("fflate");
+  if (options.isCancelled?.()) {
+    throw new DOMException("Preview cancelled.", "AbortError");
+  }
   const workbookDecoder = new TextDecoder();
   let workbookXml = "";
   let workbookXmlBytes = 0;
   let expandedBytes = 0;
   let worksheetCells = 0;
   let worksheetParts = 0;
+  let lastYield = performance.now();
+  const yieldIfNeeded = async () => {
+    if (performance.now() - lastYield < 8) return;
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    if (options.isCancelled?.())
+      throw new DOMException("Preview cancelled.", "AbortError");
+    lastYield = performance.now();
+  };
 
   for (const entry of entries) {
     const lowerName = entry.name.toLowerCase();
@@ -208,7 +226,11 @@ export async function validateOfficeArchive(
       }
     };
 
-    const compressed = new Uint8Array(bytes, entry.dataOffset, entry.compressedSize);
+    const compressed = new Uint8Array(
+      bytes,
+      entry.dataOffset,
+      entry.compressedSize,
+    );
     if (entry.method === 0) {
       for (
         let start = 0;
@@ -216,6 +238,7 @@ export async function validateOfficeArchive(
         start += MAX_STORED_INPUT_CHUNK
       ) {
         consume(compressed.subarray(start, start + MAX_STORED_INPUT_CHUNK));
+        await yieldIfNeeded();
       }
     } else {
       const inflater = new Inflate((chunk) => consume(chunk));
@@ -227,8 +250,15 @@ export async function validateOfficeArchive(
           start < compressed.length;
           start += MAX_INFLATE_INPUT_CHUNK
         ) {
-          const end = Math.min(start + MAX_INFLATE_INPUT_CHUNK, compressed.length);
-          inflater.push(compressed.subarray(start, end), end === compressed.length);
+          const end = Math.min(
+            start + MAX_INFLATE_INPUT_CHUNK,
+            compressed.length,
+          );
+          inflater.push(
+            compressed.subarray(start, end),
+            end === compressed.length,
+          );
+          await yieldIfNeeded();
         }
       }
     }
@@ -237,10 +267,7 @@ export async function validateOfficeArchive(
     if (isWorkbook) workbookXml += workbookDecoder.decode();
     if (worksheet) {
       worksheet.finish();
-      if (
-        lowerName.includes("/worksheets/") ||
-        worksheet.hasSheetData
-      ) {
+      if (lowerName.includes("/worksheets/") || worksheet.hasSheetData) {
         worksheetParts++;
         worksheetCells += worksheet.cellCount();
         if (
@@ -256,7 +283,9 @@ export async function validateOfficeArchive(
   }
 
   if (format === "XLSX") {
-    const sheetTags = workbookXml.match(/<(?:[\w.-]+:)?sheet(?=[\s/>])[^>]*>/gi);
+    const sheetTags = workbookXml.match(
+      /<(?:[\w.-]+:)?sheet(?=[\s/>])[^>]*>/gi,
+    );
     if ((sheetTags?.length ?? 0) > maxSpreadsheetSheets) {
       throw new Error(
         `XLSX preview is limited to ${maxSpreadsheetSheets} worksheets.`,
@@ -297,40 +326,56 @@ function createWorksheetDimensions(): WorksheetDimensions {
     maxColumn = Math.max(maxColumn, columnNumber);
   };
 
-  const scan = (chunk: Uint8Array) => {
-    const text = carry + decoder.decode(chunk, { stream: true });
-    if (/<(?:[\w.-]+:)?sheetData\b/i.test(text)) hasSheetData = true;
-
-    const cellRefs = /\br\s*=\s*["']([A-Z]+)([1-9]\d*)["']/gi;
-    for (const match of text.matchAll(cellRefs)) observeCell(match[1], match[2]);
-
-    const rowRefs = /\br\s*=\s*["']([1-9]\d*)["']/g;
-    for (const match of text.matchAll(rowRefs)) {
-      const rowNumber = Number(match[1]);
-      if (!Number.isSafeInteger(rowNumber) || rowNumber > 1_048_576) {
-        throw new Error("XLSX row reference is outside Excel worksheet bounds.");
+  let cellElements = 0;
+  const scan = (text: string) => {
+    const input = carry + text;
+    const tags =
+      /<(?:[\w.-]+:)?(sheetData|c|row|dimension)(?=[\s/>])([^<>]*)>/gi;
+    for (const match of input.matchAll(tags)) {
+      const kind = match[1].toLowerCase();
+      const attributes = match[2];
+      if (kind === "sheetdata") hasSheetData = true;
+      if (kind === "c") {
+        cellElements++;
+        const ref = /(?:^|\s)r\s*=\s*["']([A-Z]+)([1-9]\d*)["']/i.exec(
+          attributes,
+        );
+        if (ref) observeCell(ref[1], ref[2]);
+      } else if (kind === "row") {
+        const ref = /(?:^|\s)r\s*=\s*["']([1-9]\d*)["']/i.exec(attributes);
+        if (ref) {
+          const rowNumber = Number(ref[1]);
+          if (!Number.isSafeInteger(rowNumber) || rowNumber > 1_048_576) {
+            throw new Error(
+              "XLSX row reference is outside Excel worksheet bounds.",
+            );
+          }
+          maxRow = Math.max(maxRow, rowNumber);
+        }
+      } else if (kind === "dimension") {
+        const ref =
+          /(?:^|\s)ref\s*=\s*["']([A-Z]+)([1-9]\d*)(?::([A-Z]+)([1-9]\d*))?["']/i.exec(
+            attributes,
+          );
+        if (ref) {
+          observeCell(ref[1], ref[2]);
+          if (ref[3] && ref[4]) observeCell(ref[3], ref[4]);
+        }
       }
-      maxRow = Math.max(maxRow, rowNumber);
     }
-
-    const dimensionRefs =
-      /\bref\s*=\s*["']([A-Z]+)([1-9]\d*)(?::([A-Z]+)([1-9]\d*))?["']/gi;
-    for (const match of text.matchAll(dimensionRefs)) {
-      observeCell(match[1], match[2]);
-      if (match[3] && match[4]) observeCell(match[3], match[4]);
-    }
-    carry = text.slice(-128);
+    const lastOpen = input.lastIndexOf("<");
+    const lastClose = input.lastIndexOf(">");
+    carry = lastOpen > lastClose ? input.slice(lastOpen) : "";
+    if (carry.length > 64 * 1024)
+      throw new Error("XLSX XML tag is too large to preview.");
   };
 
   return {
-    feed: scan,
-    finish: () => {
-      scan(new Uint8Array());
-      decoder.decode();
-    },
+    feed: (chunk) => scan(decoder.decode(chunk, { stream: true })),
+    finish: () => scan(decoder.decode()),
     get hasSheetData() {
       return hasSheetData;
     },
-    cellCount: () => maxRow * maxColumn,
+    cellCount: () => Math.max(cellElements, maxRow * maxColumn),
   };
 }

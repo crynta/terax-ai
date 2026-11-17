@@ -1,4 +1,4 @@
-import { createElement, useEffect, useState, type ReactNode } from "react";
+import { createElement, type ReactNode, useEffect, useState } from "react";
 import {
   MAX_OFFICE_PREVIEW_BYTES,
   validateOfficeArchive,
@@ -58,10 +58,14 @@ export function DocxPreview({ src, size }: Props) {
         if (!response.ok)
           throw new Error(`Could not read document (${response.status}).`);
         const bytes = await response.arrayBuffer();
+        if (cancelled) return;
         if (bytes.byteLength > MAX_OFFICE_PREVIEW_BYTES) {
           throw new Error("DOCX preview is limited to 20 MB.");
         }
-        await validateOfficeArchive(bytes, "DOCX");
+        await validateOfficeArchive(bytes, "DOCX", {
+          isCancelled: () => cancelled,
+        });
+        if (cancelled) return;
         const mammoth = await import("mammoth");
         const converter = mammoth.default;
         const result = await converter.convertToHtml(
@@ -114,7 +118,11 @@ function renderSafeHtml(html: string): ReactNode[] {
 }
 
 export function renderDocxContent(content: string): ReactNode {
-  return content === "" ? <p>This document is empty.</p> : renderSafeHtml(content);
+  return content === "" ? (
+    <p>This document is empty.</p>
+  ) : (
+    renderSafeHtml(content)
+  );
 }
 
 function renderNode(node: Node, key: string): ReactNode {
