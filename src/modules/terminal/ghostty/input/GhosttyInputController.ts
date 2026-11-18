@@ -67,6 +67,7 @@ export class GhosttyInputController {
   private readonly pressedKeys = new Map<string, KeyEvent>();
   /** Ctrl+V presses waiting on the clipboard: the key may be released before the read ends. */
   private readonly pasteKeys = new Map<string, { released: boolean }>();
+  private pasteDelivery: Promise<void> = Promise.resolve();
   private readonly wheel = new WheelAccumulator();
   private composing = false;
   private optionKeys = 0;
@@ -286,7 +287,10 @@ export class GhosttyInputController {
     const encoded = data ? this.options.model.encodeKey(data) : null;
     const waiting = { released: false };
     if (data) this.pasteKeys.set(code, waiting);
-    void readTerminalClipboard().then((text) => {
+    // Start each read immediately, but deliver its result in key press order.
+    const read = readTerminalClipboard();
+    const ready = Promise.all([this.pasteDelivery, read]);
+    this.pasteDelivery = ready.then(([, text]) => {
       if (this.pasteKeys.get(code) === waiting) this.pasteKeys.delete(code);
       if (this.disposed) return;
       if (text) {
