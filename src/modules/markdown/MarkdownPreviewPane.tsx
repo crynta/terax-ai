@@ -106,19 +106,29 @@ const MarkdownBody = memo(function MarkdownBody({
   boundary: string;
   content: string;
 }) {
-  const { urlFor: assetUrlFor, error: assetError, retry } = useAssetGrant(boundary);
+  const {
+    urlFor: assetUrlFor,
+    error: assetError,
+    retry,
+    token,
+  } = useAssetGrant(boundary);
   const rehypePlugins = useMemo(() => {
     const d = defaultRehypePlugins;
     return [
       d.raw,
       d.sanitize,
-      rehypeLocalImages(path, (abs) => assetUrlFor(abs) ?? "data:,", {
-        boundary,
-        isReadable: (abs) => checkReadable(abs).ok,
-      }),
+      rehypeLocalImages(
+        path,
+        (abs) => assetUrlFor(abs) ?? "data:,",
+        {
+          boundary,
+          isReadable: (abs) => checkReadable(abs).ok,
+        },
+        `${path}\0${boundary}\0${token ?? ""}`,
+      ),
       d.harden,
     ];
-  }, [path, boundary, assetUrlFor]);
+  }, [path, boundary, assetUrlFor, token]);
 
   return (
     <>

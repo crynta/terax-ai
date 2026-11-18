@@ -35,12 +35,16 @@ export function useAssetGrant(path: string | null) {
       if (token) revoke(token);
     };
   }, [path, workspace, key]);
+  const token = grant?.key === key ? grant.token : undefined;
   const urlFor = useMemo(
     () => (asset: string) =>
-      grant?.key === key && grant.token
-        ? `${convertFileSrc(asset)}?token=${grant.token}`
-        : undefined,
-    [grant, key],
+      token ? `${convertFileSrc(asset)}?token=${token}` : undefined,
+    [token],
   );
-  return { urlFor, error: grant?.key === key ? grant.error : undefined, retry };
+  return {
+    urlFor,
+    error: grant?.key === key ? grant.error : undefined,
+    retry,
+    token,
+  };
 }

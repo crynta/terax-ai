@@ -127,6 +127,7 @@ export function rehypeLocalImages(
   basePath: string,
   toUrl: (absolutePath: string) => string,
   policy: LocalImagePolicy,
+  cacheKey?: string,
 ) {
   const rewrite = (node: HastNode): void => {
     if (node.type === "element" && node.tagName === "img") {
@@ -144,5 +145,11 @@ export function rehypeLocalImages(
     }
     node.children?.forEach(rewrite);
   };
-  return () => (tree: unknown) => rewrite(tree as HastNode);
+  const attacher = () => (tree: unknown) => rewrite(tree as HastNode);
+  const id = (cacheKey ?? `${basePath}\0${policy.boundary}`).replace(
+    /[^a-zA-Z0-9_$]/g,
+    "_",
+  );
+  Object.defineProperty(attacher, "name", { value: `rehypeLocalImages_${id}` });
+  return attacher;
 }
