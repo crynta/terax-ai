@@ -146,10 +146,12 @@ export function rehypeLocalImages(
     node.children?.forEach(rewrite);
   };
   const attacher = () => (tree: unknown) => rewrite(tree as HastNode);
-  const id = (cacheKey ?? `${basePath}\0${policy.boundary}`).replace(
-    /[^a-zA-Z0-9_$]/g,
-    "_",
-  );
-  Object.defineProperty(attacher, "name", { value: `rehypeLocalImages_${id}` });
+  const raw = cacheKey ?? `${basePath}\0${policy.boundary}`;
+  const bytes = new TextEncoder().encode(raw);
+  let hex = "";
+  for (const b of bytes) hex += b.toString(16).padStart(2, "0");
+  Object.defineProperty(attacher, "name", {
+    value: `rehypeLocalImages_${hex}`,
+  });
   return attacher;
 }
