@@ -44,13 +44,19 @@ describe("MarkdownPreviewPane Streamdown configuration", () => {
   it("wires local image rewriting and hardening into preview plugins", () => {
     expect(src).toMatch(/rehypeLocalImages\(/);
     expect(src).toMatch(/rehypeAllowBareRelativeLinks\(/);
-    expect(src).toMatch(/d\.harden/);
-    expect(src.indexOf("rehypeLocalImages(")).toBeGreaterThan(-1);
+    expect(src).toMatch(/rehypeRestoreDocHrefs\(/);
+    expect(src).toMatch(/allowedLinkPrefixes:\s*\["\*"\]/);
+    expect(src).toMatch(/allowedImagePrefixes:\s*\["\*"\]/);
+    expect(src).toMatch(/allowDataImages:\s*true/);
+    expect(src).toMatch(/allowedProtocols:\s*\["\*"\]/);
     expect(src.indexOf("rehypeLocalImages(")).toBeLessThan(
       src.indexOf("rehypeAllowBareRelativeLinks("),
     );
     expect(src.indexOf("rehypeAllowBareRelativeLinks(")).toBeLessThan(
-      src.indexOf("d.harden"),
+      src.indexOf("allowedLinkPrefixes"),
+    );
+    expect(src.indexOf("allowedLinkPrefixes")).toBeLessThan(
+      src.indexOf("rehypeRestoreDocHrefs("),
     );
   });
 
@@ -70,6 +76,8 @@ describe("MarkdownPreviewPane Streamdown configuration", () => {
     expect(html).not.toContain("data:,");
     expect(html).not.toContain("[blocked]");
     expect(html).not.toContain("Blocked URL");
+    expect(html).toContain("https://example.com/page");
+    expect(html).toContain("./other.md");
   });
 
   it("keeps links and granted image URLs against preview plugin options", () => {
@@ -135,12 +143,21 @@ describe("MarkdownPreviewPane Streamdown configuration", () => {
       assetUrlFor: () => httpGranted,
       token: "grant123",
     });
+    const hardenEntry = (previewPlugins as any[]).find(
+      (p) => Array.isArray(p) && p[1]?.allowedLinkPrefixes,
+    );
+    expect(hardenEntry?.[1]).toMatchObject({
+      allowedLinkPrefixes: ["*"],
+      allowedImagePrefixes: ["*"],
+      allowDataImages: true,
+      allowedProtocols: ["*"],
+    });
+
     const http = run(previewPlugins);
     expect(http.href).toBe("https://example.com/page");
     expect(http.src).toBe(httpGranted);
     expect(http.relTitle).toBeUndefined();
-    expect(http.relHref).not.toContain("[blocked]");
-    expect(String(http.relHref)).toContain("other.md");
+    expect(http.relHref).toBe("./other.md");
 
     const macPreviewPlugins = buildPreviewRehypePlugins({
       path: basePath,

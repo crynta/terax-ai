@@ -14,6 +14,7 @@ import {
   previewBoundary,
   rehypeAllowBareRelativeLinks,
   rehypeLocalImages,
+  rehypeRestoreDocHrefs,
 } from "./lib/assetPath";
 import { MarkdownLink } from "./MarkdownLink";
 import { MarkdownViewToggle } from "./MarkdownViewToggle";
@@ -25,15 +26,15 @@ type Props = {
   workspaceRoot?: string | null;
   visible: boolean;
   onSetView: (mode: "rendered" | "raw") => void;
+  onOpenFile?: (path: string, pin?: boolean) => void;
 };
-
-const components = { a: MarkdownLink, code: MarkdownCode };
 
 export function MarkdownPreviewPane({
   path,
   workspaceRoot = null,
   visible,
   onSetView,
+  onOpenFile,
 }: Props) {
   const status = useMarkdownDocument(path, visible);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -93,6 +94,7 @@ export function MarkdownPreviewPane({
               path={path}
               boundary={previewBoundary(path, workspaceRoot)}
               content={content}
+              onOpenFile={onOpenFile}
             />
           )}
         </div>
@@ -113,6 +115,7 @@ export function buildPreviewRehypePlugins({
   token?: string | null;
 }) {
   const d = defaultRehypePlugins;
+  const hardenFn = (Array.isArray(d.harden) ? d.harden[0] : d.harden) as any;
   return [
     d.raw,
     d.sanitize,
@@ -125,8 +128,17 @@ export function buildPreviewRehypePlugins({
       },
       `${path}\0${boundary}\0${token ?? ""}`,
     ),
-    rehypeAllowBareRelativeLinks(),
-    d.harden,
+    rehypeAllowBareRelativeLinks(path),
+    [
+      hardenFn,
+      {
+        allowedLinkPrefixes: ["*"],
+        allowedImagePrefixes: ["*"],
+        allowDataImages: true,
+        allowedProtocols: ["*"],
+      },
+    ],
+    rehypeRestoreDocHrefs(),
   ] as any;
 }
 
@@ -134,10 +146,12 @@ const MarkdownBody = memo(function MarkdownBody({
   path,
   boundary,
   content,
+  onOpenFile,
 }: {
   path: string;
   boundary: string;
   content: string;
+  onOpenFile?: (path: string, pin?: boolean) => void;
 }) {
   const {
     urlFor: assetUrlFor,
@@ -148,6 +162,19 @@ const MarkdownBody = memo(function MarkdownBody({
   const rehypePlugins = useMemo(
     () => buildPreviewRehypePlugins({ path, boundary, assetUrlFor, token }),
     [path, boundary, assetUrlFor, token],
+  );
+  const components = useMemo(
+    () => ({
+      a: (props: any) => (
+        <MarkdownLink
+          {...props}
+          documentPath={path}
+          onOpenFile={onOpenFile}
+        />
+      ),
+      code: MarkdownCode,
+    }),
+    [path, onOpenFile],
   );
   // Streamdown memoizes on plugins but not rehypePlugins; keep key stable on
   // grant changes to preserve focus while forcing a render refresh.

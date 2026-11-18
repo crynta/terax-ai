@@ -174,16 +174,41 @@ function isBareRelativeHref(href: string): boolean {
 
 /**
  * rehype-harden blocks bare relative links like `other.md` when it cannot parse
- * them without a default origin. Normalize them to an explicit relative path so
- * the hardener can evaluate them while keeping the href relative.
+ * them without a default origin. Normalize bare doc-relative hrefs to an
+ * explicit relative path and mark local document links so they can be resolved
+ * against the markdown file after hardening.
  */
-export function rehypeAllowBareRelativeLinks() {
+export function rehypeAllowBareRelativeLinks(basePath: string) {
   const rewrite = (node: HastNode): void => {
     if (node.type === "element" && node.tagName === "a") {
       const href = node.properties?.href;
-      if (typeof href === "string" && isBareRelativeHref(href.trim())) {
-        if (node.properties) node.properties.href = `./${href.trim()}`;
+      if (typeof href === "string") {
+        const trimmed = href.trim();
+        const normalized = isBareRelativeHref(trimmed)
+          ? `./${trimmed}`
+          : trimmed;
+        if (isBareRelativeHref(trimmed) && node.properties) {
+          node.properties.href = normalized;
+        }
+        if (
+          node.properties &&
+          resolveRelativeAsset(basePath, normalized) !== null
+        ) {
+          node.properties["data-doc-href"] = normalized;
+        }
       }
+    }
+    node.children?.forEach(rewrite);
+  };
+  return () => (tree: unknown) => rewrite(tree as HastNode);
+}
+
+/** Restores doc-relative hrefs preserved before hardening. */
+export function rehypeRestoreDocHrefs() {
+  const rewrite = (node: HastNode): void => {
+    if (node.type === "element" && node.tagName === "a" && node.properties) {
+      const docHref = node.properties["data-doc-href"];
+      if (typeof docHref === "string") node.properties.href = docHref;
     }
     node.children?.forEach(rewrite);
   };

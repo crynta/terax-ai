@@ -1570,6 +1570,7 @@ export default function App() {
                         onOpenCommitFile={openCommitFileDiffTab}
                         onGitHistorySearchHandle={setGitHistoryHandle}
                         onSetMarkdownView={setMarkdownView}
+                        onOpenFile={handleOpenFile}
                       />
                     </div>
 

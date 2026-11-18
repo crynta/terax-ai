@@ -1,5 +1,6 @@
 import { openExternalUrl } from "@/lib/external-link";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { resolveMarkdownDocPath } from "./MarkdownLink";
 
 const { openUrl } = vi.hoisted(() => ({ openUrl: vi.fn() }));
 
@@ -40,5 +41,18 @@ describe("MarkdownLink", () => {
 
     expect(openUrl).not.toHaveBeenCalled();
     expect(onSettled).toHaveBeenCalledOnce();
+  });
+
+
+  it("resolves relative document links against the markdown file path", () => {
+    expect(
+      resolveMarkdownDocPath("/w/docs/readme.md", "./other.md", "./other.md"),
+    ).toBe("/w/docs/other.md");
+    expect(
+      resolveMarkdownDocPath("/w/docs/readme.md", "other.md", "./other.md"),
+    ).toBe("/w/docs/other.md");
+    expect(
+      resolveMarkdownDocPath("/w/docs/readme.md", "https://example.com"),
+    ).toBeNull();
   });
 });
