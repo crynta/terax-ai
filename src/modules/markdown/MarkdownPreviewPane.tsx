@@ -133,6 +133,7 @@ const MarkdownBody = memo(function MarkdownBody({
           allowedLinkPrefixes: ["*"],
           allowedImagePrefixes: ["*"],
           allowDataImages: true,
+          allowedProtocols: ["*"],
         },
       ],
     ] as any;
