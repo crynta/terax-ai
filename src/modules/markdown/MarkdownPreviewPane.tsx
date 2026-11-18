@@ -116,15 +116,8 @@ const MarkdownBody = memo(function MarkdownBody({
         boundary,
         isReadable: (abs) => checkReadable(abs).ok,
       }),
-      [
-        d.harden,
-        {
-          allowedLinkPrefixes: ["*"],
-          allowedImagePrefixes: ["*"],
-          allowDataImages: true,
-        },
-      ],
-    ] as any;
+      d.harden,
+    ];
   }, [path, boundary, assetUrlFor]);
 
   return (
