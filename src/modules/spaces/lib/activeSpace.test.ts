@@ -1,7 +1,52 @@
 import type { WorkspaceEnv } from "@/modules/workspace";
 import { describe, expect, it } from "vitest";
-import { activeSpaceEnv, findActiveSpace, freshTabCwd } from "./activeSpace";
+import {
+  activeSpaceEnv,
+  findActiveSpace,
+  freshTabCwd,
+  selectLaunchTab,
+} from "./activeSpace";
+import { freshTerminalTab } from "./serialize";
 import type { SpaceMeta } from "./store";
+
+describe("selectLaunchTab", () => {
+  const local = { kind: "local" } as const;
+  let id = 0;
+  const allocId = () => ++id;
+
+  it("opens the requested folder when a different terminal was restored", () => {
+    const restored = [freshTerminalTab("s1", "C:/old", allocId)];
+    const selected = selectLaunchTab(restored, "s1", local, "D:/work", allocId);
+    expect(selected).toMatchObject({
+      kind: "terminal",
+      paneTree: { cwd: "D:/work" },
+    });
+    expect(restored).toHaveLength(1);
+  });
+
+  it("selects an existing match in the active space", () => {
+    const other = freshTerminalTab("s2", "D:/work", allocId);
+    const match = freshTerminalTab("s1", "D:/work", allocId);
+    expect(
+      selectLaunchTab([other, match], "s1", local, "D:/work", allocId),
+    ).toBe(match);
+  });
+
+  it("leaves ordinary launches and WSL restores alone", () => {
+    expect(
+      selectLaunchTab([], "s1", local, undefined, allocId),
+    ).toBeUndefined();
+    expect(
+      selectLaunchTab(
+        [],
+        "s1",
+        { kind: "wsl", distro: "Ubuntu" },
+        "D:/work",
+        allocId,
+      ),
+    ).toBeUndefined();
+  });
+});
 
 function space(over: Partial<SpaceMeta>): SpaceMeta {
   return {

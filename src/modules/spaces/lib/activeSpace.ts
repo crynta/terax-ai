@@ -1,4 +1,7 @@
+import type { Tab } from "@/modules/tabs";
+import { findLeafCwd } from "@/modules/terminal/lib/panes";
 import type { WorkspaceEnv } from "@/modules/workspace";
+import { freshTerminalTab } from "./serialize";
 import type { SpaceMeta } from "./store";
 
 export function findActiveSpace(
@@ -28,4 +31,22 @@ export function freshTabCwd(
   home: string | null,
 ): string | null {
   return restoredHome ?? (env.kind === "local" ? (launchCwd ?? home) : null);
+}
+
+export function selectLaunchTab(
+  tabs: Tab[],
+  spaceId: string,
+  env: WorkspaceEnv,
+  cwd: string | undefined,
+  allocId: () => number,
+) {
+  if (!cwd || env.kind !== "local") return undefined;
+  return (
+    tabs.find(
+      (tab) =>
+        tab.kind === "terminal" &&
+        tab.spaceId === spaceId &&
+        findLeafCwd(tab.paneTree, tab.activeLeafId) === cwd,
+    ) ?? freshTerminalTab(spaceId, cwd, allocId)
+  );
 }
