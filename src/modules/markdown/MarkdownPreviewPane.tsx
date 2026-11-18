@@ -97,6 +97,43 @@ export function MarkdownPreviewPane({
   );
 }
 
+export function buildPreviewRehypePlugins({
+  path,
+  boundary,
+  assetUrlFor,
+  token,
+}: {
+  path: string;
+  boundary: string;
+  assetUrlFor: (abs: string) => string | undefined;
+  token?: string | null;
+}) {
+  const d = defaultRehypePlugins;
+  const hardenFn = (Array.isArray(d.harden) ? d.harden[0] : d.harden) as any;
+  return [
+    d.raw,
+    d.sanitize,
+    rehypeLocalImages(
+      path,
+      (abs) => assetUrlFor(abs) ?? "data:,",
+      {
+        boundary,
+        isReadable: (abs) => checkReadable(abs).ok,
+      },
+      `${path}\0${boundary}\0${token ?? ""}`,
+    ),
+    [
+      hardenFn,
+      {
+        allowedLinkPrefixes: ["*"],
+        allowedImagePrefixes: ["*"],
+        allowDataImages: true,
+        allowedProtocols: ["*"],
+      },
+    ],
+  ] as any;
+}
+
 const MarkdownBody = memo(function MarkdownBody({
   path,
   boundary,
@@ -112,32 +149,10 @@ const MarkdownBody = memo(function MarkdownBody({
     retry,
     token,
   } = useAssetGrant(boundary);
-  const rehypePlugins = useMemo(() => {
-    const d = defaultRehypePlugins;
-    const hardenFn = (Array.isArray(d.harden) ? d.harden[0] : d.harden) as any;
-    return [
-      d.raw,
-      d.sanitize,
-      rehypeLocalImages(
-        path,
-        (abs) => assetUrlFor(abs) ?? "data:,",
-        {
-          boundary,
-          isReadable: (abs) => checkReadable(abs).ok,
-        },
-        `${path}\0${boundary}\0${token ?? ""}`,
-      ),
-      [
-        hardenFn,
-        {
-          allowedLinkPrefixes: ["*"],
-          allowedImagePrefixes: ["*"],
-          allowDataImages: true,
-          allowedProtocols: ["*"],
-        },
-      ],
-    ] as any;
-  }, [path, boundary, assetUrlFor, token]);
+  const rehypePlugins = useMemo(
+    () => buildPreviewRehypePlugins({ path, boundary, assetUrlFor, token }),
+    [path, boundary, assetUrlFor, token],
+  );
 
   return (
     <>
