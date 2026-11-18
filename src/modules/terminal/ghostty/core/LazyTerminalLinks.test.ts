@@ -6,8 +6,10 @@ const active = {
   dispose: vi.fn(),
 };
 const createTerminalLinks = vi.fn(() => active);
+const platform = vi.hoisted(() => ({ IS_MAC: false }));
 
 vi.mock("./terminalLinksRuntime", () => ({ createTerminalLinks }));
+vi.mock("@/lib/platform", () => platform);
 
 import { LazyTerminalLinks } from "./LazyTerminalLinks";
 
@@ -16,7 +18,7 @@ afterEach(() => vi.clearAllMocks());
 type Flags = { metaKey?: boolean; touch?: boolean; button?: number };
 
 function pointer(type: string, flags: Flags = {}) {
-  return Object.assign(new Event(type), {
+  return Object.assign(new Event(type, { cancelable: true }), {
     clientX: 10,
     clientY: 10,
     button: flags.button ?? 0,
@@ -184,6 +186,30 @@ describe("LazyTerminalLinks", () => {
       "pointerup",
     ]);
   });
+
+  it.each([true, false])(
+    "on macOS, keeps a Cmd-press from the application while the code loads only if it tracks the mouse (%s)",
+    async (mouseTracking) => {
+      platform.IS_MAC = true;
+      try {
+        const { target, model, tick, ingested } = setup();
+        model.modes.mockReturnValue({ mouseTracking });
+        // Once the code knows the press was on a link, it is too late to
+        // take it back from the application.
+        const press = pointer("pointerdown", { metaKey: true });
+        target.dispatchEvent(press);
+        target.dispatchEvent(pointer("pointerup", { metaKey: true }));
+        expect(press.defaultPrevented).toBe(mouseTracking);
+        await tick();
+        expect(ingested().map((event) => event.type)).toEqual([
+          "pointerdown",
+          "pointerup",
+        ]);
+      } finally {
+        platform.IS_MAC = false;
+      }
+    },
+  );
 
   it("ignores presses that are not a plain primary-button click with the modifier", async () => {
     const { target, tick } = setup();
