@@ -114,6 +114,7 @@ const MarkdownBody = memo(function MarkdownBody({
   } = useAssetGrant(boundary);
   const rehypePlugins = useMemo(() => {
     const d = defaultRehypePlugins;
+    const hardenFn = (Array.isArray(d.harden) ? d.harden[0] : d.harden) as any;
     return [
       d.raw,
       d.sanitize,
@@ -126,8 +127,15 @@ const MarkdownBody = memo(function MarkdownBody({
         },
         `${path}\0${boundary}\0${token ?? ""}`,
       ),
-      d.harden,
-    ];
+      [
+        hardenFn,
+        {
+          allowedLinkPrefixes: ["*"],
+          allowedImagePrefixes: ["*"],
+          allowDataImages: true,
+        },
+      ],
+    ] as any;
   }, [path, boundary, assetUrlFor, token]);
 
   return (

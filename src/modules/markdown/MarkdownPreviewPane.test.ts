@@ -16,4 +16,13 @@ describe("MarkdownPreviewPane Streamdown configuration", () => {
   it("does not run streaming incomplete-markdown repair for files", () => {
     expect(streamdownJsx).toMatch(/parseIncompleteMarkdown=\{false\}/);
   });
+
+  it("passes explicit rehype-harden options for links and images", () => {
+    expect(src).toMatch(/allowedLinkPrefixes:\s*\["\*"\]/);
+    expect(src).toMatch(/allowedImagePrefixes:\s*\["\*"\]/);
+    expect(src).toMatch(/allowDataImages:\s*true/);
+    expect(src.indexOf("rehypeLocalImages(")).toBeLessThan(
+      src.indexOf("allowedLinkPrefixes"),
+    );
+  });
 });
