@@ -124,7 +124,7 @@ const MarkdownBody = memo(function MarkdownBody({
           allowDataImages: true,
         },
       ],
-    ];
+    ] as any;
   }, [path, boundary, assetUrlFor]);
 
   return (
