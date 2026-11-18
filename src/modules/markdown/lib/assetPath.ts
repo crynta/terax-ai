@@ -155,3 +155,37 @@ export function rehypeLocalImages(
   });
   return attacher;
 }
+
+const SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
+
+function isBareRelativeHref(href: string): boolean {
+  if (
+    !href ||
+    href.startsWith("#") ||
+    href.startsWith("/") ||
+    href.startsWith("./") ||
+    href.startsWith("../") ||
+    href.startsWith("//")
+  ) {
+    return false;
+  }
+  return !SCHEME_RE.test(href);
+}
+
+/**
+ * rehype-harden blocks bare relative links like `other.md` when it cannot parse
+ * them without a default origin. Normalize them to an explicit relative path so
+ * the hardener can evaluate them while keeping the href relative.
+ */
+export function rehypeAllowBareRelativeLinks() {
+  const rewrite = (node: HastNode): void => {
+    if (node.type === "element" && node.tagName === "a") {
+      const href = node.properties?.href;
+      if (typeof href === "string" && isBareRelativeHref(href.trim())) {
+        if (node.properties) node.properties.href = `./${href.trim()}`;
+      }
+    }
+    node.children?.forEach(rewrite);
+  };
+  return () => (tree: unknown) => rewrite(tree as HastNode);
+}

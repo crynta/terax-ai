@@ -8,7 +8,8 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("./useMarkdownDocument", () => ({
   useMarkdownDocument: () => ({
     kind: "ready",
-    content: "![pic](./img.png)\n\n[link](https://example.com/page)",
+    content:
+      "![pic](./img.png)\n\n[link](https://example.com/page)\n\n[doc](other.md)",
   }),
 }));
 
@@ -40,13 +41,16 @@ describe("MarkdownPreviewPane Streamdown configuration", () => {
     expect(streamdownJsx).toMatch(/parseIncompleteMarkdown=\{false\}/);
   });
 
-  it("passes explicit rehype-harden options for links and images", () => {
-    expect(src).toMatch(/allowedLinkPrefixes:\s*\["\*"\]/);
-    expect(src).toMatch(/allowedImagePrefixes:\s*\["\*"\]/);
-    expect(src).toMatch(/allowDataImages:\s*true/);
-    expect(src).toMatch(/allowedProtocols:\s*\["\*"\]/);
+  it("wires local image rewriting and hardening into preview plugins", () => {
+    expect(src).toMatch(/rehypeLocalImages\(/);
+    expect(src).toMatch(/rehypeAllowBareRelativeLinks\(/);
+    expect(src).toMatch(/d\.harden/);
+    expect(src.indexOf("rehypeLocalImages(")).toBeGreaterThan(-1);
     expect(src.indexOf("rehypeLocalImages(")).toBeLessThan(
-      src.indexOf("allowedLinkPrefixes"),
+      src.indexOf("rehypeAllowBareRelativeLinks("),
+    );
+    expect(src.indexOf("rehypeAllowBareRelativeLinks(")).toBeLessThan(
+      src.indexOf("d.harden"),
     );
   });
 
@@ -65,9 +69,10 @@ describe("MarkdownPreviewPane Streamdown configuration", () => {
     );
     expect(html).not.toContain("data:,");
     expect(html).not.toContain("[blocked]");
+    expect(html).not.toContain("Blocked URL");
   });
 
-  it("keeps HTTP and macOS asset granted URLs against preview plugin options", () => {
+  it("keeps links and granted image URLs against preview plugin options", () => {
     const basePath = "/w/docs/readme.md";
     const boundary = "/w";
     const httpGranted =
@@ -95,6 +100,12 @@ describe("MarkdownPreviewPane Streamdown configuration", () => {
                 properties: { src: "./img.png", alt: "pic" },
                 children: [],
               },
+              {
+                type: "element",
+                tagName: "a",
+                properties: { href: "other.md" },
+                children: [{ type: "text", value: "doc" }],
+              },
             ],
           },
         ],
@@ -113,6 +124,8 @@ describe("MarkdownPreviewPane Streamdown configuration", () => {
       return {
         href: paragraph.children[0].properties.href as string,
         src: paragraph.children[1].properties.src as string,
+        relHref: paragraph.children[2].properties.href as string,
+        relTitle: paragraph.children[2].properties.title as string | undefined,
       };
     };
 
@@ -125,6 +138,9 @@ describe("MarkdownPreviewPane Streamdown configuration", () => {
     const http = run(previewPlugins);
     expect(http.href).toBe("https://example.com/page");
     expect(http.src).toBe(httpGranted);
+    expect(http.relTitle).toBeUndefined();
+    expect(http.relHref).not.toContain("[blocked]");
+    expect(String(http.relHref)).toContain("other.md");
 
     const macPreviewPlugins = buildPreviewRehypePlugins({
       path: basePath,

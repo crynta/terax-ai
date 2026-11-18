@@ -10,7 +10,11 @@ import {
   useRef,
 } from "react";
 import { defaultRehypePlugins, Streamdown } from "streamdown";
-import { previewBoundary, rehypeLocalImages } from "./lib/assetPath";
+import {
+  previewBoundary,
+  rehypeAllowBareRelativeLinks,
+  rehypeLocalImages,
+} from "./lib/assetPath";
 import { MarkdownLink } from "./MarkdownLink";
 import { MarkdownViewToggle } from "./MarkdownViewToggle";
 import { useMarkdownDocument } from "./useMarkdownDocument";
@@ -109,7 +113,6 @@ export function buildPreviewRehypePlugins({
   token?: string | null;
 }) {
   const d = defaultRehypePlugins;
-  const hardenFn = (Array.isArray(d.harden) ? d.harden[0] : d.harden) as any;
   return [
     d.raw,
     d.sanitize,
@@ -122,15 +125,8 @@ export function buildPreviewRehypePlugins({
       },
       `${path}\0${boundary}\0${token ?? ""}`,
     ),
-    [
-      hardenFn,
-      {
-        allowedLinkPrefixes: ["*"],
-        allowedImagePrefixes: ["*"],
-        allowDataImages: true,
-        allowedProtocols: ["*"],
-      },
-    ],
+    rehypeAllowBareRelativeLinks(),
+    d.harden,
   ] as any;
 }
 
@@ -153,15 +149,19 @@ const MarkdownBody = memo(function MarkdownBody({
     () => buildPreviewRehypePlugins({ path, boundary, assetUrlFor, token }),
     [path, boundary, assetUrlFor, token],
   );
+  // Streamdown memoizes on plugins but not rehypePlugins; keep key stable on
+  // grant changes to preserve focus while forcing a render refresh.
+  const renderNonce = useMemo(() => ({}), [rehypePlugins]);
 
   return (
     <>
     {assetError && <div className="mb-3 text-xs text-muted-foreground"><p role="alert">Local images unavailable: {assetError}</p><button type="button" className="underline" onClick={retry}>Retry images</button></div>}
     <Streamdown
-      key={`${path}\0${boundary}\0${token ?? ""}`}
+      key={`${path}\0${boundary}`}
       className="select-text [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
       components={components}
       rehypePlugins={rehypePlugins}
+      plugins={renderNonce as any}
       mode="static"
       parseIncompleteMarkdown={false}
     >
