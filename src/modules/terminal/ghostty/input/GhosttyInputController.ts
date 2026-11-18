@@ -67,8 +67,8 @@ export class GhosttyInputController {
   private readonly pressedKeys = new Map<string, KeyEvent>();
   /** Ctrl+V presses waiting on the clipboard: the key may be released before the read ends. */
   private readonly pasteKeys = new Map<string, { released: boolean }>();
-  private pasteDelivery: Promise<void> = Promise.resolve();
   private readonly wheel = new WheelAccumulator();
+  private pasteDelivery: Promise<void> = Promise.resolve();
   private composing = false;
   private optionKeys = 0;
   private lastData = "";
