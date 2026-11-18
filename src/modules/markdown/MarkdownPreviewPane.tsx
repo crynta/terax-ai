@@ -134,6 +134,7 @@ const MarkdownBody = memo(function MarkdownBody({
     <>
     {assetError && <div className="mb-3 text-xs text-muted-foreground"><p role="alert">Local images unavailable: {assetError}</p><button type="button" className="underline" onClick={retry}>Retry images</button></div>}
     <Streamdown
+      key={`${path}\0${boundary}\0${token ?? ""}`}
       className="select-text [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
       components={components}
       rehypePlugins={rehypePlugins}
