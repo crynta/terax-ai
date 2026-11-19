@@ -1,4 +1,4 @@
-import type { PaneNode } from "@/modules/terminal";
+import { card, type LayoutNode, split } from "@/modules/workbench/model/layout";
 
 export const AGENT_LAUNCHERS = [
   {
@@ -104,54 +104,46 @@ export function findAgentLauncher(id: AgentLauncherId) {
 }
 
 export type AgentPanePlan = {
-  paneTree: PaneNode;
+  layout: LayoutNode;
+  /** Terminal tab ids, one per agent; a terminal's id is its leaf id. */
   leafIds: number[];
+  focusedCardId: number;
 };
 
 export function createAgentPanePlan(
   instances: AgentInstanceCount,
   allocateId: () => number,
-  cwd?: string,
 ): AgentPanePlan {
   if (!Number.isInteger(instances) || instances < 1 || instances > 4) {
     throw new RangeError("Agent instance count must be between 1 and 4.");
   }
 
-  const leaves = Array.from({ length: instances }, () => ({
-    kind: "leaf" as const,
-    id: allocateId(),
-    cwd,
-  }));
-  const split = (dir: "row" | "col", children: PaneNode[]): PaneNode => ({
-    kind: "split",
-    id: allocateId(),
-    dir,
-    children,
+  const leafIds = Array.from({ length: instances }, () => allocateId());
+  const cards = leafIds.map((id) => card(allocateId(), [id]));
+  const plan = (layout: LayoutNode): AgentPanePlan => ({
+    layout,
+    leafIds,
+    focusedCardId: cards[0].id,
   });
 
   switch (instances) {
     case 1:
-      return { paneTree: leaves[0], leafIds: leaves.map((leaf) => leaf.id) };
+      return plan(cards[0]);
     case 2:
-      return {
-        paneTree: split("row", leaves),
-        leafIds: leaves.map((leaf) => leaf.id),
-      };
+      return plan(split(allocateId(), "row", cards));
     case 3:
-      return {
-        paneTree: split("row", [
-          leaves[0],
-          split("col", [leaves[1], leaves[2]]),
+      return plan(
+        split(allocateId(), "row", [
+          cards[0],
+          split(allocateId(), "col", [cards[1], cards[2]]),
         ]),
-        leafIds: leaves.map((leaf) => leaf.id),
-      };
+      );
     case 4:
-      return {
-        paneTree: split("row", [
-          split("col", [leaves[0], leaves[1]]),
-          split("col", [leaves[2], leaves[3]]),
+      return plan(
+        split(allocateId(), "row", [
+          split(allocateId(), "col", [cards[0], cards[1]]),
+          split(allocateId(), "col", [cards[2], cards[3]]),
         ]),
-        leafIds: leaves.map((leaf) => leaf.id),
-      };
+      );
   }
 }

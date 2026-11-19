@@ -34,10 +34,15 @@ pane.splitRight: Cmd+d
 pane.splitDown: Shift+Cmd+d
 pane.focusNext: Cmd+]
 pane.focusPrev: Cmd+[
-pane.swapLeft: Alt+Cmd+ArrowLeft
-pane.swapRight: Alt+Cmd+ArrowRight
-pane.swapUp: Alt+Cmd+ArrowUp
-pane.swapDown: Alt+Cmd+ArrowDown
+pane.focusLeft: Alt+Cmd+ArrowLeft
+pane.focusRight: Alt+Cmd+ArrowRight
+pane.focusUp: Alt+Cmd+ArrowUp
+pane.focusDown: Alt+Cmd+ArrowDown
+pane.maximize: Shift+Cmd+Enter
+pane.swapLeft: Alt+Shift+Cmd+ArrowLeft
+pane.swapRight: Alt+Shift+Cmd+ArrowRight
+pane.swapUp: Alt+Shift+Cmd+ArrowUp
+pane.swapDown: Alt+Shift+Cmd+ArrowDown
 pane.source: Cmd+g
 terminal.toggleInput: Cmd+u
 blocks.prev: Cmd+ArrowUp
@@ -45,6 +50,7 @@ blocks.next: Cmd+ArrowDown
 tab.next: Ctrl+Tab
 tab.prev: Ctrl+Shift+Tab
 tab.selectByIndex: Cmd+1
+task.new: Shift+Cmd+n
 space.next: Shift+Cmd+]
 space.prev: Shift+Cmd+[
 space.overview: Shift+Cmd+s
@@ -106,7 +112,7 @@ const group = (id: string) => SHORTCUTS.find((s) => s.id === id)?.group;
 const isEditor = (id: string) => group(id) === "Editor";
 
 describe("macOS defaults", () => {
-  it("are exactly what shipped before the Windows and Linux map was split", () => {
+  it("keep the macOS command map and workbench card actions", () => {
     const text = SHORTCUTS.map(
       (s) => `${s.id}: ${MAC_DEFAULTS[s.id].map(describeBinding).join(", ")}`,
     ).join("\n");
@@ -173,6 +179,7 @@ const TUI_EVENTS: { name: string; event: Partial<KeyboardEvent> }[] = [
 
 /** Claimed by the OS, the clipboard or an input method. */
 const RESERVED: KeyBinding[] = [
+  { ctrl: true, shift: true, key: "0" },
   { ctrl: true, shift: true, key: "c" },
   { ctrl: true, shift: true, key: "v" },
   { ctrl: true, shift: true, key: "u" },
@@ -493,8 +500,7 @@ describe("Windows and Linux defaults against the editor's CodeMirror keymaps", (
   it("never shares a chord with an application shortcut outside the editor", () => {
     const shared: string[] = [];
     for (const id of ids) {
-      // The editor keeps the editor group; pane swaps only run in a terminal tab
-      // with two panes (shouldDisablePaneSwapShortcut), which holds no editor.
+      // Editor actions and card swaps do not intercept the editor keymap.
       if (isEditor(id) || id.startsWith("pane.swap")) continue;
       for (const binding of WIN_LINUX_DEFAULTS[id].flatMap((b) =>
         accepted(id, b),

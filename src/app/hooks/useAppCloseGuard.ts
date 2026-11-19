@@ -5,21 +5,15 @@ import {
   flushSessionWrites,
 } from "@/modules/ai/lib/sessions";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import {
-  type RefObject,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { Tab } from "@/modules/tabs";
-import { leafHasForegroundProcess, leafIds } from "@/modules/terminal";
+import { leafHasForegroundProcess } from "@/modules/terminal";
+import { snapshot } from "@/modules/workbench/store";
+import { flushWorkbench } from "@/modules/workbench/useWorkbenchPersistence";
 
-async function anyTerminalBusy(tabs: Tab[]): Promise<boolean> {
-  const leaves = tabs.flatMap((t) =>
-    t.kind === "terminal" ? leafIds(t.paneTree) : [],
-  );
+async function anyTerminalBusy(tabs: readonly Tab[]): Promise<boolean> {
+  const leaves = tabs.flatMap((t) => (t.kind === "terminal" ? [t.id] : []));
   if (leaves.length === 0) return false;
   const checks = await Promise.all(leaves.map(leafHasForegroundProcess));
   return checks.some(Boolean);
@@ -53,7 +47,7 @@ export function canOptOutOfAppClosePrompt(blocker: AppCloseBlocker): boolean {
   return blocker.busyTerminal && blocker.dirtyEditors === 0;
 }
 
-export function useAppCloseGuard(tabsRef: RefObject<Tab[]>) {
+export function useAppCloseGuard() {
   const [pendingAppClose, setPendingAppClose] =
     useState<AppCloseBlocker | null>(null);
   const forceClose = useRef(false);
@@ -75,9 +69,18 @@ export function useAppCloseGuard(tabsRef: RefObject<Tab[]>) {
     closing.current = true;
     try {
       flushPersist();
-      const flush = await flushSessionWrites({
-        timeoutMs: CLOSE_FLUSH_TIMEOUT_MS,
-      });
+      // Tasks and layouts reach the disk before the window goes; a failing
+      // store write must not keep the window open.
+      const workbench = Promise.race([
+        flushWorkbench().catch((e) =>
+          console.error("[terax] could not save tasks on close:", e),
+        ),
+        new Promise((resolve) => setTimeout(resolve, CLOSE_FLUSH_TIMEOUT_MS)),
+      ]);
+      const [flush] = await Promise.all([
+        flushSessionWrites({ timeoutMs: CLOSE_FLUSH_TIMEOUT_MS }),
+        workbench,
+      ]);
       if (closeAfterFlush(flush, warned.current) === "warn") {
         warned.current = true;
         toast.error("Could not save chat history", {
@@ -110,9 +113,9 @@ export function useAppCloseGuard(tabsRef: RefObject<Tab[]>) {
         // unsaved-changes guard below.
         const busyTerminal =
           usePreferencesStore.getState().confirmCloseRunningTerminal &&
-          (await anyTerminalBusy(tabsRef.current));
+          (await anyTerminalBusy(snapshot().tabs));
         // Count after the await so edits made during the IPC check are seen.
-        const dirtyEditors = tabsRef.current.filter(
+        const dirtyEditors = snapshot().tabs.filter(
           (t) => t.kind === "editor" && t.dirty,
         ).length;
         if (dirtyEditors > 0 || busyTerminal) {
@@ -129,7 +132,7 @@ export function useAppCloseGuard(tabsRef: RefObject<Tab[]>) {
       disposed = true;
       unlisten?.();
     };
-  }, [tabsRef, finishClose]);
+  }, [finishClose]);
 
   const confirmAppClose = useCallback(() => {
     setPendingAppClose(null);

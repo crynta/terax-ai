@@ -437,6 +437,16 @@ export class WebGpuWindowCanvas {
   }
 
   /**
+   * A pane moved without changing size (cards swapped or re-placed): the next frame re-reads
+   * every rectangle instead of waiting for the periodic check below.
+   */
+  remeasure(): void {
+    if (this.panes.size === 0) return;
+    this.lastGeometryCheck = Number.NEGATIVE_INFINITY;
+    this.requestFrame();
+  }
+
+  /**
    * Safety net for layout changes that fire no observer: a pane or the area that moved
    * without changing size. Re-reads the rectangles at most once a second, and only while
    * frames are being produced, so an idle window never does it.

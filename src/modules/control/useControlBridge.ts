@@ -1,4 +1,5 @@
-import { DEFAULT_SPACE_ID, type Tab } from "@/modules/tabs/lib/useTabs";
+import type { Tab } from "@/modules/tabs/lib/tabs";
+import { DEFAULT_PROJECT_ID as DEFAULT_SPACE_ID } from "@/modules/workbench/useWorkbenchBoot";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";

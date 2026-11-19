@@ -1,9 +1,7 @@
+import { slotOf } from "@/modules/workbench/components/slot";
+import { snapshot } from "@/modules/workbench/store";
 import type { Tab } from "@/modules/tabs";
-import {
-  hasLeaf,
-  leafIdForPty,
-  subscribeAgentSignals,
-} from "@/modules/terminal";
+import { leafIdForPty, subscribeAgentSignals } from "@/modules/terminal";
 import { useEffect, useRef } from "react";
 import { displayAgent } from "../lib/format";
 import { maybeTriggerManagedReview } from "../lib/review";
@@ -15,18 +13,17 @@ import { useManagedAgentsStore } from "../store/managedAgentsStore";
 
 type Activate = (tabId: number, leafId: number) => void;
 type Ctx = {
-  tabs: Tab[];
-  activeId: number;
+  getTabs: () => readonly Tab[];
   focused: boolean;
   onActivate: Activate;
 };
 
 function tabInfo(
-  tabs: Tab[],
+  tabs: readonly Tab[],
   leafId: number,
 ): { tabId: number; title: string } | null {
   for (const t of tabs) {
-    if (t.kind === "terminal" && hasLeaf(t.paneTree, leafId)) {
+    if (t.kind === "terminal" && t.id === leafId) {
       return { tabId: t.id, title: t.title };
     }
   }
@@ -38,7 +35,7 @@ function route(
   kind: "attention" | "finished",
   ctx: Ctx,
 ): void {
-  const info = tabInfo(ctx.tabs, session.leafId);
+  const info = tabInfo(ctx.getTabs(), session.leafId);
   const name = displayAgent(session.agent);
   const heading =
     kind === "attention" ? `${name} needs your input` : `${name} finished`;
@@ -50,7 +47,7 @@ function route(
     title: heading,
     body: info?.title,
     focused: ctx.focused,
-    visible: ctx.activeId === session.tabId,
+    visible: slotOf(snapshot(), session.tabId)?.visible ?? false,
     // Stop fires every turn, so finished only updates the bell; attention toasts.
     allowToast: kind === "attention",
     tabId: session.tabId,
@@ -66,7 +63,7 @@ function handleSignal(sig: AgentSignal, ctx: Ctx): void {
 
   switch (sig.kind) {
     case "started": {
-      const info = tabInfo(ctx.tabs, leafId);
+      const info = tabInfo(ctx.getTabs(), leafId);
       if (!info) return;
       store.start(leafId, info.tabId, sig.agent ?? "agent");
       return;
@@ -95,17 +92,15 @@ function handleSignal(sig: AgentSignal, ctx: Ctx): void {
 }
 
 export function AgentNotificationsBridge({
-  tabs,
-  activeId,
+  getTabs,
   onActivate,
 }: {
-  tabs: Tab[];
-  activeId: number;
+  getTabs: () => readonly Tab[];
   onActivate: Activate;
 }) {
   const focused = useWindowFocus();
-  const ctxRef = useRef<Ctx>({ tabs, activeId, focused, onActivate });
-  ctxRef.current = { tabs, activeId, focused, onActivate };
+  const ctxRef = useRef<Ctx>({ getTabs, focused, onActivate });
+  ctxRef.current = { getTabs, focused, onActivate };
 
   // Shares the terminal module's single `terax:agent-signal` listener.
   useEffect(

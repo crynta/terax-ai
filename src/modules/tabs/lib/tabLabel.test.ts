@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { labelFor } from "./tabLabel";
-import type { TerminalTab } from "./useTabs";
+import type { TerminalTab } from "./tabs";
 
 function terminalTab(over: Partial<TerminalTab> = {}): TerminalTab {
   return {
@@ -8,8 +8,6 @@ function terminalTab(over: Partial<TerminalTab> = {}): TerminalTab {
     kind: "terminal",
     spaceId: "default",
     title: "shell",
-    paneTree: { kind: "leaf", id: 2 },
-    activeLeafId: 2,
     ...over,
   };
 }
@@ -27,7 +25,12 @@ describe("labelFor (terminal tabs)", () => {
 
   it("prefers a custom title over the cwd-derived name", () => {
     expect(
-      labelFor(terminalTab({ cwd: "/Users/me/projects/terax-ai", customTitle: "Server" })),
+      labelFor(
+        terminalTab({
+          cwd: "/Users/me/projects/terax-ai",
+          customTitle: "Server",
+        }),
+      ),
     ).toBe("Server");
   });
 

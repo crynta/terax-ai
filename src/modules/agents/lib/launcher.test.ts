@@ -1,12 +1,12 @@
-import { leafIds } from "@/modules/terminal";
+import { cards } from "@/modules/workbench/model/layout";
 import { describe, expect, it } from "vitest";
 import {
   AGENT_LAUNCHERS,
+  type AgentInstanceCount,
   createAgentPanePlan,
   DEFAULT_AGENT_LAUNCH_COMMANDS,
   normalizeAgentLaunchCommands,
   validateAgentLaunchCommand,
-  type AgentInstanceCount,
 } from "./launcher";
 
 function allocator(start = 1) {
@@ -62,32 +62,25 @@ describe("agent launch commands", () => {
 
 describe("createAgentPanePlan", () => {
   it.each([1, 2, 3, 4] as AgentInstanceCount[])(
-    "creates %i unique leaves with the requested cwd",
+    "creates %i cards, one unique terminal each",
     (instances) => {
-      const plan = createAgentPanePlan(instances, allocator(), "/workspace");
-      const ids = leafIds(plan.paneTree);
-      expect(ids).toEqual(plan.leafIds);
-      expect(new Set(ids).size).toBe(instances);
-
-      const visit = (node: typeof plan.paneTree) => {
-        if (node.kind === "leaf") {
-          expect(node.cwd).toBe("/workspace");
-          return;
-        }
-        node.children.forEach(visit);
-      };
-      visit(plan.paneTree);
+      const plan = createAgentPanePlan(instances, allocator());
+      const all = cards(plan.layout);
+      expect(all).toHaveLength(instances);
+      expect(all.map((c) => c.tabIds)).toEqual(plan.leafIds.map((id) => [id]));
+      expect(new Set(plan.leafIds).size).toBe(instances);
+      expect(plan.focusedCardId).toBe(all[0].id);
     },
   );
 
   it("balances four agents into a two by two grid", () => {
-    const { paneTree } = createAgentPanePlan(4, allocator());
-    expect(paneTree.kind).toBe("split");
-    if (paneTree.kind !== "split") return;
-    expect(paneTree.dir).toBe("row");
-    expect(paneTree.children).toHaveLength(2);
+    const { layout } = createAgentPanePlan(4, allocator());
+    expect(layout.kind).toBe("split");
+    if (layout.kind !== "split") return;
+    expect(layout.dir).toBe("row");
+    expect(layout.children).toHaveLength(2);
     expect(
-      paneTree.children.every(
+      layout.children.every(
         (child) =>
           child.kind === "split" &&
           child.dir === "col" &&

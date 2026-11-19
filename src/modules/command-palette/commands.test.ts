@@ -11,9 +11,7 @@ function terminalTab(id: number): Tab {
     kind: "terminal",
     spaceId: "s",
     title: "shell",
-    paneTree: { kind: "leaf", id: id * 10 },
-    activeLeafId: id * 10,
-  } as unknown as Tab;
+  };
 }
 
 function baseContext(
@@ -23,6 +21,7 @@ function baseContext(
   return {
     tabs: [terminalTab(1)],
     activeId: 1,
+    canCloseActive: false,
     searchTarget: "content" as never,
     explorerRoot: "/workspace",
     home: "/home/me",
@@ -49,6 +48,8 @@ function baseContext(
     openSpacesOverview: noop,
     newSpace: noop,
     switchSpace: noop,
+    newTask: noop,
+    toggleMaximizeCard: noop,
     ...over,
   };
 }
@@ -60,25 +61,25 @@ function reasonById(over: Partial<CommandPaletteActionContext>, id: string) {
 }
 
 describe("createCommandItems", () => {
-  it("enables split on a terminal tab below the pane limit", () => {
+  it("splits any focused card, whatever it shows", () => {
     expect(reasonById({}, "pane.splitRight")).toBeUndefined();
     expect(reasonById({}, "pane.splitDown")).toBeUndefined();
   });
 
-  it("disables split when there is no terminal tab", () => {
-    const editorTab = { ...terminalTab(1), kind: "editor" } as unknown as Tab;
-    expect(reasonById({ tabs: [editorTab] }, "pane.splitRight")).toBe(
-      "No terminal tab",
-    );
+  it("disables split before a card exists", () => {
+    expect(reasonById({ activeId: null }, "pane.splitRight")).toBe("No card");
   });
 
-  it("disables close on the last tab with a single pane", () => {
+  it("disables close on a project's last tab", () => {
     expect(reasonById({}, "tab.close")).toBe("Last tab");
   });
 
-  it("enables close when more than one tab is open", () => {
+  it("enables close when the focused tab may close", () => {
     expect(
-      reasonById({ tabs: [terminalTab(1), terminalTab(2)] }, "tab.close"),
+      reasonById(
+        { tabs: [terminalTab(1), terminalTab(2)], canCloseActive: true },
+        "tab.close",
+      ),
     ).toBeUndefined();
   });
 
@@ -99,6 +100,6 @@ describe("createCommandItems", () => {
       { spaces: [{ id: "sp1", name: "One" }], activeSpaceId: "sp1" },
       "spaces.switch.sp1",
     );
-    expect(reason).toBe("Current space");
+    expect(reason).toBe("Current project");
   });
 });

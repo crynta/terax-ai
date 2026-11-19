@@ -7,7 +7,7 @@ import {
   rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -345,7 +345,8 @@ describe("built startup graph", () => {
     expect(
       emitted
         .map((file) => file.slice(outDir.length))
-        .filter((file) => /bench/i.test(file)),
+        // Chunks named after the bench driver: bench-*.js, BenchBridge-*.js.
+        .filter((file) => /^(?:bench|BenchBridge)/i.test(basename(file))),
     ).toEqual([]);
     const offenders = emitted
       .filter((file) => /\.(js|html|css)$/.test(file))

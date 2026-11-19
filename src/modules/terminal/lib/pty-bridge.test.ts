@@ -259,18 +259,43 @@ describe("PTY bridge over the multiplexed stream", () => {
     const { openPty, useAgentActivityStore } = await load();
     nativeInvoke(60);
     const onExit = vi.fn();
+    let now = 0;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+    // Slow frontend/stream setup must not count as a long-running shell.
+    now = 10_000;
     const session = await openPty(80, 24, { onData: vi.fn(), onExit });
+    now += 25;
     mocks.signal?.({ payload: { id: 60, kind: "started", agent: "codex" } });
     await flush();
     heldPoll().reply([{ kind: "exit", id: session.id, code: 0 }]);
     await flush();
-    expect(onExit).toHaveBeenCalledWith(0);
+    expect(onExit).toHaveBeenCalledWith(0, 25);
+    clock.mockRestore();
     expect(useAgentActivityStore.getState().agents[60]).toBeUndefined();
     expect(useAgentActivityStore.getState().phases[60]).toBeUndefined();
     // The last terminal is gone: the held poll is released, nothing else runs.
     expect(polls().filter((poll) => !poll.signal?.aborted)).toHaveLength(1);
     await session.close();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("spawns in the supplied owning environment even when another project is active", async () => {
+    const { openPty } = await load();
+    nativeInvoke(80);
+    const workspace = { kind: "wsl", distro: "Ubuntu" } as const;
+    const session = await openPty(
+      80,
+      24,
+      { onData: vi.fn() },
+      "/repo",
+      false,
+      undefined,
+      12,
+      undefined,
+      workspace,
+    );
+    expect(openArguments().workspace).toEqual(workspace);
+    await session.close();
   });
 
   it("starts a terminal in the class its pane is in and reports later changes", async () => {

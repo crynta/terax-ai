@@ -18,6 +18,7 @@ export type ShortcutId =
   | "tab.next"
   | "tab.prev"
   | "tab.selectByIndex"
+  | "task.new"
   | "space.next"
   | "space.prev"
   | "space.overview"
@@ -25,6 +26,11 @@ export type ShortcutId =
   | "pane.splitDown"
   | "pane.focusNext"
   | "pane.focusPrev"
+  | "pane.focusLeft"
+  | "pane.focusRight"
+  | "pane.focusUp"
+  | "pane.focusDown"
+  | "pane.maximize"
   | "pane.swapLeft"
   | "pane.swapRight"
   | "pane.swapUp"
@@ -57,8 +63,9 @@ export type ShortcutId =
 export type ShortcutGroup =
   | "General"
   | "Tabs"
-  | "Spaces"
-  | "Panes"
+  | "Tasks"
+  | "Projects"
+  | "Cards"
   | "Terminal"
   | "Search"
   | "AI"
@@ -142,48 +149,73 @@ const SHORTCUT_META: Omit<Shortcut, "defaultBindings">[] = [
   },
   {
     id: "pane.splitRight",
-    label: "Split pane right",
-    group: "Panes",
+    label: "Split card right",
+    group: "Cards",
   },
   {
     id: "pane.splitDown",
-    label: "Split pane down",
-    group: "Panes",
+    label: "Split card down",
+    group: "Cards",
   },
   {
     id: "pane.focusNext",
-    label: "Focus next pane",
-    group: "Panes",
+    label: "Focus next card",
+    group: "Cards",
   },
   {
     id: "pane.focusPrev",
-    label: "Focus previous pane",
-    group: "Panes",
+    label: "Focus previous card",
+    group: "Cards",
+  },
+  {
+    id: "pane.focusLeft",
+    label: "Focus card left",
+    group: "Cards",
+  },
+  {
+    id: "pane.focusRight",
+    label: "Focus card right",
+    group: "Cards",
+  },
+  {
+    id: "pane.focusUp",
+    label: "Focus card up",
+    group: "Cards",
+  },
+  {
+    id: "pane.focusDown",
+    label: "Focus card down",
+    group: "Cards",
+  },
+  {
+    id: "pane.maximize",
+    label: "Maximize or restore card",
+    group: "Cards",
   },
   {
     id: "pane.swapLeft",
-    label: "Swap pane left",
-    group: "Panes",
+    label: "Swap card left",
+    group: "Cards",
   },
   {
     id: "pane.swapRight",
-    label: "Swap pane right",
-    group: "Panes",
+    label: "Swap card right",
+    group: "Cards",
   },
   {
     id: "pane.swapUp",
-    label: "Swap pane up",
-    group: "Panes",
+    label: "Swap card up",
+    group: "Cards",
   },
   {
     id: "pane.swapDown",
-    label: "Swap pane down",
-    group: "Panes",
+    label: "Swap card down",
+    group: "Cards",
   },
   {
     id: "pane.source",
     label: "Toggle source panel",
-    group: "Panes",
+    group: "Cards",
   },
   {
     id: "terminal.toggleInput",
@@ -216,23 +248,28 @@ const SHORTCUT_META: Omit<Shortcut, "defaultBindings">[] = [
   },
   {
     id: "tab.selectByIndex",
-    label: "Jump to tab 1\u20139",
-    group: "Tabs",
+    label: "Jump to task 1–9",
+    group: "Tasks",
+  },
+  {
+    id: "task.new",
+    label: "New task",
+    group: "Tasks",
   },
   {
     id: "space.next",
-    label: "Next space",
-    group: "Spaces",
+    label: "Next project",
+    group: "Projects",
   },
   {
     id: "space.prev",
-    label: "Previous space",
-    group: "Spaces",
+    label: "Previous project",
+    group: "Projects",
   },
   {
     id: "space.overview",
-    label: "Open spaces",
-    group: "Spaces",
+    label: "Open projects",
+    group: "Projects",
   },
   {
     id: "explorer.search",
@@ -340,8 +377,10 @@ export const SHORTCUTS: Shortcut[] = buildShortcuts(IS_MAC);
 
 export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   "General",
+  "Tasks",
   "Tabs",
-  "Panes",
+  "Cards",
+  "Projects",
   "Terminal",
   "View",
   "Search",

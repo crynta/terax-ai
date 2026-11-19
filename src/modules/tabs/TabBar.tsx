@@ -22,11 +22,7 @@ import {
 } from "@/modules/editor/lib/languageDefinitions";
 import { resolveDisplayName } from "@/modules/editor/lib/languageResolver";
 import { FileIcon } from "@/modules/explorer/FileIcon";
-import {
-  leafIds,
-  ptyIdForLeaf,
-  useAgentActivityStore,
-} from "@/modules/terminal";
+import { ptyIdForLeaf, useAgentActivityStore } from "@/modules/terminal";
 import {
   ArrowRight01Icon,
   Cancel01Icon,
@@ -37,6 +33,8 @@ import {
   GitCompareIcon,
   Globe02Icon,
   IncognitoIcon,
+  LayoutTwoColumnIcon,
+  LayoutTwoRowIcon,
   Message02Icon,
   PencilEdit02Icon,
   Tick02Icon,
@@ -53,13 +51,24 @@ import {
 import { useShallow } from "zustand/react/shallow";
 import { selectTabAgentStatus } from "./lib/tabAgentStatus";
 import { labelFor } from "./lib/tabLabel";
-import type { EditorTab, Tab, TerminalTab } from "./lib/useTabs";
+import type { EditorTab, Tab, TerminalTab } from "./lib/tabs";
 import { NewTabMenu } from "./NewTabMenu";
 
 type Props = {
   tabs: Tab[];
   activeId: number;
+  /** The last tab may close too (its card then closes). */
+  closable?: boolean;
   onSelect: (id: number) => void;
+  /** Moves a tab out of a multi-tab card into a new card beside it. */
+  onSplitOff?: (id: number, dir: "row" | "col") => void;
+  /** Takes over a tab drag that leaves the strip (drop on another card). */
+  externalDrag?: {
+    move: (x: number, y: number) => void;
+    /** True when the drop landed somewhere. */
+    drop: (tabId: number) => boolean;
+    cancel: () => void;
+  };
   onNew: () => void;
   onNewBlock: () => void;
   onNewPrivate: () => void;
@@ -82,10 +91,17 @@ type Props = {
   compact?: boolean;
 };
 
+/** Pointer travel (any direction) that turns a press on a tab into a drag. */
+const DRAG_THRESHOLD_PX = 6;
+
+/** A card's tab strip: one pill per tab, plus the new-tab picker. */
 export function TabBar({
   tabs,
   activeId,
+  closable = false,
   onSelect,
+  onSplitOff,
+  externalDrag,
   onNew,
   onNewBlock,
   onNewPrivate,
@@ -102,6 +118,7 @@ export function TabBar({
   onOverrideLanguage,
   compact,
 }: Props) {
+  const canClose = closable || tabs.length > 1;
   const scrollRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -111,6 +128,7 @@ export function TabBar({
   const drag = useRef<{
     pointerId: number;
     startX: number;
+    startY: number;
     fromId: number;
     active: boolean;
   } | null>(null);
@@ -180,6 +198,7 @@ export function TabBar({
     const st = drag.current;
     if (st) currentTarget.releasePointerCapture?.(st.pointerId);
     drag.current = null;
+    externalDrag?.cancel();
     setDraggingId(null);
     setDropGap(null);
     document.body.style.userSelect = "";
@@ -210,7 +229,6 @@ export function TabBar({
   return (
     <div
       ref={scrollRef}
-      data-tauri-drag-region
       className="min-w-0 shrink overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
       <div className="flex w-max items-center gap-0.5">
@@ -220,11 +238,11 @@ export function TabBar({
         >
           <TabsList
             ref={listRef}
-            className="relative h-7 w-max gap-0.5 bg-transparent p-0"
+            className="relative h-6 w-max gap-0.5 bg-transparent p-0"
           >
             <span
               aria-hidden
-              className="pointer-events-none absolute left-0 top-1/2 h-7 rounded-md bg-foreground/[0.07] shadow-sm ring-1 ring-inset ring-foreground/[0.05]"
+              className="pointer-events-none absolute left-0 top-1/2 h-6 rounded-md bg-foreground/[0.07] shadow-sm ring-1 ring-inset ring-foreground/[0.05]"
               style={
                 pill
                   ? {
@@ -262,7 +280,7 @@ export function TabBar({
                     <div
                       data-tab-id={t.id}
                       className={cn(
-                        "flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-accent text-xs text-foreground",
+                        "flex h-6 shrink-0 items-center gap-1.5 rounded-md bg-accent text-xs text-foreground",
                         compact ? "px-1.5" : "px-2",
                       )}
                     >
@@ -295,6 +313,7 @@ export function TabBar({
                     drag.current = {
                       pointerId: e.pointerId,
                       startX: e.clientX,
+                      startY: e.clientY,
                       fromId: t.id,
                       active: false,
                     };
@@ -304,19 +323,44 @@ export function TabBar({
                     const st = drag.current;
                     if (!st || st.pointerId !== e.pointerId) return;
                     if (!st.active) {
-                      if (Math.abs(e.clientX - st.startX) < 4) return;
+                      if (
+                        Math.hypot(
+                          e.clientX - st.startX,
+                          e.clientY - st.startY,
+                        ) < DRAG_THRESHOLD_PX
+                      )
+                        return;
                       st.active = true;
                       setDraggingId(st.fromId);
                       document.body.style.userSelect = "none";
                     }
                     e.preventDefault();
+                    const over = document.elementFromPoint(
+                      e.clientX,
+                      e.clientY,
+                    );
+                    if (externalDrag && !scrollRef.current?.contains(over)) {
+                      setDropGap(null);
+                      externalDrag.move(e.clientX, e.clientY);
+                      return;
+                    }
+                    externalDrag?.cancel();
                     setDropGap(gapAtX(e.clientX));
                   }}
                   onPointerUp={(e) => {
                     const st = drag.current;
-                    if (st?.active && dropGap !== null) {
+                    const from = tabs.findIndex((x) => x.id === st?.fromId);
+                    if (st?.active && externalDrag?.drop(st.fromId)) {
+                      // Landed on another card or a card edge.
+                    } else if (
+                      st?.active &&
+                      dropGap !== null &&
+                      dropGap !== from &&
+                      dropGap !== from + 1
+                    ) {
                       onReorder(st.fromId, dropGap);
-                    } else if (st && !st.active) {
+                    } else if (st) {
+                      // A press that moved nowhere is a click.
                       onSelect(t.id);
                     }
                     endDrag(e.currentTarget);
@@ -324,7 +368,7 @@ export function TabBar({
                   onPointerCancel={(e) => endDrag(e.currentTarget)}
                   onDoubleClick={() => isPreview && onPin(t.id)}
                   onAuxClick={(e) => {
-                    if (e.button === 1 && tabs.length > 1) {
+                    if (e.button === 1 && canClose) {
                       e.preventDefault();
                       e.stopPropagation();
                       onClose(t.id);
@@ -345,7 +389,7 @@ export function TabBar({
                     }
                   }}
                   className={cn(
-                    "group relative z-[1] h-7 shrink-0 justify-between gap-1.5 rounded-md bg-transparent text-xs transition-colors data-active:bg-transparent dark:data-active:bg-transparent",
+                    "group relative z-[1] h-6 shrink-0 justify-between gap-1.5 rounded-md bg-transparent text-xs transition-colors data-active:bg-transparent dark:data-active:bg-transparent",
                     isNew && "terax-tab-in",
                     isActive
                       ? "text-foreground dark:text-foreground"
@@ -476,7 +520,7 @@ export function TabBar({
                       />
                     ) : null}
                   </span>
-                  {tabs.length > 1 && (
+                  {canClose && (
                     <span
                       role="button"
                       aria-label="Close tab"
@@ -527,7 +571,7 @@ export function TabBar({
                           />
                           <span className="flex-1">Rename</span>
                         </ContextMenuItem>
-                        {tabs.length > 1 && (
+                        {canClose && (
                           <>
                             <ContextMenuSeparator />
                             <ContextMenuItem
@@ -569,6 +613,33 @@ export function TabBar({
                       />
                       <span className="flex-1">Close other tabs</span>
                     </ContextMenuItem>
+                    {onSplitOff && tabs.length > 1 && (
+                      <>
+                        <ContextMenuSeparator />
+                        <ContextMenuItem
+                          className="gap-2 rounded-xl px-2.5 py-1.5 text-[13px]"
+                          onSelect={() => onSplitOff(t.id, "row")}
+                        >
+                          <HugeiconsIcon
+                            icon={LayoutTwoColumnIcon}
+                            size={13}
+                            strokeWidth={1.75}
+                          />
+                          <span className="flex-1">Move to split right</span>
+                        </ContextMenuItem>
+                        <ContextMenuItem
+                          className="gap-2 rounded-xl px-2.5 py-1.5 text-[13px]"
+                          onSelect={() => onSplitOff(t.id, "col")}
+                        >
+                          <HugeiconsIcon
+                            icon={LayoutTwoRowIcon}
+                            size={13}
+                            strokeWidth={1.75}
+                          />
+                          <span className="flex-1">Move to split down</span>
+                        </ContextMenuItem>
+                      </>
+                    )}
                   </ContextMenuContent>
                 </ContextMenu>
               );
@@ -608,14 +679,10 @@ function DropIndicator() {
   );
 }
 
-/** Live pty ids behind a terminal tab; resolved at read time, not render time. */
+/** Live pty id behind a terminal tab; resolved at read time, not render time. */
 function terminalPtyIds(tab: TerminalTab): number[] {
-  const ptyIds: number[] = [];
-  for (const leaf of leafIds(tab.paneTree)) {
-    const id = ptyIdForLeaf(leaf);
-    if (id !== null) ptyIds.push(id);
-  }
-  return ptyIds;
+  const id = ptyIdForLeaf(tab.id);
+  return id === null ? [] : [id];
 }
 
 /**
@@ -625,8 +692,16 @@ function terminalPtyIds(tab: TerminalTab): number[] {
  * Non-terminal tabs never reach this component and subscribe to nothing.
  */
 function TerminalTabIcon({ tab }: { tab: TerminalTab }) {
+  return <AgentStatusIcon ptyIds={() => terminalPtyIds(tab)} />;
+}
+
+/**
+ * Agent state across a set of terminals (one tab, or every terminal of a
+ * task); a plain terminal glyph when none runs an agent.
+ */
+export function AgentStatusIcon({ ptyIds }: { ptyIds: () => number[] }) {
   const agentStatus = useAgentActivityStore(
-    useShallow((s) => selectTabAgentStatus(s, terminalPtyIds(tab))),
+    useShallow((s) => selectTabAgentStatus(s, ptyIds())),
   );
   if (agentStatus.state === "attention") {
     return (
@@ -732,7 +807,7 @@ export function TabIcon({ tab }: { tab: Tab }) {
   return <TerminalTabIcon tab={tab} />;
 }
 
-function TabRenameInput({
+export function TabRenameInput({
   initial,
   onCommit,
   onCancel,

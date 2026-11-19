@@ -1,5 +1,9 @@
 import { loadSessionRenderer } from "@/modules/terminal/ghostty/loadSessionRenderer";
-import { currentWorkspaceEnv, workspaceScopeKey } from "@/modules/workspace";
+import {
+  currentWorkspaceEnv,
+  workspaceScopeKey,
+  type WorkspaceEnv,
+} from "@/modules/workspace";
 import { useSpaces } from "@/modules/spaces/lib/useSpaces";
 import {
   ensureGhosttyBlocks,
@@ -8,6 +12,10 @@ import {
 } from "@/modules/terminal/ghostty/ghosttyBlockSessions";
 import { initializeSessionGeneration as startSessionInitialization } from "@/modules/terminal/ghostty/sessionInitialization";
 import { replaceSessionSurface } from "@/modules/terminal/ghostty/replaceSessionSurface";
+import {
+  currentFocus,
+  focusIsMovable,
+} from "@/modules/terminal/lib/focusGuard";
 import {
   ensureMonoFontsLoaded,
   resolveFontFamily,
@@ -72,7 +80,7 @@ type Callbacks = {
   onModel?: (model: GhosttyTerminalModelApi | null) => void;
   onError?: (error: GhosttySessionFailure | null) => void;
   onSearchReady?: (search: TerminalSearchController) => void;
-  onExit?: (code: number) => void;
+  onExit?: (code: number, livedMs: number) => void;
   onCwd?: (cwd: string) => void;
 };
 
@@ -80,6 +88,7 @@ type GhosttySession = {
   readonly leafId: number;
   readonly backend: GhosttyBackend;
   initialCwd: string | undefined;
+  workspace: WorkspaceEnv;
   lastCwd: string | null;
   model: GhosttyTerminalModelApi | null;
   surface: GhosttySurface | null;
@@ -132,8 +141,9 @@ type Options = {
   visible: boolean;
   focused: boolean;
   initialCwd?: string;
+  workspace?: WorkspaceEnv;
   blocks?: boolean;
-  onExit?: (code: number) => void;
+  onExit?: (code: number, livedMs: number) => void;
   onCwd?: (cwd: string) => void;
   onSearchReady?: (search: TerminalSearchController) => void;
 };
@@ -145,6 +155,7 @@ export function useGhosttyTerminalSession({
   visible,
   focused,
   initialCwd,
+  workspace,
   blocks = false,
   onSearchReady,
   onExit,
@@ -174,6 +185,7 @@ export function useGhosttyTerminalSession({
   const callbackRef = useRef({ onSearchReady, onExit, onCwd });
   callbackRef.current = { onSearchReady, onExit, onCwd };
   const initialCwdRef = useRef(initialCwd);
+  const workspaceRef = useRef(workspace ?? currentWorkspaceEnv());
 
   useEffect(() => {
     const session = ensureSession(
@@ -181,6 +193,7 @@ export function useGhosttyTerminalSession({
       backend,
       initialCwdRef.current,
       fontRef.current,
+      workspaceRef.current,
     );
     if (blocks) ensureGhosttyBlocks(leafId);
     const node = container.current;
@@ -190,7 +203,7 @@ export function useGhosttyTerminalSession({
       onModel: setModel,
       onError: setError,
       onSearchReady: (search) => callbackRef.current.onSearchReady?.(search),
-      onExit: (code) => callbackRef.current.onExit?.(code),
+      onExit: (code, livedMs) => callbackRef.current.onExit?.(code, livedMs),
       onCwd: (cwd) => callbackRef.current.onCwd?.(cwd),
     };
     setError(sessionFailure(session));
@@ -216,7 +229,13 @@ export function useGhosttyTerminalSession({
   }, [leafId, backend, font]);
 
   useEffect(() => {
-    const session = ensureSession(leafId, backend, initialCwdRef.current);
+    const session = ensureSession(
+      leafId,
+      backend,
+      initialCwdRef.current,
+      undefined,
+      workspaceRef.current,
+    );
     session.visible = visible;
     session.focused = focused;
     if (!visible || !focused) session.cancelFocusRetry?.();
@@ -517,6 +536,7 @@ function ensureSession(
   backend: GhosttyBackend,
   initialCwd?: string,
   font?: TerminalFontSpec,
+  workspace: WorkspaceEnv = currentWorkspaceEnv(),
 ): GhosttySession {
   const existing = sessions.get(leafId);
   if (existing) {
@@ -537,6 +557,7 @@ function ensureSession(
     leafId,
     backend,
     initialCwd,
+    workspace,
     lastCwd: null,
     model: null,
     surface: null,
@@ -840,13 +861,13 @@ async function initializeSessionGeneration(
           ghosttyBlocks(session.leafId)?.changed();
         }
       },
-      onExit: (code) => {
+      onExit: (code, livedMs) => {
         if (session.disposed || generation !== session.generation) return;
         session.shellExited = true;
         session.cancelFocusRetry?.();
         session.writer.detach();
         session.pty = null;
-        session.callbacks.onExit?.(code);
+        session.callbacks.onExit?.(code, livedMs);
       },
     },
     session.initialCwd,
@@ -854,6 +875,7 @@ async function initializeSessionGeneration(
     preferences.terminalShell || undefined,
     session.leafId,
     theme,
+    session.workspace,
   );
   if (session.disposed || generation !== session.generation) {
     await pty.close();
@@ -986,7 +1008,8 @@ function applyBlockInputMode(
   if (!changed) return;
   input.setAttribute("data-terax-block-prompt", String(prompt));
   surface?.setCursorEnabled(!prompt);
-  if (session.visible && session.focused) focusSessionSurface(session, surface);
+  if (session.visible && session.focused && focusIsMovable(currentFocus()))
+    focusSessionSurface(session, surface);
 }
 
 /**
@@ -1023,7 +1046,9 @@ function attachGhosttySurface(
   surface.setVisible(true);
   surface.setFocused(session.focused);
   applyBlockInputMode(session, surface);
-  if (session.focused) focusSessionSurface(session, surface);
+  // Showing a pane must not pull the caret out of the composer or a dialog.
+  if (session.focused && focusIsMovable(currentFocus()))
+    focusSessionSurface(session, surface);
 }
 
 function createWebGlFallbackSurface(

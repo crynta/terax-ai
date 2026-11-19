@@ -1,4 +1,4 @@
-import type { CloseTabsPlan, Tab } from "@/modules/tabs";
+import type { Tab } from "@/modules/tabs";
 
 function normalizePath(path: string): string {
   return path.replace(/\\/g, "/");
@@ -32,7 +32,14 @@ export function hasOpenPathTab(tabs: readonly Tab[], path: string): boolean {
   );
 }
 
-export type CloseManyKind = "right" | "other";
+/** What a multi-close covers, for its dialog wording. */
+export type CloseManyKind =
+  | "right"
+  | "other"
+  | "card"
+  | "task"
+  | "tasks"
+  | "project";
 
 export type CloseManyHazards = {
   dirtyIds: number[];
@@ -42,7 +49,8 @@ export type CloseManyHazards = {
 export type CloseManyPending = CloseManyHazards & {
   kind: CloseManyKind;
   anchorId: number;
-  plan: CloseTabsPlan;
+  closeIds: number[];
+  projectId?: string;
 };
 
 export function hasCloseManyHazards(hazards: CloseManyHazards): boolean {
@@ -76,20 +84,6 @@ export function deletedPathTabs(
     (tab.kind === "editor" && tab.dirty ? dirtyIds : cleanIds).push(tab.id);
   }
   return { dirtyIds, cleanIds };
-}
-
-export function spacesEmptiedByTabs(
-  tabs: readonly Tab[],
-  closeIds: readonly number[],
-): string[] {
-  const closing = new Set(closeIds);
-  const spaces = new Set(
-    tabs.filter((tab) => closing.has(tab.id)).map((tab) => tab.spaceId),
-  );
-  return [...spaces].filter(
-    (spaceId) =>
-      !tabs.some((tab) => tab.spaceId === spaceId && !closing.has(tab.id)),
-  );
 }
 
 const MAX_HAZARD_PASSES = 3;

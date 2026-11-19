@@ -6,7 +6,7 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { useShortcutLabel } from "@/modules/shortcuts";
-import { labelFor, type Tab, TabIcon } from "@/modules/tabs";
+import { type Tab, TabIcon } from "@/modules/tabs";
 import {
   ArrowDown01Icon,
   ArrowRight01Icon,
@@ -19,19 +19,32 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { InlineRename } from "./components/InlineRename";
+import { canMoveBetweenProjects } from "./lib/activeSpace";
 import { accentFor } from "./lib/spaceColor";
 import type { SpaceMeta } from "./lib/store";
 import { useSpaces } from "./lib/useSpaces";
 import { SpaceAvatar } from "./SpaceAvatar";
 
+/** A task as the project overview lists it. */
+export type SwitcherTask = {
+  id: number;
+  spaceId: string;
+  label: string;
+  /** The task's focused tab, for its icon and subtitle. */
+  tab: Tab;
+  /** The project's permanent task: not closable or movable. */
+  main: boolean;
+};
+
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  tabs: Tab[];
+  tabs: SwitcherTask[];
   onNewSpace: () => void;
   onDeleteSpace: (id: string) => void;
   onNewTabInSpace: (spaceId: string) => void;
   onJumpTab: (id: number) => void;
+  onFocusView?: () => void;
   onCloseTab: (id: number) => void;
   onMoveTabToSpace: (tabId: number, spaceId: string) => void;
   onReorderTab: (
@@ -79,6 +92,7 @@ export function SpaceSwitcher({
   onDeleteSpace,
   onNewTabInSpace,
   onJumpTab,
+  onFocusView,
   onCloseTab,
   onMoveTabToSpace,
   onReorderTab,
@@ -94,6 +108,7 @@ export function SpaceSwitcher({
     activeId ? new Set([activeId]) : new Set(),
   );
 
+  const focusViewOnClose = useRef(false);
   const drag = useRef<DragState | null>(null);
   const dropRef = useRef<DropTarget | null>(null);
   const [dragging, setDragging] = useState<{
@@ -106,7 +121,7 @@ export function SpaceSwitcher({
   const current = spaces.find((s) => s.id === activeId);
 
   const tabsBySpace = useMemo(() => {
-    const m = new Map<string, Tab[]>();
+    const m = new Map<string, SwitcherTask[]>();
     for (const t of tabs) {
       const arr = m.get(t.spaceId);
       if (arr) arr.push(t);
@@ -189,13 +204,15 @@ export function SpaceSwitcher({
       return;
     }
     const rect = hit.getBoundingClientRect();
-    const edge: Edge = e.clientY < rect.top + rect.height / 2 ? "top" : "bottom";
+    const edge: Edge =
+      e.clientY < rect.top + rect.height / 2 ? "top" : "bottom";
     const kind = hit.getAttribute("data-drop");
     let next: DropTarget | null = null;
     if (st.kind === "space") {
       if (kind === "space") {
         const spaceId = hit.getAttribute("data-space-id");
-        if (spaceId && spaceId !== st.id) next = { kind: "space", spaceId, edge };
+        if (spaceId && spaceId !== st.id)
+          next = { kind: "space", spaceId, edge };
       }
     } else if (kind === "tab") {
       const tabId = Number(hit.getAttribute("data-tab-id"));
@@ -203,6 +220,21 @@ export function SpaceSwitcher({
     } else if (kind === "space") {
       const spaceId = hit.getAttribute("data-space-id");
       if (spaceId) next = { kind: "into-space", spaceId };
+    }
+    if (st.kind === "tab" && next) {
+      const target = next;
+      const source = tabs.find((t) => t.id === st.id);
+      const targetProject =
+        target.kind === "tab"
+          ? tabs.find((t) => t.id === target.tabId)?.spaceId
+          : target.spaceId;
+      if (
+        !source ||
+        source.main ||
+        !targetProject ||
+        !canMoveBetweenProjects(spaces, source.spaceId, targetProject)
+      )
+        next = null;
     }
     dropRef.current = next;
     setDrop(next);
@@ -240,7 +272,7 @@ export function SpaceSwitcher({
       <PopoverTrigger asChild>
         <button
           type="button"
-          title={shortcut ? `Spaces · ${shortcut}` : "Spaces"}
+          title={shortcut ? `Projects · ${shortcut}` : "Projects"}
           className="flex h-7 shrink-0 items-center gap-2 rounded-md px-2 text-muted-foreground/90 outline-none transition-colors hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground"
         >
           <span className="max-w-36 truncate text-xs font-medium">
@@ -254,9 +286,23 @@ export function SpaceSwitcher({
           />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" sideOffset={6} className="w-[20rem] p-1.5">
+      <PopoverContent
+        align="start"
+        sideOffset={6}
+        className="w-[20rem] p-1.5"
+        onCloseAutoFocus={(event) => {
+          if (!focusViewOnClose.current) return;
+          focusViewOnClose.current = false;
+          if (onFocusView) {
+            event.preventDefault();
+            onFocusView();
+          }
+        }}
+      >
         <div className="flex items-center justify-between px-1.5 pb-1.5 pt-0.5">
-          <span className="text-xs font-semibold text-foreground">Spaces</span>
+          <span className="text-xs font-semibold text-foreground">
+            Projects
+          </span>
           {shortcut && (
             <Kbd className="h-5 bg-muted/70 text-[10px]">{shortcut}</Kbd>
           )}
@@ -281,6 +327,7 @@ export function SpaceSwitcher({
               onPointerUp={onPointerUp}
               onToggle={() => toggleExpand(sp.id)}
               onSwitch={() => {
+                focusViewOnClose.current = true;
                 setActive(sp.id);
                 onOpenChange(false);
               }}
@@ -293,7 +340,10 @@ export function SpaceSwitcher({
               onCancelRename={() => setEditingId(null)}
               onDelete={() => onDeleteSpace(sp.id)}
               onNewTab={() => onNewTabInSpace(sp.id)}
-              onJumpTab={onJumpTab}
+              onJumpTab={(id) => {
+                focusViewOnClose.current = true;
+                onJumpTab(id);
+              }}
               onCloseTab={onCloseTab}
             />
           ))}
@@ -305,7 +355,7 @@ export function SpaceSwitcher({
             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
           >
             <HugeiconsIcon icon={PlusSignIcon} size={14} strokeWidth={1.75} />
-            <span className="flex-1">New space</span>
+            <span className="flex-1">New project</span>
           </button>
         </div>
       </PopoverContent>
@@ -322,7 +372,7 @@ export function SpaceSwitcher({
                 label={draggedSpace.name}
               />
             ) : draggedTab ? (
-              <OverlayChip tab={draggedTab} label={labelFor(draggedTab)} />
+              <OverlayChip tab={draggedTab.tab} label={draggedTab.label} />
             ) : null}
           </div>,
           document.body,
@@ -333,7 +383,7 @@ export function SpaceSwitcher({
 
 type SpaceRowProps = {
   space: SpaceMeta;
-  tabs: Tab[];
+  tabs: SwitcherTask[];
   isActive: boolean;
   canDelete: boolean;
   expanded: boolean;
@@ -356,6 +406,7 @@ type SpaceRowProps = {
   onDelete: () => void;
   onNewTab: () => void;
   onJumpTab: (id: number) => void;
+  onFocusView?: () => void;
   onCloseTab: (id: number) => void;
 };
 
@@ -396,7 +447,9 @@ function SpaceRow({
         data-space-id={space.id}
         role="button"
         tabIndex={editing ? -1 : 0}
-        onPointerDown={editing ? undefined : (e) => onPointerDown(e, "space", space.id)}
+        onPointerDown={
+          editing ? undefined : (e) => onPointerDown(e, "space", space.id)
+        }
         onPointerMove={onPointerMove}
         onPointerUp={editing ? undefined : (e) => onPointerUp(e, onSwitch)}
         onPointerCancel={(e) => onPointerUp(e)}
@@ -456,14 +509,18 @@ function SpaceRow({
             >
               <RowAction
                 icon={PencilEdit02Icon}
-                label="Rename space"
+                label="Rename project"
                 onClick={onStartRename}
               />
-              <RowAction icon={PlusSignIcon} label="New tab" onClick={onNewTab} />
+              <RowAction
+                icon={PlusSignIcon}
+                label="New task"
+                onClick={onNewTab}
+              />
               {canDelete && (
                 <RowAction
                   icon={Delete02Icon}
-                  label="Delete space"
+                  label="Delete project"
                   destructive
                   onClick={onDelete}
                 />
@@ -485,12 +542,12 @@ function SpaceRow({
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
               onJump={() => onJumpTab(t.id)}
-              onClose={() => onCloseTab(t.id)}
+              onClose={t.main ? undefined : () => onCloseTab(t.id)}
             />
           ))}
           {tabs.length === 0 && (
             <span className="px-2 py-1 text-[10.5px] text-muted-foreground/50">
-              {draggingTabFromOther ? "Drop to move here" : "No tabs"}
+              {draggingTabFromOther ? "Drop to move here" : "No tasks"}
             </span>
           )}
         </div>
@@ -509,7 +566,7 @@ function TabRow({
   onJump,
   onClose,
 }: {
-  tab: Tab;
+  tab: SwitcherTask;
   dragging: { kind: "space" | "tab"; id: string | number } | null;
   drop: DropTarget | null;
   onPointerDown: (
@@ -520,9 +577,9 @@ function TabRow({
   onPointerMove: (e: React.PointerEvent) => void;
   onPointerUp: (e: React.PointerEvent, onActivate?: () => void) => void;
   onJump: () => void;
-  onClose: () => void;
+  onClose?: () => void;
 }) {
-  const subtitle = subtitleFor(tab);
+  const subtitle = subtitleFor(tab.tab);
   const isDragging = dragging?.kind === "tab" && dragging.id === tab.id;
   const reorderEdge =
     drop?.kind === "tab" && drop.tabId === tab.id ? drop.edge : null;
@@ -551,10 +608,10 @@ function TabRow({
           isDragging && "opacity-50",
         )}
       >
-        <TabIcon tab={tab} />
+        <TabIcon tab={tab.tab} />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-[11.5px] leading-tight">
-            {labelFor(tab)}
+            {tab.label}
           </span>
           {subtitle && (
             <span className="truncate text-[9.5px] leading-tight text-muted-foreground/55">
@@ -562,18 +619,20 @@ function TabRow({
             </span>
           )}
         </span>
-        <button
-          type="button"
-          data-no-drag
-          onClick={(e) => {
-            e.stopPropagation();
-            onClose();
-          }}
-          aria-label="Close tab"
-          className="flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover/tab:opacity-70 hover:opacity-100"
-        >
-          <HugeiconsIcon icon={Cancel01Icon} size={11} strokeWidth={2} />
-        </button>
+        {onClose && (
+          <button
+            type="button"
+            data-no-drag
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
+            aria-label="Close task"
+            className="flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover/tab:opacity-70 hover:opacity-100"
+          >
+            <HugeiconsIcon icon={Cancel01Icon} size={11} strokeWidth={2} />
+          </button>
+        )}
       </div>
     </div>
   );

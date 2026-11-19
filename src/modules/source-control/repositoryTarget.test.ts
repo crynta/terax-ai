@@ -15,8 +15,6 @@ const terminalTab: Tab = {
   kind: "terminal",
   spaceId: "space-a",
   title: "shell",
-  paneTree: { kind: "leaf", id: 10 },
-  activeLeafId: 10,
 };
 
 const editorTab: Tab = {
@@ -54,12 +52,7 @@ describe("repository targets", () => {
       mode: "follow-context",
     });
     expect(
-      setRepositoryTargetForSpace(
-        targets,
-        "space-a",
-        "local",
-        "/repos/a",
-      ),
+      setRepositoryTargetForSpace(targets, "space-a", "local", "/repos/a"),
     ).toBe(targets);
   });
 

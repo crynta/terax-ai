@@ -1,3 +1,7 @@
+import {
+  currentFocus,
+  focusIsMovable,
+} from "@/modules/terminal/lib/focusGuard";
 import { endpointIdFromCompatModel } from "@/modules/ai/config";
 import { getCustomEndpointKey, getKey } from "@/modules/ai/lib/keyring";
 import { lspFormatDocument, useLspExtension } from "@/modules/lsp";
@@ -95,6 +99,7 @@ type Props = {
   onSaved?: () => void;
   onClose?: () => void;
   mediaActive?: boolean;
+  canFocus?: () => boolean;
 };
 
 // Above this, syntax highlighting and LSP are disabled: a multi-MB lezer
@@ -107,7 +112,7 @@ function formatBytes(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-// memo: EditorStack passes identity-stable props, so background editors
+// memo: EditorView passes identity-stable props, so background editors
 // skip re-rendering entirely when App re-renders (terminal events, tab churn).
 export const EditorPane = memo(
   forwardRef<EditorPaneHandle, Props>(function EditorPane(props, ref) {
@@ -253,6 +258,8 @@ export const EditorPane = memo(
     const performSaveRef = useRef(performSave);
     performSaveRef.current = performSave;
 
+    const canFocusRef = useRef(props.canFocus);
+    canFocusRef.current = props.canFocus;
     const pathRef = useRef(path);
     pathRef.current = path;
 
@@ -279,7 +286,12 @@ export const EditorPane = memo(
     const focusWhenRendered = useCallback(
       (view: EditorView, targetPath: string) => {
         requestAnimationFrame(() => {
-          if (cmRef.current?.view === view && pathRef.current === targetPath) {
+          if (
+            cmRef.current?.view === view &&
+            pathRef.current === targetPath &&
+            canFocusRef.current?.() !== false &&
+            focusIsMovable(currentFocus())
+          ) {
             view.focus();
           }
         });

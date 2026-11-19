@@ -1,6 +1,11 @@
 import type { WorkspaceEnv } from "@/modules/workspace";
 import { describe, expect, it } from "vitest";
-import { activeSpaceEnv, findActiveSpace, freshTabCwd } from "./activeSpace";
+import {
+  activeSpaceEnv,
+  canMoveBetweenProjects,
+  findActiveSpace,
+  freshTabCwd,
+} from "./activeSpace";
 import type { SpaceMeta } from "./store";
 
 function space(over: Partial<SpaceMeta>): SpaceMeta {
@@ -76,4 +81,27 @@ describe("freshTabCwd", () => {
     expect(freshTabCwd(local, null, null, "C:/Users/me")).toBe("C:/Users/me");
     expect(freshTabCwd(local, null, null, null)).toBeNull();
   });
+});
+
+it("shares the task-drop compatibility rule for local and WSL project targets", () => {
+  const meta = (id: string, env: WorkspaceEnv) => ({
+    id,
+    name: id,
+    root: null,
+    env,
+    createdAt: 0,
+    updatedAt: 0,
+  });
+  const spaces = [
+    meta("local", { kind: "local" }),
+    meta("other-local", { kind: "local" }),
+    meta("ubuntu", { kind: "wsl", distro: "Ubuntu" }),
+    meta("other-ubuntu", { kind: "wsl", distro: "Ubuntu" }),
+    meta("debian", { kind: "wsl", distro: "Debian" }),
+  ];
+  expect(canMoveBetweenProjects(spaces, "local", "other-local")).toBe(true);
+  expect(canMoveBetweenProjects(spaces, "ubuntu", "other-ubuntu")).toBe(true);
+  expect(canMoveBetweenProjects(spaces, "local", "ubuntu")).toBe(false);
+  expect(canMoveBetweenProjects(spaces, "ubuntu", "debian")).toBe(false);
+  expect(canMoveBetweenProjects(spaces, "ubuntu", "missing")).toBe(false);
 });

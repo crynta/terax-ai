@@ -1,7 +1,4 @@
-export { AiDiffStack } from "./AiDiffStackLazy";
 export type { EditorPaneHandle } from "./EditorPane";
-export { EditorStack } from "./EditorStackLazy";
-export { GitDiffStack } from "./GitDiffStackLazy";
 export { useDiagnosticsStore } from "./lib/diagnosticsStore";
 export { useApplyEditorFontSize } from "./lib/useApplyEditorFontSize";
 export { NewEditorDialog } from "./NewEditorDialog";
