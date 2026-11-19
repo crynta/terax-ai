@@ -46,6 +46,27 @@ describe("selectLaunchTab", () => {
       ),
     ).toBeUndefined();
   });
+
+  it.each([
+    ["D:\\work\\", "D:/work"],
+    ["D:\\", "D:/"],
+    ["\\\\server\\share\\", "//server/share"],
+    ["/home/project/", "/home/project"],
+  ])("reuses the terminal for equivalent paths %s and %s", (saved, target) => {
+    const tab = freshTerminalTab("s1", saved, allocId);
+    expect(selectLaunchTab([tab], "s1", local, target, allocId)).toBe(tab);
+    expect(tab.paneTree).toMatchObject({ cwd: saved });
+  });
+
+  it.each([
+    ["D:", "D:/"],
+    ["D:/", "E:/"],
+    ["/home/Project", "/home/project"],
+    ["/home/a\\b", "/home/a/b"],
+  ])("keeps distinct paths %s and %s separate", (saved, target) => {
+    const tab = freshTerminalTab("s1", saved, allocId);
+    expect(selectLaunchTab([tab], "s1", local, target, allocId)).not.toBe(tab);
+  });
 });
 
 function space(over: Partial<SpaceMeta>): SpaceMeta {

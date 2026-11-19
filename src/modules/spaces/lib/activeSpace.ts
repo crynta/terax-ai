@@ -33,6 +33,15 @@ export function freshTabCwd(
   return restoredHome ?? (env.kind === "local" ? (launchCwd ?? home) : null);
 }
 
+function comparableCwd(path: string): string {
+  // A backslash in a POSIX segment is a literal filename character.
+  const normalized = /^(?:[a-z]:[\\/]|[\\/]{2})/i.test(path)
+    ? path.replace(/\\/g, "/")
+    : path;
+  if (/^[a-z]:\/+$/i.test(normalized)) return normalized.slice(0, 3);
+  return normalized.replace(/([^/])\/+$/, "$1");
+}
+
 export function selectLaunchTab(
   tabs: Tab[],
   spaceId: string,
@@ -41,12 +50,12 @@ export function selectLaunchTab(
   allocId: () => number,
 ) {
   if (!cwd || env.kind !== "local") return undefined;
+  const requested = comparableCwd(cwd);
   return (
-    tabs.find(
-      (tab) =>
-        tab.kind === "terminal" &&
-        tab.spaceId === spaceId &&
-        findLeafCwd(tab.paneTree, tab.activeLeafId) === cwd,
-    ) ?? freshTerminalTab(spaceId, cwd, allocId)
+    tabs.find((tab) => {
+      if (tab.kind !== "terminal" || tab.spaceId !== spaceId) return false;
+      const leafCwd = findLeafCwd(tab.paneTree, tab.activeLeafId);
+      return leafCwd !== undefined && comparableCwd(leafCwd) === requested;
+    }) ?? freshTerminalTab(spaceId, cwd, allocId)
   );
 }
