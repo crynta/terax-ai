@@ -458,9 +458,21 @@ export async function loadPreferences(): Promise<Preferences> {
     autocompleteProvider:
       get<AutocompleteProviderId>(KEY_AUTOCOMPLETE_PROVIDER) ??
       DEFAULT_PREFERENCES.autocompleteProvider,
-    autocompleteModelId:
-      get<string>(KEY_AUTOCOMPLETE_MODEL) ??
-      DEFAULT_PREFERENCES.autocompleteModelId,
+    autocompleteModelId: ((): string => {
+      const stored =
+        get<string>(KEY_AUTOCOMPLETE_MODEL) ??
+        DEFAULT_PREFERENCES.autocompleteModelId;
+      const provider =
+        get<AutocompleteProviderId>(KEY_AUTOCOMPLETE_PROVIDER) ??
+        DEFAULT_PREFERENCES.autocompleteProvider;
+      // Groq autocomplete ids come from the catalog, so a model removed
+      // there leaves stale selections pointing at deleted endpoints. Other
+      // providers accept runtime-supplied ids, so keep those untouched.
+      if (provider === "groq" && stored && !isKnownModelId(stored)) {
+        return DEFAULT_AUTOCOMPLETE_MODEL.groq ?? "";
+      }
+      return stored;
+    })(),
     lmstudioBaseURL:
       get<string>(KEY_LMSTUDIO_BASE_URL) ?? DEFAULT_PREFERENCES.lmstudioBaseURL,
     lmstudioModelId:
