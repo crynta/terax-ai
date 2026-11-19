@@ -70,6 +70,10 @@ describe("MarkdownLink", () => {
       path: "/w/docs/guide.md",
     });
     expect(
+      resolveMarkdownDocTarget("/w/docs/readme.md", "#install"),
+    ).toEqual({ path: "/w/docs/readme.md", fragment: "install" });
+    expect(resolveMarkdownDocTarget("/w/docs/readme.md", "#")).toBeNull();
+    expect(
       resolveMarkdownDocTarget("/w/docs/readme.md", "https://example.com#x"),
     ).toBeNull();
   });

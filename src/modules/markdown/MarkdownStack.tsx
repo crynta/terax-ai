@@ -52,10 +52,18 @@ export function MarkdownStack({
               onSetView={(mode) => onSetMarkdownView(t.id, mode)}
               onOpenFile={onOpenFile}
               scrollToFragment={
-                pendingFragment?.path === t.path ? pendingFragment.fragment : null
+                pendingFragment &&
+                pendingFragment.path.replace(/\\/g, "/") ===
+                  t.path.replace(/\\/g, "/")
+                  ? pendingFragment.fragment
+                  : null
               }
               onFragmentConsumed={() => {
-                if (pendingFragment?.path === t.path) {
+                if (
+                  pendingFragment &&
+                  pendingFragment.path.replace(/\\/g, "/") ===
+                    t.path.replace(/\\/g, "/")
+                ) {
                   onConsumePendingFragment?.(t.path, pendingFragment.fragment);
                 }
               }}

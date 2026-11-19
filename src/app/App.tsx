@@ -696,12 +696,10 @@ export default function App() {
       // Markdown opens in its rendered view by default; a per-tab toggle flips
       // it to the raw editor. Other files default to preview (pin=false);
       // explicit actions like context-menu "Open" pass pin=true to persist.
-      if (isMarkdownPath(path)) {
-        newMarkdownTab(path);
-        if (fragment) setPendingMarkdownFragment({ path, fragment });
-      } else {
-        openFileTab(path, pin ?? false);
-      }
+      const markdown = isMarkdownPath(path);
+      setPendingMarkdownFragment(markdown && fragment ? { path, fragment } : null);
+      if (markdown) newMarkdownTab(path);
+      else openFileTab(path, pin ?? false);
     },
     [openFileTab, newMarkdownTab],
   );
@@ -1341,8 +1339,13 @@ export default function App() {
   } | null>(null);
   const consumePendingMarkdownFragment = useCallback(
     (path: string, fragment: string) => {
+      const norm = (p: string) => p.replace(/\\/g, "/");
       setPendingMarkdownFragment((curr) =>
-        curr && curr.path === path && curr.fragment === fragment ? null : curr,
+        curr &&
+        norm(curr.path) === norm(path) &&
+        curr.fragment === fragment
+          ? null
+          : curr,
       );
     },
     [],

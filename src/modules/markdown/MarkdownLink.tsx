@@ -21,6 +21,11 @@ export function resolveMarkdownDocTarget(
   const docHref = dataDocHref ?? href;
   if (!documentPath || !docHref) return null;
   const hashIndex = docHref.indexOf("#");
+  if (hashIndex === 0) {
+    const rawFragment = docHref.slice(1);
+    const fragment = rawFragment ? rawFragment : undefined;
+    return fragment ? { path: documentPath, fragment } : null;
+  }
   const withoutHash = hashIndex === -1 ? docHref : docHref.slice(0, hashIndex);
   const rawFragment = hashIndex === -1 ? undefined : docHref.slice(hashIndex + 1);
   const fragment = rawFragment ? rawFragment : undefined;
