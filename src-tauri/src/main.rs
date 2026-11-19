@@ -14,5 +14,8 @@ fn main() {
         }
     }
 
+    #[cfg(target_os = "linux")]
+    terax_lib::modules::workspace::disable_nv_explicit_sync_if_needed();
+
     terax_lib::run()
 }
