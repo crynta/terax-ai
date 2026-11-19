@@ -129,6 +129,59 @@ describe("PtyOutputHub", () => {
     vi.restoreAllMocks();
   });
 
+  it("shares one parse budget across cheap frames and terminals", async () => {
+    await hub.ensureStream();
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const tasks: (() => void)[] = [];
+    const parsed: number[] = [];
+    const receivers = [1, 2].map((id) => {
+      const receiver = new PtyOutputReceiver(
+        () => {
+          now += 0.75;
+          parsed.push(id);
+        },
+        vi.fn(),
+        vi.fn(),
+        (task) => {
+          tasks.push(task);
+          return () => {};
+        },
+      );
+      hub.register(id, receiver, vi.fn());
+      receiver.start();
+      return receiver;
+    });
+    await flush();
+    transport.held.respond(
+      Array.from({ length: 16 }, (_, i) => ({
+        kind: "data" as const,
+        id: (i % 2) + 1,
+        offset: Math.floor(i / 2) * 8192,
+        bytes: bytes(8192),
+      })),
+    );
+    await flush();
+    expect(now).toBeGreaterThanOrEqual(4);
+    expect(now).toBeLessThan(4.75);
+    expect(tasks).toHaveLength(2);
+    expect(receivers.map((r) => r.diagnostics().processedBytes)).toEqual([
+      3 * 8192,
+      3 * 8192,
+    ]);
+    while (tasks.length) {
+      const start = now;
+      tasks.shift()?.();
+      expect(now - start).toBeLessThan(4.75);
+    }
+    await flush();
+    expect(parsed).toHaveLength(16);
+    for (const receiver of receivers) {
+      expect(receiver.diagnostics().reportedBytes).toBe(8 * 8192);
+      receiver.dispose();
+    }
+  });
+
   it("opens the stream once and keeps exactly one poll outstanding", async () => {
     await Promise.all([hub.ensureStream(), hub.ensureStream()]);
     await hub.ensureStream();

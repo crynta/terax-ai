@@ -1,6 +1,9 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use memchr::{memchr, memchr2};
+use memchr::memchr2;
+use terax_control_protocol::hook::clean_text;
 
 const ESC: u8 = 0x1b;
 const BEL: u8 = 0x07;
@@ -14,11 +17,23 @@ const OSC_MAX: usize = 2048;
 /// this window are the same moment of attention and are not re-emitted.
 const ATTENTION_REPEAT: Duration = Duration::from_secs(3);
 
+/// Terminal notifications from any program are limited to a burst per window,
+/// and an identical one right after another is the same notification.
+const NOTIFY_WINDOW: Duration = Duration::from_secs(10);
+const NOTIFY_BURST: u8 = 5;
+const NOTIFY_DUPLICATE: Duration = Duration::from_secs(1);
+const MAX_NOTIFY_TITLE: usize = 256;
+const MAX_NOTIFY_BODY: usize = 1024;
+
 const DEFAULT_AGENTS: &[&str] = &["claude", "codex", "gemini", "pi", "opencode", "grok"];
 
-// OSC 777 marker our agent hooks emit. Legacy 3-field `notify;Terax;<event>`
+/// Extensions a launcher shim or native binary carries on Windows.
+const LAUNCHER_EXTENSIONS: &[&str] = &[".exe", ".cmd", ".bat", ".ps1", ".com"];
+
+// OSC 777 marker older agent hooks emit. Legacy 3-field `notify;Terax;<event>`
 // (Claude) or 4-field `notify;Terax;<agent>;<event>` (Codex/Gemini/Pi).
 const TERAX_MARKER: &[u8] = b"notify;Terax;";
+
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum State {
@@ -64,52 +79,244 @@ impl Transition {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NotificationKind {
+    Bell,
+    Osc9,
+    Osc99,
+    Osc777,
+}
+
+/// A notification a program asked the terminal to show (bell, OSC 9, OSC 99 or
+/// OSC 777), from any program rather than a known agent.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct TerminalNotification {
+    pub kind: NotificationKind,
+    pub title: Option<String>,
+    pub body: String,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalNotificationEvent {
+    pub pty_id: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    pub body: String,
+    pub kind: NotificationKind,
+}
+
+impl TerminalNotification {
+    pub fn into_event(self, pty_id: u32) -> TerminalNotificationEvent {
+        TerminalNotificationEvent {
+            pty_id,
+            title: self.title,
+            body: self.body,
+            kind: self.kind,
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum Signal {
+    Transition(Transition),
+    Notification(TerminalNotification),
+}
+
+/// What a structured agent hook means for the legacy state machine.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum HookIntent {
+    Start,
+    Working,
+    /// Tool and subagent traffic. Background hooks race the synchronous ones, so
+    /// it can trail the request it belongs to and never changes the status.
+    Activity,
+    Attention,
+    Finished,
+    Quiet,
+}
+
+/// State shared between a PTY's reader thread (OSC detection) and the control
+/// server (structured hooks), so the two sources agree on one agent per PTY.
+#[derive(Default)]
+pub struct AgentLink {
+    armed: AtomicBool,
+    hooked: AtomicBool,
+    waiting: AtomicBool,
+}
+
+impl AgentLink {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+
+    pub fn is_armed(&self) -> bool {
+        self.armed.load(Ordering::Acquire)
+    }
+
+    /// True once a structured hook has reported for the running agent; OSC
+    /// state hints are redundant from then on.
+    pub fn is_hooked(&self) -> bool {
+        self.hooked.load(Ordering::Acquire)
+    }
+
+    fn arm(&self) -> bool {
+        let armed = self
+            .armed
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok();
+        if armed {
+            self.hooked.store(false, Ordering::Release);
+            self.waiting.store(false, Ordering::Release);
+        }
+        armed
+    }
+
+    fn disarm(&self) -> bool {
+        let was_armed = self.armed.swap(false, Ordering::AcqRel);
+        self.hooked.store(false, Ordering::Release);
+        self.waiting.store(false, Ordering::Release);
+        was_armed
+    }
+
+    /// Records a structured hook and returns the legacy transitions it implies.
+    pub fn apply_hook(&self, agent: &str, intent: HookIntent) -> Vec<Transition> {
+        let mut out = Vec::new();
+        // Tool and notification hooks can trail the process exit; only hooks
+        // that mark real agent state may start an agent.
+        let starts = matches!(
+            intent,
+            HookIntent::Start | HookIntent::Working | HookIntent::Attention | HookIntent::Finished
+        );
+        if !starts && !self.is_armed() {
+            return out;
+        }
+        if self.arm() {
+            out.push(Transition::Started { agent: agent.to_string() });
+        }
+        self.hooked.store(true, Ordering::Release);
+        match intent {
+            HookIntent::Quiet | HookIntent::Start | HookIntent::Activity => {}
+            HookIntent::Working => {
+                if self.waiting.swap(false, Ordering::AcqRel) {
+                    out.push(Transition::Working);
+                }
+            }
+            HookIntent::Attention => {
+                if !self.waiting.swap(true, Ordering::AcqRel) {
+                    out.push(Transition::Attention);
+                }
+            }
+            HookIntent::Finished => {
+                self.waiting.store(true, Ordering::Release);
+                out.push(Transition::Finished);
+            }
+        }
+        out
+    }
+}
+
+struct NotificationLimiter {
+    window_start: Option<Instant>,
+    count: u8,
+    last: Option<(Instant, TerminalNotification)>,
+}
+
+impl NotificationLimiter {
+    fn new() -> Self {
+        Self { window_start: None, count: 0, last: None }
+    }
+
+    fn allow(&mut self, now: Instant, notification: &TerminalNotification) -> bool {
+        if let Some((at, previous)) = &self.last {
+            if previous == notification && now.saturating_duration_since(*at) < NOTIFY_DUPLICATE {
+                return false;
+            }
+        }
+        let fresh = self
+            .window_start
+            .is_none_or(|start| now.saturating_duration_since(start) >= NOTIFY_WINDOW);
+        if fresh {
+            self.window_start = Some(now);
+            self.count = 0;
+        }
+        if self.count >= NOTIFY_BURST {
+            return false;
+        }
+        self.count += 1;
+        self.last = Some((now, notification.clone()));
+        true
+    }
+}
+
+#[derive(Default)]
+struct KittyPending {
+    id: Option<String>,
+    title: String,
+    body: String,
+}
+
 pub struct AgentDetector {
     agents: Vec<String>,
     state: State,
     osc: Vec<u8>,
-    armed: bool,
+    link: Arc<AgentLink>,
     status: Status,
     /// When generic attention was last emitted; consulted only while armed.
     last_attention: Option<Instant>,
+    limiter: NotificationLimiter,
+    kitty: KittyPending,
     clock: fn() -> Instant,
 }
 
 impl AgentDetector {
+    #[cfg(test)]
     pub fn new() -> Self {
-        Self::with_agents(DEFAULT_AGENTS.iter().map(|s| s.to_string()).collect())
+        Self::with_link(AgentLink::new())
     }
 
-    pub fn with_agents(agents: Vec<String>) -> Self {
-        Self::with_clock(agents, Instant::now)
+    pub fn with_link(link: Arc<AgentLink>) -> Self {
+        Self::with_clock(
+            DEFAULT_AGENTS.iter().map(|s| s.to_string()).collect(),
+            link,
+            Instant::now,
+        )
     }
 
-    fn with_clock(agents: Vec<String>, clock: fn() -> Instant) -> Self {
+    fn with_clock(agents: Vec<String>, link: Arc<AgentLink>, clock: fn() -> Instant) -> Self {
         Self {
             agents,
             state: State::Ground,
             osc: Vec::new(),
-            armed: false,
+            link,
             status: Status::Working,
             last_attention: None,
+            limiter: NotificationLimiter::new(),
+            kitty: KittyPending::default(),
             clock,
         }
     }
 
-    /// Feed a chunk of raw PTY output. Transitions come only from OSC sequences
-    /// (`133` prompt boundaries, our `777` hook marker), never from raw output,
-    /// so a TUI agent that repaints continuously never flaps working/waiting.
-    pub fn process<F: FnMut(Transition)>(&mut self, input: &[u8], mut emit: F) {
+    /// Feed a chunk of raw PTY output. Agent transitions come only from OSC
+    /// sequences (`133` prompt boundaries, hook markers, notifications), never
+    /// from raw output, so a TUI agent that repaints continuously never flaps
+    /// working/waiting. A bare BEL is reported as a terminal notification.
+    pub fn process<F: FnMut(Signal)>(&mut self, input: &[u8], mut emit: F) {
         let mut i = 0;
         while i < input.len() {
             match self.state {
                 State::Ground => {
-                    // Output without an escape is never interesting.
-                    let Some(esc) = memchr(ESC, &input[i..]) else {
+                    // Output without an escape or bell is never interesting.
+                    let Some(at) = memchr2(ESC, BEL, &input[i..]) else {
                         return;
                     };
-                    self.state = State::Esc;
-                    i += esc + 1;
+                    i += at + 1;
+                    if input[i - 1] == BEL {
+                        self.bell(&mut emit);
+                    } else {
+                        self.state = State::Esc;
+                    }
                 }
                 State::Esc => {
                     let b = input[i];
@@ -172,24 +379,23 @@ impl AgentDetector {
 
     /// Called when the underlying PTY closes. Reports the agent as exited so the
     /// UI doesn't leave a stale entry if the shell died mid-command.
-    pub fn finish<F: FnMut(Transition)>(&mut self, mut emit: F) {
-        if self.armed {
-            self.disarm();
-            emit(Transition::Exited);
+    pub fn finish<F: FnMut(Signal)>(&mut self, mut emit: F) {
+        if self.disarm() {
+            emit(Signal::Transition(Transition::Exited));
         }
     }
 
-    fn disarm(&mut self) {
-        self.armed = false;
+    fn disarm(&mut self) -> bool {
         self.status = Status::Working;
         self.last_attention = None;
+        self.link.disarm()
     }
 
     fn note_attention(&mut self) {
         self.last_attention = Some((self.clock)());
     }
 
-    fn finish_osc<F: FnMut(Transition)>(&mut self, emit: &mut F) {
+    fn finish_osc<F: FnMut(Signal)>(&mut self, emit: &mut F) {
         let body = std::mem::take(&mut self.osc);
         let (ps, pt) = match body.iter().position(|&c| c == b';') {
             Some(i) => (&body[..i], &body[i + 1..]),
@@ -197,14 +403,21 @@ impl AgentDetector {
         };
         match ps {
             b"133" => self.handle_osc133(pt, emit),
-            // OSC 9;4 is taskbar progress, not a notification.
-            b"9" if !pt.starts_with(b"4;") && pt != b"4" => self.generic_attention(emit),
+            // OSC 9;4 is taskbar progress and 9;<n>; are ConEmu commands.
+            b"9" if !is_conemu_command(pt) => {
+                let notification = notification(NotificationKind::Osc9, None, pt);
+                self.generic_notification(notification, emit);
+            }
+            b"99" => {
+                let notification = self.handle_osc99(pt);
+                self.generic_notification(notification, emit);
+            }
             b"777" => self.handle_osc777(pt, emit),
             _ => {}
         }
     }
 
-    fn handle_osc777<F: FnMut(Transition)>(&mut self, pt: &[u8], emit: &mut F) {
+    fn handle_osc777<F: FnMut(Signal)>(&mut self, pt: &[u8], emit: &mut F) {
         if let Some(tail) = pt.strip_prefix(TERAX_MARKER) {
             // PTY output is untrusted: only self-arm for known agents.
             let (agent, event) = match tail.iter().position(|&c| c == b';') {
@@ -219,6 +432,9 @@ impl AgentDetector {
                 }
                 None => ("claude", tail),
             };
+            if self.link.is_hooked() {
+                return;
+            }
             // Self-arms when no shell preexec fired (bash, Windows, tmux).
             match event {
                 b"working" => {
@@ -229,54 +445,93 @@ impl AgentDetector {
                     self.ensure_armed(agent, emit);
                     self.status = Status::Waiting;
                     self.note_attention();
-                    emit(Transition::Attention);
+                    emit(Signal::Transition(Transition::Attention));
                 }
                 b"finished" => {
                     self.ensure_armed(agent, emit);
                     self.status = Status::Waiting;
                     self.note_attention();
-                    emit(Transition::Finished);
+                    emit(Signal::Transition(Transition::Finished));
                 }
                 _ => {}
             }
             return;
         }
-        self.generic_attention(emit);
+        let notification = pt.strip_prefix(b"notify;").and_then(|rest| {
+            let (title, body) = match rest.iter().position(|&c| c == b';') {
+                Some(i) => (&rest[..i], &rest[i + 1..]),
+                None => (&rest[0..0], rest),
+            };
+            notification(NotificationKind::Osc777, Some(title), body)
+        });
+        self.generic_notification(notification, emit);
     }
 
-    fn handle_osc133<F: FnMut(Transition)>(&mut self, pt: &[u8], emit: &mut F) {
+    fn handle_osc133<F: FnMut(Signal)>(&mut self, pt: &[u8], emit: &mut F) {
         match pt.first() {
             Some(b'C') => {
-                if self.armed {
+                if self.link.is_armed() {
                     return;
                 }
                 let cmd = pt.strip_prefix(b"C;").unwrap_or(b"");
                 if let Some(agent) = self.match_agent(cmd) {
-                    self.armed = true;
-                    self.status = Status::Working;
-                    emit(Transition::Started { agent });
+                    self.ensure_armed(&agent, emit);
                 }
             }
-            Some(b'D') if self.armed => {
+            Some(b'D') if self.link.is_armed() => {
                 self.disarm();
-                emit(Transition::Exited);
+                emit(Signal::Transition(Transition::Exited));
             }
             _ => {}
         }
     }
 
-    fn ensure_armed<F: FnMut(Transition)>(&mut self, agent: &str, emit: &mut F) {
-        if !self.armed {
-            self.armed = true;
+    fn ensure_armed<F: FnMut(Signal)>(&mut self, agent: &str, emit: &mut F) {
+        if self.link.arm() {
             self.status = Status::Working;
-            emit(Transition::Started { agent: agent.to_string() });
+            self.last_attention = None;
+            emit(Signal::Transition(Transition::Started { agent: agent.to_string() }));
         }
     }
 
-    fn set_working<F: FnMut(Transition)>(&mut self, emit: &mut F) {
+    fn set_working<F: FnMut(Signal)>(&mut self, emit: &mut F) {
         if self.status != Status::Working {
             self.status = Status::Working;
-            emit(Transition::Working);
+            emit(Signal::Transition(Transition::Working));
+        }
+    }
+
+    /// An OSC notification means attention while an agent runs and a plain
+    /// terminal notification otherwise. A hooked agent already reports its own
+    /// state, so its OSC notifications are redundant.
+    fn generic_notification<F: FnMut(Signal)>(
+        &mut self,
+        notification: Option<TerminalNotification>,
+        emit: &mut F,
+    ) {
+        if self.link.is_armed() {
+            self.generic_attention(emit);
+        } else if let Some(notification) = notification {
+            self.notify(notification, emit);
+        }
+    }
+
+    fn bell<F: FnMut(Signal)>(&mut self, emit: &mut F) {
+        // A running agent has its own entry; its bell is not a second notification.
+        if self.link.is_armed() {
+            return;
+        }
+        let bell = TerminalNotification {
+            kind: NotificationKind::Bell,
+            title: None,
+            body: String::new(),
+        };
+        self.notify(bell, emit);
+    }
+
+    fn notify<F: FnMut(Signal)>(&mut self, notification: TerminalNotification, emit: &mut F) {
+        if self.limiter.allow((self.clock)(), &notification) {
+            emit(Signal::Notification(notification));
         }
     }
 
@@ -284,8 +539,8 @@ impl AgentDetector {
     /// is the same moment of attention unless enough time has passed for it to
     /// plausibly be the next turn (agents without hooks never report
     /// `working`, so the status alone cannot tell the two apart).
-    fn generic_attention<F: FnMut(Transition)>(&mut self, emit: &mut F) {
-        if !self.armed {
+    fn generic_attention<F: FnMut(Signal)>(&mut self, emit: &mut F) {
+        if !self.link.is_armed() || self.link.is_hooked() {
             return;
         }
         let now = (self.clock)();
@@ -298,16 +553,56 @@ impl AgentDetector {
         }
         self.status = Status::Waiting;
         self.last_attention = Some(now);
-        emit(Transition::Attention);
+        emit(Signal::Transition(Transition::Attention));
+    }
+
+    /// Kitty notification protocol: `99;<metadata>;<payload>`, possibly sent
+    /// in chunks that share an `i=` id until a chunk with `d=1` (the default).
+    fn handle_osc99(&mut self, pt: &[u8]) -> Option<TerminalNotification> {
+        let (meta, payload) = match pt.iter().position(|&c| c == b';') {
+            Some(i) => (&pt[..i], &pt[i + 1..]),
+            None => (pt, &pt[0..0]),
+        };
+        let meta = std::str::from_utf8(meta).ok()?;
+        let part = kitty_field(meta, "p").unwrap_or("title");
+        if part != "title" && part != "body" {
+            return None;
+        }
+        let id = kitty_field(meta, "i").map(str::to_string);
+        let done = kitty_field(meta, "d") != Some("0");
+        let bytes = if kitty_field(meta, "e") == Some("1") {
+            decode_base64(payload)?
+        } else {
+            payload.to_vec()
+        };
+        let text = String::from_utf8_lossy(&bytes);
+        if self.kitty.id != id {
+            self.kitty = KittyPending { id, ..KittyPending::default() };
+        }
+        let target = if part == "body" {
+            &mut self.kitty.body
+        } else {
+            &mut self.kitty.title
+        };
+        if target.len() < MAX_NOTIFY_BODY {
+            target.push_str(&text);
+        }
+        if !done {
+            return None;
+        }
+        let KittyPending { title, body, .. } = std::mem::take(&mut self.kitty);
+        notification(NotificationKind::Osc99, Some(title.as_bytes()), body.as_bytes())
     }
 
     fn match_agent(&self, cmd: &[u8]) -> Option<String> {
         let cmd = std::str::from_utf8(cmd).ok()?;
         for token in cmd.split_whitespace() {
-            if token.starts_with('-') {
+            let token = token.trim_matches(['"', '\'']);
+            if token.is_empty() || token.starts_with('-') {
                 continue;
             }
             let base = token.rsplit(['/', '\\']).next().unwrap_or(token);
+            let base = strip_launcher_extension(base).to_ascii_lowercase();
             if let Some(agent) = self.agents.iter().find(|a| {
                 base.strip_prefix(a.as_str())
                     .is_some_and(|rest| rest.is_empty() || rest.starts_with('-'))
@@ -319,14 +614,101 @@ impl AgentDetector {
     }
 }
 
+fn strip_launcher_extension(name: &str) -> &str {
+    let lower = name.to_ascii_lowercase();
+    for extension in LAUNCHER_EXTENSIONS {
+        if lower.ends_with(extension) {
+            return &name[..name.len() - extension.len()];
+        }
+    }
+    name
+}
+
+fn is_conemu_command(pt: &[u8]) -> bool {
+    let digits = pt.iter().take_while(|c| c.is_ascii_digit()).count();
+    digits > 0 && (digits == pt.len() || pt[digits] == b';')
+}
+
+fn notification(
+    kind: NotificationKind,
+    title: Option<&[u8]>,
+    body: &[u8],
+) -> Option<TerminalNotification> {
+    let text = |bytes: &[u8], max: usize| clean_text(&String::from_utf8_lossy(bytes), max);
+    let title = title.and_then(|title| text(title, MAX_NOTIFY_TITLE));
+    let body = text(body, MAX_NOTIFY_BODY);
+    match (title, body) {
+        (None, None) => None,
+        (Some(only), None) => Some(TerminalNotification { kind, title: None, body: only }),
+        (title, Some(body)) => Some(TerminalNotification { kind, title, body }),
+    }
+}
+
+fn kitty_field<'a>(meta: &'a str, key: &str) -> Option<&'a str> {
+    meta.split(':')
+        .filter_map(|field| field.split_once('='))
+        .find_map(|(name, value)| (name == key).then_some(value))
+}
+
+fn decode_base64(input: &[u8]) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(input.len() / 4 * 3);
+    let mut bits = 0u32;
+    let mut count = 0u8;
+    for &byte in input {
+        let value = match byte {
+            b'A'..=b'Z' => byte - b'A',
+            b'a'..=b'z' => byte - b'a' + 26,
+            b'0'..=b'9' => byte - b'0' + 52,
+            b'+' | b'-' => 62,
+            b'/' | b'_' => 63,
+            b'=' => break,
+            b' ' | b'\n' | b'\r' => continue,
+            _ => return None,
+        };
+        bits = (bits << 6) | u32::from(value);
+        count += 1;
+        if count == 4 {
+            out.extend_from_slice(&[(bits >> 16) as u8, (bits >> 8) as u8, bits as u8]);
+            bits = 0;
+            count = 0;
+        }
+    }
+    match count {
+        0 => {}
+        2 => out.push((bits >> 4) as u8),
+        3 => out.extend_from_slice(&[(bits >> 10) as u8, (bits >> 2) as u8]),
+        _ => return None,
+    }
+    Some(out)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn run(d: &mut AgentDetector, input: &[u8]) -> Vec<Transition> {
+    fn run_all(d: &mut AgentDetector, input: &[u8]) -> Vec<Signal> {
         let mut out = Vec::new();
-        d.process(input, |t| out.push(t));
+        d.process(input, |signal| out.push(signal));
         out
+    }
+
+    fn run(d: &mut AgentDetector, input: &[u8]) -> Vec<Transition> {
+        run_all(d, input)
+            .into_iter()
+            .filter_map(|signal| match signal {
+                Signal::Transition(transition) => Some(transition),
+                Signal::Notification(_) => None,
+            })
+            .collect()
+    }
+
+    fn notifications(d: &mut AgentDetector, input: &[u8]) -> Vec<TerminalNotification> {
+        run_all(d, input)
+            .into_iter()
+            .filter_map(|signal| match signal {
+                Signal::Notification(notification) => Some(notification),
+                Signal::Transition(_) => None,
+            })
+            .collect()
     }
 
     fn osc(body: &str) -> Vec<u8> {
@@ -479,6 +861,7 @@ mod tests {
     fn timed() -> AgentDetector {
         AgentDetector::with_clock(
             DEFAULT_AGENTS.iter().map(|s| s.to_string()).collect(),
+            AgentLink::new(),
             fake_now,
         )
     }
@@ -602,10 +985,10 @@ mod tests {
         let mut d = AgentDetector::new();
         run(&mut d, &osc("133;C;claude"));
         let mut out = Vec::new();
-        d.finish(|t| out.push(t));
-        assert_eq!(out, vec![Transition::Exited]);
+        d.finish(|signal| out.push(signal));
+        assert_eq!(out, vec![Signal::Transition(Transition::Exited)]);
         let mut out2 = Vec::new();
-        d.finish(|t| out2.push(t));
+        d.finish(|signal| out2.push(signal));
         assert!(out2.is_empty());
     }
 
@@ -618,5 +1001,280 @@ mod tests {
         seq.extend_from_slice(&[ESC, ST_FINAL]);
         assert!(run(&mut d, &seq).is_empty());
         assert_eq!(run(&mut d, &osc("777;notify;Terax;attention")), vec![Transition::Attention]);
+    }
+
+    fn note(kind: NotificationKind, title: Option<&str>, body: &str) -> TerminalNotification {
+        TerminalNotification {
+            kind,
+            title: title.map(str::to_string),
+            body: body.to_string(),
+        }
+    }
+
+    #[test]
+    fn arms_on_windows_command_forms() {
+        for command in [
+            "claude.exe",
+            "claude.cmd --resume",
+            "CLAUDE.EXE",
+            ".\\claude.exe",
+            "& 'C:\\Users\\me\\.local\\bin\\claude.exe' -p hi",
+            "\"C:\\Program Files\\nodejs\\claude.cmd\" --model opus",
+            "C:\\Users\\me\\AppData\\Roaming\\npm\\claude.ps1",
+            "npx -y @anthropic-ai/claude-code@latest",
+            "cmd /c claude",
+            "pwsh -NoProfile -Command claude.exe",
+        ] {
+            let mut d = AgentDetector::new();
+            assert_eq!(run(&mut d, &osc(&format!("133;C;{command}"))), vec![started("claude")], "{command}");
+        }
+        let mut d = AgentDetector::new();
+        assert_eq!(run(&mut d, &osc("133;C;codex.cmd exec")), vec![started("codex")]);
+        let mut d = AgentDetector::new();
+        assert_eq!(run(&mut d, &osc("133;C;gemini.ps1")), vec![started("gemini")]);
+    }
+
+    #[test]
+    fn windows_forms_do_not_arm_on_lookalikes() {
+        for command in ["claude.txt", "notepad claude.md", "claudexyz.exe", "type claude.log", "dir C:\\docs\\claude.bak"] {
+            let mut d = AgentDetector::new();
+            assert!(run(&mut d, &osc(&format!("133;C;{command}"))).is_empty(), "{command}");
+        }
+    }
+
+    #[test]
+    fn a_bell_is_a_terminal_notification() {
+        let mut d = timed();
+        assert_eq!(
+            notifications(&mut d, b"build done\x07"),
+            vec![note(NotificationKind::Bell, None, "")]
+        );
+    }
+
+    #[test]
+    fn an_armed_agents_bell_is_not_a_terminal_notification() {
+        let mut d = timed();
+        run(&mut d, &osc("133;C;opencode"));
+        assert!(run_all(&mut d, b"ding\x07").is_empty());
+        run(&mut d, &osc("133;D;0"));
+        advance(NOTIFY_WINDOW);
+        assert_eq!(notifications(&mut d, b"\x07").len(), 1);
+    }
+
+    #[test]
+    fn a_bell_terminating_an_osc_is_not_a_bell() {
+        let mut d = timed();
+        assert!(run_all(&mut d, b"\x1b]0;title\x07").is_empty());
+    }
+
+    #[test]
+    fn notifications_are_rate_limited_and_deduplicated() {
+        let mut d = timed();
+        assert_eq!(notifications(&mut d, b"\x07\x07\x07").len(), 1);
+        advance(NOTIFY_DUPLICATE);
+        assert_eq!(notifications(&mut d, b"\x07").len(), 1);
+        // A burst of distinct notifications is capped per window.
+        let mut allowed = 0;
+        for index in 0..6 {
+            advance(NOTIFY_DUPLICATE);
+            allowed += notifications(&mut d, &osc(&format!("9;message {index}"))).len();
+        }
+        assert_eq!(allowed, usize::from(NOTIFY_BURST) - 2);
+        advance(NOTIFY_WINDOW);
+        assert_eq!(notifications(&mut d, &osc("9;fresh window")).len(), 1);
+    }
+
+    #[test]
+    fn osc9_is_a_notification_unless_it_is_a_conemu_command() {
+        let mut d = timed();
+        assert_eq!(
+            notifications(&mut d, &osc("9;Build finished")),
+            vec![note(NotificationKind::Osc9, None, "Build finished")]
+        );
+        advance(NOTIFY_DUPLICATE);
+        assert_eq!(
+            notifications(&mut d, &osc("9;3 tests passed")),
+            vec![note(NotificationKind::Osc9, None, "3 tests passed")]
+        );
+        for command in ["9;4;1;50", "9;4", "9;9;C:\\work", "9;1;100"] {
+            advance(NOTIFY_DUPLICATE);
+            assert!(notifications(&mut d, &osc(command)).is_empty(), "{command}");
+        }
+        assert!(notifications(&mut d, &osc("9;")).is_empty());
+    }
+
+    #[test]
+    fn osc777_notify_splits_title_and_body() {
+        let mut d = timed();
+        assert_eq!(
+            notifications(&mut d, &osc("777;notify;Deploy;prod; 2 of 3 done")),
+            vec![note(NotificationKind::Osc777, Some("Deploy"), "prod; 2 of 3 done")]
+        );
+        advance(NOTIFY_DUPLICATE);
+        assert!(notifications(&mut d, &osc("777;precmd")).is_empty());
+        assert!(notifications(&mut d, &osc("777;notify;Terax;codex;finished")).is_empty());
+    }
+
+    #[test]
+    fn osc99_supports_single_chunked_and_base64_notifications() {
+        let mut d = timed();
+        assert_eq!(
+            notifications(&mut d, &osc("99;;Hello")),
+            vec![note(NotificationKind::Osc99, None, "Hello")]
+        );
+        advance(NOTIFY_DUPLICATE);
+        let mut chunked = run_all(&mut d, &osc("99;i=1:d=0;Build"));
+        chunked.extend(run_all(&mut d, &osc("99;i=1:d=0:p=body;all green")));
+        assert!(chunked.is_empty());
+        assert_eq!(
+            notifications(&mut d, &osc("99;i=1:p=body;!")),
+            vec![note(NotificationKind::Osc99, Some("Build"), "all green!")]
+        );
+        advance(NOTIFY_DUPLICATE);
+        assert_eq!(
+            notifications(&mut d, &osc("99;e=1;SGVsbG8gd29ybGQ=")),
+            vec![note(NotificationKind::Osc99, None, "Hello world")]
+        );
+        advance(NOTIFY_DUPLICATE);
+        for ignored in ["99;p=close:i=1;", "99;p=?;", "99;e=1;***", "99;p=icon;AAAA"] {
+            assert!(notifications(&mut d, &osc(ignored)).is_empty(), "{ignored}");
+        }
+    }
+
+    #[test]
+    fn base64_decoding_handles_padding_and_rejects_garbage() {
+        assert_eq!(decode_base64(b"TWFu").unwrap(), b"Man");
+        assert_eq!(decode_base64(b"TWE=").unwrap(), b"Ma");
+        assert_eq!(decode_base64(b"TQ==").unwrap(), b"M");
+        assert_eq!(decode_base64(b"TQ").unwrap(), b"M");
+        assert_eq!(decode_base64(b"").unwrap(), b"");
+        assert_eq!(decode_base64(b"T").ok_or(()), Err(()));
+        assert_eq!(decode_base64(b"T*Q=").ok_or(()), Err(()));
+    }
+
+    #[test]
+    fn notification_text_is_sanitized_and_bounded() {
+        let mut d = timed();
+        let long = "x".repeat(1500);
+        let out = notifications(&mut d, &osc(&format!("777;notify;a\x01b;{long}")));
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].title.as_deref(), Some("ab"));
+        assert!(out[0].body.len() <= MAX_NOTIFY_BODY + 3);
+    }
+
+    #[test]
+    fn osc_notifications_are_attention_not_notifications_while_an_agent_runs() {
+        let mut d = timed();
+        run(&mut d, &osc("133;C;codex"));
+        let signals = run_all(&mut d, &osc("9;needs you"));
+        assert_eq!(signals, vec![Signal::Transition(Transition::Attention)]);
+    }
+
+    #[test]
+    fn notification_event_wire_shape() {
+        let event = note(NotificationKind::Osc777, Some("T"), "B").into_event(4);
+        assert_eq!(
+            serde_json::to_value(event).unwrap(),
+            serde_json::json!({ "ptyId": 4, "title": "T", "body": "B", "kind": "osc777" })
+        );
+        let bell = note(NotificationKind::Bell, None, "").into_event(1);
+        assert_eq!(
+            serde_json::to_value(bell).unwrap(),
+            serde_json::json!({ "ptyId": 1, "body": "", "kind": "bell" })
+        );
+    }
+
+    fn hooked(link: &Arc<AgentLink>, intent: HookIntent) -> Vec<Transition> {
+        link.apply_hook("claude", intent)
+    }
+
+    #[test]
+    fn hooks_self_arm_then_track_turns() {
+        let link = AgentLink::new();
+        assert_eq!(hooked(&link, HookIntent::Start), vec![started("claude")]);
+        assert!(hooked(&link, HookIntent::Working).is_empty());
+        assert!(hooked(&link, HookIntent::Activity).is_empty());
+        assert_eq!(hooked(&link, HookIntent::Attention), vec![Transition::Attention]);
+        assert!(hooked(&link, HookIntent::Attention).is_empty());
+        assert_eq!(hooked(&link, HookIntent::Finished), vec![Transition::Finished]);
+        assert_eq!(hooked(&link, HookIntent::Working), vec![Transition::Working]);
+        assert!(hooked(&link, HookIntent::Quiet).is_empty());
+    }
+
+    #[test]
+    fn tool_activity_never_hides_a_pending_attention() {
+        let link = AgentLink::new();
+        hooked(&link, HookIntent::Working);
+        assert_eq!(hooked(&link, HookIntent::Attention), vec![Transition::Attention]);
+        // A background tool hook that lost the race against the permission
+        // request arrives afterwards, and so does tool traffic for another tool.
+        for _ in 0..3 {
+            assert!(hooked(&link, HookIntent::Activity).is_empty());
+        }
+        // Still waiting: another attention is the same moment, not a new one.
+        assert!(hooked(&link, HookIntent::Attention).is_empty());
+        assert_eq!(hooked(&link, HookIntent::Working), vec![Transition::Working]);
+    }
+
+    #[test]
+    fn trailing_activity_hooks_do_not_start_an_agent() {
+        let link = AgentLink::new();
+        assert!(hooked(&link, HookIntent::Activity).is_empty());
+        assert!(hooked(&link, HookIntent::Quiet).is_empty());
+        assert!(!link.is_armed());
+        assert!(!link.is_hooked());
+    }
+
+    #[test]
+    fn a_first_attention_hook_arms_before_signalling() {
+        let link = AgentLink::new();
+        assert_eq!(
+            hooked(&link, HookIntent::Attention),
+            vec![started("claude"), Transition::Attention]
+        );
+    }
+
+    #[test]
+    fn a_hook_after_osc_arming_does_not_start_twice() {
+        let link = AgentLink::new();
+        let mut d = AgentDetector::with_link(link.clone());
+        assert_eq!(run(&mut d, &osc("133;C;claude")), vec![started("claude")]);
+        assert!(hooked(&link, HookIntent::Start).is_empty());
+        assert!(link.is_hooked());
+        assert!(run(&mut d, &osc("133;C;claude")).is_empty());
+    }
+
+    #[test]
+    fn osc_state_hints_are_ignored_for_a_hooked_agent() {
+        let link = AgentLink::new();
+        let mut d = timed_with(link.clone());
+        run(&mut d, &osc("133;C;codex"));
+        hooked(&link, HookIntent::Working);
+        assert!(run_all(&mut d, &osc("9;Agent turn complete")).is_empty());
+        assert!(run_all(&mut d, &osc("777;notify;Terax;codex;finished")).is_empty());
+        assert!(run_all(&mut d, b"\x07").is_empty());
+        // Process lifecycle still comes from OSC 133.
+        assert_eq!(run(&mut d, &osc("133;D;0")), vec![Transition::Exited]);
+        assert!(!link.is_hooked());
+        run(&mut d, &osc("133;C;codex"));
+        advance(ATTENTION_REPEAT);
+        assert_eq!(run(&mut d, &osc("9;done")), vec![Transition::Attention]);
+    }
+
+    #[test]
+    fn a_hook_after_the_process_exited_starts_a_fresh_run() {
+        let link = AgentLink::new();
+        let mut d = AgentDetector::with_link(link.clone());
+        run(&mut d, &osc("133;C;claude"));
+        run(&mut d, &osc("133;D;0"));
+        assert_eq!(hooked(&link, HookIntent::Working), vec![started("claude")]);
+    }
+
+    fn timed_with(link: Arc<AgentLink>) -> AgentDetector {
+        AgentDetector::with_clock(
+            DEFAULT_AGENTS.iter().map(|s| s.to_string()).collect(),
+            link,
+            fake_now,
+        )
     }
 }

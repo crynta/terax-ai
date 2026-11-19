@@ -74,7 +74,12 @@ describe("terminalLineNavigationSequence", () => {
   it("does not remap Cmd+Option+Arrow (selection-style combos pass through)", () => {
     expect(
       terminalLineNavigationSequence(
-        evt({ metaKey: true, altKey: true, key: "ArrowLeft", code: "ArrowLeft" }),
+        evt({
+          metaKey: true,
+          altKey: true,
+          key: "ArrowLeft",
+          code: "ArrowLeft",
+        }),
         { isMac: true },
       ),
     ).toBeNull();
@@ -129,10 +134,9 @@ describe("terminalDeleteSequence", () => {
 
   it("does not remap plain Backspace", () => {
     expect(
-      terminalDeleteSequence(
-        evt({ key: "Backspace", code: "Backspace" }),
-        { isMac: true },
-      ),
+      terminalDeleteSequence(evt({ key: "Backspace", code: "Backspace" }), {
+        isMac: true,
+      }),
     ).toBeNull();
   });
 });
@@ -162,18 +166,58 @@ describe("terminalReadlineSequence", () => {
       expect(
         terminalReadlineSequence(event, {
           isMac: true,
-          isAlternateScreen: false,
+          alternateScreen: () => false,
         }),
       ).toBe(sequence);
     },
   );
 
-  it.each(remaps)("suppresses %s on the alternate screen", (_name, event) => {
+  it.each(remaps)(
+    "keeps Command editing and leaves Option motion to the application on the alternate screen (%s)",
+    (_name, event, sequence) => {
+      expect(
+        terminalReadlineSequence(event, {
+          isMac: true,
+          alternateScreen: () => true,
+        }),
+      ).toBe(event.metaKey ? sequence : null);
+    },
+  );
+
+  it("never remaps Ctrl+Backspace on the alternate screen", () => {
     expect(
-      terminalReadlineSequence(event, {
-        isMac: true,
-        isAlternateScreen: true,
-      }),
+      terminalReadlineSequence(
+        evt({ ctrlKey: true, key: "Backspace", code: "Backspace" }),
+        { isMac: false, alternateScreen: () => true },
+      ),
     ).toBeNull();
+  });
+});
+
+describe("Ctrl+Backspace under the Kitty protocol", () => {
+  const event = evt({ ctrlKey: true, key: "Backspace", code: "Backspace" });
+  const opts = { isMac: false, alternateScreen: () => false };
+
+  it("kills a word outside the protocol and leaves the key to the encoder inside it", () => {
+    expect(terminalReadlineSequence(event, opts)).toBe("\x17");
+    expect(
+      terminalReadlineSequence(event, { ...opts, kittyFlags: () => 0 }),
+    ).toBe("\x17");
+    expect(
+      terminalReadlineSequence(event, { ...opts, kittyFlags: () => 1 }),
+    ).toBeNull();
+  });
+
+  it("does not ask the application's mode for keys it never remaps", () => {
+    let asked = 0;
+    const kittyFlags = () => {
+      asked += 1;
+      return 1;
+    };
+    terminalReadlineSequence(evt({ key: "a", code: "KeyA" }), {
+      ...opts,
+      kittyFlags,
+    });
+    expect(asked).toBe(0);
   });
 });

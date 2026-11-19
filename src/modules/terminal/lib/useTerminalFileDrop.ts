@@ -1,8 +1,13 @@
+import { nativeDropClientPoint } from "@/lib/nativeDropPoint";
+import { IS_WINDOWS } from "@/lib/platform";
+import { shellDialect, type ShellDialect } from "@/lib/shellQuote";
+import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useEffect } from "react";
 import { useTerminalDropStore } from "./dropStore";
 import { formatDroppedPaths } from "./quoteShellPath";
-import { pasteIntoSession } from "./terminalSessionApi";
+import { pasteIntoSession, ptyIdForLeaf } from "./terminalSessionApi";
 
 export type TerminalPathDropTarget = {
   updateTarget: (clientX: number, clientY: number) => boolean;
@@ -14,29 +19,38 @@ type TerminalPathDropDeps = {
   leafIdAtPoint: (clientX: number, clientY: number) => number | null;
   paste: (leafId: number, text: string) => boolean;
   setTarget: (leafId: number | null) => void;
+  dialect?: (
+    leafId: number,
+  ) => ShellDialect | null | Promise<ShellDialect | null>;
 };
 
-// Tauri reports the drop point in physical pixels on some platforms and logical
-// on others; only scale down when it overflows the logical viewport.
 function leafIdAt(x: number, y: number): number | null {
-  let lx = x;
-  let ly = y;
-  if (x > window.innerWidth || y > window.innerHeight) {
-    const dpr = window.devicePixelRatio || 1;
-    lx = x / dpr;
-    ly = y / dpr;
-  }
-  const el = document.elementFromPoint(lx, ly);
+  const el = document.elementFromPoint(x, y);
   const leafEl = el?.closest<HTMLElement>("[data-pane-leaf]");
   if (!leafEl) return null;
   const id = Number(leafEl.dataset.paneLeaf);
   return Number.isFinite(id) ? id : null;
 }
 
+function dialectForLeaf(
+  leafId: number,
+): ShellDialect | null | Promise<ShellDialect | null> {
+  const id = ptyIdForLeaf(leafId);
+  if (id === null) return null;
+  return invoke<string>("pty_session_shell", { id }).then((program) => {
+    if (ptyIdForLeaf(leafId) !== id) return null;
+    const dialect = shellDialect(program);
+    if (dialect === null)
+      throw new Error("File drops are unavailable for this shell.");
+    return dialect;
+  });
+}
+
 export function createTerminalPathDropTarget({
   leafIdAtPoint,
   paste,
   setTarget,
+  dialect = dialectForLeaf,
 }: TerminalPathDropDeps): TerminalPathDropTarget {
   return {
     updateTarget(clientX, clientY) {
@@ -48,7 +62,18 @@ export function createTerminalPathDropTarget({
       setTarget(null);
       const leafId = leafIdAtPoint(clientX, clientY);
       if (leafId === null) return false;
-      paste(leafId, formatDroppedPaths(paths));
+      const insert = (shell: ShellDialect | null) => {
+        if (shell === null) return;
+        try {
+          paste(leafId, formatDroppedPaths(paths, shell));
+        } catch (error) {
+          toast.error(String(error));
+        }
+      };
+      const shell = dialect(leafId);
+      if (shell instanceof Promise)
+        void shell.then(insert).catch((error) => toast.error(String(error)));
+      else insert(shell);
       return true;
     },
     clearTarget() {
@@ -75,21 +100,23 @@ export function useTerminalFileDrop(): TerminalPathDropTarget {
     void getCurrentWebview()
       .onDragDropEvent((e) => {
         const p = e.payload;
-        if (p.type === "enter" || p.type === "over") {
-          setTarget(leafIdAt(p.position.x, p.position.y));
-          return;
-        }
         if (p.type === "leave") {
           setTarget(null);
+          return;
+        }
+        const { x, y } = nativeDropClientPoint(
+          p.position,
+          IS_WINDOWS,
+          window.devicePixelRatio,
+        );
+        if (p.type === "enter" || p.type === "over") {
+          setTarget(leafIdAt(x, y));
           return;
         }
         if (p.type === "drop") {
           setTarget(null);
           if (!p.paths.length) return;
-          const leafId = leafIdAt(p.position.x, p.position.y);
-          if (leafId !== null) {
-            pasteIntoSession(leafId, formatDroppedPaths(p.paths));
-          }
+          terminalPathDropTarget.dropPath(p.paths, x, y);
         }
       })
       .then((fn) => {

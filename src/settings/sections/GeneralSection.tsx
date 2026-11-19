@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
+import { IS_MAC } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import {
   type OsNotificationResult,
@@ -31,13 +32,17 @@ import {
   setTerminalFontWeight,
   setTerminalLetterSpacing,
   setTerminalScrollback,
+  setTerminalMacOptionAsAlt,
+  setTerminalScrollSpeed,
   setTerminalShell,
+  coerceTerminalRenderer,
   setTerminalRenderer,
   setTerminalScreenReader,
   setZoomLevel,
   TERMINAL_FONT_SIZES,
   TERMINAL_SCROLLBACK_PRESETS,
 } from "@/modules/settings/store";
+import { coerceMacOptionAsAlt } from "@/modules/terminal/ghostty/input/macOptionAsAlt";
 import { useTheme } from "@/modules/theme";
 import {
   ComputerIcon,
@@ -73,6 +78,13 @@ const TERMINAL_CURSOR_STYLES = [
   { value: "underline", label: "Underline" },
 ] as const;
 const LETTER_SPACINGS = [-4, -3, -2, -1, 0, 1, 2, 3, 4] as const;
+const OPTION_AS_ALT_CHOICES = [
+  ["off", "Off"],
+  ["left", "Left Option"],
+  ["right", "Right Option"],
+  ["both", "Both"],
+] as const;
+const SCROLL_SPEEDS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4] as const;
 
 type ShellInfo = { name: string; path: string; integrated: boolean };
 const SHELL_AUTO = "auto";
@@ -113,6 +125,10 @@ export function GeneralSection() {
   );
   const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
   const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
+  const terminalScrollSpeed = usePreferencesStore((s) => s.terminalScrollSpeed);
+  const terminalMacOptionAsAlt = usePreferencesStore(
+    (s) => s.terminalMacOptionAsAlt,
+  );
   const confirmCloseRunningTerminal = usePreferencesStore(
     (s) => s.confirmCloseRunningTerminal,
   );
@@ -249,12 +265,12 @@ export function GeneralSection() {
         <Label>Terminal</Label>
         <SettingRow
           title="Terminal renderer"
-          description="Automatic uses WebGPU with WebGL fallback. Choose WebGL for graphics compatibility. Applies to new terminals."
+          description="Automatic and WebGPU draw with WebGPU and fall back to WebGL where the webview has none. WebGL is a compatibility mode: it uses more CPU and holds at most 12 visible panes per window. Applies to new terminals."
         >
           <Select
             value={terminalRenderer}
             onValueChange={(value) =>
-              void setTerminalRenderer(value === "webgl" ? "webgl" : "auto")
+              void setTerminalRenderer(coerceTerminalRenderer(value))
             }
           >
             <SelectTrigger className="h-8 w-36 text-[12px]">
@@ -262,6 +278,7 @@ export function GeneralSection() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="auto">Automatic</SelectItem>
+              <SelectItem value="webgpu">WebGPU</SelectItem>
               <SelectItem value="webgl">WebGL</SelectItem>
             </SelectContent>
           </Select>
@@ -484,6 +501,53 @@ export function GeneralSection() {
             </SelectContent>
           </Select>
         </SettingRow>
+        {IS_MAC && (
+          <SettingRow
+            title="Option as Alt"
+            description="Send Option as Alt (Meta) so readline and editor shortcuts like Option+B and Option+F work. Off types the characters Option produces. Keys are matched by their position on a US keyboard, so layouts that type other letters on those keys are not followed."
+          >
+            <Select
+              value={terminalMacOptionAsAlt}
+              onValueChange={(v) =>
+                void setTerminalMacOptionAsAlt(coerceMacOptionAsAlt(v))
+              }
+            >
+              <SelectTrigger size="sm" className="h-8 w-36 text-[12px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {OPTION_AS_ALT_CHOICES.map(([value, label]) => (
+                  <SelectItem key={value} value={value} className="text-[12px]">
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SettingRow>
+        )}
+        <SettingRow
+          title="Scroll speed"
+          description="Lines per wheel or trackpad movement, for history and for programs that read the mouse wheel."
+        >
+          <Select
+            value={String(terminalScrollSpeed)}
+            onValueChange={(v) => void setTerminalScrollSpeed(Number(v))}
+          >
+            <SelectTrigger size="sm" className="h-8 w-28 text-[12px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(SCROLL_SPEEDS.some((v) => v === terminalScrollSpeed)
+                ? SCROLL_SPEEDS
+                : [...SCROLL_SPEEDS, terminalScrollSpeed].sort((a, b) => a - b)
+              ).map((v) => (
+                <SelectItem key={v} value={String(v)} className="text-[12px]">
+                  {v}x
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingRow>
         <SettingRow
           title="Confirm before killing a running process"
           description="Ask before closing a terminal tab or quitting while a command is still running. Unsaved editor changes are always confirmed."
@@ -625,7 +689,7 @@ function FontFamilyInput({
   return (
     <SettingRow
       title="Font family"
-      description='Nerd Font name for icons (e.g. "CaskaydiaCove Nerd Font Mono"). Leave blank to auto-detect.'
+      description='Terminal font (e.g. "CaskaydiaCove Nerd Font Mono"). Icons render without a Nerd Font; leave blank to use an installed one when found.'
     >
       <input
         type="text"

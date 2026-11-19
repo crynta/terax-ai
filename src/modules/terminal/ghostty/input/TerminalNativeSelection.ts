@@ -14,11 +14,8 @@ export class TerminalNativeSelection {
   private originalStyle: string | null = null;
 
   constructor(private readonly options: Options) {
-    options.target.addEventListener("pointerdown", this.pointerDown, true);
-    options.target.addEventListener("contextmenu", this.contextMenu);
-    options.input.addEventListener("copy", this.copy);
-    options.input.addEventListener("cut", this.copy);
-    options.input.addEventListener("blur", this.reset);
+    for (const [target, type, listener, capture] of this.listeners())
+      target.addEventListener(type, listener, capture);
   }
 
   readonly reset = (): void => {
@@ -30,12 +27,19 @@ export class TerminalNativeSelection {
 
   dispose(): void {
     this.reset();
+    for (const [target, type, listener, capture] of this.listeners())
+      target.removeEventListener(type, listener, capture);
+  }
+
+  private listeners(): [EventTarget, string, EventListener, boolean][] {
     const { target, input } = this.options;
-    target.removeEventListener("pointerdown", this.pointerDown, true);
-    target.removeEventListener("contextmenu", this.contextMenu);
-    input.removeEventListener("copy", this.copy);
-    input.removeEventListener("cut", this.copy);
-    input.removeEventListener("blur", this.reset);
+    return [
+      [target, "pointerdown", this.pointerDown as EventListener, true],
+      [target, "contextmenu", this.contextMenu as EventListener, false],
+      [input, "copy", this.copy as EventListener, false],
+      [input, "cut", this.copy as EventListener, false],
+      [input, "blur", this.reset, false],
+    ];
   }
 
   private readonly pointerDown = (event: PointerEvent): void => {
@@ -63,13 +67,15 @@ export class TerminalNativeSelection {
     const { target, input } = this.options;
     const rect = target.getBoundingClientRect();
     this.originalStyle ??= input.style.cssText;
-    input.style.left = `${Math.max(0, event.clientX - rect.left - 10)}px`;
-    input.style.top = `${Math.max(0, event.clientY - rect.top - 10)}px`;
-    input.style.width = "20px";
-    input.style.height = "20px";
-    input.style.zIndex = "20";
-    input.style.pointerEvents = "auto";
-    input.style.userSelect = "text";
+    Object.assign(input.style, {
+      left: `${Math.max(0, event.clientX - rect.left - 10)}px`,
+      top: `${Math.max(0, event.clientY - rect.top - 10)}px`,
+      width: "20px",
+      height: "20px",
+      zIndex: "20",
+      pointerEvents: "auto",
+      userSelect: "text",
+    });
     this.options.proxy.expose(this.options.getSelection() ?? "");
     input.focus({ preventScroll: true });
     input.select();

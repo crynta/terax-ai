@@ -66,13 +66,14 @@ const readback: Readback = { device: null, texture: null, pending: [] };
   };
 }
 
-const [{ getGhosttyCoreRuntime }, { WebGpuTerminalSurface }, terminalVisuals, fonts, runtimeModule] =
+const [{ getGhosttyCoreRuntime }, { WebGpuTerminalSurface }, terminalVisuals, fonts, runtimeModule, terminalFit] =
   await Promise.all([
     import("@/modules/terminal/ghostty/GhosttyCoreRuntime"),
     import("@/modules/terminal/ghostty/gpu/WebGpuTerminalSurface"),
     import("@/modules/terminal/ghostty/gpu/terminalVisuals"),
     import("@/lib/fonts"),
     import("@/modules/terminal/ghostty/gpu/WebGpuTerminalRuntime"),
+    import("@/modules/terminal/ghostty/gpu/TerminalFit"),
   ]);
 
 const number = (key: string, fallback: number) => {
@@ -99,6 +100,7 @@ const theme = {
   background: [0x16, 0x18, 0x1b],
   foreground: [0xd0, 0xd4, 0xd9],
   cursor: [0xf0, 0xc0, 0x40],
+  cursorText: [0x10, 0x40, 0xd0],
   selection: { color: [0x50, 0x80, 0xc0], alpha: 0.45 },
   palette: PALETTE,
 } as const;
@@ -120,7 +122,10 @@ const scale = window.devicePixelRatio;
 let paneWidth: number;
 let paneHeight: number;
 if (params.get("exact") === "1") {
-  paneWidth = (number("cols", 40) * metrics.deviceCellWidth) / scale;
+  // The fit keeps a gutter free at the right of the grid (TERMINAL_RIGHT_GUTTER_CSS_PX); the exact
+  // pane holds the gutter too, so its grid still reaches the scissor edge.
+  paneWidth =
+    (number("cols", 40) * metrics.deviceCellWidth + Math.round(terminalFit.TERMINAL_RIGHT_GUTTER_CSS_PX * scale)) / scale;
   paneHeight = (number("rows", 12) * metrics.deviceCellHeight) / scale;
 } else {
   paneWidth = (number("w", 1000) - gap * (gridCols - 1)) / gridCols;

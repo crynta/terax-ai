@@ -246,6 +246,35 @@ where
     run_git_uncached(workspace, cwd, args, timeout_secs, stdout_cap, true)
 }
 
+/// Extras for the few invocations that need environment variables (a private
+/// `GIT_INDEX_FILE`) or bytes on stdin (a patch, a path list).
+#[derive(Default)]
+pub struct RunOptions {
+    pub env: Vec<(OsString, OsString)>,
+    pub stdin: Option<Vec<u8>>,
+    /// Defaults to `MAX_OUTPUT_BYTES` when zero.
+    pub stdout_cap: usize,
+}
+
+pub fn run_git_with<I, S>(
+    workspace: &WorkspaceEnv,
+    cwd: Option<&str>,
+    args: I,
+    timeout_secs: u64,
+    options: RunOptions,
+) -> Result<GitOutput>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let cap = if options.stdout_cap == 0 {
+        MAX_OUTPUT_BYTES
+    } else {
+        options.stdout_cap
+    };
+    run_git_full(workspace, cwd, args, timeout_secs, cap, false, options)
+}
+
 fn run_git_uncached<I, S>(
     workspace: &WorkspaceEnv,
     cwd: Option<&str>,
@@ -258,11 +287,43 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
+    run_git_full(
+        workspace,
+        cwd,
+        args,
+        timeout_secs,
+        stdout_cap,
+        stop_on_stdout_cap,
+        RunOptions::default(),
+    )
+}
+
+fn run_git_full<I, S>(
+    workspace: &WorkspaceEnv,
+    cwd: Option<&str>,
+    args: I,
+    timeout_secs: u64,
+    stdout_cap: usize,
+    stop_on_stdout_cap: bool,
+    options: RunOptions,
+) -> Result<GitOutput>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
     let dur = Duration::from_secs(timeout_secs.clamp(1, MAX_TIMEOUT_SECS));
-    let args: Vec<OsString> = args
+    if workspace.is_wsl() && !options.env.is_empty() {
+        // `wsl.exe` does not forward the environment without WSLENV plumbing.
+        return Err(GitError::command(
+            "git",
+            "environment overrides are not supported in WSL workspaces",
+        ));
+    }
+    let mut args: Vec<OsString> = args
         .into_iter()
         .map(|arg| arg.as_ref().to_os_string())
         .collect();
+    harden_inspection(&mut args);
     let mut cmd = build_git_command(workspace, cwd, &args)?;
     cmd.env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_ASKPASS", "")
@@ -271,12 +332,25 @@ where
         .env("GCM_INTERACTIVE", "Never")
         .env("GCM_PROVIDER", "")
         .env("LC_ALL", "C")
-        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    // A repository or configuration redirect inherited from the launching shell
+    // must never steer an invocation; callers that want one pass it in
+    // `options.env`.
+    for name in inherited_git_env_to_strip(std::env::vars_os().map(|(key, _)| key)) {
+        cmd.env_remove(name);
+    }
+    for (key, value) in &options.env {
+        cmd.env(key, value);
+    }
+    cmd.stdin(if options.stdin.is_some() {
+        Stdio::piped()
+    } else {
+        Stdio::null()
+    });
     crate::modules::proc::hide_console(&mut cmd);
 
-    let captured = capture::run(
+    let captured = capture::run_with_input(
         &mut cmd,
         dur,
         Limits {
@@ -284,6 +358,7 @@ where
             stderr: MAX_OUTPUT_BYTES,
             stop_on_stdout_cap,
         },
+        options.stdin,
     )
     .map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound | std::io::ErrorKind::PermissionDenied => {
@@ -299,6 +374,69 @@ where
         timed_out: captured.timed_out,
         truncated: captured.stdout_truncated,
     })
+}
+
+// Fsmonitor is an executable repository setting, even for status. User-requested
+// write hooks remain enabled; no passive diff surface needs external converters.
+fn harden_inspection(args: &mut Vec<OsString>) {
+    let mut command = 0;
+    while command < args.len() {
+        if args[command] == "-c" || args[command] == "-C" {
+            command += 2;
+        } else if args[command].to_string_lossy().starts_with('-') {
+            command += 1;
+        } else {
+            break;
+        }
+    }
+    if command < args.len() {
+        if matches!(
+            args[command].to_str(),
+            Some("diff" | "show" | "log" | "diff-tree" | "diff-index" | "diff-files")
+        ) {
+            args.splice(
+                command + 1..command + 1,
+                ["--no-ext-diff".into(), "--no-textconv".into()],
+            );
+        }
+        args.splice(
+            command..command,
+            // Git 2.23 treats "false" as a hook filename; an empty path disables it.
+            ["-c".into(), "core.fsmonitor=".into()],
+        );
+    }
+}
+
+/// Variables that redirect git to another repository, object store, namespace
+/// or configuration. Fixed names are always listed (removing an unset variable
+/// is harmless); the numbered `GIT_CONFIG_KEY_<n>` / `GIT_CONFIG_VALUE_<n>`
+/// pairs are matched against what is actually set.
+const REDIRECTING_GIT_VARS: &[&str] = &[
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_COMMON_DIR",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_NAMESPACE",
+    "GIT_PREFIX",
+    "GIT_CONFIG_COUNT",
+    "GIT_CONFIG_PARAMETERS",
+];
+
+pub(crate) fn inherited_git_env_to_strip(
+    inherited: impl Iterator<Item = OsString>,
+) -> Vec<OsString> {
+    let mut out: Vec<OsString> = REDIRECTING_GIT_VARS.iter().map(OsString::from).collect();
+    for key in inherited {
+        let Some(name) = key.to_str() else {
+            continue;
+        };
+        if name.starts_with("GIT_CONFIG_KEY_") || name.starts_with("GIT_CONFIG_VALUE_") {
+            out.push(key);
+        }
+    }
+    out
 }
 
 fn build_git_command(
@@ -368,7 +506,7 @@ fn classify_auth_error(stderr: &str) -> Option<GitError> {
     None
 }
 
-fn decode_text(bytes: Vec<u8>) -> TextSource {
+pub(crate) fn decode_text(bytes: Vec<u8>) -> TextSource {
     let sniff_len = bytes.len().min(8192);
     if bytes[..sniff_len].contains(&0) {
         return TextSource::Binary;
@@ -384,17 +522,86 @@ mod tests {
     #[cfg(windows)]
     use super::build_git_command;
     use super::{
-        classify_auth_error, decode_text, parse_git_version, prune_expired_availability_entries,
-        version_meets_minimum, Availability, AvailabilityCache, AVAILABILITY_TTL,
+        classify_auth_error, decode_text, harden_inspection, parse_git_version,
+        prune_expired_availability_entries, version_meets_minimum, Availability, AvailabilityCache,
+        AVAILABILITY_TTL,
     };
     use crate::modules::git::errors::GitError;
     use crate::modules::git::types::TextSource;
     #[cfg(windows)]
     use crate::modules::workspace::WorkspaceEnv;
     use std::collections::HashMap;
-    #[cfg(windows)]
     use std::ffi::OsString;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn inspection_disables_fsmonitor_as_an_empty_hook_path_for_git_2_23() {
+        let mut args: Vec<OsString> = ["-c", "core.fsmonitor=false", "status", "--porcelain"]
+            .into_iter()
+            .map(OsString::from)
+            .collect();
+        harden_inspection(&mut args);
+        assert_eq!(
+            args,
+            [
+                "-c",
+                "core.fsmonitor=false",
+                "-c",
+                "core.fsmonitor=",
+                "status",
+                "--porcelain"
+            ]
+            .map(OsString::from)
+        );
+    }
+
+    #[test]
+    fn inherited_redirects_are_all_stripped_but_unrelated_config_is_kept() {
+        let inherited = [
+            "PATH",
+            "HOME",
+            "GIT_CONFIG_GLOBAL",
+            "GIT_CONFIG_NOSYSTEM",
+            "GIT_CEILING_DIRECTORIES",
+            "GIT_CONFIG_KEY_0",
+            "GIT_CONFIG_VALUE_0",
+            "GIT_CONFIG_KEY_12",
+            "GIT_AUTHOR_NAME",
+        ]
+        .map(std::ffi::OsString::from);
+        let strip: Vec<String> = super::inherited_git_env_to_strip(inherited.into_iter())
+            .into_iter()
+            .map(|n| n.to_string_lossy().into_owned())
+            .collect();
+        for must in [
+            "GIT_DIR",
+            "GIT_WORK_TREE",
+            "GIT_INDEX_FILE",
+            "GIT_COMMON_DIR",
+            "GIT_OBJECT_DIRECTORY",
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+            "GIT_NAMESPACE",
+            "GIT_PREFIX",
+            "GIT_CONFIG_COUNT",
+            "GIT_CONFIG_PARAMETERS",
+            "GIT_CONFIG_KEY_0",
+            "GIT_CONFIG_VALUE_0",
+            "GIT_CONFIG_KEY_12",
+        ] {
+            assert!(strip.iter().any(|n| n == must), "{must} must be stripped");
+        }
+        for keep in [
+            "PATH",
+            "HOME",
+            "GIT_CONFIG_GLOBAL",
+            "GIT_CONFIG_NOSYSTEM",
+            "GIT_AUTHOR_NAME",
+            // A deliberate user bound on repository discovery, not a redirect.
+            "GIT_CEILING_DIRECTORIES",
+        ] {
+            assert!(!strip.iter().any(|n| n == keep), "{keep} must be kept");
+        }
+    }
 
     #[test]
     fn extracts_simple_version() {
@@ -540,10 +747,10 @@ mod tests {
 
     #[test]
     fn leaves_unrelated_stderr_untouched() {
-        assert!(
-            classify_auth_error("fatal: not a git repository (or any of the parent directories)")
-                .is_none()
-        );
+        assert!(classify_auth_error(
+            "fatal: not a git repository (or any of the parent directories)"
+        )
+        .is_none());
         assert!(classify_auth_error("").is_none());
         assert!(
             classify_auth_error("error: RPC failed because the HTTP client could not connect")

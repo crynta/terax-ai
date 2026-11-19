@@ -8,6 +8,27 @@ catalog:
 overrides:
   # Parsers and themes must share Lezer's highlighting metadata identity.
   '@lezer/highlight': 'catalog:'
+  # Single bundled copy of shared libraries (dist-graph.mjs fails the build on
+  # duplicates). Each @ai-sdk package pins its own exact provider and
+  # provider-utils, and codemirror-languageserver pins marked 16, so every lazy
+  # chunk used to ship a second copy (~27 kB gzipped). Scoped to the current
+  # majors so a major bump drops its override; re-check with `pnpm why` when
+  # bumping any of them.
+  'ai@6>@ai-sdk/provider': 3.0.13
+  'ai@6>@ai-sdk/provider-utils': 4.0.36
+  '@ai-sdk/gateway@3>@ai-sdk/provider': 3.0.13
+  '@ai-sdk/gateway@3>@ai-sdk/provider-utils': 4.0.36
+  '@ai-sdk/react@3>@ai-sdk/provider-utils': 4.0.36
+  '@ai-sdk/google@3>@ai-sdk/provider': 3.0.13
+  '@ai-sdk/google@3>@ai-sdk/provider-utils': 4.0.36
+  '@ai-sdk/groq@3>@ai-sdk/provider': 3.0.13
+  '@ai-sdk/groq@3>@ai-sdk/provider-utils': 4.0.36
+  '@ai-sdk/cerebras@2>@ai-sdk/provider': 3.0.13
+  '@ai-sdk/cerebras@2>@ai-sdk/provider-utils': 4.0.36
+  '@ai-sdk/cerebras@2>@ai-sdk/openai-compatible': 2.0.57
+  '@ai-sdk/openai-compatible@2>@ai-sdk/provider': 3.0.13
+  '@ai-sdk/openai-compatible@2>@ai-sdk/provider-utils': 4.0.36
+  'codemirror-languageserver@1>marked': 17.0.6
 allowBuilds:
   esbuild: true
   msgpackr-extract: false

@@ -100,6 +100,12 @@ export class GhosttyBlocks {
     }
     if (event.type === "prompt-start" || event.type === "prompt-end")
       this.phase = "prompt";
+    // A shell that replaced itself (exec zsh) or died inside a command never
+    // reports its end; the next prompt does, or the block would run forever.
+    if (event.type === "prompt-start" && this.live && event.marker) {
+      this.finish(event.marker, null);
+      this.entryRevision++;
+    }
     if (event.type === "end-of-input") {
       this.integrated = true;
       this.phase = "running";
@@ -389,7 +395,8 @@ export class GhosttyBlocks {
   }
 
   dispose(): void {
-    if (!this.model.isDisposed?.()) this.model.enableSemanticMarkers(false);
+    if (this.model.isDisposed?.()) return;
+    this.model.enableSemanticMarkers(false);
   }
 }
 

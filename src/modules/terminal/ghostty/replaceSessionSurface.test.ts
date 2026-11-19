@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { replaceSessionSurface } from "@/modules/terminal/ghostty/replaceSessionSurface";
-import { GhosttySearchController } from "@/modules/terminal/ghostty/search/GhosttySearchController";
+import { GhosttySearchEngine } from "@/modules/terminal/ghostty/search/GhosttySearchEngine";
 import type { GhosttyTerminalModelApi } from "@/modules/terminal/ghostty/GhosttyTerminalModel";
 
 function surface() {
@@ -37,7 +37,7 @@ describe("renderer replacement ownership", () => {
       searchViewportMatches: () => [],
     } as unknown as GhosttyTerminalModelApi;
     const create = () => {
-      const controller = new GhosttySearchController(model, vi.fn(), {
+      const controller = new GhosttySearchEngine(model, vi.fn(), {
         request: () => 1,
         cancel: vi.fn(),
       });

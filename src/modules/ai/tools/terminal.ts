@@ -1,3 +1,4 @@
+import { loopbackPreviewOrigin } from "@/modules/preview/lib/previewUrl";
 import { tool } from "ai";
 import { z } from "zod";
 import { checkShellCommand } from "../lib/security";
@@ -80,14 +81,7 @@ export function buildTerminalTools(ctx: ToolContext) {
         if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
           return { error: "only http/https URLs are allowed", url };
         }
-        const host = parsed.hostname;
-        const isLocal =
-          host === "localhost" ||
-          host === "127.0.0.1" ||
-          host === "0.0.0.0" ||
-          host === "[::1]" ||
-          host === "::1" ||
-          host.endsWith(".localhost");
+        const isLocal = loopbackPreviewOrigin(url) !== null;
         if (!isLocal) {
           return {
             error:

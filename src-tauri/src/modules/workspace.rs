@@ -16,10 +16,79 @@ struct CanonicalEntry {
     inserted_at: Instant,
 }
 
+/// How far a chain of derived roots may nest (a worktree of a worktree's repo).
+const MAX_DERIVED_DEPTH: usize = 4;
+
 #[derive(Default)]
 pub struct WorkspaceRegistry {
     roots: Mutex<HashSet<PathBuf>>,
+    /// Roots that exist only because another authorized root vouches for them
+    /// (a linked worktree and its parent repository): child -> parent. They
+    /// stop counting the moment they are revoked or the parent is no longer
+    /// authorized.
+    derived: Mutex<HashMap<PathBuf, PathBuf>>,
     canonical_cache: Mutex<HashMap<PathBuf, CanonicalEntry>>,
+}
+
+/// `path` canonicalized when it exists, otherwise its deepest existing ancestor
+/// canonicalized with the missing tail re-attached: the form a grant on it was
+/// stored under, even though the directory itself is gone.
+fn canonical_or_resolved(path: &Path) -> PathBuf {
+    let mut tail: Vec<&std::ffi::OsStr> = Vec::new();
+    let mut cursor = path;
+    loop {
+        if let Ok(mut found) = std::fs::canonicalize(cursor) {
+            for name in tail.iter().rev() {
+                found.push(name);
+            }
+            return found;
+        }
+        match (cursor.file_name(), cursor.parent()) {
+            (Some(name), Some(parent)) => {
+                tail.push(name);
+                cursor = parent;
+            }
+            _ => return path.to_path_buf(),
+        }
+    }
+}
+
+/// A comparison key for a location: on Windows the verbatim prefix is dropped,
+/// both separators are one, and case does not matter (all three are properties
+/// of the file system there); elsewhere only a trailing separator is ignored.
+/// Pure, with `windows` a parameter, so it is tested on every host.
+fn normalize_location(path: &str, windows: bool) -> String {
+    if !windows {
+        return path.trim_end_matches('/').to_string();
+    }
+    let stripped = if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{rest}")
+    } else if let Some(rest) = path.strip_prefix(r"\\?\") {
+        rest.to_string()
+    } else {
+        path.to_string()
+    };
+    stripped
+        .replace('\\', "/")
+        .trim_end_matches('/')
+        .to_ascii_lowercase()
+}
+
+fn covered(
+    target: &Path,
+    roots: &HashSet<PathBuf>,
+    derived: &HashMap<PathBuf, PathBuf>,
+    depth: usize,
+) -> bool {
+    if roots.iter().any(|root| target.starts_with(root)) {
+        return true;
+    }
+    if depth >= MAX_DERIVED_DEPTH {
+        return false;
+    }
+    derived.iter().any(|(child, parent)| {
+        target.starts_with(child) && covered(parent, roots, derived, depth + 1)
+    })
 }
 
 impl WorkspaceRegistry {
@@ -32,7 +101,49 @@ impl WorkspaceRegistry {
 
     pub fn is_authorized(&self, target: &Path) -> bool {
         let set = self.roots.lock().expect("workspace registry poisoned");
-        set.iter().any(|root| target.starts_with(root))
+        let derived = self.derived.lock().expect("workspace registry poisoned");
+        covered(target, &set, &derived, 0)
+    }
+
+    /// Authorizes `child` on the strength of `parent`, which must itself be
+    /// authorized. Revoking the child (or losing the parent) removes the grant.
+    ///
+    /// A child that is already authorized, by a root or by a live grant, keeps
+    /// what it has: replacing `task -> main` by `task -> task`, as listing the
+    /// worktrees from inside the task itself would, leaves a grant whose parent
+    /// covers nothing. The checks and the insertion share one critical section.
+    pub fn authorize_derived(&self, child: &Path, parent: &Path) -> std::io::Result<PathBuf> {
+        let child = std::fs::canonicalize(child)?;
+        let parent = std::fs::canonicalize(parent)?;
+        let roots = self.roots.lock().expect("workspace registry poisoned");
+        let mut derived = self.derived.lock().expect("workspace registry poisoned");
+        if !covered(&parent, &roots, &derived, 0) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "parent is not an authorized root",
+            ));
+        }
+        if !covered(&child, &roots, &derived, 0) {
+            derived.insert(child.clone(), parent);
+        }
+        Ok(child)
+    }
+
+    /// Drops a derived grant. The path need not exist any more, and may be
+    /// spelled differently from the canonical form the grant was stored under
+    /// (git prints `C:/Users/x/wt`; the registry holds `\\?\C:\Users\x\wt`).
+    pub fn revoke_derived(&self, child: &Path) -> bool {
+        let windows = cfg!(windows);
+        let wanted: Vec<String> = [child.to_path_buf(), canonical_or_resolved(child)]
+            .iter()
+            .map(|p| normalize_location(&p.to_string_lossy(), windows))
+            .collect();
+        let mut derived = self.derived.lock().expect("workspace registry poisoned");
+        let before = derived.len();
+        derived.retain(|key, _| {
+            !wanted.contains(&normalize_location(&key.to_string_lossy(), windows))
+        });
+        derived.len() != before
     }
 
     pub fn canonicalize_cached<P: AsRef<Path>>(&self, path: P) -> std::io::Result<PathBuf> {
@@ -384,7 +495,7 @@ pub(crate) fn validate_wsl_distro_name(distro: &str) -> Result<(), String> {
 }
 
 #[cfg(windows)]
-fn wsl_drvfs_to_windows(path: &str) -> Option<PathBuf> {
+pub(crate) fn wsl_drvfs_to_windows(path: &str) -> Option<PathBuf> {
     let normalized = path.replace('\\', "/");
     let rest = normalized.strip_prefix("/mnt/")?;
     let mut parts = rest.splitn(2, '/');
@@ -780,6 +891,207 @@ mod auth_tests {
         p.push(format!("terax-auth-{label}-{nanos}-{}", std::process::id()));
         fs::create_dir_all(&p).expect("create tempdir");
         fs::canonicalize(&p).expect("canonicalize tempdir")
+    }
+
+    #[test]
+    fn derived_root_is_authorized_while_its_parent_is_and_after_revoke_is_not() {
+        let reg = WorkspaceRegistry::default();
+        let parent = tempdir("derived-parent");
+        let child = tempdir("derived-child");
+        reg.authorize(&parent).unwrap();
+        assert!(!reg.is_authorized(&child));
+
+        reg.authorize_derived(&child, &parent).unwrap();
+        assert!(reg.is_authorized(&child));
+        assert!(reg.is_authorized(&child.join("nested/file.txt")));
+        assert!(!reg.is_authorized(child.parent().unwrap()));
+
+        assert!(reg.revoke_derived(&child));
+        assert!(!reg.is_authorized(&child));
+        assert!(!reg.revoke_derived(&child), "second revoke is a no-op");
+    }
+
+    #[test]
+    fn locations_compare_equal_across_windows_spellings_only_on_windows() {
+        let verbatim = normalize_location(r"\\?\C:\Users\Runner\Temp\wt", true);
+        for spelling in [
+            "C:/Users/Runner/Temp/wt",
+            r"C:\Users\Runner\Temp\wt",
+            r"c:\users\runner\temp\WT",
+            "C:/Users/Runner/Temp/wt/",
+        ] {
+            assert_eq!(normalize_location(spelling, true), verbatim, "{spelling}");
+        }
+        assert_eq!(
+            normalize_location(r"\\?\UNC\server\share\wt", true),
+            normalize_location("//server/share/wt", true)
+        );
+        assert_ne!(
+            normalize_location(r"C:\Users\a", true),
+            normalize_location(r"C:\Users\b", true)
+        );
+        // Elsewhere a backslash is a name character and case matters.
+        assert_ne!(
+            normalize_location(r"/tmp/a\b", false),
+            normalize_location("/tmp/a/b", false)
+        );
+        assert_ne!(
+            normalize_location("/tmp/Wt", false),
+            normalize_location("/tmp/wt", false)
+        );
+        assert_eq!(
+            normalize_location("/tmp/wt/", false),
+            normalize_location("/tmp/wt", false)
+        );
+    }
+
+    #[test]
+    fn a_grant_on_a_deleted_directory_is_revoked_whatever_the_spelling() {
+        let reg = WorkspaceRegistry::default();
+        let parent = tempdir("revoke-parent");
+        reg.authorize(&parent).unwrap();
+        // Deliberately not canonical (on macOS /var/folders is /private/var/...).
+        let spelled = env::temp_dir().join(format!(
+            "terax-revoke-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        fs::create_dir_all(&spelled).unwrap();
+        let canonical = fs::canonicalize(&spelled).unwrap();
+        reg.authorize_derived(&spelled, &parent).unwrap();
+        assert!(reg.is_authorized(&canonical));
+
+        fs::remove_dir_all(&spelled).unwrap();
+        assert!(
+            reg.revoke_derived(&spelled),
+            "the grant is found although the directory is gone"
+        );
+        assert!(!reg.is_authorized(&canonical));
+        assert!(reg.derived.lock().unwrap().is_empty());
+        assert!(!reg.revoke_derived(&spelled), "nothing is left to revoke");
+    }
+
+    #[test]
+    fn revoking_one_grant_leaves_the_others() {
+        let reg = WorkspaceRegistry::default();
+        let parent = tempdir("revoke-keep-parent");
+        let a = tempdir("revoke-keep-a");
+        let b = tempdir("revoke-keep-b");
+        reg.authorize(&parent).unwrap();
+        reg.authorize_derived(&a, &parent).unwrap();
+        reg.authorize_derived(&b, &parent).unwrap();
+        assert!(reg.revoke_derived(&a));
+        assert!(!reg.is_authorized(&a));
+        assert!(reg.is_authorized(&b));
+    }
+
+    #[test]
+    fn a_child_that_is_already_authorized_keeps_its_grant() {
+        let reg = WorkspaceRegistry::default();
+        let main = tempdir("keep-main");
+        let task = tempdir("keep-task");
+        reg.authorize(&main).unwrap();
+        reg.authorize_derived(&task, &main).unwrap();
+
+        // Listing the worktrees from inside the task itself derives the task
+        // from the task; that must not replace `task -> main`.
+        reg.authorize_derived(&task, &task).unwrap();
+        assert!(reg.is_authorized(&task), "the grant still reaches a root");
+        assert_eq!(reg.derived.lock().unwrap().get(&task), Some(&main));
+        assert!(reg.revoke_derived(&task));
+        assert!(!reg.is_authorized(&task));
+
+        // Neither does a second grant through another authorized parent.
+        let other = tempdir("keep-other");
+        reg.authorize(&other).unwrap();
+        reg.authorize_derived(&task, &main).unwrap();
+        reg.authorize_derived(&task, &other).unwrap();
+        assert_eq!(reg.derived.lock().unwrap().get(&task), Some(&main));
+    }
+
+    #[test]
+    fn a_child_inside_a_root_needs_no_grant_of_its_own() {
+        let reg = WorkspaceRegistry::default();
+        let main = tempdir("inside-main");
+        reg.authorize(&main).unwrap();
+        let nested = main.join("worktrees/task");
+        fs::create_dir_all(&nested).unwrap();
+        let nested = fs::canonicalize(&nested).unwrap();
+        reg.authorize_derived(&nested, &main).unwrap();
+        assert!(reg.is_authorized(&nested));
+        assert!(reg.derived.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn concurrent_authorizations_never_leave_a_self_parented_grant() {
+        let reg = std::sync::Arc::new(WorkspaceRegistry::default());
+        let main = tempdir("race-main");
+        reg.authorize(&main).unwrap();
+        let tasks: Vec<PathBuf> = (0..8).map(|i| tempdir(&format!("race-task-{i}"))).collect();
+        let threads: Vec<_> = tasks
+            .iter()
+            .map(|task| {
+                let (reg, task, main) = (reg.clone(), task.clone(), main.clone());
+                std::thread::spawn(move || {
+                    for _ in 0..50 {
+                        reg.authorize_derived(&task, &main).unwrap();
+                        reg.authorize_derived(&task, &task).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for thread in threads {
+            thread.join().unwrap();
+        }
+        for task in &tasks {
+            assert!(reg.is_authorized(task), "{task:?}");
+            assert_eq!(reg.derived.lock().unwrap().get(task), Some(&main));
+        }
+    }
+
+    #[test]
+    fn derived_root_requires_an_authorized_parent() {
+        let reg = WorkspaceRegistry::default();
+        let parent = tempdir("derived-orphan-parent");
+        let child = tempdir("derived-orphan-child");
+        let err = reg.authorize_derived(&child, &parent).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+        assert!(!reg.is_authorized(&child));
+    }
+
+    #[test]
+    fn derived_roots_chain_but_a_dangling_chain_grants_nothing() {
+        let reg = WorkspaceRegistry::default();
+        let root = tempdir("derived-chain-root");
+        let mid = tempdir("derived-chain-mid");
+        let leaf = tempdir("derived-chain-leaf");
+        reg.authorize(&root).unwrap();
+        reg.authorize_derived(&mid, &root).unwrap();
+        reg.authorize_derived(&leaf, &mid).unwrap();
+        assert!(reg.is_authorized(&leaf));
+
+        reg.revoke_derived(&mid);
+        assert!(
+            !reg.is_authorized(&leaf),
+            "a leaf whose parent lost its grant is no longer covered"
+        );
+    }
+
+    #[test]
+    fn derived_cycles_terminate() {
+        let reg = WorkspaceRegistry::default();
+        let root = tempdir("derived-cycle-root");
+        let a = tempdir("derived-cycle-a");
+        let b = tempdir("derived-cycle-b");
+        reg.authorize(&root).unwrap();
+        reg.authorize_derived(&a, &root).unwrap();
+        reg.authorize_derived(&b, &a).unwrap();
+        reg.derived.lock().unwrap().insert(a.clone(), b.clone());
+        assert!(!reg.is_authorized(&a));
+        assert!(!reg.is_authorized(&b));
     }
 
     #[test]

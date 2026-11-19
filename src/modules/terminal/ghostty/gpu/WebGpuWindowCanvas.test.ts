@@ -218,6 +218,30 @@ function setup(options: { scale?: number } = {}) {
 }
 
 describe("WebGpuWindowCanvas", () => {
+  it.each([1, 1.25, 1.5, 2])(
+    "positions the canvas in layout at DPR %s without a compositing transform",
+    (scale) => {
+      const t = setup({ scale });
+      t.area.rect = { left: 11, top: 21, width: 1001, height: 641 };
+      t.resizeArea(1001, 641);
+      t.canvas.beginFrame();
+      const canvas = t.canvases[0];
+      expect((11 + Number.parseFloat(canvas.style.left)) * scale).toBeCloseTo(
+        Math.round(11 * scale),
+      );
+      expect((21 + Number.parseFloat(canvas.style.top)) * scale).toBeCloseTo(
+        Math.round(21 * scale),
+      );
+      expect(Number.parseFloat(canvas.style.width) * scale).toBeCloseTo(
+        canvas.width,
+      );
+      expect(Number.parseFloat(canvas.style.height) * scale).toBeCloseTo(
+        canvas.height,
+      );
+      expect(canvas.style.transform).toBeUndefined();
+    },
+  );
+
   it("is placed first in its area and sized to it exactly, in device pixels, at the first frame", () => {
     const t = setup({ scale: 2 });
     expect(t.area.insertBefore).toHaveBeenCalledWith(t.canvases[0], null);
@@ -267,10 +291,13 @@ describe("WebGpuWindowCanvas", () => {
     const t = setup({ scale: 1.25 });
     t.area.rect = { left: 100.4, top: 20, width: 700, height: 500 };
     t.resizeArea(700, 500);
-    expect(t.canvases[0].style.transform).toBe("translate(0.4px, 0px)");
+    expect(t.canvases[0].style.left).toBe("0.4px");
+    expect(t.canvases[0].style.top).toBe("0px");
+    expect(t.canvases[0].style.transform).toBeUndefined();
     t.area.rect = { left: 100, top: 20, width: 700, height: 500 };
     t.resizeArea(700, 500);
-    expect(t.canvases[0].style.transform).toBe("");
+    expect(t.canvases[0].style.left).toBe("0px");
+    expect(t.canvases[0].style.top).toBe("0px");
   });
 
   it("never sizes the canvas past what the device allows", () => {
@@ -476,9 +503,11 @@ describe("WebGpuWindowCanvas", () => {
     const t = setup({ scale: 1.25 });
     t.area.rect = { left: 100.4, top: 20, width: 700, height: 500 };
     t.resizeArea(700, 500);
-    expect(t.canvases[0].style.transform).toBe("translate(0.4px, 0px)");
+    expect(t.canvases[0].style.left).toBe("0.4px");
+    expect(t.canvases[0].style.top).toBe("0px");
+    expect(t.canvases[0].style.transform).toBeUndefined();
     // The window moves to a display with another ratio: the rectangle is the same CSS box, so
-    // nothing re-measured it, but the translation that lands it on a device pixel is different.
+    // nothing re-measured it, but the offset that lands it on a device pixel is different.
     t.setScale(1);
     const onResize = (
       (window.addEventListener as ReturnType<typeof vi.fn>).mock.calls.find(
@@ -486,15 +515,14 @@ describe("WebGpuWindowCanvas", () => {
       ) as [string, () => void]
     )[1];
     onResize();
-    const x = Number.parseFloat(
-      /translate\((-?[\d.]+)px/.exec(t.canvases[0].style.transform)?.[1] ?? "",
-    );
+    const x = Number.parseFloat(t.canvases[0].style.left);
     expect(x).toBeCloseTo(-0.4, 6);
-    // And back to a ratio at which the box already sits on a pixel: no transform at all.
+    // And back to a ratio at which the box already sits on a pixel: no offset at all.
     t.area.rect = { left: 100, top: 20, width: 700, height: 500 };
     t.setScale(2);
     onResize();
-    expect(t.canvases[0].style.transform).toBe("");
+    expect(t.canvases[0].style.left).toBe("0px");
+    expect(t.canvases[0].style.top).toBe("0px");
   });
 
   it("clips a pane laid out partly left of or above the canvas instead of sliding it in", () => {

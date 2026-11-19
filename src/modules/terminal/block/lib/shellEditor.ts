@@ -1,5 +1,6 @@
 import "@/modules/terminal/block/block.css";
 
+import { unescapeForShell } from "@/lib/shellQuote";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
 import {
   acceptCompletion,
@@ -38,7 +39,9 @@ import { tags as t } from "@lezer/highlight";
 import { completionIcon } from "./completionIcons";
 import { historyOpen, historyPopover } from "./historyPopover";
 import { inlineSuggestion } from "./inlineSuggest";
-import { pathCompletions } from "./pathComplete";
+import { pathCompletionResult, pathCompletions } from "./pathComplete";
+import { usesWindowsShell } from "./shellSyntax";
+import { shellWordAt } from "./shellWord";
 
 const shellLanguage = StreamLanguage.define(shell);
 
@@ -64,6 +67,10 @@ export type ShellEditorOptions = {
   onChange?: (text: string) => void;
 };
 
+/** The empty-input hint; `hint` is the shortcut that switches to the AI input. */
+export const shellPlaceholder = (hint: string) =>
+  `Run a command  -  ↑ history  ${hint} switch to AI`;
+
 export type ShellEditorHandle = {
   readonly view: EditorView;
   focus(): void;
@@ -71,6 +78,7 @@ export type ShellEditorHandle = {
   setValue(text: string): void;
   clear(): void;
   setEditable(editable: boolean): void;
+  setPlaceholder(text: string): void;
   retheme(fontFamily: string, fontSize: number, fontWeight: string): void;
   destroy(): void;
 };
@@ -199,7 +207,6 @@ const SHELL_COMMANDS = [
   "open",
 ];
 
-const WORD_RE = /[\w./+-]*/;
 const DOC_WORD_RE = /[A-Za-z_][\w./-]+/g;
 const VALID_FOR = /^[\w./+-]*$/;
 // Command position = start of a command segment: line start, or right after a
@@ -238,38 +245,37 @@ function docWordOptions(ctx: CompletionContext, current: string): Completion[] {
   return out;
 }
 
-const PATH_VALID_FOR = /^[^/]*$/;
-
-function makeCompletionSource(
+export function makeCompletionSource(
   getCommands: () => string[],
   getCwd: () => string | null,
 ) {
   return async (ctx: CompletionContext): Promise<CompletionResult | null> => {
     if (historyOpen(ctx.state)) return null;
-    const word = ctx.matchBefore(WORD_RE);
-    if (!word || (word.from === word.to && !ctx.explicit)) return null;
-    const line = ctx.state.doc.lineAt(word.from);
-    const before = ctx.state.doc.sliceString(line.from, word.from);
+    const typed = ctx.state.doc.toString();
+    const windows = usesWindowsShell();
+    const word = shellWordAt(typed, ctx.pos, windows);
+    const from = word.start;
+    if (from === ctx.pos && !ctx.explicit) return null;
+    const before = typed.slice(0, word.start);
     if (SEGMENT_START.test(before)) {
       return {
-        from: word.from,
+        from,
         options: commandOptions(word.text, getCommands),
         validFor: VALID_FOR,
       };
     }
     const cwd = getCwd();
     if (cwd) {
+      if (unescapeForShell(typed.slice(word.start, word.end), windows) === null)
+        return null;
       const res = await pathCompletions(word.text, cwd);
+      if (getCwd() !== cwd) return null;
       if (res?.options.length) {
-        return {
-          from: word.from + res.fromOffset,
-          options: res.options,
-          validFor: PATH_VALID_FOR,
-        };
+        return pathCompletionResult(word, res, windows, () => getCwd() === cwd);
       }
     }
     return {
-      from: word.from,
+      from,
       options: docWordOptions(ctx, word.text),
       validFor: VALID_FOR,
     };
@@ -350,6 +356,9 @@ const completionNav = Prec.highest(
   keymap.of([
     { key: "ArrowDown", run: moveCompletionSelection(true) },
     { key: "ArrowUp", run: moveCompletionSelection(false) },
+    { key: "Ctrl-n", run: moveCompletionSelection(true) },
+    { key: "Ctrl-p", run: moveCompletionSelection(false) },
+    { key: "Ctrl-y", run: acceptCompletion },
     { key: "Escape", run: closeCompletion },
   ]),
 );
@@ -358,6 +367,7 @@ export function createShellEditor(opts: ShellEditorOptions): ShellEditorHandle {
   const themeComp = new Compartment();
   const highlightComp = new Compartment();
   const editableComp = new Compartment();
+  const placeholderComp = new Compartment();
 
   const clear = (view: EditorView) =>
     view.dispatch({
@@ -424,7 +434,7 @@ export function createShellEditor(opts: ShellEditorOptions): ShellEditorHandle {
       completionNav,
       ...(opts.suggest ? inlineSuggestion(opts.suggest) : []),
       ...(opts.historyList ? historyPopover(opts.historyList) : []),
-      placeholder(opts.placeholderText ?? "Run a command"),
+      placeholderComp.of(placeholder(opts.placeholderText ?? "Run a command")),
       ...(opts.onChange
         ? [
             EditorView.updateListener.of((u) => {
@@ -469,6 +479,10 @@ export function createShellEditor(opts: ShellEditorOptions): ShellEditorHandle {
           EditorView.editable.of(editable),
           EditorState.readOnly.of(!editable),
         ]),
+      }),
+    setPlaceholder: (text) =>
+      view.dispatch({
+        effects: placeholderComp.reconfigure(placeholder(text)),
       }),
     retheme: (fontFamily, fontSize, fontWeight) =>
       view.dispatch({

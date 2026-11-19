@@ -95,6 +95,19 @@ describe("AI search tools path safety", () => {
     ]);
   });
 
+  it.each(["界", "\r", "\u2028"])("preserves native line clipping with %s and its omitted-character count", async (character) => {
+    const text = `${character.repeat(160)}…[+999840]`;
+    nativeMock.grep.mockResolvedValue({
+      hits: [{ path: "/workspace/code.ts", rel: "code.ts", line: 1, text }],
+      truncated: false,
+      files_scanned: 1,
+    });
+    const execute = buildSearchTools(makeContext()).grep.execute;
+    if (!execute) throw new Error("grep tool execute missing");
+    const result = (await execute({ pattern: "." }, toolOptions)) as GrepToolResult;
+    expect(result.hits[0].text).toBe(text);
+  });
+
   it("filters glob hits that enumerate sensitive paths", async () => {
     nativeMock.glob.mockResolvedValue({
       hits: [

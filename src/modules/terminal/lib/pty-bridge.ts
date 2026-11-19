@@ -17,6 +17,7 @@ import {
   unbindLeafPty,
 } from "@/modules/terminal/lib/ptyPresentation";
 import { tokenBytes } from "@/modules/terminal/lib/ptyWire";
+import type { TerminalGpuTheme } from "@/modules/terminal/ghostty/gpu/terminalVisuals";
 import { currentWorkspaceEnv } from "@/modules/workspace";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
@@ -91,10 +92,17 @@ export type PtyHandlers = {
   onOutputStatus?: (status: PtyOutputStatus) => void;
 };
 
+/** What native answers `OSC 4/10/11/12` and `CSI ? 996 n` queries from. */
+export type PtyColors = Pick<
+  TerminalGpuTheme,
+  "foreground" | "background" | "cursor" | "palette"
+>;
+
 export type PtySession = {
   id: number;
   write: (data: string | Uint8Array) => Promise<void>;
   resize: (cols: number, rows: number) => Promise<void>;
+  setColors: (colors: PtyColors) => Promise<void>;
   close: () => Promise<void>;
 };
 
@@ -106,6 +114,7 @@ export async function openPty(
   blocks?: boolean,
   shell?: string,
   paneId?: number,
+  colors?: PtyColors,
 ): Promise<PtySession> {
   const stream = outputHub();
   let id: number | null = null;
@@ -163,6 +172,7 @@ export async function openPty(
       shell: shell ?? null,
       paneId: paneId ?? null,
       presentation: presentation ?? null,
+      colors: colors ?? null,
     });
   } catch (error) {
     releaseHandlers();
@@ -200,6 +210,10 @@ export async function openPty(
         { headers },
       ),
     resize: (c, r) => invoke("pty_resize", { id: sessionId, cols: c, rows: r }),
+    setColors: (next) =>
+      closed
+        ? Promise.resolve()
+        : invoke("pty_set_colors", { id: sessionId, colors: next }),
     close: async () => {
       if (closed) return;
       closed = true;

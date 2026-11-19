@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { relativePath } from "./contextActions";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { copyToClipboard, relativePath } from "./contextActions";
 
 describe("relativePath", () => {
   it("returns '.' when the path is the root itself", () => {
@@ -17,4 +17,15 @@ describe("relativePath", () => {
   it("returns an unrelated path unchanged", () => {
     expect(relativePath("/a/b", "/x/y")).toBe("/x/y");
   });
+});
+
+vi.mock("@tauri-apps/plugin-opener", () => ({ revealItemInDir: vi.fn() }));
+afterEach(() => vi.unstubAllGlobals());
+it("copies raw paths for pasting into any application", async () => {
+  const writeText = vi.fn();
+  vi.stubGlobal("navigator", { clipboard: { writeText } });
+  const path = "/work/it's a $file.txt";
+  await copyToClipboard(path);
+  await copyToClipboard(relativePath("/work", path));
+  expect(writeText.mock.calls).toEqual([[path], ["it's a $file.txt"]]);
 });

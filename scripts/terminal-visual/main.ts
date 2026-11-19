@@ -143,14 +143,14 @@ const theme = {
   background: [0x16, 0x18, 0x1b],
   foreground: [0xd0, 0xd4, 0xd9],
   cursor: [0xf0, 0xc0, 0x40],
+  cursorText: [0x10, 0x40, 0xd0],
   selection: { color: [0x50, 0x80, 0xc0], alpha: 0.45 },
   palette: PALETTE,
 } as const;
 const pack = (color: readonly number[]) => (color[0] << 16) | (color[1] << 8) | color[2];
 
 const font = {
-  family:
-    params.get("ff") ?? '"JetBrains Mono", SFMono-Regular, Menlo, monospace',
+  family: params.get("ff") ?? fonts.resolveFontFamily(""),
   size: number("fs", 14),
   lineHeight: number("lh", 1.2),
   letterSpacing: number("ls", 0),
@@ -209,6 +209,12 @@ stage("attach");
 surface.attach(host);
 surface.setVisible(true);
 surface.setFocused(true);
+// The session rebuilds a surface's glyphs when a lazily loaded symbol face arrives
+// (`TerminalFontSpec.symbols`); so does the harness.
+fonts.subscribeSymbolFonts(async () => {
+  const next = await terminalVisuals.measureTerminalFont({ ...font, symbols: fonts.symbolFontEpoch() });
+  surface.setFontMetrics(next);
+});
 
 const encoder = new TextEncoder();
 const write = (text: string) => model.write(encoder.encode(text));
@@ -310,15 +316,53 @@ if (params.get("stress")) {
   write("\x1b[2J\x1b[H");
 }
 const patternName = params.get("pattern") ?? "full";
+const glyphPatterns = ["colors", "icons", "cursor"];
+const glyphPattern = glyphPatterns.includes(patternName) ? await import("./glyphPattern") : null;
+let glyphCases: unknown = null;
 if (patternName === "sprites") {
   const sprites = await import("./spritePattern");
   write(sprites.spriteAnsi());
+} else if (glyphPattern) {
+  if (patternName === "colors") {
+    const built = glyphPattern.colorsPattern(PALETTE as never);
+    glyphCases = built.cases;
+    write(`\x1b[?25l${built.ansi}`);
+  } else if (patternName === "icons") {
+    // The last-column rows need the grid the fit settles on, not the model's initial one.
+    await frames(6);
+    const built = glyphPattern.iconsPattern((surface.diagnostics() as unknown as { cols: number }).cols);
+    glyphCases = built;
+    // Mode 2027 clusters ZWJ sequences, flags and skin tones into one two-cell grapheme.
+    write(`\x1b[?25l\x1b[?2027h${built.ansi}`);
+  } else {
+    write(glyphPattern.cursorPattern());
+    const target =
+      glyphPattern.CURSOR_TARGETS[(params.get("cursorAt") ?? "letter") as "letter" | "wide" | "colored" | "flame"];
+    glyphCases = target;
+    write(`\x1b[${target.row + 1};${target.col + 1}H`);
+  }
 } else if (patternName !== "empty") write(pattern());
 const selectSpec = params.get("select");
 const searchTerm = params.get("search");
 
 stage("settle");
+// A glob, because a revision without lazily loaded glyph code must still load.
+const lazyGlyphs = Object.values(
+  import.meta.glob("@/modules/terminal/ghostty/gpu/builtin/lazyGlyphs.ts"),
+)[0] as undefined | (() => Promise<{ loadLazyBuiltin(): Promise<void> }>);
+
 async function settle(): Promise<void> {
+  if (patternName === "sprites" && lazyGlyphs) {
+    // Sextants, octants and legacy computing shapes draw from code that loads on first
+    // use; its arrival rebuilds the atlas like the icon face's.
+    await (await lazyGlyphs()).loadLazyBuiltin();
+    await sleep(300);
+  }
+  if (patternName === "icons") {
+    // The Material Design icon face loads on first use; its arrival rebuilds the atlas.
+    for (let attempt = 0; attempt < 100 && fonts.extendedSymbolsPending(); attempt += 1) await sleep(50);
+    await sleep(300);
+  }
   for (let attempt = 0; attempt < 200; attempt += 1) {
     await frames(2);
     const pending = (surface.diagnostics() as { pendingGlyphs?: number }).pendingGlyphs ?? 0;
@@ -337,7 +381,11 @@ function applySelection(spec: string): void {
 }
 
 if (selectSpec) applySelection(selectSpec);
-if (searchTerm) surface.searchController().findNext(searchTerm);
+if (searchTerm) {
+  surface.searchController().findNext(searchTerm);
+  // The search engine loads on the first find (a revision before that is synchronous).
+  await sleep(300);
+}
 await settle();
 
 type Capture = { width: number; height: number; rgba: Uint8Array };
@@ -453,6 +501,59 @@ const api = {
   },
   diagnostics: () => surface.diagnostics(),
   /**
+   * Checks the capture of `pattern=colors|icons|cursor` (ANSI 16/256/truecolor foregrounds, private-use
+   * icons, CJK and emoji staying in their cells, a block cursor over a glyph) and saves
+   * `<name>.check.json`; `compare.mjs check` prints it.
+   */
+  async glyphCheck(name: string) {
+    await settle();
+    const [check, frame] = await Promise.all([import("./glyphCheck"), captureFrame()]);
+    const geometry = {
+      cellWidth: metrics.deviceCellWidth,
+      cellHeight: metrics.deviceCellHeight,
+    };
+    let report: Record<string, unknown>;
+    if (patternName === "colors") {
+      report = check.checkColors(frame, glyphCases as never, geometry, theme.background, theme.foreground);
+    } else if (patternName === "icons") {
+      const icons = glyphCases as { cases: never; equal: never };
+      const first = check.checkIcons(frame, icons.cases, geometry, theme.background);
+      const second = check.checkEqualCells(frame, icons.equal, geometry);
+      report = {
+        ok: first.ok && second.ok,
+        checked: first.checked + second.checked,
+        failures: [...first.failures, ...second.failures],
+      };
+    } else {
+      const style = (params.get("cursor") as "block" | "bar" | "underline") ?? "block";
+      const at = params.get("cursorAt") ?? "letter";
+      report = check.checkCursor(
+        frame,
+        geometry,
+        glyphCases as never,
+        at === "wide" ? 2 : 1,
+        style,
+        {
+          cursor: theme.cursor,
+          cursorText: theme.cursorText,
+          foreground: theme.foreground,
+          background: theme.background,
+        },
+        at === "flame" && style === "block",
+      );
+    }
+    const meta = {
+      name,
+      pattern: patternName,
+      dpr: window.devicePixelRatio,
+      renderer: surfaceKind,
+      cell: `${geometry.cellWidth}x${geometry.cellHeight}`,
+      ...report,
+    };
+    await post(`${name}.check.json`, JSON.stringify(meta));
+    return meta;
+  },
+  /**
    * Resizes the terminal area and the pane host together, like dragging the window edge, and
    * fires the window `resize` event (a hidden browser pane delivers no ResizeObserver callbacks).
    */
@@ -528,6 +629,10 @@ if (autoCapture) {
   if (patternName === "sprites") {
     (window as unknown as { __spriteCheck: unknown }).__spriteCheck =
       await api.spriteCheck(autoCapture);
+  }
+  if (glyphPattern) {
+    (window as unknown as { __glyphCheck: unknown }).__glyphCheck =
+      await api.glyphCheck(autoCapture);
   }
   document.title = `captured ${autoCapture}`;
 }

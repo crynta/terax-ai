@@ -1,5 +1,8 @@
 /** Node-side stand-ins for the terminal input proxy (no DOM in unit tests). */
 export class FakeElement extends EventTarget {
+  readonly ownerDocument = Object.assign(new EventTarget(), {
+    defaultView: new EventTarget(),
+  });
   getBoundingClientRect(): DOMRect {
     return {
       left: 0,

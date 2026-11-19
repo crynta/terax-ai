@@ -7,12 +7,18 @@ import {
 } from "@/modules/terminal/ghostty/windowPresentation";
 import type { WindowPresentation } from "@/modules/terminal/ghostty/WindowPresentationPolicy";
 import type { TerminalSurface } from "@/modules/terminal/backend/contracts";
+import { isPrimaryModifierPressed } from "@/lib/platform";
 import { noteTerminalHostResize } from "@/modules/terminal/lib/terminalResizeGesture";
 import {
   subscribeTerminalResizeInteraction,
   terminalResizeInteractionActive,
 } from "@/modules/terminal/lib/terminalResizeInteraction";
 import { TerminalResizeSync } from "@/modules/terminal/lib/terminalResizeSync";
+import {
+  type DeferredTerminalLinks,
+  deferTerminalLinks,
+} from "../core/terminalLinksLoader";
+import type { TerminalLinkHit } from "../core/terminalLinks";
 import type { GhosttyTerminalModelApi } from "../GhosttyTerminalModel";
 import type { GestureGrowth } from "../gpu/CanvasBackingStore";
 import { DevicePixelRatioMonitor } from "../gpu/DevicePixelRatioMonitor";
@@ -22,7 +28,10 @@ import {
   measureGestureBackingEnvironment,
   windowInnerSize,
 } from "../gpu/GestureBacking";
-import { fitTerminalViewport } from "../gpu/TerminalFit";
+import {
+  fitTerminalViewport,
+  TERMINAL_RIGHT_GUTTER_CSS_PX,
+} from "../gpu/TerminalFit";
 import {
   TerminalFitQueue,
   type TerminalFitQueueDiagnostics,
@@ -37,8 +46,10 @@ import {
   metricsForScale,
   rgbToCss,
 } from "../gpu/terminalVisuals";
+import { currentTextContrast } from "../gpu/textContrast";
 import { GhosttySearchController } from "../search/GhosttySearchController";
 import { TerminalSelectionController } from "../selection/TerminalSelectionController";
+import { WebGlPoolExhaustedError } from "./WebGlPoolExhaustedError";
 import {
   getWebGlTerminalRuntime,
   type WebGlRuntimeSurface,
@@ -66,7 +77,7 @@ export type WebGlTerminalSurfaceOptions = {
   readonly onFirstFrame?: () => void;
   readonly onFrame?: () => void;
   readonly onRequestFocus?: () => void;
-  readonly onOpenLink?: (uri: string) => void;
+  readonly onOpenLink?: (link: TerminalLinkHit) => void;
 };
 
 export type WebGlTerminalSurfaceStats = {
@@ -128,9 +139,7 @@ export class WebGlTerminalSurface
   private consecutiveRendererErrors = 0;
   private recoveringRenderer = false;
   private contentRevision: number;
-  private hoveredCell = -1;
-  private hoveredLink: string | null = null;
-  private mouseDownLink: string | null = null;
+  private readonly links: DeferredTerminalLinks;
   private applyingFit = false;
   private readonly unsubscribePresentation: () => void;
   private disposed = false;
@@ -202,6 +211,21 @@ export class WebGlTerminalSurface
         this.runtime.schedule(this);
       },
     });
+    this.root.style.cursor = "text";
+    this.links = deferTerminalLinks({
+      target: this.root,
+      keyTarget: window,
+      isModifier: isPrimaryModifierPressed,
+      model: options.model,
+      scrollbar: this.scrollbar,
+      geometry: () => ({
+        cellWidth: this.metrics.cellWidth,
+        cellHeight: this.metrics.cellHeight,
+        shiftY: 0,
+        color: rgbToCss(this.theme.foreground),
+      }),
+      onActivate: (hit) => options.onOpenLink?.(hit),
+    });
     this.search = new GhosttySearchController(options.model, () => {
       if (this.applyingFit) return;
       this.renderer?.resetModel();
@@ -217,6 +241,7 @@ export class WebGlTerminalSurface
       if (!this.visible || this.documentSuspended || !this.host) return;
       this.cursorVisible = true;
       this.textBlinkVisible = true;
+      this.links.invalidate();
       this.search.invalidate();
       if (!this.applyingFit) this.runtime.schedule(this);
       this.armCursorBlink();
@@ -236,10 +261,6 @@ export class WebGlTerminalSurface
       },
     );
     this.root.addEventListener("pointerdown", this.handlePointerDown);
-    this.root.addEventListener("mousemove", this.handleLinkMouseMove);
-    this.root.addEventListener("mousedown", this.handleLinkMouseDown);
-    this.root.addEventListener("mouseup", this.handleLinkMouseUp);
-    this.root.addEventListener("mouseleave", this.handleLinkMouseLeave);
     this.scrollbar.addEventListener("scroll", this.handleScroll);
     this.unsubscribePresentation = subscribeWindowPresentation(
       this.handleVisibilityChange,
@@ -257,8 +278,13 @@ export class WebGlTerminalSurface
     this.pixelRatioMonitor.start();
     this.resizeObserver.observe(container);
     if (this.visible && !this.documentSuspended) {
-      this.acquireRenderer();
-      this.resizeToHost();
+      try {
+        this.acquireRenderer();
+        this.resizeToHost();
+      } catch (error) {
+        this.handleRendererError(toError(error));
+        return;
+      }
     }
     this.updateScrollbar();
     if (this.visible && !this.documentSuspended) this.runtime.schedule(this);
@@ -431,8 +457,7 @@ export class WebGlTerminalSurface
     const revision = this.options.model.revision();
     if (revision !== this.contentRevision) {
       this.contentRevision = revision;
-      if (this.hoveredCell >= 0) this.clearHoveredLink();
-      this.mouseDownLink = null;
+      this.links.invalidate();
     }
     this.selection.reconcile();
     this.search.refreshOverlay();
@@ -474,6 +499,7 @@ export class WebGlTerminalSurface
     this.clearTextBlinkTimer();
     if (this.documentSuspended) return;
     if (
+      error instanceof WebGlPoolExhaustedError ||
       this.recoveringRenderer ||
       this.consecutiveRendererErrors > 0 ||
       !this.visible ||
@@ -528,10 +554,7 @@ export class WebGlTerminalSurface
     this.scrollbarSync.dispose();
     this.unsubscribeInteraction();
     this.root.removeEventListener("pointerdown", this.handlePointerDown);
-    this.root.removeEventListener("mousemove", this.handleLinkMouseMove);
-    this.root.removeEventListener("mousedown", this.handleLinkMouseDown);
-    this.root.removeEventListener("mouseup", this.handleLinkMouseUp);
-    this.root.removeEventListener("mouseleave", this.handleLinkMouseLeave);
+    this.links.dispose();
     this.scrollbar.removeEventListener("scroll", this.handleScroll);
     this.unsubscribePresentation();
   }
@@ -539,32 +562,6 @@ export class WebGlTerminalSurface
   private readonly handlePointerDown = (): void => {
     if (this.options.onRequestFocus) this.options.onRequestFocus();
     else this.focus();
-  };
-
-  private readonly handleLinkMouseMove = (event: MouseEvent): void => {
-    this.updateHoveredLink(event);
-  };
-
-  private readonly handleLinkMouseDown = (event: MouseEvent): void => {
-    if (event.button !== 0) return;
-    this.updateHoveredLink(event);
-    this.mouseDownLink = this.hoveredLink;
-  };
-
-  private readonly handleLinkMouseUp = (event: MouseEvent): void => {
-    if (event.button !== 0) return;
-    this.updateHoveredLink(event);
-    const uri = this.hoveredLink;
-    const activate = uri !== null && uri === this.mouseDownLink;
-    this.mouseDownLink = null;
-    if (!activate) return;
-    event.preventDefault();
-    this.options.onOpenLink?.(uri);
-  };
-
-  private readonly handleLinkMouseLeave = (): void => {
-    this.mouseDownLink = null;
-    this.clearHoveredLink();
   };
 
   private readonly handleVisibilityChange = ({
@@ -637,45 +634,8 @@ export class WebGlTerminalSurface
       metrics: this.metrics,
       theme: this.theme,
       scale: this.scale,
+      contrast: currentTextContrast(),
     } as const;
-  }
-
-  private updateHoveredLink(event: MouseEvent): void {
-    if (
-      !this.host ||
-      this.scrollbar.contains(event.target as Node) ||
-      (this.options.model.modes().mouseTracking && !event.shiftKey)
-    ) {
-      this.clearHoveredLink();
-      return;
-    }
-    const rect = this.root.getBoundingClientRect();
-    const column = Math.floor(
-      (event.clientX - rect.left) / this.metrics.cellWidth,
-    );
-    const row = Math.floor(
-      (event.clientY - rect.top) / this.metrics.cellHeight,
-    );
-    if (
-      column < 0 ||
-      column >= this.options.model.cols ||
-      row < 0 ||
-      row >= this.options.model.rows
-    ) {
-      this.clearHoveredLink();
-      return;
-    }
-    const cell = row * this.options.model.cols + column;
-    if (cell === this.hoveredCell) return;
-    this.hoveredCell = cell;
-    this.hoveredLink = this.options.model.hyperlinkAtViewportCell(row, column);
-    this.root.style.cursor = this.hoveredLink ? "pointer" : "text";
-  }
-
-  private clearHoveredLink(): void {
-    this.hoveredCell = -1;
-    this.hoveredLink = null;
-    this.root.style.cursor = "text";
   }
 
   private queueFit(bounds?: Pick<DOMRectReadOnly, "width" | "height">): void {
@@ -715,13 +675,24 @@ export class WebGlTerminalSurface
     if (devicePixelScale() !== this.scale) {
       this.syncScale();
       this.runtime.release(this);
-      this.acquireRenderer();
+      try {
+        this.acquireRenderer();
+      } catch (error) {
+        this.handleRendererError(toError(error));
+        return;
+      }
     }
 
     const bounds = measuredBounds ?? this.host.getBoundingClientRect();
     this.scrollbarSync.invalidate();
     this.scrollbarViewportHeight = Math.round(bounds.height);
-    const fit = fitTerminalViewport(bounds.width, bounds.height, this.metrics);
+    const fit = fitTerminalViewport(
+      bounds.width,
+      bounds.height,
+      this.metrics,
+      undefined,
+      TERMINAL_RIGHT_GUTTER_CSS_PX,
+    );
     if (!fit) return;
     const { cols, rows, pixelWidth, pixelHeight } = fit;
     if (cols * rows > MAX_SURFACE_CELLS) {

@@ -17,7 +17,7 @@ drag. Each frame uses one encoder/submission and one render pass for all panes.
 Per-pane deadlines bound focused, background-pane, and unfocused-window
 cadences to 60, 30, and 15 fps. At most two submissions await GPU completion.
 
-`ghostty/webgl/WebGlTerminalRuntime.ts` pools at most five WebGL2 renderer slots.
+`ghostty/webgl/WebGlTerminalRuntime.ts` pools at most twelve WebGL2 renderer slots (browsers drop the oldest context past sixteen); a pane beyond them shows its error and retry state rather than throwing.
 Each slot owns a `WebGlCellRenderer`, which consumes the same Ghostty model and
 dirty-row information as WebGPU. One idle slot stays warm for up to 30 seconds.
 The adapted renderer retains its upstream MIT attribution; no xterm runtime or

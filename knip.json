@@ -27,6 +27,8 @@
     ".": {
       "entry": [
         "src/settings/main.tsx",
+        "src/modules/agents/model/index.ts",
+        "src/modules/control/agents.ts",
         "src/**/*.test.{ts,tsx}",
         "src/**/*.bench.ts",
         "scripts/**/*.html",

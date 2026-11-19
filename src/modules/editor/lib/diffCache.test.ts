@@ -1,11 +1,11 @@
 ﻿import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const nativeMock = vi.hoisted(() => ({
-  gitDiffContent: vi.fn(),
-  gitCommitFileDiff: vi.fn(),
+const gitMock = vi.hoisted(() => ({
+  diffContent: vi.fn(),
+  commitFileDiff: vi.fn(),
 }));
 
-vi.mock("@/modules/ai/lib/native", () => ({ native: nativeMock }));
+vi.mock("@/modules/git", () => ({ git: gitMock }));
 
 const workspaceMock = vi.hoisted(() => ({
   currentWorkspaceScopeKey: vi.fn(() => "scope"),
@@ -13,7 +13,7 @@ const workspaceMock = vi.hoisted(() => ({
 
 vi.mock("@/modules/workspace", () => workspaceMock);
 
-import type { GitDiffContentResult } from "@/modules/ai/lib/native";
+import type { GitDiffContentResult } from "@/modules/git";
 
 function result(modifiedContent: string): GitDiffContentResult {
   return {
@@ -32,8 +32,8 @@ async function loadModule() {
 describe("git diff content cache", () => {
   beforeEach(() => {
     vi.resetModules();
-    nativeMock.gitDiffContent.mockReset();
-    nativeMock.gitCommitFileDiff.mockReset();
+    gitMock.diffContent.mockReset();
+    gitMock.commitFileDiff.mockReset();
     workspaceMock.currentWorkspaceScopeKey.mockClear();
     workspaceMock.currentWorkspaceScopeKey.mockReturnValue("scope");
   });
@@ -51,19 +51,19 @@ describe("git diff content cache", () => {
 
   it("serves repeated reads of the same file from cache", async () => {
     const { fetchWorkingDiff } = await loadModule();
-    nativeMock.gitDiffContent.mockResolvedValue(result("- line"));
+    gitMock.diffContent.mockResolvedValue(result("- line"));
 
     await fetchWorkingDiff("/repo", "a.ts", "-", null);
     const second = await fetchWorkingDiff("/repo", "a.ts", "-", null);
 
     expect(second.modifiedContent).toBe("- line");
-    expect(nativeMock.gitDiffContent).toHaveBeenCalledTimes(1);
+    expect(gitMock.diffContent).toHaveBeenCalledTimes(1);
   });
 
   it("coalesces concurrent reads of the same diff into one backend call", async () => {
     const { fetchWorkingDiff } = await loadModule();
     let release: ((v: GitDiffContentResult) => void) | undefined;
-    nativeMock.gitDiffContent.mockReturnValue(
+    gitMock.diffContent.mockReturnValue(
       new Promise<GitDiffContentResult>((r) => {
         release = r;
       }),
@@ -74,12 +74,12 @@ describe("git diff content cache", () => {
     release?.(result("shared"));
 
     expect(await first).toBe(await second);
-    expect(nativeMock.gitDiffContent).toHaveBeenCalledTimes(1);
+    expect(gitMock.diffContent).toHaveBeenCalledTimes(1);
   });
 
   it("evicts the least recently used entry past six", async () => {
     const mod = await loadModule();
-    nativeMock.gitDiffContent.mockImplementation((_root, path: string) =>
+    gitMock.diffContent.mockImplementation((_root, path: string) =>
       Promise.resolve(result(`body ${path}`)),
     );
 
@@ -95,7 +95,7 @@ describe("git diff content cache", () => {
   it("keeps an entry that was just read when the limit overflows", async () => {
     const { fetchWorkingDiff, getCachedDiff, workingDiffKey } =
       await loadModule();
-    nativeMock.gitDiffContent.mockImplementation((_root, path: string) =>
+    gitMock.diffContent.mockImplementation((_root, path: string) =>
       Promise.resolve(result(`body ${path}`)),
     );
 
@@ -111,7 +111,7 @@ describe("git diff content cache", () => {
 
   it("does not retry or cache a failed backend call", async () => {
     const { fetchWorkingDiff } = await loadModule();
-    nativeMock.gitDiffContent
+    gitMock.diffContent
       .mockRejectedValueOnce(new Error("git failed"))
       .mockResolvedValueOnce(result("recovered"));
 
@@ -121,13 +121,13 @@ describe("git diff content cache", () => {
     await expect(fetchWorkingDiff("/repo", "a.ts", "-", null)).resolves.toEqual(
       result("recovered"),
     );
-    expect(nativeMock.gitDiffContent).toHaveBeenCalledTimes(2);
+    expect(gitMock.diffContent).toHaveBeenCalledTimes(2);
   });
 
   it("invalidates only the current workspace scope for a repo root", async () => {
     const mod = await loadModule();
     const { fetchWorkingDiff, getCachedDiff, workingDiffKey } = mod;
-    nativeMock.gitDiffContent.mockImplementation((_root, path: string) =>
+    gitMock.diffContent.mockImplementation((_root, path: string) =>
       Promise.resolve(result(`body ${path}`)),
     );
 
@@ -148,14 +148,14 @@ describe("git diff content cache", () => {
 
   it("keeps working-tree and commit diffs under separate namespaces", async () => {
     const { fetchWorkingDiff, fetchCommitDiff } = await loadModule();
-    nativeMock.gitDiffContent.mockResolvedValue(result("work"));
-    nativeMock.gitCommitFileDiff.mockResolvedValue(result("commit"));
+    gitMock.diffContent.mockResolvedValue(result("work"));
+    gitMock.commitFileDiff.mockResolvedValue(result("commit"));
 
     await fetchWorkingDiff("/repo", "a.ts", "+", null);
     await fetchCommitDiff("/repo", "sha1", "a.ts", null);
 
-    expect(nativeMock.gitDiffContent).toHaveBeenCalledTimes(1);
-    expect(nativeMock.gitCommitFileDiff).toHaveBeenCalledWith(
+    expect(gitMock.diffContent).toHaveBeenCalledTimes(1);
+    expect(gitMock.commitFileDiff).toHaveBeenCalledWith(
       "/repo",
       "sha1",
       "a.ts",

@@ -22,6 +22,48 @@ pub fn display_path(path: &Path) -> String {
     crate::modules::fs::to_canon(path)
 }
 
+/// Removes a Windows verbatim prefix and nothing else (separators are kept):
+/// `\\?\C:\x` -> `C:\x`, `\\?\UNC\server\share\x` -> `\\server\share\x`. Git
+/// cannot take a `\\?\` path where it expects a location (a clone URL, a
+/// remote, a worktree), so every canonicalized path that is handed to git goes
+/// through this or through `display_path`. Pure, so it is tested on any host.
+pub fn strip_verbatim_prefix(path: &str) -> String {
+    if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{rest}")
+    } else if let Some(rest) = path.strip_prefix(r"\\?\") {
+        rest.to_string()
+    } else {
+        path.to_string()
+    }
+}
+
+/// A path as git should receive it: on Windows without a verbatim prefix and
+/// with forward slashes (the form `display_path` gives and git prints); elsewhere
+/// the exact bytes, so a non-UTF-8 name survives.
+pub fn git_arg(path: &Path) -> std::ffi::OsString {
+    #[cfg(windows)]
+    {
+        std::ffi::OsString::from(display_path(path))
+    }
+    #[cfg(not(windows))]
+    {
+        path.as_os_str().to_os_string()
+    }
+}
+
+/// `path` without its Windows verbatim prefix; unchanged elsewhere, where a
+/// backslash is an ordinary filename character.
+pub fn plain_path(path: &Path) -> PathBuf {
+    #[cfg(windows)]
+    {
+        PathBuf::from(strip_verbatim_prefix(&path.to_string_lossy()))
+    }
+    #[cfg(not(windows))]
+    {
+        path.to_path_buf()
+    }
+}
+
 fn normalize_git_path(path: &str) -> String {
     path.replace('\\', "/")
 }
@@ -126,6 +168,78 @@ fn resolve_deleted_within_repo(repo_root: &Path, joined: &Path, rel: &str) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn verbatim_drive_paths_lose_only_their_prefix() {
+        assert_eq!(
+            strip_verbatim_prefix(r"\\?\C:\Users\runner\Temp\.tmpAbC"),
+            r"C:\Users\runner\Temp\.tmpAbC"
+        );
+        assert_eq!(strip_verbatim_prefix(r"\\?\D:\"), r"D:\");
+    }
+
+    #[test]
+    fn verbatim_unc_paths_become_ordinary_unc_paths() {
+        assert_eq!(
+            strip_verbatim_prefix(r"\\?\UNC\server\share\dir\file.txt"),
+            r"\\server\share\dir\file.txt"
+        );
+        assert_eq!(
+            strip_verbatim_prefix(r"\\?\UNC\wsl.localhost\Ubuntu\home"),
+            r"\\wsl.localhost\Ubuntu\home"
+        );
+    }
+
+    #[test]
+    fn ordinary_paths_are_left_alone() {
+        for path in [
+            r"C:\Users\x",
+            "C:/Users/x",
+            r"\\server\share\x",
+            "/home/user/repo",
+            "relative/dir",
+            r"\\.\COM1",
+            "",
+        ] {
+            assert_eq!(strip_verbatim_prefix(path), path);
+        }
+        // Not a prefix when it is not at the start.
+        assert_eq!(strip_verbatim_prefix(r"x\\?\C:\y"), r"x\\?\C:\y");
+    }
+
+    #[test]
+    fn git_arg_is_the_form_git_accepts_for_a_location() {
+        let verbatim = git_arg(Path::new(r"\\?\C:\Users\runner\Temp\wt"));
+        let unc = git_arg(Path::new(r"\\?\UNC\server\share\wt"));
+        if cfg!(windows) {
+            assert_eq!(
+                verbatim,
+                std::ffi::OsString::from("C:/Users/runner/Temp/wt")
+            );
+            assert_eq!(unc, std::ffi::OsString::from("//server/share/wt"));
+        } else {
+            // Elsewhere the exact bytes, so a backslash or non-UTF-8 name survives.
+            assert_eq!(
+                verbatim,
+                std::ffi::OsString::from(r"\\?\C:\Users\runner\Temp\wt")
+            );
+        }
+        assert_eq!(
+            git_arg(Path::new("/home/me/my repo/wt")),
+            std::ffi::OsString::from("/home/me/my repo/wt")
+        );
+    }
+
+    #[test]
+    fn plain_path_only_rewrites_on_windows() {
+        let verbatim = Path::new(r"\\?\C:\a\b");
+        if cfg!(windows) {
+            assert_eq!(plain_path(verbatim), PathBuf::from(r"C:\a\b"));
+        } else {
+            assert_eq!(plain_path(verbatim), verbatim);
+        }
+        assert_eq!(plain_path(Path::new("/tmp/x")), PathBuf::from("/tmp/x"));
+    }
 
     #[test]
     fn split_upstream_separates_remote_and_branch() {

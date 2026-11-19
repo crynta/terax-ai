@@ -1,18 +1,22 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub mod hook;
+
 pub const PROTOCOL_VERSION: u16 = 1;
 pub const MAX_MESSAGE_BYTES: usize = 64 * 1024;
 pub const METHOD_PING: &str = "ping";
 pub const METHOD_CAPABILITIES: &str = "capabilities";
 pub const METHOD_IDENTIFY: &str = "identify";
 pub const METHOD_OPEN: &str = "open";
+pub const METHOD_HOOK: &str = "hook";
 pub const SERVER_RESPONSE_ID: &str = "server";
 pub const METHODS: &[&str] = &[
     METHOD_PING,
     METHOD_CAPABILITIES,
     METHOD_IDENTIFY,
     METHOD_OPEN,
+    METHOD_HOOK,
 ];
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -173,7 +177,10 @@ mod tests {
 
     #[test]
     fn methods_catalog_matches_the_wire_literals() {
-        assert_eq!(METHODS, &["ping", "capabilities", "identify", "open"]);
+        assert_eq!(
+            METHODS,
+            &["ping", "capabilities", "identify", "open", "hook"]
+        );
     }
 
     #[test]

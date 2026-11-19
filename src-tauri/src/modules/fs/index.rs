@@ -10,7 +10,8 @@
 //! returned to the query that asked for it but never cached.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use ignore::WalkBuilder;
@@ -37,6 +38,8 @@ pub const PRUNE_DIRS: &[&str] = &[
 ];
 
 const MAX_SLOTS: usize = 2;
+const MAX_BUILDS: usize = 2;
+const CANCEL_POLL: Duration = Duration::from_millis(25);
 const TTL: Duration = Duration::from_secs(45);
 /// Upper bound on the packed path text of one index (about 50k typical paths).
 const MAX_PACKED_BYTES: usize = 16 * 1024 * 1024;
@@ -135,8 +138,42 @@ struct Table {
 #[derive(Default)]
 struct Inner {
     table: Mutex<Table>,
-    /// Serializes cold walks so concurrent queries for one root share a build.
-    build: Mutex<()>,
+    builds: Mutex<Vec<Arc<Build>>>,
+    available: Condvar,
+}
+
+struct Build {
+    key: IndexKey,
+    result: Mutex<Option<Option<Arc<FileIndex>>>>,
+    ready: Condvar,
+    waiters: AtomicUsize,
+}
+
+struct BuildGuard<'a> {
+    inner: &'a Inner,
+    build: Arc<Build>,
+}
+
+impl Drop for BuildGuard<'_> {
+    fn drop(&mut self) {
+        self.build
+            .result
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get_or_insert(None);
+        self.build.ready.notify_all();
+        let mut builds = self.inner.builds.lock().unwrap_or_else(|e| e.into_inner());
+        builds.retain(|build| !Arc::ptr_eq(build, &self.build));
+        self.inner.available.notify_all();
+    }
+}
+
+struct BuildWaiter(Arc<Build>);
+
+impl Drop for BuildWaiter {
+    fn drop(&mut self) {
+        self.0.waiters.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 /// Unregisters the walk when the build ends, however it ends (a panic in the
@@ -203,30 +240,107 @@ fn is_pruned_relative(relative: &str) -> bool {
 impl FileIndexState {
     /// Returns the cached index for `key` or builds it.
     pub fn get_or_build(&self, key: &IndexKey) -> Arc<FileIndex> {
-        self.get_or_build_with(key, Instant::now(), || build_index(key))
+        self.get_or_build_cancelled(key, &|| false)
+            .expect("uncancellable build")
     }
 
-    pub(crate) fn get_or_build_with(
+    pub fn get_or_build_cancelled(
+        &self,
+        key: &IndexKey,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Option<Arc<FileIndex>> {
+        self.get_or_build_cancellable_with(key, Instant::now(), cancelled, |stop| {
+            build_index_cancelled(key, stop)
+        })
+    }
+
+    #[cfg(test)]
+    fn get_or_build_with(
         &self,
         key: &IndexKey,
         now: Instant,
         build: impl FnOnce() -> FileIndex,
     ) -> Arc<FileIndex> {
-        if let Some(hit) = self.lookup(key, now) {
-            return hit;
-        }
-        let _build = self.0.build.lock().unwrap_or_else(|e| e.into_inner());
-        // Another caller may have finished the same walk while we waited.
-        if let Some(hit) = self.lookup(key, now) {
-            return hit;
-        }
+        self.get_or_build_cancellable_with(key, now, &|| false, |_| Some(build()))
+            .unwrap()
+    }
+
+    fn get_or_build_cancellable_with(
+        &self,
+        key: &IndexKey,
+        now: Instant,
+        cancelled: &dyn Fn() -> bool,
+        build: impl FnOnce(&dyn Fn() -> bool) -> Option<FileIndex>,
+    ) -> Option<Arc<FileIndex>> {
+        let owned = loop {
+            let mut builds = self.0.builds.lock().unwrap_or_else(|e| e.into_inner());
+            if cancelled() {
+                return None;
+            }
+            if let Some(hit) = self.lookup(key, now) {
+                return Some(hit);
+            }
+            if let Some(active) = builds.iter().find(|build| build.key == *key).cloned() {
+                active.waiters.fetch_add(1, Ordering::SeqCst);
+                let _waiter = BuildWaiter(active.clone());
+                drop(builds);
+                let mut result = active.result.lock().unwrap_or_else(|e| e.into_inner());
+                loop {
+                    if cancelled() {
+                        return None;
+                    }
+                    if result.is_some() {
+                        // A completed walk may have been invalidated; only the
+                        // cache can supply a still-current shared result.
+                        break;
+                    }
+                    result = active
+                        .ready
+                        .wait_timeout(result, CANCEL_POLL)
+                        .unwrap_or_else(|e| e.into_inner())
+                        .0;
+                }
+                continue;
+            }
+            if builds.len() < MAX_BUILDS {
+                let active = Arc::new(Build {
+                    key: key.clone(),
+                    result: Mutex::new(None),
+                    ready: Condvar::new(),
+                    waiters: AtomicUsize::new(0),
+                });
+                builds.push(active.clone());
+                break BuildGuard {
+                    inner: &self.0,
+                    build: active,
+                };
+            }
+            drop(
+                self.0
+                    .available
+                    .wait_timeout(builds, CANCEL_POLL)
+                    .unwrap_or_else(|e| e.into_inner()),
+            );
+        };
         let prefix = event_prefix(&key.root);
         let walk = self.begin_walk(&prefix);
-        let index = Arc::new(build());
-        if !walk.dirty() {
-            self.insert(key, prefix, index.clone(), now);
+        let abandoned = || cancelled() && owned.build.waiters.load(Ordering::SeqCst) == 0;
+        let index = if abandoned() {
+            None
+        } else {
+            build(&abandoned).map(Arc::new)
+        };
+        if let Some(index) = &index {
+            if !walk.dirty() {
+                self.insert(key, prefix, index.clone(), now);
+            }
         }
-        index
+        *owned.build.result.lock().unwrap_or_else(|e| e.into_inner()) = Some(index.clone());
+        if cancelled() {
+            None
+        } else {
+            index
+        }
     }
 
     fn begin_walk(&self, event_prefix: &str) -> WalkGuard<'_> {
@@ -311,7 +425,15 @@ impl FileIndexState {
     }
 }
 
+#[cfg(test)]
 fn build_index(key: &IndexKey) -> FileIndex {
+    build_index_cancelled(key, &|| false).unwrap()
+}
+
+fn build_index_cancelled(key: &IndexKey, cancelled: &dyn Fn() -> bool) -> Option<FileIndex> {
+    if cancelled() {
+        return None;
+    }
     let walker = WalkBuilder::new(&key.root)
         .hidden(!key.show_hidden)
         .git_ignore(true)
@@ -336,7 +458,11 @@ fn build_index(key: &IndexKey) -> FileIndex {
     let mut entries = Packed::default();
     let mut scanned = 0usize;
     let mut truncated = false;
-    for dent in walker.flatten() {
+    for dent in walker {
+        if cancelled() {
+            return None;
+        }
+        let Ok(dent) = dent else { continue };
         scanned += 1;
         if scanned > MAX_SCANNED {
             truncated = true;
@@ -355,13 +481,259 @@ fn build_index(key: &IndexKey) -> FileIndex {
             break;
         }
     }
-    FileIndex { entries, truncated }
+    Some(FileIndex { entries, truncated })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn unrelated_cold_roots_build_without_waiting_for_each_other() {
+        let state = FileIndexState::default();
+        let a = tree();
+        let b = tree();
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            let state = &state;
+            scope.spawn(move || {
+                state.get_or_build_with(&key(a.path()), Instant::now(), || {
+                    entered_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                    build_index(&key(a.path()))
+                })
+            });
+            entered_rx.recv().unwrap();
+            scope.spawn(move || {
+                state.get_or_build(&key(b.path()));
+                done_tx.send(()).unwrap();
+            });
+            let completed = done_rx.recv_timeout(Duration::from_secs(2));
+            release_tx.send(()).unwrap();
+            assert!(completed.is_ok(), "B must finish while A is paused");
+        });
+    }
+
+    #[test]
+    fn a_live_same_key_waiter_keeps_a_superseded_build_alive() {
+        let state = FileIndexState::default();
+        let dir = tree();
+        let k = key(dir.path());
+        let cancelled = std::sync::atomic::AtomicBool::new(false);
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let (joined_tx, joined_rx) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            let state = &state;
+            let k = &k;
+            let cancelled = &cancelled;
+            let first = scope.spawn(move || {
+                state.get_or_build_cancellable_with(
+                    k,
+                    Instant::now(),
+                    &|| cancelled.load(Ordering::SeqCst),
+                    |stop| {
+                        entered_tx.send(()).unwrap();
+                        release_rx.recv().unwrap();
+                        assert!(!stop(), "the other consumer still needs the walk");
+                        Some(build_index(k))
+                    },
+                )
+            });
+            entered_rx.recv().unwrap();
+            let second = scope.spawn(move || {
+                let checks = std::cell::Cell::new(0);
+                state.get_or_build_cancellable_with(
+                    k,
+                    Instant::now(),
+                    &|| {
+                        checks.set(checks.get() + 1);
+                        if checks.get() == 2 {
+                            joined_tx.send(()).unwrap();
+                        }
+                        false
+                    },
+                    |_| panic!("same key must share the build"),
+                )
+            });
+            joined_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+            cancelled.store(true, Ordering::SeqCst);
+            release_tx.send(()).unwrap();
+            assert!(first.join().unwrap().is_none());
+            assert!(!second.join().unwrap().unwrap().entries.is_empty());
+        });
+        assert_eq!(state.slot_count(), 1);
+    }
+
+    #[test]
+    fn a_waiter_rebuilds_when_the_shared_walk_was_invalidated() {
+        let state = FileIndexState::default();
+        let dir = tree();
+        let k = key(dir.path());
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let (joined_tx, joined_rx) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            let state = &state;
+            let k = &k;
+            let owner = scope.spawn(move || {
+                state.get_or_build_with(k, Instant::now(), || {
+                    let old = build_index(k);
+                    entered_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                    old
+                })
+            });
+            entered_rx.recv().unwrap();
+            std::fs::write(k.root.join("late.rs"), "").unwrap();
+            state.note_change(&to_canon(
+                std::fs::canonicalize(k.root.join("late.rs")).unwrap(),
+            ));
+            let waiter = scope.spawn(move || {
+                let checks = std::cell::Cell::new(0);
+                state
+                    .get_or_build_cancellable_with(
+                        k,
+                        Instant::now(),
+                        &|| {
+                            checks.set(checks.get() + 1);
+                            if checks.get() == 2 {
+                                joined_tx.send(()).unwrap();
+                            }
+                            false
+                        },
+                        |_| Some(build_index(k)),
+                    )
+                    .unwrap()
+            });
+            joined_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+            release_tx.send(()).unwrap();
+            assert!(owner
+                .join()
+                .unwrap()
+                .entries
+                .iter()
+                .all(|(rel, _)| rel != "late.rs"));
+            assert!(waiter
+                .join()
+                .unwrap()
+                .entries
+                .iter()
+                .any(|(rel, _)| rel == "late.rs"));
+        });
+        assert_eq!(state.slot_count(), 1);
+    }
+
+    #[test]
+    fn an_obsolete_waiter_leaves_without_building_or_cancelling_the_owner() {
+        let state = FileIndexState::default();
+        let dir = tree();
+        let k = key(dir.path());
+        let cancelled = std::sync::atomic::AtomicBool::new(false);
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let (joined_tx, joined_rx) = std::sync::mpsc::channel();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            let state = &state;
+            let k = &k;
+            let cancelled = &cancelled;
+            scope.spawn(move || {
+                state.get_or_build_with(k, Instant::now(), || {
+                    entered_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                    build_index(k)
+                })
+            });
+            entered_rx.recv().unwrap();
+            scope.spawn(move || {
+                let checks = std::cell::Cell::new(0);
+                let result = state.get_or_build_cancellable_with(
+                    k,
+                    Instant::now(),
+                    &|| {
+                        checks.set(checks.get() + 1);
+                        if checks.get() == 2 {
+                            joined_tx.send(()).unwrap();
+                        }
+                        cancelled.load(Ordering::SeqCst)
+                    },
+                    |_| panic!("obsolete waiter must not build"),
+                );
+                done_tx.send(result.is_none()).unwrap();
+            });
+            joined_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+            cancelled.store(true, Ordering::SeqCst);
+            let done = done_rx.recv_timeout(Duration::from_secs(2));
+            release_tx.send(()).unwrap();
+            assert!(done.unwrap());
+        });
+        assert_eq!(state.slot_count(), 1);
+    }
+
+    #[test]
+    fn only_two_roots_walk_and_queued_cancellation_never_starts_a_third() {
+        let state = FileIndexState::default();
+        let dirs = [tree(), tree(), tree()];
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (release_a_tx, release_a_rx) = std::sync::mpsc::channel();
+        let (release_b_tx, release_b_rx) = std::sync::mpsc::channel();
+        let (queued_tx, queued_rx) = std::sync::mpsc::channel();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let cancelled = std::sync::atomic::AtomicBool::new(false);
+        std::thread::scope(|scope| {
+            for (dir, release) in dirs.iter().zip([release_a_rx, release_b_rx]) {
+                let state = &state;
+                let entered = entered_tx.clone();
+                scope.spawn(move || {
+                    state.get_or_build_with(&key(dir.path()), Instant::now(), || {
+                        entered.send(()).unwrap();
+                        release.recv().unwrap();
+                        build_index(&key(dir.path()))
+                    })
+                });
+            }
+            entered_rx.recv().unwrap();
+            entered_rx.recv().unwrap();
+            scope.spawn(|| {
+                let result = state.get_or_build_cancellable_with(
+                    &key(dirs[2].path()),
+                    Instant::now(),
+                    &|| {
+                        let _ = queued_tx.send(());
+                        cancelled.load(Ordering::SeqCst)
+                    },
+                    |_| panic!("third root must not walk"),
+                );
+                done_tx.send(result.is_none()).unwrap();
+            });
+            queued_rx.recv().unwrap();
+            assert_eq!(state.walks_in_flight(), MAX_BUILDS);
+            cancelled.store(true, Ordering::SeqCst);
+            let done = done_rx.recv_timeout(Duration::from_secs(2));
+            release_a_tx.send(()).unwrap();
+            release_b_tx.send(()).unwrap();
+            assert!(done.unwrap());
+        });
+    }
+
+    #[test]
+    fn abandoned_walks_stop_without_caching_a_partial_index() {
+        let dir = tree();
+        let state = FileIndexState::default();
+        let checks = std::cell::Cell::new(0);
+        let result = state.get_or_build_cancelled(&key(dir.path()), &|| {
+            checks.set(checks.get() + 1);
+            checks.get() > 4
+        });
+        assert!(result.is_none());
+        assert_eq!(state.slot_count(), 0);
+        assert_eq!(state.walks_in_flight(), 0);
+        assert!(!state.get_or_build(&key(dir.path())).entries.is_empty());
+    }
 
     fn key(root: &Path) -> IndexKey {
         IndexKey {

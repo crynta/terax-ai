@@ -8,13 +8,18 @@ import {
   terminalFrameIntervalMs,
   terminalWindowFocused,
 } from "../renderScheduling";
+import { WebGlPoolExhaustedError } from "./WebGlPoolExhaustedError";
 import {
   rendererProfileKey,
   type WebGlRendererProfile,
   WebGlCellRenderer,
 } from "./WebGlCellRenderer";
 
-export const MAX_WEBGL_RENDERER_SLOTS = 5;
+/**
+ * Live WebGL contexts the pool holds. Chromium and WebKit drop the oldest context of a page
+ * past 16, and the rest of the window may own a few, so the pool stops well short of that.
+ */
+export const MAX_WEBGL_RENDERER_SLOTS = 12;
 const MIN_WARM_WEBGL_RENDERER_SLOTS = 1;
 export const WEBGL_RENDERER_IDLE_TTL_MS = 30_000;
 
@@ -134,11 +139,7 @@ export class WebGlTerminalRuntime {
       };
       this.slots.push(slot);
     }
-    if (!slot) {
-      throw new Error(
-        `WebGL terminal renderer pool exhausted (${MAX_WEBGL_RENDERER_SLOTS} visible panes)`,
-      );
-    }
+    if (!slot) throw new WebGlPoolExhaustedError(MAX_WEBGL_RENDERER_SLOTS);
 
     slot.owner = surface;
     slot.profileKey = key;

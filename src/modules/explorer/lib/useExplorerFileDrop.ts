@@ -1,3 +1,5 @@
+import { nativeDropClientPoint } from "@/lib/nativeDropPoint";
+import { IS_WINDOWS } from "@/lib/platform";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useEffect, useRef, useState } from "react";
@@ -17,22 +19,13 @@ type Options = {
   onCopied: (destDir: string) => void;
 };
 
-// Tauri reports the drop point in physical pixels on some platforms; scale down
-// only when it overflows the logical viewport (mirrors the terminal drop).
 function dirAt(
   x: number,
   y: number,
   rootPath: string | null,
   isDir: (p: string) => boolean | undefined,
 ): string | null {
-  let lx = x;
-  let ly = y;
-  if (x > window.innerWidth || y > window.innerHeight) {
-    const dpr = window.devicePixelRatio || 1;
-    lx = x / dpr;
-    ly = y / dpr;
-  }
-  const el = document.elementFromPoint(lx, ly) as HTMLElement | null;
+  const el = document.elementFromPoint(x, y) as HTMLElement | null;
   if (!el) return null;
   const row = el.closest<HTMLElement>("[data-fs-path]");
   if (row) {
@@ -65,16 +58,21 @@ export function useExplorerFileDrop({
       .onDragDropEvent((e) => {
         const p = e.payload;
         const { rootPath, isDir, onCopied } = optsRef.current;
-        if (p.type === "enter" || p.type === "over") {
-          setTargetDir(dirAt(p.position.x, p.position.y, rootPath, isDir));
-          return;
-        }
         if (p.type === "leave") {
           setTargetDir(null);
           return;
         }
+        const { x, y } = nativeDropClientPoint(
+          p.position,
+          IS_WINDOWS,
+          window.devicePixelRatio,
+        );
+        const dir = dirAt(x, y, rootPath, isDir);
+        if (p.type === "enter" || p.type === "over") {
+          setTargetDir(dir);
+          return;
+        }
         if (p.type === "drop") {
-          const dir = dirAt(p.position.x, p.position.y, rootPath, isDir);
           setTargetDir(null);
           if (!rootPath || !dir || p.paths.length === 0) return;
           const workspace = currentWorkspaceEnv();

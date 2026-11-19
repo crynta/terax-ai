@@ -18,7 +18,7 @@ import {
   PreviewAddressBar,
   type PreviewAddressBarHandle,
 } from "./PreviewAddressBar";
-import { loopbackPreviewOrigin } from "./lib/previewUrl";
+import { isAllowedPreviewUrl, loopbackPreviewOrigin } from "./lib/previewUrl";
 
 export type PreviewPaneHandle = {
   reload: () => void;
@@ -70,6 +70,7 @@ export const PreviewPane = forwardRef<PreviewPaneHandle, Props>(
       [url],
     );
 
+    const allowed = isAllowedPreviewUrl(url);
     const cookieOrigin = loopbackPreviewOrigin(url);
     const showXfoHint = url ? cookieOrigin === null : false;
     const showCookieHint =
@@ -150,7 +151,9 @@ export const PreviewPane = forwardRef<PreviewPaneHandle, Props>(
               : "relative min-h-0 flex-1 bg-background"
           }
         >
-          {url ? (
+          {url && !allowed ? (
+            <p className="p-4 text-sm text-destructive">This URL cannot be loaded in preview.</p>
+          ) : url ? (
             loaded ? (
               <iframe
                 key={`${url}#${nonce}`}

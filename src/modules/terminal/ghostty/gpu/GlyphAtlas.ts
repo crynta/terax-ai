@@ -1,5 +1,6 @@
 import { isBuiltinGlyph } from "./BuiltinGlyphs";
-import { GlyphRasterizer } from "./GlyphRasterizer";
+import { isNeighbourAware, isNonGraphicsSymbol } from "./GlyphPlacement";
+import { GlyphRasterizer, type RasterizedGlyph } from "./GlyphRasterizer";
 import { SkylineAtlasAllocator } from "./SkylineAtlasAllocator";
 import type { TerminalFontMetrics } from "./terminalVisuals";
 
@@ -9,6 +10,14 @@ const GLYPH_ENTRY_BYTES = GLYPH_ENTRY_WORDS * 4;
 export const GLYPH_ENTRY_FLAG_COLOR = 1;
 /** Coverage is final (cell-exact shapes): the shader applies no contrast. */
 export const GLYPH_ENTRY_FLAG_EXACT = 2;
+/**
+ * The glyph may take two cells: this entry is the constrained form and the next entry the
+ * roomy one. The shader picks the roomy one when the next cell is blank, the cell is not the
+ * last column and the cell before is not a symbol (`GlyphPlacement.ts`).
+ */
+export const GLYPH_ENTRY_FLAG_NEIGHBOUR = 4;
+/** A private-use symbol that is not a Powerline separator (see `isNonGraphicsSymbol`). */
+export const GLYPH_ENTRY_FLAG_SYMBOL = 8;
 /** `resolve()` result when nothing more fits even at the largest atlas. */
 export const ATLAS_FULL = -1;
 
@@ -160,12 +169,32 @@ export class GlyphAtlas {
       ? this.simple.get(simpleKey)
       : this.complex.get(complexKey);
     if (cached !== undefined) return cached;
-    if (this.count >= MAX_TABLE_ENTRIES) {
+    // A glyph that may take two cells gets two consecutive entries: constrained, then roomy.
+    const aware = single && isNeighbourAware(codepoint);
+    const variants = aware ? 2 : 1;
+    if (this.count + variants > MAX_TABLE_ENTRIES) {
       this.capacityFailureCountValue += 1;
       return ATLAS_FULL;
     }
 
-    const glyph = this.rasterizer.rasterize(text, style);
+    const index = this.count;
+    this.ensureTableCapacity(index + variants);
+    const symbol = single && isNonGraphicsSymbol(codepoint);
+    const extra =
+      (aware ? GLYPH_ENTRY_FLAG_NEIGHBOUR : 0) |
+      (symbol ? GLYPH_ENTRY_FLAG_SYMBOL : 0);
+    for (let variant = 0; variant < variants; variant += 1) {
+      const glyph = this.rasterizer.rasterize(text, style, variant === 1 || !aware);
+      if (!this.place(index + variant, glyph, extra)) return ATLAS_FULL;
+    }
+    this.count += variants;
+    if (single) this.simple.set(simpleKey, index);
+    else this.complex.set(complexKey, index);
+    return index;
+  }
+
+  /** Allocates, uploads and records one rasterized glyph as table entry `index`. */
+  private place(index: number, glyph: RasterizedGlyph, extraFlags: number): boolean {
     const plane = glyph.intrinsicColor
       ? (this.color ?? this.createColorPlane())
       : this.requirePlane(this.coverage);
@@ -175,7 +204,7 @@ export class GlyphAtlas {
     }
     if (!region) {
       this.capacityFailureCountValue += 1;
-      return ATLAS_FULL;
+      return false;
     }
 
     const bytesPerPixel = glyph.intrinsicColor ? 4 : 1;
@@ -188,8 +217,6 @@ export class GlyphAtlas {
     this.uploadCountValue += 1;
     this.uploadedBytesValue += glyph.width * glyph.height * bytesPerPixel;
 
-    const index = this.count;
-    this.ensureTableCapacity(index + 1);
     const base = index * GLYPH_ENTRY_WORDS;
     this.tableData[base] = region.x | (region.y << 16);
     this.tableData[base + 1] = glyph.width | (glyph.height << 16);
@@ -197,13 +224,11 @@ export class GlyphAtlas {
       (glyph.bearingX & 0xffff) | ((glyph.bearingY & 0xffff) << 16);
     this.tableData[base + 3] =
       (glyph.intrinsicColor ? GLYPH_ENTRY_FLAG_COLOR : 0) |
-      (glyph.exact ? GLYPH_ENTRY_FLAG_EXACT : 0);
+      (glyph.exact ? GLYPH_ENTRY_FLAG_EXACT : 0) |
+      extraFlags;
     this.tableDirtyStart = Math.min(this.tableDirtyStart, index);
     this.tableDirtyEnd = Math.max(this.tableDirtyEnd, index);
-    this.count += 1;
-    if (single) this.simple.set(simpleKey, index);
-    else this.complex.set(complexKey, index);
-    return index;
+    return true;
   }
 
   /** Uploads table entries written since the last commit. */

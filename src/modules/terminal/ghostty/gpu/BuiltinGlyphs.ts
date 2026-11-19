@@ -15,20 +15,16 @@ import { SpriteMask } from "./builtin/SpriteMask";
 import {
   drawBlockElement,
   drawBraille,
-  drawOctant,
-  drawSextant,
   isBlockElement,
   isBraille,
-  isOctant,
-  isSextant,
 } from "./builtin/blockElements";
 import { drawBoxDrawing, isBoxDrawing } from "./builtin/boxDrawing";
 import {
-  drawGeometricShape,
-  drawLegacyComputing,
-  isGeometricShape,
-  isLegacyComputing,
-} from "./builtin/legacyComputing";
+  isLazyBuiltin,
+  lazyBuiltinDraw,
+  lazyBuiltinFailed,
+  lazyBuiltinPending,
+} from "./builtin/lazyGlyphs";
 import { drawPowerline, isPowerline } from "./builtin/powerline";
 import { builtinLineThickness, type SpriteSpec } from "./builtin/spriteSpec";
 import type { TerminalFontMetrics } from "./terminalVisuals";
@@ -52,17 +48,24 @@ export function isBuiltinGlyph(codepoint: number): boolean {
     isBlockElement(codepoint) ||
     isBraille(codepoint) ||
     isPowerline(codepoint) ||
-    isGeometricShape(codepoint) ||
-    isSextant(codepoint) ||
-    isLegacyComputing(codepoint) ||
-    isOctant(codepoint)
+    (isLazyBuiltin(codepoint) && !lazyBuiltinFailed())
   );
+}
+
+/**
+ * True while `codepoint` is a builtin glyph whose drawing code is still loading
+ * (`lazyGlyphs.ts`); the first call starts the load. The caller draws nothing
+ * for now: terminals rebuild their atlases when the code arrives.
+ */
+export function builtinGlyphPending(codepoint: number): boolean {
+  return isLazyBuiltin(codepoint) && lazyBuiltinPending();
 }
 
 /**
  * Draws builtin glyphs for one cell size. The returned mask is the renderer's
  * own scratch buffer (`width * height` coverage bytes, row-major, top row
- * first), valid until the next call.
+ * first), valid until the next call. A rarely used glyph (`lazyGlyphs.ts`)
+ * returns null until its code has loaded (`builtinGlyphPending`).
  */
 export class BuiltinGlyphRenderer {
   private readonly mask: SpriteMask;
@@ -79,16 +82,18 @@ export class BuiltinGlyphRenderer {
   render(codepoint: number): Uint8Array | null {
     if (!isBuiltinGlyph(codepoint)) return null;
     const { mask, spec } = this;
+    if (isLazyBuiltin(codepoint)) {
+      const draw = lazyBuiltinDraw();
+      if (!draw) return null;
+      mask.clear();
+      draw(mask, spec, codepoint);
+      return mask.data;
+    }
     mask.clear();
     if (isBoxDrawing(codepoint)) drawBoxDrawing(mask, spec, codepoint);
     else if (isBlockElement(codepoint)) drawBlockElement(mask, spec, codepoint);
     else if (isBraille(codepoint)) drawBraille(mask, spec, codepoint);
-    else if (isPowerline(codepoint)) drawPowerline(mask, spec, codepoint);
-    else if (isGeometricShape(codepoint)) {
-      drawGeometricShape(mask, spec, codepoint);
-    } else if (isSextant(codepoint)) drawSextant(mask, spec, codepoint);
-    else if (isOctant(codepoint)) drawOctant(mask, spec, codepoint);
-    else drawLegacyComputing(mask, spec, codepoint);
+    else drawPowerline(mask, spec, codepoint);
     return mask.data;
   }
 }

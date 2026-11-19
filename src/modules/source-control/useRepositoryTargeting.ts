@@ -1,4 +1,4 @@
-import { native } from "@/modules/ai/lib/native";
+import { git } from "@/modules/git";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -49,7 +49,7 @@ export function useRepositoryTargeting({
     async (path: string, requestRef: RequestCounter) => {
       const requestId = ++requestRef.current;
       try {
-        const repo = await native.gitResolveRepo(path);
+        const repo = await git.resolveRepo(path);
         if (
           requestId !== requestRef.current ||
           !isContextCurrent(spaceId, workspaceKey)

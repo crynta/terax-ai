@@ -11,6 +11,15 @@ export function parseHtmlAssets(html: string): {
 };
 export function chunkName(file: string): string;
 export function packagesFromMap(mapText: string | null): Set<string> | null;
+export function packageVersionsFromMap(
+  mapText: string | null,
+): Set<string> | null;
+export function findDuplicatePackages(
+  mapTexts: Iterable<string | null>,
+): { name: string; versions: string[] }[];
+export function findDuplicatePackagesInDist(
+  distDir: string,
+): { name: string; versions: string[] }[] | null;
 
 export type StartupFile = {
   bytes: number;

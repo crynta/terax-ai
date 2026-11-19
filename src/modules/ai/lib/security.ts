@@ -28,74 +28,12 @@
  *    into a protected directory.
  */
 
-const SECRET_BASENAME_PATTERNS: RegExp[] = [
-  // Match `.env` and `.env.<suffix>` with no required tail anchor — Windows
-  // strips trailing dots/spaces at open time and NTFS exposes alternate data
-  // streams via `name:stream`, both of which would otherwise slip past a `$`
-  // anchored pattern (`.env.`, `.env::$DATA`).
-  /^\.env(\..+)?(?:[.\s:]|$)/i,
-  /^.*\.pem(?:[.\s:]|$)/i,
-  /^.*\.key(?:[.\s:]|$)/i, // private keys
-  /^.*\.p12(?:[.\s:]|$)/i,
-  /^.*\.pfx(?:[.\s:]|$)/i,
-  /^.*\.asc(?:[.\s:]|$)/i, // PGP armored keys
-  /^.*\.gpg(?:[.\s:]|$)/i,
-  /^.*\.keystore(?:[.\s:]|$)/i,
-  /^.*\.jks(?:[.\s:]|$)/i,
-  // Match `id_rsa`, `id_rsa.pub`, and common backup/copy patterns like
-  // `id_rsa.bak`, `id_rsa_old`, `id_rsa-backup`.
-  /^id_(rsa|dsa|ecdsa|ed25519)([._-].*)?(?:[.\s:]|$)/i,
-  /^known_hosts(?:[.\s:]|$)/i,
-  /^authorized_keys(?:[.\s:]|$)/i,
-  /^htpasswd(?:[.\s:]|$)/i,
-  /^\.netrc(?:[.\s:]|$)/i,
-  /^_netrc(?:[.\s:]|$)/i, // Windows variant
-  /^credentials(?:[.\s:]|$)/i, // .aws/credentials, gcloud, etc.
-  /^\.pgpass(?:[.\s:]|$)/i,
-  /^\.npmrc(?:[.\s:]|$)/i,
-  /^\.pypirc(?:[.\s:]|$)/i,
-  /^secrets?\.(json|ya?ml|toml|env)(?:[.\s:]|$)/i,
-  /^service[-_]?account.*\.json(?:[.\s:]|$)/i, // GCP service account keys
-];
+import pathPolicy from "./pathPolicy.json";
 
-/**
- * Protected directories. Matched as **exact path** OR **prefix where the next
- * char is a separator** — never raw substring. Listed without trailing slash;
- * the comparator handles separators.
- */
-const PROTECTED_DIRS = [
-  "/.ssh",
-  "/.gnupg",
-  "/.aws",
-  "/.azure",
-  "/.kube",
-  "/.docker",
-  "/.config/gh",
-  "/.config/git",
-  "/.config/gcloud",
-  "/.config/op", // 1Password CLI
-  "/.git", // git internals — refusing avoids tools mutating refs/objects
-  "/.terraform.d",
-  "/library/keychains",
-  "/library/cookies",
-  // System dirs holding host secrets/PII/process state. Per-PID files under
-  // /proc leak env vars and command lines from other processes; /sys exposes
-  // kernel state and hardware identifiers. /etc and /private/etc hold global
-  // config that frequently contains credentials in basenames the regex won't
-  // match (passwd, shadow, master.passwd, *.cnf, *.conf with creds).
-  "/etc",
-  "/private/etc",
-  "/proc",
-  "/sys",
-  "/var/db",
-  "/var/root",
-  "/private/var/db",
-  "/private/var/root",
-  // Windows user profile equivalents (post drive-strip + lowercase).
-  "/appdata/roaming/microsoft/credentials",
-  "/appdata/local/microsoft/credentials",
-  "/appdata/roaming/gcloud",
-];
+const SECRET_BASENAME_PATTERNS = pathPolicy.secretBasenames.map(
+  (pattern) => new RegExp(pattern, "i"),
+);
+const PROTECTED_DIRS = pathPolicy.protectedDirs;
 
 /**
  * Write-only deny prefixes (system locations). Read access is *not* universally
@@ -237,7 +175,10 @@ export function checkWritable(path: string): SafetyResult {
   // Ensure the comparison surface has a leading separator for prefix matching.
   const cmpForPrefix = cmp.startsWith("/") ? cmp : `/${cmp}`;
   for (const prefix of WRITE_DENY_PREFIXES) {
-    if (cmpForPrefix.startsWith(prefix) || `${cmpForPrefix}/`.startsWith(prefix)) {
+    if (
+      cmpForPrefix.startsWith(prefix) ||
+      `${cmpForPrefix}/`.startsWith(prefix)
+    ) {
       return {
         ok: false,
         reason: `Refused: writes under "${prefix.replace(/\/$/, "")}" are not allowed.`,
@@ -342,7 +283,8 @@ export function checkShellCommand(cmd: string): SafetyResult {
   if (/[\u202A-\u202E\u2066-\u2069\u200E\u200F\u061C]/.test(c)) {
     return {
       ok: false,
-      reason: "Refused: command contains Unicode bidirectional override characters.",
+      reason:
+        "Refused: command contains Unicode bidirectional override characters.",
     };
   }
   // rm -rf / (and variants with quoted /, --no-preserve-root, etc.)
@@ -365,7 +307,8 @@ export function checkShellCommand(cmd: string): SafetyResult {
   ) {
     return {
       ok: false,
-      reason: "Refused: command attempts to recursively delete the home directory.",
+      reason:
+        "Refused: command attempts to recursively delete the home directory.",
     };
   }
   if (/--no-preserve-root/.test(c)) {
@@ -373,7 +316,10 @@ export function checkShellCommand(cmd: string): SafetyResult {
   }
   // dd to a raw disk device
   if (/\bdd\b[^|]*\bof=\/dev\/(disk|sd|nvme|hd)/i.test(c)) {
-    return { ok: false, reason: "Refused: dd to a block device is not allowed." };
+    return {
+      ok: false,
+      reason: "Refused: dd to a block device is not allowed.",
+    };
   }
   // mkfs / fdisk / diskutil eraseDisk / parted
   if (

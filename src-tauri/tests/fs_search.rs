@@ -3,7 +3,7 @@ mod common;
 use common::{git_available, FsFixture, GitRepoFixture};
 use terax_lib::modules::fs::grep::{run_glob as fs_glob, run_grep as fs_grep};
 use terax_lib::modules::fs::index::FileIndexState;
-use terax_lib::modules::fs::search::{run_list_files, run_search};
+use terax_lib::modules::fs::search::{run_list_files, run_search, SearchOptions};
 use terax_lib::modules::fs::tree::{
     read_dir_entries as fs_read_dir, subdirs as list_subdirs, EntryKind,
 };
@@ -22,6 +22,7 @@ fn fs_search(
         limit,
         workspace,
         show_hidden,
+        SearchOptions::default(),
         &|| false,
     )
 }

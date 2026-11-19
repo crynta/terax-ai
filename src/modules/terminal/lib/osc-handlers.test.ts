@@ -8,6 +8,15 @@ describe("terminal semantic boundaries", () => {
     ["file:///c/Users/leo/project", "C:/Users/leo/project"],
     ["file:///C:/Users/me/project", "C:/Users/me/project"],
     ["file://host/home/me/a%20b", "/home/me/a b"],
+    // cmd.exe prompts: raw backslashes, spaces and characters a URL would escape.
+    ["file://BOX/C:\\Users\\me\\proj", "C:/Users/me/proj"],
+    ["file:///D:\\My Docs\\100% real #1", "D:/My Docs/100% real #1"],
+    // a literal percent in a cmd.exe folder name is not an escape
+    ["file://BOX/C:\\Users\\a%20b\\c%2Fd", "C:/Users/a%20b/c%2Fd"],
+    ["file://BOX/C:\\", "C:/"],
+    ["file://BOX/\\\\server\\share\\dir", "//server/share/dir"],
+    // while the encoded form every other shell sends still decodes
+    ["file:///C:/Users/a%20b", "C:/Users/a b"],
     ["https://example.com/path", null],
   ])("normalizes cwd %s", (uri, expected) =>
     expect(parseOsc7(uri)).toBe(expected),

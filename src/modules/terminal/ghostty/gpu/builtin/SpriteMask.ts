@@ -53,14 +53,6 @@ export class SpriteMask {
     }
   }
 
-  /** Replaces every pixel with its complement. */
-  invert(): void {
-    const data = this.data;
-    for (let index = 0; index < data.length; index += 1) {
-      data[index] = 255 - data[index];
-    }
-  }
-
   /**
    * Fills a polygon, optionally with holes, with exact area coverage scaled by
    * `value` and composited over what is already there.
@@ -86,15 +78,6 @@ export class SpriteMask {
         data[index] = Math.round(below + coverage * value * (1 - below / 255));
       }
     }
-  }
-
-  /**
-   * Fills a closed outline of the given weight lying inside `ring`; a shape too
-   * small to have an inside is filled solid.
-   */
-  outline(ring: Ring, thickness: number): void {
-    const inner = insetRing(ring, thickness);
-    this.fill(ring, inner ? [inner] : []);
   }
 
   /** Strokes a line segment with butt caps. */
@@ -192,7 +175,7 @@ export class SpriteMask {
   }
 }
 
-function signedArea(points: Ring): number {
+export function signedArea(points: Ring): number {
   let area = 0;
   const count = points.length / 2;
   for (let index = 0; index < count; index += 1) {
@@ -323,50 +306,6 @@ function strokeOutline(
     outline.push(right[index], right[index + 1]);
   }
   return outline;
-}
-
-/**
- * `ring` moved inward by `distance` with mitered corners (exact for convex
- * shapes); null when the inset turns it inside out.
- */
-function insetRing(ring: Ring, distance: number): number[] | null {
-  const count = ring.length / 2;
-  if (count < 3) return null;
-  // With a y-down axis a positive area means the interior is right of travel.
-  const side = signedArea(ring) >= 0 ? 1 : -1;
-  const normals: number[] = [];
-  for (let index = 0; index < count; index += 1) {
-    const next = (index + 1) % count;
-    const dx = ring[next * 2] - ring[index * 2];
-    const dy = ring[next * 2 + 1] - ring[index * 2 + 1];
-    const length = Math.hypot(dx, dy);
-    if (length === 0) return null;
-    normals.push((-dy * side) / length, (dx * side) / length);
-  }
-  const result: number[] = [];
-  for (let index = 0; index < count; index += 1) {
-    const before = ((index + count - 1) % count) * 2;
-    const after = index * 2;
-    const dot =
-      normals[before] * normals[after] +
-      normals[before + 1] * normals[after + 1];
-    const scale = distance / (1 + dot);
-    result.push(
-      ring[index * 2] + (normals[before] + normals[after]) * scale,
-      ring[index * 2 + 1] + (normals[before + 1] + normals[after + 1]) * scale,
-    );
-  }
-  // A collapsed inset has turned inside out: some edge now runs backwards.
-  for (let index = 0; index < count; index += 1) {
-    const next = (index + 1) % count;
-    const before =
-      (ring[next * 2] - ring[index * 2]) *
-        (result[next * 2] - result[index * 2]) +
-      (ring[next * 2 + 1] - ring[index * 2 + 1]) *
-        (result[next * 2 + 1] - result[index * 2 + 1]);
-    if (before <= 0) return null;
-  }
-  return result;
 }
 
 /** Appends the flattened cubic Bezier (without its start point) to `out`. */

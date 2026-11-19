@@ -2,6 +2,8 @@
 //   node compare.mjs diff <dir> <a> <b> [out.png]     per-pixel diff of two captures
 //   node compare.mjs png <dir> <name> [scale] [x y w h] export one capture (optionally cropped, upscaled)
 //   node compare.mjs crisp <dir> <name>               edge sharpness / fractional-edge statistics
+//   node compare.mjs check <dir> <name> [...]         pass or fail of the colors / icons / cursor / sprite checks (<name>.check.json)
+//   node compare.mjs parity <dir> <glName> <gpuName>  WebGL and WebGPU captures of one pattern must match pixel for pixel
 //   node compare.mjs grid <dir> <split> <single>      split-pane capture (grid.html) against one pane of the same size
 import fs from "node:fs";
 import path from "node:path";
@@ -215,7 +217,41 @@ if (command === "png") {
   console.log(JSON.stringify(report, null, 1));
   console.log(bad ? "GRID CHECK FAILED" : "GRID CHECK PASSED");
   process.exit(bad ? 1 : 0);
+} else if (command === "check") {
+  let failed = false;
+  for (const name of rest) {
+    const report = JSON.parse(fs.readFileSync(path.join(dir, `${name}.check.json`), "utf8"));
+    const failures = [
+      ...(report.failures ?? []),
+      ...(report.seams && report.seams.mismatched > 0 ? [`${report.seams.mismatched} seam mismatches`] : []),
+    ];
+    const ok = report.ok !== false && failures.length === 0;
+    failed ||= !ok;
+    console.log(`${ok ? "PASS" : "FAIL"} ${name} (${report.pattern ?? "sprites"}, ${report.renderer}, dpr ${report.dpr}, cell ${report.cell}, ${report.checked ?? "?"} checked)`);
+    for (const failure of failures) console.log(`  ${failure}`);
+  }
+  process.exit(failed ? 1 : 0);
+} else if (command === "parity") {
+  const [glName, gpuName] = rest;
+  const a = load(glName);
+  const b = load(gpuName);
+  if (a.width !== b.width || a.height !== b.height) {
+    console.log(`PARITY FAILED: size ${a.width}x${a.height} vs ${b.width}x${b.height}`);
+    process.exit(1);
+  }
+  let different = 0;
+  let maxDelta = 0;
+  for (let pixel = 0; pixel < a.width * a.height; pixel += 1) {
+    let delta = 0;
+    for (let channel = 0; channel < 3; channel += 1) {
+      delta = Math.max(delta, Math.abs(a.rgba[pixel * 4 + channel] - b.rgba[pixel * 4 + channel]));
+    }
+    if (delta > 1) different += 1;
+    maxDelta = Math.max(maxDelta, delta);
+  }
+  console.log(`${different === 0 ? "PARITY PASSED" : "PARITY FAILED"} ${glName} vs ${gpuName}: ${different} px differ by more than 1 (max ${maxDelta}) at dpr ${a.meta.dpr}`);
+  process.exit(different === 0 ? 0 : 1);
 } else {
-  console.error("usage: compare.mjs diff|png|crisp|grid <dir> ...");
+  console.error("usage: compare.mjs diff|png|crisp|check|parity|grid <dir> ...");
   process.exit(2);
 }

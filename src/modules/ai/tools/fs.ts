@@ -152,8 +152,16 @@ export function buildFsTools(ctx: ToolContext) {
           let isNewFile = false;
           try {
             const r = await native.readFile(abs);
-            if (r.kind === "text") original = r.content;
-          } catch {
+            if (r.kind !== "text")
+              return {
+                error:
+                  "Cannot snapshot a binary or oversized file for plan review",
+                path: abs,
+              };
+            original = r.content;
+          } catch (error) {
+            if (error !== "AI file not found")
+              return { error: String(error), path: abs };
             isNewFile = true;
           }
           usePlanStore.getState().enqueue({

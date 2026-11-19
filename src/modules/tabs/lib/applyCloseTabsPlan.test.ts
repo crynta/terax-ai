@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { applyCloseTabsPlan, planCloseTabsToRight, type Tab } from "./useTabs";
+import {
+  applyCloseTabsPlan,
+  planCloseTabsToRight,
+  planSingleTabClose,
+  type Tab,
+} from "./useTabs";
 
 function editor(id: number, spaceId = "a"): Tab {
   return {
@@ -25,6 +30,48 @@ function terminal(id: number, leafId: number, spaceId = "a"): Tab {
 }
 
 describe("applyCloseTabsPlan", () => {
+  it("plans single-tab cleanup before React schedules any state update", () => {
+    const tabs = [terminal(1, 10), terminal(2, 20), editor(3, "b")];
+    const first = planSingleTabClose(tabs, 2, 2);
+    if (!first) throw new Error("Expected terminal close plan");
+    expect(first?.disposeLeafIds).toEqual([20]);
+    expect(first?.nextActiveId).toBe(1);
+    expect(first?.tabs.map((tab) => tab.id)).toEqual([1, 3]);
+    expect(planSingleTabClose(first.tabs, 2, 1)).toBeNull();
+    expect(planSingleTabClose(first.tabs, 1, 1)).toBeNull();
+    expect(tabs).toHaveLength(3);
+  });
+
+  it("preserves the active tab when closing a background editor", () => {
+    const result = planSingleTabClose(
+      [terminal(1, 10), editor(2), editor(3, "b")],
+      2,
+      3,
+    );
+    expect(result?.nextActiveId).toBe(3);
+    expect(result?.disposeLeafIds).toEqual([]);
+  });
+
+  it("returns every split leaf of the closed terminal without touching its neighbor", () => {
+    const split: Tab = {
+      ...terminal(2, 20),
+      kind: "terminal",
+      activeLeafId: 20,
+      paneTree: {
+        kind: "split",
+        id: 99,
+        dir: "row",
+        children: [
+          { kind: "leaf", id: 20 },
+          { kind: "leaf", id: 21 },
+        ],
+      },
+    };
+    expect(
+      planSingleTabClose([terminal(1, 10), split], 2, 1)?.disposeLeafIds,
+    ).toEqual([20, 21]);
+  });
+
   it("closes exactly the planned tabs and returns terminal leaves to dispose", () => {
     const tabs = [terminal(1, 10), terminal(2, 20), editor(3), editor(4)];
     const result = applyCloseTabsPlan(tabs, 1, {

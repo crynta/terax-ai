@@ -1,6 +1,7 @@
-import type {
-  PtyOutputReceiver,
-  PtyTransportStatus,
+import {
+  PARSE_BUDGET_MS,
+  type PtyOutputReceiver,
+  type PtyTransportStatus,
 } from "@/modules/terminal/lib/PtyOutputReceiver";
 import {
   decodeFrames,
@@ -375,6 +376,7 @@ export class PtyOutputHub {
       return;
     }
     this.stats.frames += frames.length;
+    const parseDeadline = performance.now() + PARSE_BUDGET_MS;
     for (const frame of frames) {
       // Frames can outlive a terminal that closed while they were in flight.
       const entry = this.entries.get(frame.id);
@@ -392,7 +394,7 @@ export class PtyOutputHub {
           }
           entry.received += frame.bytes.length;
           this.stats.dataBytes += frame.bytes.length;
-          entry.receiver.receive(frame.bytes);
+          entry.receiver.receive(frame.bytes, parseDeadline);
           break;
         case "exit":
           entry.dead = true;

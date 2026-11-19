@@ -16,4 +16,15 @@ export type PaletteItem = {
   run: () => void;
 };
 
-export type PaletteMode = "commands" | "history" | "content" | "help";
+/** What a query without a sigil means. */
+export type PaletteBase = "commands" | "files";
+export type PaletteMode = PaletteBase | "history" | "content" | "help";
+export type PaletteInitialMode = PaletteBase | "content";
+
+/** How to open a file picked in the palette. */
+export type OpenFileTarget = {
+  line?: number;
+  column?: number;
+  /** Cmd/Ctrl+Enter. Hosts without side-by-side editors treat it as a plain open. */
+  side?: boolean;
+};

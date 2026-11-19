@@ -1,0 +1,43 @@
+// Aliased in for `zod/v3` at build time. @ai-sdk/provider-utils imports only
+// this enum from it, to recognise zod 3 schemas, but the real entry carries all
+// of zod 3 (~14 kB gzipped) into the AI chunks. Terax builds its schemas with
+// zod 4. If provider-utils starts importing more, the build fails here.
+
+export const ZodFirstPartyTypeKind = {
+  ZodString: "ZodString",
+  ZodNumber: "ZodNumber",
+  ZodNaN: "ZodNaN",
+  ZodBigInt: "ZodBigInt",
+  ZodBoolean: "ZodBoolean",
+  ZodDate: "ZodDate",
+  ZodSymbol: "ZodSymbol",
+  ZodUndefined: "ZodUndefined",
+  ZodNull: "ZodNull",
+  ZodAny: "ZodAny",
+  ZodUnknown: "ZodUnknown",
+  ZodNever: "ZodNever",
+  ZodVoid: "ZodVoid",
+  ZodArray: "ZodArray",
+  ZodObject: "ZodObject",
+  ZodUnion: "ZodUnion",
+  ZodDiscriminatedUnion: "ZodDiscriminatedUnion",
+  ZodIntersection: "ZodIntersection",
+  ZodTuple: "ZodTuple",
+  ZodRecord: "ZodRecord",
+  ZodMap: "ZodMap",
+  ZodSet: "ZodSet",
+  ZodFunction: "ZodFunction",
+  ZodLazy: "ZodLazy",
+  ZodLiteral: "ZodLiteral",
+  ZodEnum: "ZodEnum",
+  ZodEffects: "ZodEffects",
+  ZodNativeEnum: "ZodNativeEnum",
+  ZodOptional: "ZodOptional",
+  ZodNullable: "ZodNullable",
+  ZodDefault: "ZodDefault",
+  ZodCatch: "ZodCatch",
+  ZodPromise: "ZodPromise",
+  ZodBranded: "ZodBranded",
+  ZodPipeline: "ZodPipeline",
+  ZodReadonly: "ZodReadonly",
+} as const;
