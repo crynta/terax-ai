@@ -290,7 +290,7 @@ export class GhosttyInputController {
     // Start each read immediately, but deliver its result in key press order.
     const read = readTerminalClipboard();
     const ready = Promise.all([this.pasteDelivery, read]);
-    this.pasteDelivery = ready.then(([, text]) => {
+    const delivery = ready.then(([, text]) => {
       if (this.pasteKeys.get(code) === waiting) this.pasteKeys.delete(code);
       if (this.disposed) return;
       if (text) {
@@ -314,6 +314,10 @@ export class GhosttyInputController {
         action: KeyAction.RELEASE,
       });
       if (release.byteLength > 0) this.options.onData(release);
+    });
+    this.pasteDelivery = delivery.catch((error: unknown) => {
+      if (this.pasteKeys.get(code) === waiting) this.pasteKeys.delete(code);
+      console.error("[terax] terminal paste failed:", error);
     });
   }
 
