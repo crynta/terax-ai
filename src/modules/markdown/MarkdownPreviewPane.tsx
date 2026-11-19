@@ -26,8 +26,19 @@ type Props = {
   workspaceRoot?: string | null;
   visible: boolean;
   onSetView: (mode: "rendered" | "raw") => void;
-  onOpenFile?: (path: string, pin?: boolean) => void;
+  onOpenFile?: (path: string, pin?: boolean, fragment?: string) => void;
+  scrollToFragment?: string | null;
+  onFragmentConsumed?: () => void;
 };
+
+function slugifyHeading(text: string): string {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^\p{L}\p{N}\s-]/gu, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-");
+}
 
 export function MarkdownPreviewPane({
   path,
@@ -35,6 +46,8 @@ export function MarkdownPreviewPane({
   visible,
   onSetView,
   onOpenFile,
+  scrollToFragment,
+  onFragmentConsumed,
 }: Props) {
   const status = useMarkdownDocument(path, visible);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -60,6 +73,26 @@ export function MarkdownPreviewPane({
       el.scrollTop = scrollTopRef.current;
     }
   }, [content]);
+
+  useLayoutEffect(() => {
+    if (!visible || !scrollToFragment || content === null) return;
+    const root = scrollRef.current;
+    if (!root) return;
+    const raw = scrollToFragment;
+    let decoded = raw;
+    try {
+      decoded = decodeURIComponent(raw);
+    } catch {}
+    const wanted = slugifyHeading(decoded);
+    const headings = Array.from(root.querySelectorAll("h1,h2,h3,h4,h5,h6"));
+    const target =
+      headings.find((el) => el.id === raw || el.id === decoded) ??
+      headings.find((el) => slugifyHeading(el.textContent ?? "") === wanted);
+    if (target) {
+      target.scrollIntoView({ block: "start" });
+      onFragmentConsumed?.();
+    }
+  }, [visible, scrollToFragment, content, path, onFragmentConsumed]);
 
   return (
     <div
@@ -116,9 +149,28 @@ export function buildPreviewRehypePlugins({
 }) {
   const d = defaultRehypePlugins;
   const hardenFn = (Array.isArray(d.harden) ? d.harden[0] : d.harden) as any;
+  const sanitizeEntry = Array.isArray(d.sanitize)
+    ? (d.sanitize as [any, any])
+    : [d.sanitize as any, undefined];
+  const [sanitizeFn, sanitizeSchema] = sanitizeEntry;
+  const sanitizeForPreview = [
+    sanitizeFn,
+    {
+      ...sanitizeSchema,
+      protocols: {
+        ...(sanitizeSchema?.protocols ?? {}),
+        src: [
+          ...(((sanitizeSchema?.protocols?.src as string[]) ?? ["http", "https"]).filter(
+            (p: string) => p !== "data",
+          )),
+          "data",
+        ],
+      },
+    },
+  ];
   return [
     d.raw,
-    d.sanitize,
+    sanitizeForPreview,
     rehypeLocalImages(
       path,
       (abs) => assetUrlFor(abs) ?? "data:,",
@@ -151,7 +203,7 @@ const MarkdownBody = memo(function MarkdownBody({
   path: string;
   boundary: string;
   content: string;
-  onOpenFile?: (path: string, pin?: boolean) => void;
+  onOpenFile?: (path: string, pin?: boolean, fragment?: string) => void;
 }) {
   const {
     urlFor: assetUrlFor,

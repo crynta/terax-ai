@@ -3,13 +3,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import React from "react";
 import { renderToString } from "react-dom/server";
+import { Streamdown } from "streamdown";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./useMarkdownDocument", () => ({
   useMarkdownDocument: () => ({
     kind: "ready",
     content:
-      "![pic](./img.png)\n\n[link](https://example.com/page)\n\n[doc](other.md)",
+      "![pic](./img.png)\n\n![embed](data:image/png;base64,AAAA)\n\n[link](https://example.com/page)\n\n[doc](other.md)",
   }),
 }));
 
@@ -71,104 +72,53 @@ describe("MarkdownPreviewPane Streamdown configuration", () => {
     );
 
     expect(html).toContain(
-      "src=\"asset://localhost/%2Fw%2Fdocs%2Fimg.png?token=grant123\"",
+      'src="asset://localhost/%2Fw%2Fdocs%2Fimg.png?token=grant123"',
     );
-    expect(html).not.toContain("data:,");
+    expect(html).toContain('src="data:image/png;base64,AAAA"');
+    expect(html).not.toContain("src=\"data:,\"");
     expect(html).not.toContain("[blocked]");
     expect(html).not.toContain("Blocked URL");
     expect(html).toContain("https://example.com/page");
     expect(html).toContain("./other.md");
   });
 
-  it("keeps links and granted image URLs against preview plugin options", () => {
+  it("renders links, granted local images, and embedded data images through preview plugins", () => {
     const basePath = "/w/docs/readme.md";
     const boundary = "/w";
-    const httpGranted =
-      "http://asset.localhost/%2Fw%2Fdocs%2Fimg.png?token=grant123";
-    const macGranted =
-      "asset://localhost/%2Fw%2Fdocs%2Fimg.png?token=grant123";
+    const markdown =
+      "![pic](./img.png)\n\n![embed](data:image/png;base64,AAAA)\n\n[link](https://example.com/page)\n\n[doc](other.md)";
+    const granted = "asset://localhost/%2Fw%2Fdocs%2Fimg.png?token=grant123";
 
-    const run = (plugins: unknown[]) => {
-      const tree = {
-        type: "root",
-        children: [
-          {
-            type: "element",
-            tagName: "p",
-            children: [
-              {
-                type: "element",
-                tagName: "a",
-                properties: { href: "https://example.com/page" },
-                children: [{ type: "text", value: "link" }],
-              },
-              {
-                type: "element",
-                tagName: "img",
-                properties: { src: "./img.png", alt: "pic" },
-                children: [],
-              },
-              {
-                type: "element",
-                tagName: "a",
-                properties: { href: "other.md" },
-                children: [{ type: "text", value: "doc" }],
-              },
-            ],
+    const renderWithPlugins = (rehypePlugins: unknown[], children = markdown) =>
+      renderToString(
+        React.createElement(Streamdown, {
+          mode: "static",
+          parseIncompleteMarkdown: false,
+          components: {
+            a: (props: any) => React.createElement("a", props, props.children),
+            img: (props: any) => React.createElement("img", props),
           },
-        ],
-      } as any;
+          rehypePlugins: rehypePlugins as any,
+          children,
+        }),
+      );
 
-      for (const plugin of plugins) {
-        if (typeof plugin === "function") {
-          (plugin as any)()(tree);
-        } else if (Array.isArray(plugin)) {
-          const [fn, opts] = plugin as [any, any];
-          fn(opts)(tree);
-        }
-      }
-
-      const paragraph = tree.children[0];
-      return {
-        href: paragraph.children[0].properties.href as string,
-        src: paragraph.children[1].properties.src as string,
-        relHref: paragraph.children[2].properties.href as string,
-        relTitle: paragraph.children[2].properties.title as string | undefined,
-      };
-    };
-
-    const previewPlugins = buildPreviewRehypePlugins({
+    const plugins = buildPreviewRehypePlugins({
       path: basePath,
       boundary,
-      assetUrlFor: () => httpGranted,
+      assetUrlFor: () => granted,
       token: "grant123",
     });
-    const hardenEntry = (previewPlugins as any[]).find(
-      (p) => Array.isArray(p) && p[1]?.allowedLinkPrefixes,
-    );
-    expect(hardenEntry?.[1]).toMatchObject({
-      allowedLinkPrefixes: ["*"],
-      allowedImagePrefixes: ["*"],
-      allowDataImages: true,
-      allowedProtocols: ["*"],
-    });
+    const html = renderWithPlugins(plugins);
 
-    const http = run(previewPlugins);
-    expect(http.href).toBe("https://example.com/page");
-    expect(http.src).toBe(httpGranted);
-    expect(http.relTitle).toBeUndefined();
-    expect(http.relHref).toBe("./other.md");
+    expect(html).toContain(`src="${granted}"`);
+    expect(html).toContain('src="data:image/png;base64,AAAA"');
+    expect(html).toContain('href="https://example.com/page"');
+    expect(html).toContain('href="./other.md"');
+    expect(html).not.toContain("[blocked]");
+    expect(html).not.toContain("Blocked URL");
 
-    const macPreviewPlugins = buildPreviewRehypePlugins({
-      path: basePath,
-      boundary,
-      assetUrlFor: () => macGranted,
-      token: "grant123",
-    });
-    const mac = run(macPreviewPlugins);
-    expect(mac.src).toBe(macGranted);
-
-    const macWithoutProtocols = (macPreviewPlugins as any[]).map((plugin) => {
+    const withoutProtocols = plugins.map((plugin: unknown) => {
       if (!Array.isArray(plugin)) return plugin;
       const [fn, opts] = plugin as [any, Record<string, unknown>];
       if (opts && "allowedProtocols" in opts) {
@@ -177,7 +127,7 @@ describe("MarkdownPreviewPane Streamdown configuration", () => {
       }
       return plugin;
     });
-    const macBlocked = run(macWithoutProtocols);
-    expect(macBlocked.src).not.toBe(macGranted);
+    const blocked = renderWithPlugins(withoutProtocols, "![pic](./img.png)");
+    expect(blocked).not.toContain(granted);
   });
 });

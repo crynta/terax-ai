@@ -6,7 +6,9 @@ type Props = {
   tabs: Tab[];
   activeId: number;
   onSetMarkdownView: (id: number, mode: "rendered" | "raw") => void;
-  onOpenFile?: (path: string, pin?: boolean) => void;
+  onOpenFile?: (path: string, pin?: boolean, fragment?: string) => void;
+  pendingFragment?: { path: string; fragment: string } | null;
+  onConsumePendingFragment?: (path: string, fragment: string) => void;
 };
 
 /** The folder the explorer shows: the active terminal's cwd, else any terminal's. */
@@ -22,6 +24,8 @@ export function MarkdownStack({
   activeId,
   onSetMarkdownView,
   onOpenFile,
+  pendingFragment,
+  onConsumePendingFragment,
 }: Props) {
   const markdowns = tabs.filter(
     (t): t is MarkdownTab => t.kind === "markdown" && !t.cold,
@@ -47,6 +51,14 @@ export function MarkdownStack({
               visible={visible}
               onSetView={(mode) => onSetMarkdownView(t.id, mode)}
               onOpenFile={onOpenFile}
+              scrollToFragment={
+                pendingFragment?.path === t.path ? pendingFragment.fragment : null
+              }
+              onFragmentConsumed={() => {
+                if (pendingFragment?.path === t.path) {
+                  onConsumePendingFragment?.(t.path, pendingFragment.fragment);
+                }
+              }}
             />
           </div>
         );

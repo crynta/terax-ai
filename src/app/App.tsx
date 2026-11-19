@@ -692,12 +692,16 @@ export default function App() {
   );
 
   const handleOpenFile = useCallback(
-    (path: string, pin?: boolean) => {
+    (path: string, pin?: boolean, fragment?: string) => {
       // Markdown opens in its rendered view by default; a per-tab toggle flips
       // it to the raw editor. Other files default to preview (pin=false);
       // explicit actions like context-menu "Open" pass pin=true to persist.
-      if (isMarkdownPath(path)) newMarkdownTab(path);
-      else openFileTab(path, pin ?? false);
+      if (isMarkdownPath(path)) {
+        newMarkdownTab(path);
+        if (fragment) setPendingMarkdownFragment({ path, fragment });
+      } else {
+        openFileTab(path, pin ?? false);
+      }
     },
     [openFileTab, newMarkdownTab],
   );
@@ -1331,6 +1335,18 @@ export default function App() {
   const pendingEditorNavigation = useRef<
     Map<number, { line?: number; focus: boolean }>
   >(new Map());
+  const [pendingMarkdownFragment, setPendingMarkdownFragment] = useState<{
+    path: string;
+    fragment: string;
+  } | null>(null);
+  const consumePendingMarkdownFragment = useCallback(
+    (path: string, fragment: string) => {
+      setPendingMarkdownFragment((curr) =>
+        curr && curr.path === path && curr.fragment === fragment ? null : curr,
+      );
+    },
+    [],
+  );
   const openContentHit = useCallback(
     (path: string, line: number) => {
       const id = openFileTab(path, true);
@@ -1571,6 +1587,8 @@ export default function App() {
                         onGitHistorySearchHandle={setGitHistoryHandle}
                         onSetMarkdownView={setMarkdownView}
                         onOpenFile={handleOpenFile}
+                        pendingMarkdownFragment={pendingMarkdownFragment}
+                        onConsumePendingMarkdownFragment={consumePendingMarkdownFragment}
                       />
                     </div>
 

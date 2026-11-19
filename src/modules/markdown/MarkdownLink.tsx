@@ -2,23 +2,39 @@ import { isExternalUrl, openExternalUrl } from "@/lib/external-link";
 import type { ComponentProps, MouseEventHandler } from "react";
 import { resolveRelativeAsset } from "./lib/assetPath";
 
+export type MarkdownDocTarget = { path: string; fragment?: string };
+
 export type MarkdownLinkProps = ComponentProps<"a"> & {
   node?: unknown;
   onSettled?: () => void;
   documentPath?: string;
-  onOpenFile?: (path: string, pin?: boolean) => void;
+  onOpenFile?: (path: string, pin?: boolean, fragment?: string) => void;
   "data-doc-href"?: string;
   dataDocHref?: string;
 };
+
+export function resolveMarkdownDocTarget(
+  documentPath: string | undefined,
+  href: string | undefined,
+  dataDocHref?: string,
+): MarkdownDocTarget | null {
+  const docHref = dataDocHref ?? href;
+  if (!documentPath || !docHref) return null;
+  const hashIndex = docHref.indexOf("#");
+  const withoutHash = hashIndex === -1 ? docHref : docHref.slice(0, hashIndex);
+  const rawFragment = hashIndex === -1 ? undefined : docHref.slice(hashIndex + 1);
+  const fragment = rawFragment ? rawFragment : undefined;
+  const path = resolveRelativeAsset(documentPath, withoutHash);
+  if (!path) return null;
+  return fragment ? { path, fragment } : { path };
+}
 
 export function resolveMarkdownDocPath(
   documentPath: string | undefined,
   href: string | undefined,
   dataDocHref?: string,
 ): string | null {
-  const docHref = dataDocHref ?? href;
-  if (!documentPath || !docHref) return null;
-  return resolveRelativeAsset(documentPath, docHref);
+  return resolveMarkdownDocTarget(documentPath, href, dataDocHref)?.path ?? null;
 }
 
 export function MarkdownLink({
@@ -43,14 +59,14 @@ export function MarkdownLink({
       return;
     }
 
-    const resolved = resolveMarkdownDocPath(
+    const resolved = resolveMarkdownDocTarget(
       documentPath,
       href,
       dataDocHrefAttr ?? dataDocHref,
     );
     if (resolved && onOpenFile) {
       event.preventDefault();
-      onOpenFile(resolved, true);
+      onOpenFile(resolved.path, true, resolved.fragment);
       onSettled?.();
     }
   };

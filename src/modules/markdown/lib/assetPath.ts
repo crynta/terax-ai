@@ -163,6 +163,7 @@ function isBareRelativeHref(href: string): boolean {
     !href ||
     href.startsWith("#") ||
     href.startsWith("/") ||
+    href.startsWith("\\") ||
     href.startsWith("./") ||
     href.startsWith("../") ||
     href.startsWith("//")
@@ -184,10 +185,12 @@ export function rehypeAllowBareRelativeLinks(basePath: string) {
       const href = node.properties?.href;
       if (typeof href === "string") {
         const trimmed = href.trim();
-        const normalized = isBareRelativeHref(trimmed)
-          ? `./${trimmed}`
-          : trimmed;
-        if (isBareRelativeHref(trimmed) && node.properties) {
+        const canPrefixRelative =
+          isBareRelativeHref(trimmed) &&
+          !trimmed.startsWith("/") &&
+          !trimmed.startsWith("\\");
+        const normalized = canPrefixRelative ? `./${trimmed}` : trimmed;
+        if (canPrefixRelative && node.properties) {
           node.properties.href = normalized;
         }
         if (
