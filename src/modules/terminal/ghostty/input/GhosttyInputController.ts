@@ -20,7 +20,7 @@ import { encodeTerminalPaste } from "./terminalInputEncoding";
 import {
   cursorKeySequence,
   DEFAULT_SCROLL_SPEED,
-  MAX_WHEEL_REPORTS_PER_EVENT,
+  MAX_ALTERNATE_SCROLL_KEYS_PER_EVENT,
   WheelAccumulator,
   wheelLines,
   wheelRoute,
@@ -473,19 +473,20 @@ export class GhosttyInputController {
     const count = this.wheel.push(
       route,
       wheelUnits(route, lines),
-      MAX_WHEEL_REPORTS_PER_EVENT,
+      // A TUI can scroll several rows per mouse notch. Never replay a burst
+      // of notches for a single fast or inertial wheel event.
+      route === "report" ? 1 : MAX_ALTERNATE_SCROLL_KEYS_PER_EVENT,
     );
     if (count === 0) return;
-    const times = Math.abs(count);
     if (route === "arrows") {
       const sequence = cursorKeySequence(
         count < 0 ? "up" : "down",
         model.mode(MODE_CURSOR_KEYS),
       );
-      this.emitText(sequence.repeat(times), "keydown", false);
+      this.emitText(sequence.repeat(Math.abs(count)), "keydown", false);
       return;
     }
-    this.mouse?.wheel(event, count < 0, times);
+    this.mouse?.wheel(event, count < 0);
   };
 
   private emitText(
