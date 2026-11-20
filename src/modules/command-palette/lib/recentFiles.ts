@@ -1,4 +1,4 @@
-// Files opened through the palette, newest first, kept per project root.
+// Files opened through the palette, newest first, kept per workspace and root.
 // localStorage keeps it off the preferences store and its IPC broadcast path.
 
 const KEY = "terax-palette-recent-files";
@@ -56,13 +56,22 @@ function read(): RecentStore {
   }
 }
 
-export function recentFiles(root: string): string[] {
-  return read()[root] ?? [];
+function recentKey(root: string, workspace: string): string {
+  return workspace === "local" ? root : `${workspace}\0${root}`;
 }
 
-export function recordRecentFile(root: string, path: string): void {
+export function recentFiles(root: string, workspace = "local"): string[] {
+  return read()[recentKey(root, workspace)] ?? [];
+}
+
+export function recordRecentFile(
+  root: string,
+  path: string,
+  workspace = "local",
+): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(recordInStore(read(), root, path)));
+    const key = recentKey(root, workspace);
+    localStorage.setItem(KEY, JSON.stringify(recordInStore(read(), key, path)));
   } catch {
     /* ignore */
   }
