@@ -1,21 +1,23 @@
 import { MarkdownCode } from "@/components/ai-elements/markdown-code";
-import { checkReadable } from "@/modules/ai/lib/security";
-import { cn } from "@/lib/utils";
 import { useAssetGrant } from "@/lib/useAssetGrant";
+import { cn } from "@/lib/utils";
+import { checkReadable } from "@/modules/ai/lib/security";
+import { memo, useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import {
-  memo,
-  useCallback,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-} from "react";
-import { defaultRehypePlugins, Streamdown } from "streamdown";
+  defaultRehypePlugins,
+  Streamdown,
+  type StreamdownProps,
+} from "streamdown";
 import {
   previewBoundary,
   rehypeAllowBareRelativeLinks,
   rehypeLocalImages,
   rehypeRestoreDocHrefs,
 } from "./lib/assetPath";
+import {
+  findMarkdownFragment,
+  rehypeHeadingAnchors,
+} from "./lib/headingAnchors";
 import { MarkdownLink } from "./MarkdownLink";
 import { MarkdownViewToggle } from "./MarkdownViewToggle";
 import { useMarkdownDocument } from "./useMarkdownDocument";
@@ -30,15 +32,6 @@ type Props = {
   scrollToFragment?: string | null;
   onFragmentConsumed?: () => void;
 };
-
-function slugifyHeading(text: string): string {
-  return text
-    .toLowerCase()
-    .trim()
-    .replace(/[^\p{L}\p{N}\s-]/gu, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-");
-}
 
 export function MarkdownPreviewPane({
   path,
@@ -78,21 +71,11 @@ export function MarkdownPreviewPane({
     if (!visible || !scrollToFragment || content === null) return;
     const root = scrollRef.current;
     if (!root) return;
-    const raw = scrollToFragment;
-    let decoded = raw;
-    try {
-      decoded = decodeURIComponent(raw);
-    } catch {}
-    const wanted = slugifyHeading(decoded);
-    const headings = Array.from(root.querySelectorAll("h1,h2,h3,h4,h5,h6"));
-    const target =
-      headings.find((el) => el.id === raw || el.id === decoded) ??
-      headings.find((el) => slugifyHeading(el.textContent ?? "") === wanted);
-    if (target) {
-      target.scrollIntoView({ block: "start" });
-      onFragmentConsumed?.();
-    }
-  }, [visible, scrollToFragment, content, path, onFragmentConsumed]);
+    findMarkdownFragment(root, scrollToFragment)?.scrollIntoView({
+      block: "start",
+    });
+    onFragmentConsumed?.();
+  }, [visible, scrollToFragment, content, onFragmentConsumed]);
 
   return (
     <div
@@ -140,58 +123,40 @@ export function buildPreviewRehypePlugins({
   path,
   boundary,
   assetUrlFor,
-  token,
 }: {
   path: string;
   boundary: string;
   assetUrlFor: (abs: string) => string | undefined;
-  token?: string | null;
 }) {
   const d = defaultRehypePlugins;
-  const hardenFn = (Array.isArray(d.harden) ? d.harden[0] : d.harden) as any;
-  const sanitizeEntry = Array.isArray(d.sanitize)
-    ? (d.sanitize as [any, any])
-    : [d.sanitize as any, undefined];
-  const [sanitizeFn, sanitizeSchema] = sanitizeEntry;
-  const sanitizeForPreview = [
-    sanitizeFn,
-    {
-      ...sanitizeSchema,
-      protocols: {
-        ...(sanitizeSchema?.protocols ?? {}),
-        src: [
-          ...(((sanitizeSchema?.protocols?.src as string[]) ?? ["http", "https"]).filter(
-            (p: string) => p !== "data",
-          )),
-          "data",
-        ],
-      },
-    },
-  ];
+  const sanitize = d.sanitize;
+  const sanitizeForPreview = Array.isArray(sanitize)
+    ? ([
+        sanitize[0],
+        {
+          ...sanitize[1],
+          protocols: {
+            ...sanitize[1]?.protocols,
+            src: [
+              ...(sanitize[1]?.protocols?.src ?? ["http", "https"]),
+              "data",
+            ],
+          },
+        },
+      ] satisfies typeof sanitize)
+    : sanitize;
   return [
     d.raw,
     sanitizeForPreview,
-    rehypeLocalImages(
-      path,
-      (abs) => assetUrlFor(abs) ?? "data:,",
-      {
-        boundary,
-        isReadable: (abs) => checkReadable(abs).ok,
-      },
-      `${path}\0${boundary}\0${token ?? ""}`,
-    ),
+    rehypeHeadingAnchors,
+    rehypeLocalImages(path, (abs) => assetUrlFor(abs) ?? "data:,", {
+      boundary,
+      isReadable: (abs) => checkReadable(abs).ok,
+    }),
     rehypeAllowBareRelativeLinks(path),
-    [
-      hardenFn,
-      {
-        allowedLinkPrefixes: ["*"],
-        allowedImagePrefixes: ["*"],
-        allowDataImages: true,
-        allowedProtocols: ["*"],
-      },
-    ],
+    d.harden,
     rehypeRestoreDocHrefs(),
-  ] as any;
+  ] satisfies NonNullable<StreamdownProps["rehypePlugins"]>;
 }
 
 const MarkdownBody = memo(function MarkdownBody({
@@ -209,43 +174,46 @@ const MarkdownBody = memo(function MarkdownBody({
     urlFor: assetUrlFor,
     error: assetError,
     retry,
-    token,
   } = useAssetGrant(boundary);
-  const rehypePlugins = useMemo(
-    () => buildPreviewRehypePlugins({ path, boundary, assetUrlFor, token }),
-    [path, boundary, assetUrlFor, token],
+  // Streamdown's comparator uses plugins identity but skips rehypePlugins.
+  const { rehypePlugins, plugins } = useMemo(
+    () => ({
+      rehypePlugins: buildPreviewRehypePlugins({ path, boundary, assetUrlFor }),
+      plugins: {},
+    }),
+    [path, boundary, assetUrlFor],
   );
   const components = useMemo(
     () => ({
-      a: (props: any) => (
-        <MarkdownLink
-          {...props}
-          documentPath={path}
-          onOpenFile={onOpenFile}
-        />
+      a: (props: Parameters<typeof MarkdownLink>[0]) => (
+        <MarkdownLink {...props} documentPath={path} onOpenFile={onOpenFile} />
       ),
       code: MarkdownCode,
     }),
     [path, onOpenFile],
   );
-  // Streamdown memoizes on plugins but not rehypePlugins; keep key stable on
-  // grant changes to preserve focus while forcing a render refresh.
-  const renderNonce = useMemo(() => ({}), [rehypePlugins]);
 
   return (
     <>
-    {assetError && <div className="mb-3 text-xs text-muted-foreground"><p role="alert">Local images unavailable: {assetError}</p><button type="button" className="underline" onClick={retry}>Retry images</button></div>}
-    <Streamdown
-      key={`${path}\0${boundary}`}
-      className="select-text [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
-      components={components}
-      rehypePlugins={rehypePlugins}
-      plugins={renderNonce as any}
-      mode="static"
-      parseIncompleteMarkdown={false}
-    >
-      {content}
-    </Streamdown>
+      {assetError && (
+        <div className="mb-3 text-xs text-muted-foreground">
+          <p role="alert">Local images unavailable: {assetError}</p>
+          <button type="button" className="underline" onClick={retry}>
+            Retry images
+          </button>
+        </div>
+      )}
+      <Streamdown
+        key={`${path}\0${boundary}`}
+        className="select-text [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+        components={components}
+        rehypePlugins={rehypePlugins}
+        plugins={plugins}
+        mode="static"
+        parseIncompleteMarkdown={false}
+      >
+        {content}
+      </Streamdown>
     </>
   );
 });

@@ -50,6 +50,15 @@ const LOCAL_IMAGE_EXTENSIONS: ReadonlySet<string> = new Set([
 
 const ASSET_URL = /^(?:asset:|(?:https?:)?\/\/asset\.localhost)/i;
 
+function protocolRelativeWebUrl(href: string): string | undefined {
+  if (!href.startsWith("//")) return;
+  try {
+    return new URL(`https:${href}`).href;
+  } catch {
+    return undefined;
+  }
+}
+
 function toPosix(path: string): string {
   return path.replace(/\\/g, "/");
 }
@@ -109,17 +118,20 @@ export function isAllowedLocalImage(
   );
 }
 
-type HastNode = {
+export type HastNode = {
   type?: string;
   tagName?: string;
+  value?: string;
   properties?: Record<string, unknown>;
   children?: HastNode[];
 };
 
+let nextImageProcessorId = 0;
+
 /**
  * Rehype plugin that rewrites relative `<img src>` to `toUrl(absolutePath)` when
- * `policy` allows it. A relative path it refuses stays as written (it will not
- * load), and a document-supplied asset-protocol URL is dropped outright.
+ * `policy` allows it. Document-supplied asset URLs are dropped, and remote
+ * images become links for explicit browser opening.
  * It has to run after sanitize (which strips the asset scheme) and before
  * harden (which would block a relative URL it cannot resolve).
  */
@@ -127,36 +139,55 @@ export function rehypeLocalImages(
   basePath: string,
   toUrl: (absolutePath: string) => string,
   policy: LocalImagePolicy,
-  cacheKey?: string,
 ) {
-  const rewrite = (node: HastNode): void => {
+  const rewrite = (node: HastNode, insideLink = false): void => {
     if (node.type === "element" && node.tagName === "img") {
       const src = node.properties?.src;
       if (typeof src === "string" && node.properties) {
-        const abs = resolveRelativeAsset(basePath, src);
+        const trimmed = src.trim();
+        const abs = resolveRelativeAsset(basePath, trimmed);
         if (abs) {
           if (isAllowedLocalImage(abs, policy)) {
             node.properties.src = toUrl(abs);
           }
-        } else if (ASSET_URL.test(src.trim())) {
+        } else if (ASSET_URL.test(trimmed)) {
           delete node.properties.src;
+        } else {
+          const remote = /^https?:\/\//i.test(trimmed)
+            ? trimmed
+            : protocolRelativeWebUrl(trimmed);
+          if (remote) {
+            const alt =
+              typeof node.properties.alt === "string"
+                ? node.properties.alt
+                : "";
+            node.tagName = insideLink ? "span" : "a";
+            node.properties = insideLink ? {} : { href: remote };
+            const label = alt
+              ? `Open image in browser: ${alt}`
+              : "Open image in browser";
+            node.children = [
+              {
+                type: "text",
+                value: insideLink ? alt || "Remote image" : label,
+              },
+            ];
+          }
         }
       }
     }
-    node.children?.forEach(rewrite);
+    const childInsideLink = insideLink || node.tagName === "a";
+    node.children?.forEach((child) => {
+      rewrite(child, childInsideLink);
+    });
   };
   const attacher = () => (tree: unknown) => rewrite(tree as HastNode);
-  const raw = cacheKey ?? `${basePath}\0${policy.boundary}`;
-  const bytes = new TextEncoder().encode(raw);
-  let hex = "";
-  for (const b of bytes) hex += b.toString(16).padStart(2, "0");
+  // Streamdown keys processors by plugin name. This one closes over a grant.
   Object.defineProperty(attacher, "name", {
-    value: `rehypeLocalImages_${hex}`,
+    value: `rehypeLocalImages_${nextImageProcessorId++}`,
   });
   return attacher;
 }
-
-const SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
 
 function isBareRelativeHref(href: string): boolean {
   if (
@@ -165,12 +196,11 @@ function isBareRelativeHref(href: string): boolean {
     href.startsWith("/") ||
     href.startsWith("\\") ||
     href.startsWith("./") ||
-    href.startsWith("../") ||
-    href.startsWith("//")
+    href.startsWith("../")
   ) {
     return false;
   }
-  return !SCHEME_RE.test(href);
+  return !URL_SCHEME.test(href);
 }
 
 /**
@@ -185,19 +215,14 @@ export function rehypeAllowBareRelativeLinks(basePath: string) {
       const href = node.properties?.href;
       if (typeof href === "string") {
         const trimmed = href.trim();
-        const canPrefixRelative =
-          isBareRelativeHref(trimmed) &&
-          !trimmed.startsWith("/") &&
-          !trimmed.startsWith("\\");
-        const normalized = canPrefixRelative ? `./${trimmed}` : trimmed;
-        if (canPrefixRelative && node.properties) {
+        const normalized =
+          protocolRelativeWebUrl(trimmed) ??
+          (isBareRelativeHref(trimmed) ? `./${trimmed}` : trimmed);
+        if (node.properties) {
           node.properties.href = normalized;
-        }
-        if (
-          node.properties &&
-          resolveRelativeAsset(basePath, normalized) !== null
-        ) {
-          node.properties["data-doc-href"] = normalized;
+          if (resolveRelativeAsset(basePath, normalized) !== null) {
+            node.properties["data-doc-href"] = normalized;
+          }
         }
       }
     }
