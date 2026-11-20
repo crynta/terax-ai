@@ -32,6 +32,9 @@ type Props = {
   onOpenCommitFile: GitHistoryStackProps["onOpenCommitFile"];
   onGitHistorySearchHandle: GitHistoryStackProps["onSearchHandle"];
   onSetMarkdownView: EditorStackProps["onSetMarkdownView"];
+  onOpenFile: (path: string, pin?: boolean, fragment?: string) => void;
+  pendingMarkdownFragment?: { path: string; fragment: string } | null;
+  onConsumePendingMarkdownFragment?: (path: string, fragment: string) => void;
 };
 
 const LAYER = "absolute inset-0";
@@ -63,6 +66,9 @@ export function WorkspaceSurface({
   onOpenCommitFile,
   onGitHistorySearchHandle,
   onSetMarkdownView,
+  onOpenFile,
+  pendingMarkdownFragment,
+  onConsumePendingMarkdownFragment,
 }: Props) {
   const kind = activeTab?.kind;
   const isTerminalTab = kind === "terminal";
@@ -125,6 +131,9 @@ export function WorkspaceSurface({
           tabs={tabs}
           activeId={activeId}
           onSetMarkdownView={onSetMarkdownView}
+          onOpenFile={onOpenFile}
+          pendingFragment={pendingMarkdownFragment}
+          onConsumePendingFragment={onConsumePendingMarkdownFragment}
         />
       </div>
       <div
