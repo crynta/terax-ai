@@ -18,6 +18,7 @@ import {
   excludeNestedSources,
   type FsMoveResult,
 } from "./batchMove";
+import { parentDir, pathBasename } from "./pathParent";
 import { listenFsChanged, watchAdd, watchRemove } from "./watch";
 import { createWatchRegistry, planVisibilityEdge } from "./watchRegistry";
 
@@ -50,9 +51,26 @@ export function joinPath(parent: string, name: string): string {
 }
 
 function dirname(path: string): string {
-  const i = path.lastIndexOf("/");
-  if (i <= 0) return "/";
-  return path.slice(0, i);
+  return parentDir(path, "/");
+}
+
+export function removedChildDirectories(
+  parent: string,
+  cachedPaths: readonly string[],
+  liveDirs: ReadonlySet<string>,
+): string[] {
+  return cachedPaths.filter(
+    (path) => path !== parent && dirname(path) === parent && !liveDirs.has(path),
+  );
+}
+
+export function planExplorerRename(path: string, newName: string) {
+  const name = newName.trim();
+  const oldName = pathBasename(path);
+  if (!name || name === oldName) return null;
+  const parent = dirname(path);
+  const prefix = path.slice(0, path.length - oldName.length);
+  return { parent, to: prefix ? `${prefix}${name}` : joinPath(parent, name) };
 }
 
 const EXPANSION_CACHE_LIMIT = 8;
@@ -219,11 +237,11 @@ export function useFileTree(rootPath: string | null, options?: Options) {
             .filter((e) => e.kind === "dir")
             .map((e) => joinPath(path, e.name)),
         );
-        const removedRoots: string[] = [];
-        for (const key of Object.keys(nodesRef.current)) {
-          if (dirname(key) === path && !liveDirs.has(key))
-            removedRoots.push(key);
-        }
+        const removedRoots = removedChildDirectories(
+          path,
+          Object.keys(nodesRef.current),
+          liveDirs,
+        );
         const dead = new Set<string>();
         if (removedRoots.length > 0) {
           const candidates = new Set<string>([
@@ -470,14 +488,12 @@ export function useFileTree(rootPath: string | null, options?: Options) {
   const commitRename = useCallback(
     async (newName: string) => {
       if (!renaming) return;
-      const trimmed = newName.trim();
-      const parent = dirname(renaming);
-      const oldName = renaming.slice(parent === "/" ? 1 : parent.length + 1);
-      if (!trimmed || trimmed === oldName) {
+      const plan = planExplorerRename(renaming, newName);
+      if (!plan) {
         setRenaming(null);
         return;
       }
-      const to = joinPath(parent, trimmed);
+      const { parent, to } = plan;
       try {
         await invoke("fs_rename", {
           from: renaming,
