@@ -79,7 +79,7 @@ function harness(flags: number) {
     );
   const sent = () =>
     onData.mock.calls.map(([bytes]) => new TextDecoder().decode(bytes));
-  return { controller, input, key, sent };
+  return { controller, input, key, sent, onData };
 }
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -132,6 +132,55 @@ describe("Ctrl+V forwarded as a key when the clipboard has no text", () => {
     await settle();
     expect(sent()).toEqual([PRESS, RELEASE]);
     controller.dispose();
+  });
+
+  it("delivers separate pastes in key order when clipboard reads finish out of order", async () => {
+    const { controller, key, sent } = harness(0);
+    try {
+      key("keydown");
+      const firstRead = clipboard.resolve;
+      key("keyup");
+      key("keydown");
+      const secondRead = clipboard.resolve;
+      key("keyup");
+
+      secondRead("second");
+      await settle();
+      expect(sent()).toEqual([]);
+
+      firstRead("first");
+      await settle();
+      expect(sent()).toEqual(["first", "second"]);
+    } finally {
+      controller.dispose();
+    }
+  });
+
+  it("delivers the next paste when an earlier delivery throws", async () => {
+    const { controller, key, onData, sent } = harness(0);
+    const error = new Error("terminal write failed");
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    onData.mockImplementationOnce(() => {
+      throw error;
+    });
+    try {
+      key("keydown");
+      const firstRead = clipboard.resolve;
+      key("keyup");
+      key("keydown");
+      key("keyup");
+      clipboard.resolve("second");
+      firstRead("first");
+      await settle();
+
+      expect(sent()).toEqual(["first", "second"]);
+      expect(log).toHaveBeenCalledExactlyOnceWith(
+        "[terax] terminal paste failed:",
+        error,
+      );
+    } finally {
+      controller.dispose();
+    }
   });
 
   it("releases on the key up when it comes after the read", async () => {
