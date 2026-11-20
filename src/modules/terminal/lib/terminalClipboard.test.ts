@@ -19,6 +19,49 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("terminal clipboard", () => {
+  it("serializes native copies and reads after the latest preceding copy", async () => {
+    let finishFirst = () => {};
+    let contents = "old";
+    native.writeText.mockImplementationOnce(
+      (text) =>
+        new Promise<void>((resolve) => {
+          finishFirst = () => {
+            contents = text;
+            resolve();
+          };
+        }),
+    );
+    native.writeText.mockImplementation(async (text) => {
+      contents = text;
+    });
+    native.readText.mockImplementation(async () => contents);
+    const first = writeTerminalClipboard("first");
+    await vi.waitFor(() => expect(native.writeText).toHaveBeenCalledOnce());
+    const second = writeTerminalClipboard("second");
+    const paste = readTerminalClipboard();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const writesBeforeFirstFinished = native.writeText.mock.calls.length;
+    const readsBeforeFirstFinished = native.readText.mock.calls.length;
+    finishFirst();
+    await Promise.all([first, second]);
+    await expect(paste).resolves.toBe("second");
+    expect(writesBeforeFirstFinished).toBe(1);
+    expect(readsBeforeFirstFinished).toBe(0);
+    expect(native.writeText.mock.calls).toEqual([["first"], ["second"]]);
+  });
+
+  it("does not read old text after a pending native write fails and can retry", async () => {
+    native.writeText.mockRejectedValueOnce(new Error("clipboard busy"));
+    const copy = writeTerminalClipboard("failed");
+    const paste = readTerminalClipboard();
+    await expect(copy).rejects.toThrow("clipboard busy");
+    await expect(paste).resolves.toBe("");
+    expect(native.readText).not.toHaveBeenCalled();
+    native.writeText.mockResolvedValueOnce(undefined);
+    native.readText.mockResolvedValueOnce("retry");
+    await writeTerminalClipboard("retry");
+    await expect(readTerminalClipboard()).resolves.toBe("retry");
+  });
   it.each(["Macintosh", "Windows NT", "X11; Linux"])(
     "uses native copy and paste in the %s application without WebKit prompts",
     async (userAgent) => {
