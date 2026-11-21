@@ -12,6 +12,7 @@ import {
   Grok02Icon,
   MistralIcon,
   PlugIcon,
+  Route01Icon,
   ServerStack01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -26,6 +27,7 @@ const ICON_BY_PROVIDER = {
   deepseek: DeepseekIcon,
   mistral: MistralIcon,
   openrouter: GlobeIcon,
+  requesty: Route01Icon,
   "openai-compatible": PlugIcon,
   lmstudio: ComputerIcon,
   mlx: AppleIcon,
