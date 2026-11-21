@@ -13,6 +13,7 @@ import { LspStatusPill } from "@/modules/lsp";
 import type { WorkspaceEnv } from "@/modules/workspace";
 import { IncognitoIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { CursorPositionBadge } from "./CursorPositionBadge";
 import { CwdBreadcrumb } from "./CwdBreadcrumb";
 import { DiagnosticsBadge } from "./DiagnosticsBadge";
 import { WorkspaceEnvSelector } from "./WorkspaceEnvSelector";
@@ -20,6 +21,8 @@ import { WorkspaceEnvSelector } from "./WorkspaceEnvSelector";
 type Props = {
   cwd: string | null;
   filePath?: string | null;
+  /** The active editor tab's file; null on diff tabs, which share filePath. */
+  editorPath?: string | null;
   home: string | null;
   onCd: (path: string) => void;
   onWorkspaceChange: (env: WorkspaceEnv) => void;
@@ -34,6 +37,7 @@ type Props = {
 export function StatusBar({
   cwd,
   filePath,
+  editorPath,
   home,
   onCd,
   onWorkspaceChange,
@@ -51,6 +55,7 @@ export function StatusBar({
         <CwdBreadcrumb cwd={cwd} filePath={filePath} home={home} onCd={onCd} />
         <LspStatusPill filePath={filePath ?? null} />
         <DiagnosticsBadge filePath={filePath ?? null} />
+        <CursorPositionBadge filePath={editorPath ?? null} />
         {privateActive ? (
           <Tooltip>
             <TooltipTrigger asChild>

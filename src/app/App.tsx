@@ -1616,6 +1616,7 @@ export default function App() {
             <StatusBar
               cwd={activeCwd}
               filePath={activeFilePath}
+              editorPath={activeTab?.kind === "editor" ? activeTab.path : null}
               home={home}
               onCd={sendCd}
               onWorkspaceChange={handleWorkspaceChange}

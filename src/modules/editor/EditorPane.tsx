@@ -34,6 +34,7 @@ import {
   inlineCompletion,
   triggerInlineCompletion,
 } from "./lib/autocomplete/inlineExtension";
+import { cursorReporter } from "./lib/cursorReporter";
 import { diagnosticsReporter } from "./lib/diagnosticsReporter";
 import { useDiagnosticsStore } from "./lib/diagnosticsStore";
 import {
@@ -345,6 +346,7 @@ export const EditorPane = memo(
         languageCompartment.of([]),
         lspCompartment.of([]),
         diagnosticsReporter(() => pathRef.current),
+        cursorReporter(() => pathRef.current),
         // Before inlineCompletion so an open popup wins Tab over the ghost.
         Prec.highest(keymap.of([{ key: "Tab", run: acceptCompletion }])),
         inlineCompletion({
