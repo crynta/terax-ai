@@ -66,15 +66,24 @@ if (release) cargoArgs.push("--release");
 
 run("cargo", cargoArgs);
 
+// Cargo's target dir can be moved by CARGO_TARGET_DIR or build.target-dir.
+const { target_directory: targetDir } = JSON.parse(
+  run(
+    "cargo",
+    [
+      "metadata",
+      "--format-version",
+      "1",
+      "--no-deps",
+      "--manifest-path",
+      join(tauriDir, "Cargo.toml"),
+    ],
+    { capture: true },
+  ),
+);
 const extension = target.includes("windows") ? ".exe" : "";
 const profile = release ? "release" : "debug";
-const source = join(
-  tauriDir,
-  "target",
-  target,
-  profile,
-  `terax-cli${extension}`,
-);
+const source = join(targetDir, target, profile, `terax-cli${extension}`);
 const destination = join(
   tauriDir,
   "binaries",
