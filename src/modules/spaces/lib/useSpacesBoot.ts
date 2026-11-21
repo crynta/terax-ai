@@ -10,6 +10,28 @@ import { freshTerminalTab, hydrateTabs } from "./serialize";
 import { loadAll, type SpaceMeta, saveActiveId, saveSpacesList } from "./store";
 import { useSpaces } from "./useSpaces";
 
+const WORKSPACE_RESTORE_TIMEOUT_MS = 5000;
+
+export function withBootTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  onTimeout: () => T,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => resolve(onTimeout()), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 type Params = {
   ready: boolean;
   launchCwd: string | null;
@@ -94,7 +116,16 @@ export function useSpacesBoot({
         // Apply the space's env+home before the fresh-tab fallback and spawns
         // below; env is set synchronously so cwd resolution picks WSL vs local.
         const env = activeSpaceEnv(spaces, active);
-        const restoredHome = await adoptWorkspaceEnv(env);
+        const restoredHome = await withBootTimeout(
+          adoptWorkspaceEnv(env),
+          WORKSPACE_RESTORE_TIMEOUT_MS,
+          () => {
+            console.warn(
+              "[terax] adoptWorkspaceEnv timed out; continuing boot",
+            );
+            return null;
+          },
+        );
 
         // Active space must never be empty, else its tab list shows nothing.
         if (!restored.some((t) => t.spaceId === active)) {
@@ -103,7 +134,18 @@ export function useSpacesBoot({
         }
 
         await Promise.allSettled(
-          uniqueCwds(restored).map((cwd) => native.workspaceAuthorize(cwd)),
+          uniqueCwds(restored).map((cwd) =>
+            withBootTimeout(
+              native.workspaceAuthorize(cwd),
+              WORKSPACE_RESTORE_TIMEOUT_MS,
+              () => {
+                console.warn(
+                  `[terax] workspaceAuthorize timed out for ${cwd}; continuing boot`,
+                );
+                return cwd;
+              },
+            ),
+          ),
         );
 
         const initialActiveIndex: Record<string, number> = {};
@@ -117,6 +159,19 @@ export function useSpacesBoot({
         replaceTabs(restored, activeTab.id);
       } catch (e) {
         console.error("[terax] spaces boot failed:", e);
+        if (!useSpaces.getState().hydrated) {
+          const now = Date.now();
+          const fallbackMeta: SpaceMeta = {
+            id: DEFAULT_SPACE_ID,
+            name: "Default",
+            root: launchCwd ?? home ?? null,
+            env: { kind: "local" },
+            createdAt: now,
+            updatedAt: now,
+          };
+          setActiveSpaceForNewTabs(DEFAULT_SPACE_ID);
+          useSpaces.getState().hydrate([fallbackMeta], DEFAULT_SPACE_ID);
+        }
       } finally {
         markBooted();
       }
