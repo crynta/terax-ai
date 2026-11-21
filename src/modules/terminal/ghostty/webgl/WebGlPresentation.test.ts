@@ -13,7 +13,11 @@ it("keeps unchanged WebGL frames idle, retains cursor buffers, and presents cach
         if (/^[A-Z_0-9]+$/.test(key)) return 1;
         let method = methods.get(key);
         if (!method) {
-          method = vi.fn(() => (key === "getExtension" ? null : {}));
+          method = vi.fn((_, name) => {
+            if (key === "getExtension") return null;
+            if (key === "getUniformLocation") return name;
+            return {};
+          });
           methods.set(key, method);
         }
         return method;
@@ -34,13 +38,14 @@ it("keeps unchanged WebGL frames idle, retains cursor buffers, and presents cach
   const renderer = new WebGlCellRenderer();
   const cursor = { x: 0, y: 0, visible: true, blinking: false, style: "block" };
   let background = 0;
+  let cellCount = 80 * 24;
   const model = {
     cols: 80,
     rows: 24,
     cursor: () => cursor,
     viewportOriginLine: () => 0,
     renderCells: () => ({
-      length: 80 * 24,
+      length: cellCount,
       width: () => 1,
       flags: () => 0,
       codepoint: () => 0,
@@ -164,6 +169,28 @@ it("keeps unchanged WebGL frames idle, retains cursor buffers, and presents cach
         (call) => call[1] instanceof Float32Array && call[1].length === 9,
       ),
     ).toBe(true);
+
+    // Shrink without replacing the backing store. The bottom row and cursor
+    // must still be drawn within the visible 79-by-23 grid.
+    cursor.y = 22;
+    cellCount = 79 * 23;
+    renderer.resize(79, 23);
+    expect(renderer.render(frame)).toBe(true);
+    expect(renderer.canvas.width).toBe(640);
+    expect(renderer.canvas.height).toBe(384);
+    expect(methods.get("viewport")).toHaveBeenLastCalledWith(0, 16, 632, 368);
+    expect(methods.get("uniform2f")).toHaveBeenCalledWith(
+      "u_resolution",
+      632,
+      368,
+    );
+    expect(methods.get("uniform4f")).toHaveBeenCalledWith(
+      "u_cursor_box",
+      8,
+      336,
+      16,
+      352,
+    );
   } finally {
     renderer.dispose();
   }
