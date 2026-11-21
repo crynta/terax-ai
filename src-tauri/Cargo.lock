@@ -1286,11 +1286,12 @@ dependencies = [
 
 [[package]]
 name = "fsevent-sys"
-version = "4.1.0"
+version = "5.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "76ee7a02da4d231650c7cea31349b889be2f45ddb3ef3032d2ec8185f6313fd2"
+checksum = "e90520699e70a2008360ae6259fa3474a8c14fcf2e6b067c71b58eb6b1f53625"
 dependencies = [
- "libc",
+ "core-foundation 0.10.1",
+ "dispatch2",
 ]
 
 [[package]]
