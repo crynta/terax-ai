@@ -160,6 +160,8 @@ export class WebGlCellRenderer {
   private rowCapacity = 0;
   private cols = 0;
   private rows = 0;
+  private gridWidth = 1;
+  private gridHeight = 1;
   private forceFullRedraw = true;
   private contextLost = false;
   private viewportDirty = true;
@@ -249,6 +251,11 @@ export class WebGlCellRenderer {
     this.rows = rows;
     const width = Math.max(1, cols * this.profile.metrics.deviceCellWidth);
     const height = Math.max(1, rows * this.profile.metrics.deviceCellHeight);
+    if (width !== this.gridWidth || height !== this.gridHeight) {
+      this.gridWidth = width;
+      this.gridHeight = height;
+      this.viewportDirty = true;
+    }
     const backingStoreChanged = this.backingStore.stage(
       width,
       height,
@@ -281,7 +288,13 @@ export class WebGlCellRenderer {
     const backingStoreChanged = this.backingStore.commit();
     if (backingStoreChanged) this.backingStoreResizeCount += 1;
     if (backingStoreChanged || this.viewportDirty) {
-      this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+      // The backing store can retain slack. Anchor the visible grid at its top-left.
+      this.gl.viewport(
+        0,
+        this.canvas.height - this.gridHeight,
+        this.gridWidth,
+        this.gridHeight,
+      );
       this.viewportDirty = false;
       this.forceFullRedraw = true;
     }
@@ -485,8 +498,6 @@ export class WebGlCellRenderer {
     let rectanglesChanged = false;
     const first = Math.max(0, firstRow);
     const last = Math.min(this.rows - 1, lastRow);
-    const canvasWidth = this.canvas.width;
-    const canvasHeight = this.canvas.height;
     const viewportOrigin = frame.model.viewportOriginLine();
 
     for (let row = first; row <= last; row += 1) {
@@ -585,8 +596,6 @@ export class WebGlCellRenderer {
             ((flags & CellFlags.FAINT) !== 0 ? 0.5 : 1) *
               ((flags & CellFlags.BLINK) !== 0 ? -1 : 1),
             previousBackground !== background,
-            canvasWidth,
-            canvasHeight,
           );
         }
         previousBackground = background;
@@ -608,8 +617,6 @@ export class WebGlCellRenderer {
     foreground: number,
     alpha: number,
     clipLeft: boolean,
-    canvasWidth: number,
-    canvasHeight: number,
   ): void {
     let offsetX = glyph.originOffsetX;
     let width = glyph.width;
@@ -633,8 +640,8 @@ export class WebGlCellRenderer {
 
     this.glyphAttributes[index] = offsetX;
     this.glyphAttributes[index + 1] = glyph.originOffsetY;
-    this.glyphAttributes[index + 2] = width / canvasWidth;
-    this.glyphAttributes[index + 3] = glyph.height / canvasHeight;
+    this.glyphAttributes[index + 2] = width / this.gridWidth;
+    this.glyphAttributes[index + 3] = glyph.height / this.gridHeight;
     this.glyphAttributes[index + 4] = uvMinX;
     this.glyphAttributes[index + 5] = glyph.uvMinY;
     this.glyphAttributes[index + 6] = uvMaxX - uvMinX;
@@ -957,8 +964,8 @@ export class WebGlCellRenderer {
     );
     gl.uniform2f(
       resources.glyphProgram.resolution,
-      this.canvas.width,
-      this.canvas.height,
+      this.gridWidth,
+      this.gridHeight,
     );
     atlas.bindAndUpload();
     gl.uniform1i(resources.glyphProgram.atlas, 0);
@@ -983,12 +990,15 @@ export class WebGlCellRenderer {
     );
     const { deviceCellWidth: cellWidth, deviceCellHeight: cellHeight } =
       profile.metrics;
+    // gl_FragCoord includes the viewport's bottom offset, while the box uses
+    // top-down coordinates after the shader flips Y against the grid height.
+    const viewportBottom = this.canvas.height - this.gridHeight;
     gl.uniform4f(
       resources.glyphProgram.cursorBox,
       this.blockColumn * cellWidth,
-      this.blockRow * cellHeight,
+      this.blockRow * cellHeight - viewportBottom,
       (this.blockColumn + this.blockCount) * cellWidth,
-      (this.blockRow + 1) * cellHeight,
+      (this.blockRow + 1) * cellHeight - viewportBottom,
     );
     gl.uniform2f(resources.glyphProgram.cells, this.cols, this.rows);
     gl.uniform2f(
