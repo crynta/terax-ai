@@ -1,8 +1,12 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { WebGlCellRenderer } from "@/modules/terminal/ghostty/webgl/WebGlCellRenderer";
 import type { GhosttyTerminalModelApi } from "@/modules/terminal/ghostty/GhosttyTerminalModel";
+import { WebGlGlyphAtlas } from "./WebGlGlyphAtlas";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 it("keeps unchanged WebGL frames idle, retains cursor buffers, and presents cached data on request", () => {
   const methods = new Map<string, ReturnType<typeof vi.fn>>();
@@ -39,6 +43,7 @@ it("keeps unchanged WebGL frames idle, retains cursor buffers, and presents cach
   const cursor = { x: 0, y: 0, visible: true, blinking: false, style: "block" };
   let background = 0;
   let cellCount = 80 * 24;
+  let glyphCell = -1;
   const model = {
     cols: 80,
     rows: 24,
@@ -48,7 +53,8 @@ it("keeps unchanged WebGL frames idle, retains cursor buffers, and presents cach
       length: cellCount,
       width: () => 1,
       flags: () => 0,
-      codepoint: () => 0,
+      codepoint: (index: number) => (index === glyphCell ? 65 : 0),
+      graphemeLength: () => 0,
       backgroundPacked: () => background,
       foregroundPacked: () => 0xffffff,
       underlineColorPacked: () => 0,
@@ -174,6 +180,20 @@ it("keeps unchanged WebGL frames idle, retains cursor buffers, and presents cach
     // must still be drawn within the visible 79-by-23 grid.
     cursor.y = 22;
     cellCount = 79 * 23;
+    glyphCell = 22 * 79 + cursor.x;
+    vi.spyOn(WebGlGlyphAtlas.prototype, "glyph").mockReturnValue({
+      originOffsetX: 0,
+      originOffsetY: 0,
+      width: 7,
+      height: 13,
+      uvMinX: 0,
+      uvMinY: 0,
+      uvMaxX: 1,
+      uvMaxY: 1,
+      intrinsicColor: false,
+      exact: false,
+    });
+    glyphUpload?.mockClear();
     renderer.resize(79, 23);
     expect(renderer.render(frame)).toBe(true);
     expect(renderer.canvas.width).toBe(640);
@@ -191,6 +211,14 @@ it("keeps unchanged WebGL frames idle, retains cursor buffers, and presents cach
       16,
       352,
     );
+    const attributes = glyphUpload?.mock.calls.find(
+      ([, offset, data]) =>
+        offset === 0 &&
+        data instanceof Float32Array &&
+        data.length === cellCount * 15,
+    )?.[2];
+    expect(attributes?.[glyphCell * 15 + 2]).toBeCloseTo(7 / 632, 7);
+    expect(attributes?.[glyphCell * 15 + 3]).toBeCloseTo(13 / 368, 7);
   } finally {
     renderer.dispose();
   }
