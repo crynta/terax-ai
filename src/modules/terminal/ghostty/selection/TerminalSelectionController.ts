@@ -281,6 +281,13 @@ export class TerminalSelectionController {
       this.autoScrollFrame = null;
       if (this.pointerId === null) return;
       const currentRect = this.options.target.getBoundingClientRect();
+      // Layout can move the pane back under a stationary pointer between frames.
+      if (
+        this.lastClientY >= currentRect.top &&
+        this.lastClientY <= currentRect.bottom
+      ) {
+        return;
+      }
       const overflow =
         this.lastClientY < currentRect.top
           ? this.lastClientY - currentRect.top

@@ -242,6 +242,33 @@ describe("terminal selection pointer ownership", () => {
     }
   });
 
+  it("stops autoscrolling when the pane grows under a stationary pointer", () => {
+    let frame: FrameRequestCallback | undefined;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frame = callback;
+      return 1;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const fixture = dragFixture();
+    try {
+      fixture.setBottom(400);
+      fixture.pointer("pointerdown", 15);
+      fixture.pointer("pointermove", 45, 450);
+      const tick = frame;
+      expect(tick).toBeDefined();
+
+      fixture.setBottom(480);
+      frame = undefined;
+      tick?.(16);
+
+      expect(fixture.model.scrollBy).not.toHaveBeenCalled();
+      expect(frame).toBeUndefined();
+    } finally {
+      fixture.controller.dispose();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("selects the cell that is drawn under the pointer while the grid is shifted up", () => {
     // A pane shorter than its grid during a resize gesture shows the grid moved up by 40 px.
     let shift = 40;
@@ -303,6 +330,7 @@ function dragFixture(
 ) {
   let tracked: TerminalBufferSelection | null = null;
   let capture: number | null = null;
+  let bottom = 480;
   const target = Object.assign(new EventTarget(), {
     setPointerCapture: (id: number) => {
       capture = id;
@@ -311,7 +339,7 @@ function dragFixture(
     releasePointerCapture: () => {
       capture = null;
     },
-    getBoundingClientRect: () => ({ left: 0, top: 0, right: 800, bottom: 480 }),
+    getBoundingClientRect: () => ({ left: 0, top: 0, right: 800, bottom }),
   });
   const model =
     realModel ??
@@ -340,6 +368,9 @@ function dragFixture(
     model,
     onChange,
     tracked: () => tracked,
+    setBottom: (value: number) => {
+      bottom = value;
+    },
     pointer: (type: string, clientX: number, clientY = 10) =>
       target.dispatchEvent(
         Object.assign(new Event(type, { cancelable: true }), {
