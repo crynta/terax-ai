@@ -255,7 +255,7 @@ export class WebGlCellRenderer {
       this.profile.scale,
       gesture,
     );
-    if (backingStoreChanged) this.viewportDirty = true;
+    if (changed || backingStoreChanged) this.viewportDirty = true;
     if (changed) this.resizeModel(cols, rows);
     const capacityChanged = deferCompaction
       ? false
@@ -281,7 +281,22 @@ export class WebGlCellRenderer {
     const backingStoreChanged = this.backingStore.commit();
     if (backingStoreChanged) this.backingStoreResizeCount += 1;
     if (backingStoreChanged || this.viewportDirty) {
-      this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+      // The backing store keeps slack around the grid (CanvasBackingStore); the grid draws
+      // into its exact top-left sub-rectangle and the host clips the surplus.
+      const gridWidth = Math.max(
+        1,
+        this.cols * this.profile.metrics.deviceCellWidth,
+      );
+      const gridHeight = Math.max(
+        1,
+        this.rows * this.profile.metrics.deviceCellHeight,
+      );
+      this.gl.viewport(
+        0,
+        this.canvas.height - gridHeight,
+        gridWidth,
+        gridHeight,
+      );
       this.viewportDirty = false;
       this.forceFullRedraw = true;
     }
@@ -485,8 +500,14 @@ export class WebGlCellRenderer {
     let rectanglesChanged = false;
     const first = Math.max(0, firstRow);
     const last = Math.min(this.rows - 1, lastRow);
-    const canvasWidth = this.canvas.width;
-    const canvasHeight = this.canvas.height;
+    const gridWidth = Math.max(
+      1,
+      this.cols * this.profile.metrics.deviceCellWidth,
+    );
+    const gridHeight = Math.max(
+      1,
+      this.rows * this.profile.metrics.deviceCellHeight,
+    );
     const viewportOrigin = frame.model.viewportOriginLine();
 
     for (let row = first; row <= last; row += 1) {
@@ -585,8 +606,8 @@ export class WebGlCellRenderer {
             ((flags & CellFlags.FAINT) !== 0 ? 0.5 : 1) *
               ((flags & CellFlags.BLINK) !== 0 ? -1 : 1),
             previousBackground !== background,
-            canvasWidth,
-            canvasHeight,
+            gridWidth,
+            gridHeight,
           );
         }
         previousBackground = background;
@@ -608,8 +629,8 @@ export class WebGlCellRenderer {
     foreground: number,
     alpha: number,
     clipLeft: boolean,
-    canvasWidth: number,
-    canvasHeight: number,
+    gridWidth: number,
+    gridHeight: number,
   ): void {
     let offsetX = glyph.originOffsetX;
     let width = glyph.width;
@@ -633,8 +654,8 @@ export class WebGlCellRenderer {
 
     this.glyphAttributes[index] = offsetX;
     this.glyphAttributes[index + 1] = glyph.originOffsetY;
-    this.glyphAttributes[index + 2] = width / canvasWidth;
-    this.glyphAttributes[index + 3] = glyph.height / canvasHeight;
+    this.glyphAttributes[index + 2] = width / gridWidth;
+    this.glyphAttributes[index + 3] = glyph.height / gridHeight;
     this.glyphAttributes[index + 4] = uvMinX;
     this.glyphAttributes[index + 5] = glyph.uvMinY;
     this.glyphAttributes[index + 6] = uvMaxX - uvMinX;
@@ -955,11 +976,12 @@ export class WebGlCellRenderer {
       false,
       PROJECTION_MATRIX,
     );
-    gl.uniform2f(
-      resources.glyphProgram.resolution,
-      this.canvas.width,
-      this.canvas.height,
-    );
+    const { deviceCellWidth: cellWidth, deviceCellHeight: cellHeight } =
+      profile.metrics;
+    const gridWidth = Math.max(1, this.cols * cellWidth);
+    const gridHeight = Math.max(1, this.rows * cellHeight);
+    const cursorYOffset = this.canvas.height - gridHeight;
+    gl.uniform2f(resources.glyphProgram.resolution, gridWidth, gridHeight);
     atlas.bindAndUpload();
     gl.uniform1i(resources.glyphProgram.atlas, 0);
     gl.uniform1i(resources.glyphProgram.colorAtlas, 1);
@@ -981,14 +1003,12 @@ export class WebGlCellRenderer {
       text[1] / 255,
       text[2] / 255,
     );
-    const { deviceCellWidth: cellWidth, deviceCellHeight: cellHeight } =
-      profile.metrics;
     gl.uniform4f(
       resources.glyphProgram.cursorBox,
       this.blockColumn * cellWidth,
-      this.blockRow * cellHeight,
+      this.blockRow * cellHeight - cursorYOffset,
       (this.blockColumn + this.blockCount) * cellWidth,
-      (this.blockRow + 1) * cellHeight,
+      (this.blockRow + 1) * cellHeight - cursorYOffset,
     );
     gl.uniform2f(resources.glyphProgram.cells, this.cols, this.rows);
     gl.uniform2f(
