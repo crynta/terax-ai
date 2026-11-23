@@ -285,6 +285,15 @@ html[data-chrome="borderless"] #settings-root {
 html[data-chrome="borderless"] #root {
   background: var(--frame);
 }
+/* Portaled overlays (dialogs, sheets, the command palette) mount at body
+ * level and paint square to the viewport, so their dim background would
+ * cover the rounded window corners while one is open. Clip them to the same
+ * frame. */
+html[data-chrome="borderless"] [data-slot="dialog-overlay"],
+html[data-chrome="borderless"] [data-slot="alert-dialog-overlay"],
+html[data-chrome="borderless"] [data-slot="sheet-overlay"] {
+  border-radius: 12px;
+}
 
 
 

@@ -66,6 +66,27 @@ describe("planFileTabOpen", () => {
     expect(plan.tabs).toBe(tabs);
   });
 
+  it("reuses a tab whose path spells the same file differently", () => {
+    // LSP servers return file:///d%3A/... URIs that decode to forward-slash,
+    // lowercase-drive paths while tabs hold the native spelling.
+    const tabs: Tab[] = [
+      terminal,
+      editor(3, "D:\\projects\\sample\\src\\a.py", "one", false),
+    ];
+
+    const plan = planFileTabOpen(
+      tabs,
+      "d:/projects/sample/src/a.py",
+      true,
+      "one",
+      () => {
+        throw new Error("should not allocate");
+      },
+    );
+
+    expect(plan).toEqual({ tabs, tabId: 3 });
+  });
+
   it("promotes an existing preview only in the requested space", () => {
     const preview = editor(3, "/repo/main.rs", "one", true);
     const otherPreview = editor(4, "/repo/main.rs", "two", true);

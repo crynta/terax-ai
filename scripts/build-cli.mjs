@@ -37,6 +37,27 @@ function hostTriple() {
   return match[1].trim();
 }
 
+function cargoTargetDir() {
+  const output = run(
+    "cargo",
+    [
+      "metadata",
+      "--format-version",
+      "1",
+      "--no-deps",
+      "--manifest-path",
+      join(tauriDir, "Cargo.toml"),
+    ],
+    { capture: true },
+  );
+  try {
+    const dir = JSON.parse(output).target_directory;
+    if (typeof dir === "string" && dir.length > 0) return dir;
+  } catch {}
+  process.stderr.write("cargo metadata did not report a target_directory\n");
+  process.exit(1);
+}
+
 function requireArtifact(path, label) {
   try {
     const artifact = statSync(path);
@@ -69,8 +90,7 @@ run("cargo", cargoArgs);
 const extension = target.includes("windows") ? ".exe" : "";
 const profile = release ? "release" : "debug";
 const source = join(
-  tauriDir,
-  "target",
+  cargoTargetDir(),
   target,
   profile,
   `terax-cli${extension}`,
