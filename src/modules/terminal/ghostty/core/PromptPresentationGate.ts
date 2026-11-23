@@ -31,6 +31,8 @@ export class PromptPresentationGate {
 
   observe(event: GhosttyTerminalEvent): void {
     if (event.type === "prompt-start") {
+      // A repeated start still belongs to the prompt already being held.
+      if (this.suppressedValue) return;
       this.suppressedValue = true;
       this.awaitingEnd = true;
       this.armWatchdog();
@@ -58,7 +60,6 @@ export class PromptPresentationGate {
   }
 
   private armWatchdog(): void {
-    this.clearWatchdog();
     this.watchdog = globalThis.setTimeout(() => {
       this.watchdog = null;
       if (!this.suppressedValue) return;
