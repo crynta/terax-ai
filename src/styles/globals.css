@@ -285,6 +285,13 @@ html[data-chrome="borderless"] #settings-root {
 html[data-chrome="borderless"] #root {
   background: var(--frame);
 }
+/* Dialog overlays portal to `body`, so they escape `#root`'s rounded clip and
+ * would otherwise paint a dark square over the window's transparent corners. */
+html[data-chrome="borderless"] [data-slot="dialog-overlay"],
+html[data-chrome="borderless"] [data-slot="alert-dialog-overlay"],
+html[data-chrome="borderless"] [data-slot="sheet-overlay"] {
+  border-radius: 12px;
+}
 
 
 
