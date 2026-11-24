@@ -142,15 +142,9 @@ export class TerminalMouse {
     this.send(button, position, false, event);
   }
 
-  /** `times` wheel notches up or down at the pointer. */
-  wheel(event: MouseEvent, up: boolean, times: number): void {
+  wheel(event: MouseEvent, up: boolean): void {
     const position = this.position(event);
-    if (!position || times <= 0) return;
-    const report = this.report(up ? 64 : 65, position, false, event);
-    const reports = new Uint8Array(report.length * times);
-    for (let index = 0; index < times; index++)
-      reports.set(report, index * report.length);
-    this.host.send(reports);
+    if (position) this.send(up ? 64 : 65, position, false, event);
   }
 
   private position(event: MouseEvent): { col: number; row: number } | null {

@@ -3,11 +3,10 @@ const DOM_DELTA_LINE = 1;
 const DOM_DELTA_PAGE = 2;
 
 /**
- * A browser event can carry any distance (a synthetic 2000 px, an inertial
- * flick), but a program on the other side of the PTY has to read every report
- * or arrow it is sent. Excess beyond this is dropped, never queued.
+ * Alternate scroll sends one cursor key per line. Bound the burst so an
+ * inertial flick cannot flood the PTY.
  */
-export const MAX_WHEEL_REPORTS_PER_EVENT = 10;
+export const MAX_ALTERNATE_SCROLL_KEYS_PER_EVENT = 10;
 
 /**
  * A wheel report is a notch, not a row: the program scrolls a few lines for
