@@ -15,6 +15,13 @@ export type AsyncQueryState<T> = {
   retry: () => void;
 };
 
+type Snapshot<T> = Omit<AsyncQueryState<T>, "retry"> & {
+  run: Params<T>["run"];
+  term: string;
+};
+
+const EMPTY: never[] = [];
+
 export function useAsyncQuery<T>({
   enabled,
   term,
@@ -22,51 +29,60 @@ export function useAsyncQuery<T>({
   debounceMs,
   run,
 }: Params<T>): AsyncQueryState<T> {
-  const [results, setResults] = useState<T[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [snapshot, setSnapshot] = useState<Snapshot<T> | null>(null);
   const requestIdRef = useRef(0);
-  const runRef = useRef(run);
-  runRef.current = run;
+  const timerRef = useRef<number | null>(null);
+  const active = enabled && term.length >= minLength;
 
-  const execute = useCallback((q: string) => {
+  const cancelPending = useCallback(() => {
+    if (timerRef.current === null) return;
+    window.clearTimeout(timerRef.current);
+    timerRef.current = null;
+  }, []);
+
+  const execute = useCallback(() => {
+    cancelPending();
     const requestId = ++requestIdRef.current;
-    setLoading(true);
-    setError(null);
-    runRef
-      .current(q)
-      .then((hits) => {
+    setSnapshot({ run, term, results: [], loading: true, error: null });
+    run(term)
+      .then((results) => {
         if (requestId !== requestIdRef.current) return;
-        setResults(hits);
+        setSnapshot({ run, term, results, loading: false, error: null });
       })
       .catch((e) => {
         if (requestId !== requestIdRef.current) return;
-        setResults([]);
-        setError(String(e));
-      })
-      .finally(() => {
-        if (requestId === requestIdRef.current) setLoading(false);
+        setSnapshot({
+          run,
+          term,
+          results: [],
+          loading: false,
+          error: String(e),
+        });
       });
-  }, []);
+  }, [cancelPending, run, term]);
 
   useEffect(() => {
-    requestIdRef.current += 1;
-    if (!enabled || term.length < minLength) {
-      setResults([]);
-      setLoading(false);
-      setError(null);
+    if (!active) {
+      setSnapshot(null);
       return;
     }
-    setResults([]);
-    setLoading(true);
-    setError(null);
-    const handle = window.setTimeout(() => execute(term), debounceMs);
-    return () => window.clearTimeout(handle);
-  }, [enabled, term, minLength, debounceMs, execute]);
+    timerRef.current = window.setTimeout(execute, debounceMs);
+    return () => {
+      cancelPending();
+      requestIdRef.current += 1;
+    };
+  }, [active, cancelPending, debounceMs, execute]);
 
   const retry = useCallback(() => {
-    if (enabled && term.length >= minLength) execute(term);
-  }, [enabled, term, minLength, execute]);
+    if (active) execute();
+  }, [active, execute]);
 
-  return { results, loading, error, retry };
+  const current =
+    active && snapshot?.run === run && snapshot.term === term ? snapshot : null;
+  return {
+    results: current?.results ?? EMPTY,
+    loading: current?.loading ?? active,
+    error: current?.error ?? null,
+    retry,
+  };
 }
