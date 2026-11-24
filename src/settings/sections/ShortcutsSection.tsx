@@ -27,7 +27,7 @@ import {
   Search01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useMemo, useState } from "react";
+import { type KeyboardEvent, useMemo, useState } from "react";
 import { SectionHeader } from "../components/SectionHeader";
 
 export function ShortcutsSection() {
@@ -183,7 +183,48 @@ function ShortcutRow({
   const bindings =
     userBindings !== undefined ? userBindings : shortcut.defaultBindings;
   const isModified = userBindings !== undefined;
-  const hasBindings = bindings && bindings.length > 0;
+  const tokens = getBindingTokens(bindings[0]);
+
+  const recordKey = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (!isRecording) return;
+    // Tab still moves focus, which cancels recording.
+    if (
+      event.key === "Tab" &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      !event.metaKey
+    )
+      return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.key === "Escape") {
+      onStopRecording();
+      return;
+    }
+    if (
+      event.repeat ||
+      event.nativeEvent.isComposing ||
+      ["Control", "Shift", "Alt", "AltGraph", "Meta", "Dead"].includes(
+        event.key,
+      )
+    )
+      return;
+    // Shift alone is fine for navigation keys, but must not swallow typing.
+    if (
+      !event.ctrlKey &&
+      !event.altKey &&
+      !event.metaKey &&
+      (!event.shiftKey || event.key.length === 1)
+    )
+      return;
+    onRecord({
+      key: event.key,
+      ctrl: event.ctrlKey,
+      shift: event.shiftKey,
+      alt: event.altKey,
+      meta: event.metaKey,
+    });
+  };
 
   return (
     <div className="group flex items-center justify-between px-3 py-2.5 transition-colors hover:bg-muted/30">
@@ -192,137 +233,77 @@ function ShortcutRow({
       </div>
 
       <div className="flex items-center gap-2">
-        {isRecording ? (
-          <Recorder onRecord={onRecord} onCancel={onStopRecording} />
-        ) : (
-          <>
-            <div
-              onClick={onStartRecording}
-              className="flex min-w-[100px] cursor-pointer items-center justify-end gap-1"
-            >
-              {hasBindings ? (
-                <KbdGroup>
-                  {getBindingTokens(bindings[0]).map((t, i) => (
-                    <Kbd
-                      key={i}
-                      className="group-hover:bg-accent group-hover:text-accent-foreground transition-colors"
-                    >
-                      {t}
-                    </Kbd>
-                  ))}
-                </KbdGroup>
-              ) : (
-                <span className="text-[11px] text-muted-foreground italic">
-                  Unassigned
-                </span>
-              )}
-            </div>
-
-            <div className="flex items-center gap-1">
-              {isModified && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-7 text-muted-foreground hover:text-foreground"
-                  onClick={onReset}
-                  title="Reset to default"
+        <button
+          type="button"
+          aria-label={
+            isRecording
+              ? `Recording shortcut for ${shortcut.label}. Press Escape to cancel.`
+              : `Change shortcut for ${shortcut.label} (${tokens.join(" + ") || "Unassigned"})`
+          }
+          onClick={(event) => {
+            if (isRecording) {
+              onStopRecording();
+            } else {
+              event.currentTarget.focus();
+              onStartRecording();
+            }
+          }}
+          onBlur={isRecording ? onStopRecording : undefined}
+          onKeyDown={recordKey}
+          className="flex min-w-[100px] cursor-pointer items-center justify-end gap-1 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          {isRecording ? (
+            <span className="flex items-center gap-2 rounded bg-accent/50 px-2 py-1 text-[11px] ring-1 ring-accent">
+              <span className="font-medium motion-safe:animate-pulse">
+                Recording...
+              </span>
+              <span className="text-muted-foreground">(Esc to cancel)</span>
+            </span>
+          ) : tokens.length > 0 ? (
+            <KbdGroup>
+              {tokens.map((t) => (
+                <Kbd
+                  key={t}
+                  className="group-hover:bg-accent group-hover:text-accent-foreground transition-colors"
                 >
-                  <HugeiconsIcon icon={ArrowTurnBackwardIcon} size={12} />
-                </Button>
-              )}
+                  {t}
+                </Kbd>
+              ))}
+            </KbdGroup>
+          ) : (
+            <span className="text-[11px] text-muted-foreground italic">
+              Unassigned
+            </span>
+          )}
+        </button>
+
+        {!isRecording && (
+          <div className="flex items-center gap-1">
+            {isModified && (
               <Button
                 variant="ghost"
                 size="icon"
-                className="size-7 text-muted-foreground hover:text-destructive opacity-0 transition-opacity group-hover:opacity-100"
-                onClick={onClear}
-                title="Clear shortcut"
+                className="size-7 text-muted-foreground hover:text-foreground"
+                onClick={onReset}
+                aria-label={`Reset shortcut for ${shortcut.label}`}
+                title="Reset to default"
               >
-                <HugeiconsIcon icon={Delete02Icon} size={12} />
+                <HugeiconsIcon icon={ArrowTurnBackwardIcon} size={12} />
               </Button>
-            </div>
-          </>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7 text-muted-foreground hover:text-destructive opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+              onClick={onClear}
+              aria-label={`Clear shortcut for ${shortcut.label}`}
+              title="Clear shortcut"
+            >
+              <HugeiconsIcon icon={Delete02Icon} size={12} />
+            </Button>
+          </div>
         )}
       </div>
-    </div>
-  );
-}
-
-function Recorder({
-  onRecord,
-  onCancel,
-}: {
-  onRecord: (b: KeyBinding) => void;
-  onCancel: () => void;
-}) {
-  const [_mods, setMods] = useState({
-    ctrl: false,
-    shift: false,
-    alt: false,
-    meta: false,
-  });
-
-  useEffect(() => {
-    const onDown = (e: KeyboardEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      if (e.key === "Escape") {
-        onCancel();
-        return;
-      }
-
-      const isMod = ["Control", "Shift", "Alt", "Meta"].includes(e.key);
-      if (isMod) {
-        setMods({
-          ctrl: e.ctrlKey,
-          shift: e.shiftKey,
-          alt: e.altKey,
-          meta: e.metaKey,
-        });
-        return;
-      }
-
-      // Require at least one primary modifier (Ctrl, Alt, Meta).
-      // Reject Shift‑only shortcuts that would insert a character.
-      const hasPrimaryModifier = e.ctrlKey || e.altKey || e.metaKey;
-      const isCharacterKey = e.key.length === 1; // anything that types a glyph
-      // this blocks shortcuts such as Shift+2 which would be "@" and Shift+, which would be "<" on many layouts
-      if (!hasPrimaryModifier && (!e.shiftKey || isCharacterKey)) {
-        return;
-      }
-      onRecord({
-        key: e.key,
-        ctrl: e.ctrlKey,
-        shift: e.shiftKey,
-        alt: e.altKey,
-        meta: e.metaKey,
-      });
-    };
-
-    const onUp = (e: KeyboardEvent) => {
-      const isMod = ["Control", "Shift", "Alt", "Meta"].includes(e.key);
-      if (isMod) {
-        setMods({
-          ctrl: e.ctrlKey,
-          shift: e.shiftKey,
-          alt: e.altKey,
-          meta: e.metaKey,
-        });
-      }
-    };
-
-    window.addEventListener("keydown", onDown, { capture: true });
-    window.addEventListener("keyup", onUp, { capture: true });
-    return () => {
-      window.removeEventListener("keydown", onDown, { capture: true });
-      window.removeEventListener("keyup", onUp, { capture: true });
-    };
-  }, [onRecord, onCancel]);
-
-  return (
-    <div className="flex items-center gap-2 rounded bg-accent/50 px-2 py-1 text-[11px] ring-1 ring-accent">
-      <span className="animate-pulse font-medium">Recording...</span>
-      <span className="text-muted-foreground">(Esc to cancel)</span>
     </div>
   );
 }
