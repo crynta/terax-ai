@@ -261,6 +261,68 @@ describe("terminal selection pointer ownership", () => {
     }
   });
 
+  it("stops autoscrolling when the pane grows under a stationary pointer", () => {
+    let frame: FrameRequestCallback | undefined;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frame = callback;
+      return 1;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const fixture = dragFixture();
+    try {
+      fixture.setBottom(400);
+      fixture.pointer("pointerdown", 15);
+      fixture.pointer("pointermove", 45, 450);
+      const tick = frame;
+      expect(tick).toBeDefined();
+
+      fixture.setBottom(480);
+      frame = undefined;
+      tick?.(16);
+
+      expect(fixture.model.scrollBy).not.toHaveBeenCalled();
+      expect(frame).toBeUndefined();
+    } finally {
+      fixture.controller.dispose();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("moves the same number of rows on 60 Hz and 144 Hz displays", () => {
+    let frame: FrameRequestCallback | undefined;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frame = callback;
+      return 1;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const scrollForOneSecond = (refreshRate: number) => {
+      const fixture = dragFixture();
+      const scrollBy = vi.mocked(fixture.model.scrollBy);
+      scrollBy.mockReturnValue(true);
+      try {
+        fixture.pointer("pointerdown", 15);
+        fixture.pointer("pointermove", 45, 540);
+        for (let i = 0; i <= refreshRate; i++) {
+          const tick = frame;
+          frame = undefined;
+          tick?.((i * 1000) / refreshRate);
+        }
+        return scrollBy.mock.calls.reduce((total, [rows]) => total + rows, 0);
+      } finally {
+        fixture.controller.dispose();
+      }
+    };
+    try {
+      const at60Hz = scrollForOneSecond(60);
+      const at144Hz = scrollForOneSecond(144);
+      expect(at60Hz).toBeGreaterThan(0);
+      expect(at144Hz).toBeGreaterThan(0);
+      expect(Math.abs(at60Hz - at144Hz)).toBeLessThanOrEqual(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("selects the cell that is drawn under the pointer while the grid is shifted up", () => {
     // A pane shorter than its grid during a resize gesture shows the grid moved up by 40 px.
     let shift = 40;
@@ -322,6 +384,7 @@ function dragFixture(
 ) {
   let tracked: TerminalBufferSelection | null = null;
   let capture: number | null = null;
+  let bottom = 480;
   const target = Object.assign(new EventTarget(), {
     setPointerCapture: (id: number) => {
       capture = id;
@@ -330,7 +393,7 @@ function dragFixture(
     releasePointerCapture: () => {
       capture = null;
     },
-    getBoundingClientRect: () => ({ left: 0, top: 0, right: 800, bottom: 480 }),
+    getBoundingClientRect: () => ({ left: 0, top: 0, right: 800, bottom }),
   });
   const model =
     realModel ??
@@ -361,6 +424,9 @@ function dragFixture(
     model,
     onChange,
     tracked: () => tracked,
+    setBottom: (value: number) => {
+      bottom = value;
+    },
     pointer: (type: string, clientX: number, clientY = 10) =>
       target.dispatchEvent(
         Object.assign(new Event(type, { cancelable: true }), {

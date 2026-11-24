@@ -304,24 +304,49 @@ export class TerminalSelectionController {
       return;
     }
     if (this.autoScrollFrame !== null) return;
-    const tick = () => {
+    let lastFrame: number | null = null;
+    let pendingRows = 0;
+    const tick = (now: number) => {
       this.autoScrollFrame = null;
       if (this.pointerId === null) return;
       const currentRect = this.options.target.getBoundingClientRect();
+      // Layout can move the pane back under a stationary pointer between frames.
+      if (
+        this.lastClientY >= currentRect.top &&
+        this.lastClientY <= currentRect.bottom
+      ) {
+        return;
+      }
       const overflow =
         this.lastClientY < currentRect.top
           ? this.lastClientY - currentRect.top
           : this.lastClientY - currentRect.bottom;
       const cellHeight = Math.max(1, this.options.cellSize().height);
-      const lines =
-        Math.sign(overflow) *
-        Math.max(1, Math.min(8, Math.ceil(Math.abs(overflow) / cellHeight)));
-      if (!this.options.model.scrollBy(lines)) return;
-      this.updateFocus({
-        clientX: this.lastClientX,
-        clientY: this.lastClientY,
-        altKey: this.selection?.rectangular ?? false,
-      });
+      const direction = Math.sign(overflow);
+      if (pendingRows !== 0 && Math.sign(pendingRows) !== direction)
+        pendingRows = 0;
+      if (lastFrame === null) {
+        pendingRows = direction;
+      } else {
+        // Scroll in rows per second and drop elapsed time after a stalled frame.
+        const elapsed = Math.max(0, Math.min(50, now - lastFrame));
+        const speed = Math.min(
+          120,
+          Math.max(15, (Math.abs(overflow) / cellHeight) * 30),
+        );
+        pendingRows += (direction * speed * elapsed) / 1000;
+      }
+      lastFrame = now;
+      const rows = Math.trunc(pendingRows);
+      pendingRows -= rows;
+      if (rows !== 0) {
+        if (!this.options.model.scrollBy(rows)) return;
+        this.updateFocus({
+          clientX: this.lastClientX,
+          clientY: this.lastClientY,
+          altKey: this.selection?.rectangular ?? false,
+        });
+      }
       this.autoScrollFrame = requestAnimationFrame(tick);
     };
     this.autoScrollFrame = requestAnimationFrame(tick);
