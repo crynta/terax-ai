@@ -9,6 +9,7 @@ import {
 } from "@/app/hooks/tabCloseGuards";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
+  canReplaceLastTab,
   type CloseTabsPlan,
   nextActiveInSpace,
   planCloseOtherTabs,
@@ -62,15 +63,14 @@ export function useTabCloseGuards({
 
   const handleClose = useCallback(
     async (id: number) => {
-      // Last tab in its space can't be closed (closeTab refuses). Skip the
-      // dialog entirely so confirming it doesn't appear to silently fail.
-      if (nextActiveInSpace(tabs, id) === null) return;
       const t = tabs.find((x) => x.id === id);
-      if (t?.kind === "editor" && t.dirty) {
+      if (!t || (!canReplaceLastTab(t) && nextActiveInSpace(tabs, id) === null))
+        return;
+      if (t.kind === "editor" && t.dirty) {
         setPendingCloseTab(id);
         return;
       }
-      if (t?.kind === "terminal" && confirmRunningTerminal()) {
+      if (t.kind === "terminal" && confirmRunningTerminal()) {
         const leaves = leafIds(t.paneTree);
         const checks = await Promise.all(leaves.map(leafHasForegroundProcess));
         if (checks.some(Boolean)) {

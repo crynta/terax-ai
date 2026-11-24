@@ -386,13 +386,33 @@ export function planCloseOtherTabs(
   };
 }
 
+export function canReplaceLastTab(tab: Tab): tab is GitHistoryTab {
+  return tab.kind === "git-history";
+}
+
 export function planSingleTabClose(
   tabs: Tab[],
   closingId: number,
   activeId: number,
+  allocId: () => number,
 ): CloseTabsPlanResult | null {
   const fallback = nextActiveInSpace(tabs, closingId);
-  if (fallback === null) return null;
+  if (fallback === null) {
+    const closing = tabs.find((tab) => tab.id === closingId);
+    if (!closing || !canReplaceLastTab(closing)) return null;
+    const replacement = coldTerminalTab(
+      allocId(),
+      allocId(),
+      closing.spaceId,
+      closing.repoRoot,
+    );
+    return {
+      tabs: tabs.map((tab) => (tab.id === closingId ? replacement : tab)),
+      closeIds: [closingId],
+      disposeLeafIds: [],
+      nextActiveId: activeId === closingId ? replacement.id : activeId,
+    };
+  }
   return applyCloseTabsPlan(tabs, fallback, {
     closeIds: [closingId],
     nextActiveId: activeId === closingId ? fallback : activeId,
@@ -1188,6 +1208,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         tabsRef.current,
         id,
         activeIdRef.current,
+        allocId,
       );
       if (!result) return;
       tabsRef.current = result.tabs;
@@ -1196,7 +1217,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       setActiveId(result.nextActiveId);
       for (const lid of result.disposeLeafIds) disposeSession(lid);
     },
-    [setTabs, setActiveId],
+    [allocId, setTabs, setActiveId],
   );
 
   const closeTabs = useCallback(

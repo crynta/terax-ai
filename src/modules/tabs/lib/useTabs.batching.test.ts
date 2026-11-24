@@ -56,6 +56,21 @@ beforeEach(() => {
 });
 
 describe("tab actions before deferred state updates commit", () => {
+  it("closes the last Git graph and selects a terminal in its repository", () => {
+    const tabs = render();
+    const graph = tabs.openCommitHistoryTab({ repoRoot: "/repo" });
+    tabs.closeTab(1);
+    tabs.closeTab(graph);
+    tabs.closeTab(graph);
+    const next = render();
+    expect(next.tabs).toHaveLength(1);
+    expect(next.tabs[0]).toMatchObject({
+      kind: "terminal",
+      cwd: "/repo",
+      id: next.activeId,
+    });
+    expect(scheduler.dispose).toHaveBeenCalledExactlyOnceWith(2);
+  });
   it("keeps a pending new tab when closing its predecessor", () => {
     const tabs = render();
     const created = tabs.newTab();
