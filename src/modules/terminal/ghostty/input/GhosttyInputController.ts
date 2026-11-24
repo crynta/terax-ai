@@ -68,6 +68,7 @@ export class GhosttyInputController {
   /** Ctrl+V presses waiting on the clipboard: the key may be released before the read ends. */
   private readonly pasteKeys = new Map<string, { released: boolean }>();
   private readonly wheel = new WheelAccumulator();
+  private pasteDelivery: Promise<void> = Promise.resolve();
   private composing = false;
   private optionKeys = 0;
   private lastData = "";
@@ -286,7 +287,10 @@ export class GhosttyInputController {
     const encoded = data ? this.options.model.encodeKey(data) : null;
     const waiting = { released: false };
     if (data) this.pasteKeys.set(code, waiting);
-    void readTerminalClipboard().then((text) => {
+    // Start each read immediately, but deliver its result in key press order.
+    const read = readTerminalClipboard();
+    const ready = Promise.all([this.pasteDelivery, read]);
+    const delivery = ready.then(([, text]) => {
       if (this.pasteKeys.get(code) === waiting) this.pasteKeys.delete(code);
       if (this.disposed) return;
       if (text) {
@@ -310,6 +314,10 @@ export class GhosttyInputController {
         action: KeyAction.RELEASE,
       });
       if (release.byteLength > 0) this.options.onData(release);
+    });
+    this.pasteDelivery = delivery.catch((error: unknown) => {
+      if (this.pasteKeys.get(code) === waiting) this.pasteKeys.delete(code);
+      console.error("[terax] terminal paste failed:", error);
     });
   }
 
