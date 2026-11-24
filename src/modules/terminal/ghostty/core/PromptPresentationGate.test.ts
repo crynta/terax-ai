@@ -110,14 +110,22 @@ describe("PromptPresentationGate", () => {
     gate.dispose();
   });
 
-  it("never holds a prompt longer than a second whatever it learned", () => {
+  it("keeps the original deadline when the shell repeats the prompt start", () => {
     vi.useFakeTimers();
-    const gate = new PromptPresentationGate(() => {});
-    for (let i = 0; i < 10; i += 1) {
+    const release = vi.fn();
+    const gate = new PromptPresentationGate(release);
+    gate.observe({ type: "prompt-start" });
+    for (let i = 0; i < 3; i += 1) {
+      vi.advanceTimersByTime(PROMPT_PRESENTATION_WATCHDOG_MS / 4);
       gate.observe({ type: "prompt-start" });
-      vi.advanceTimersByTime(PROMPT_PRESENTATION_WATCHDOG_MS);
-      expect(gate.suppressed).toBe(false);
     }
+    vi.advanceTimersByTime(PROMPT_PRESENTATION_WATCHDOG_MS / 4 - 1);
+    expect(gate.suppressed).toBe(true);
+    expect(release).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(gate.suppressed).toBe(false);
+    expect(release).toHaveBeenCalledOnce();
+    expiredPrompt(gate, PROMPT_PRESENTATION_SUSPECT_MS);
     gate.dispose();
   });
 });
