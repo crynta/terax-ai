@@ -39,9 +39,8 @@ type Pointer = {
  * the platform modifier is held, so a plain click keeps selecting text, and a
  * pointer without the modifier costs nothing: no layout read, no model read.
  *
- * Activation uses pointer events. The selection controller cancels
- * `pointerdown`, and browsers then suppress the compatibility `mousedown` and
- * `mouseup` events, so mouse listeners never see a primary-button click.
+ * Activation uses pointer events so it follows the same gesture as terminal
+ * selection, including pointer capture.
  */
 export class TerminalLinkInteraction {
   private pointer: Pointer | null = null;
