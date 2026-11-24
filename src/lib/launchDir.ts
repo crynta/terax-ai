@@ -1,16 +1,29 @@
 import { invoke } from "@tauri-apps/api/core";
 
 let cached: string | undefined;
+let explicit: string | undefined;
 
 export async function initLaunchDir(): Promise<void> {
-  const dir =
-    (await invoke<string | null>("get_launch_dir").catch(() => null)) ??
-    (await invoke<string>("workspace_current_dir").catch(() => null));
-  cached = dir ? dir.replace(/\\/g, "/") : undefined;
+  const requested = await invoke<string | null>("get_launch_dir").catch(
+    () => null,
+  );
+  explicit = requested ? requested.replace(/\\/g, "/") : undefined;
+  if (explicit) {
+    cached = explicit;
+    return;
+  }
+  const fallback = await invoke<string>("workspace_current_dir").catch(
+    () => null,
+  );
+  cached = fallback ? fallback.replace(/\\/g, "/") : undefined;
 }
 
 export function getLaunchDir(): string | undefined {
   return cached;
+}
+
+export function getExplicitLaunchDir(): string | undefined {
+  return explicit;
 }
 
 /**
