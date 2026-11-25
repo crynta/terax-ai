@@ -94,7 +94,8 @@ Terax is a lightweight open-source terminal-first AI-native development environm
 ### File explorer
 
 - Catppuccin icon theme
-- Fuzzy search, keyboard navigation, inline rename, context actions
+- Fuzzy search, keyboard navigation, and context actions
+- Rename files and folders inline from the context menu or with `F2` in the file tree
 - Live updates when files change on disk
 - Attach files and selections directly to the AI side-panel
 

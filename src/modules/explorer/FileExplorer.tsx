@@ -122,6 +122,7 @@ type Row =
 
 const ROW_HEIGHT = 24;
 const PASTE_HINT = IS_MAC ? "⌘V" : "Ctrl+V";
+const RENAME_KEY = "F2";
 const OVERSCAN = 8;
 
 function basename(path: string): string {
@@ -555,6 +556,34 @@ export const FileExplorer = memo(
         return;
       }
 
+      if (e.key === RENAME_KEY) {
+        if (
+          selectedPaths.size > 1 ||
+          e.altKey ||
+          e.ctrlKey ||
+          e.metaKey ||
+          e.shiftKey ||
+          e.repeat
+        )
+          return;
+
+        const path =
+          target === e.currentTarget
+            ? selectedPaths.size === 1
+              ? anchorPath
+              : null
+            : scrollRef.current?.contains(target)
+              ? target.closest("[data-fs-path]")?.getAttribute("data-fs-path")
+              : null;
+        if (!path || !entryIndexByPath.has(path)) return;
+
+        e.preventDefault();
+        if (!selectedPaths.has(path)) collapseSelectionTo(path);
+        scrollEntryIntoView(path);
+        tree.beginRename(path);
+        return;
+      }
+
       if (entryPaths.length === 0) return;
 
       if (e.key === "Escape" && selectedPaths.size > 1) {
@@ -568,6 +597,7 @@ export const FileExplorer = memo(
         const clamped = Math.max(0, Math.min(entryPaths.length - 1, next));
         const path = entryPaths[clamped];
         collapseSelectionTo(path);
+        e.currentTarget.focus({ preventScroll: true });
         requestAnimationFrame(() => scrollEntryIntoView(path));
       };
 
@@ -606,7 +636,10 @@ export const FileExplorer = memo(
             tree.toggle(row.path);
           } else {
             const parent = row.path.slice(0, row.path.lastIndexOf("/"));
-            if (parent && parent !== rootPath) collapseSelectionTo(parent);
+            if (parent && parent !== rootPath) {
+              collapseSelectionTo(parent);
+              e.currentTarget.focus({ preventScroll: true });
+            }
           }
           break;
         }
@@ -986,6 +1019,14 @@ export const FileExplorer = memo(
                     Attach to Agent
                   </ContextMenuItem>
                   <ContextMenuSeparator />
+                  <ContextMenuItem
+                    className={COMPACT_ITEM}
+                    disabled={renameInProgress}
+                    onSelect={() => tree.beginRename(menuTarget.path)}
+                  >
+                    Rename
+                    <ContextMenuShortcut>{RENAME_KEY}</ContextMenuShortcut>
+                  </ContextMenuItem>
                   <ContextMenuItem
                     className={COMPACT_ITEM}
                     variant="destructive"
