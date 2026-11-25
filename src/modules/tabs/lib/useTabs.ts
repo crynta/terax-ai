@@ -1,3 +1,4 @@
+import { sameFsPath } from "@/lib/fsPath";
 import { isMarkdownPath } from "@/lib/utils";
 import {
   type AgentInstanceCount,
@@ -177,12 +178,11 @@ export function planMarkdownTabOpen(
   spaceId: string,
   allocId: () => number,
 ): { tabs: Tab[]; tabId: number } {
-  const pathKey = path.replace(/\\/g, "/");
   const existing = tabs.find(
     (tab) =>
       tab.kind === "markdown" &&
       tab.spaceId === spaceId &&
-      tab.path.replace(/\\/g, "/") === pathKey,
+      sameFsPath(tab.path, path),
   );
   if (existing) return { tabs, tabId: existing.id };
 
@@ -212,7 +212,9 @@ export function planFileTabOpen(
   if (pin) {
     const existing = tabs.find(
       (tab) =>
-        tab.kind === "editor" && tab.spaceId === spaceId && tab.path === path,
+        tab.kind === "editor" &&
+        tab.spaceId === spaceId &&
+        sameFsPath(tab.path, path),
     );
     if (existing?.kind === "editor") {
       return {
@@ -247,7 +249,7 @@ export function planFileTabOpen(
     (tab) =>
       tab.kind === "editor" &&
       tab.spaceId === spaceId &&
-      tab.path === path &&
+      sameFsPath(tab.path, path) &&
       !tab.preview,
   );
   if (persistent) return { tabs, tabId: persistent.id };
@@ -256,7 +258,7 @@ export function planFileTabOpen(
     (tab) =>
       tab.kind === "editor" &&
       tab.spaceId === spaceId &&
-      tab.path === path &&
+      sameFsPath(tab.path, path) &&
       tab.preview,
   );
   if (existingPreview) return { tabs, tabId: existingPreview.id };

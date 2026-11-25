@@ -23,7 +23,7 @@ import {
   locationsPanel,
   openLocationsPanel,
 } from "./locationsPanel";
-import { fileUriToPath } from "./uri";
+import { fileUriToPath, sameFileUri } from "./uri";
 
 export {
   languageServerWithTransport,
@@ -245,7 +245,7 @@ export function lspInteractions(opts: {
   onExternal: (uri: string, line: number) => void;
 }): Extension {
   const navigate = (view: EditorView, loc: LspLocation): void => {
-    if (loc.uri === opts.documentUri) {
+    if (sameFileUri(loc.uri, opts.documentUri)) {
       const targetLine = Math.min(
         loc.range.start.line + 1,
         view.state.doc.lines,

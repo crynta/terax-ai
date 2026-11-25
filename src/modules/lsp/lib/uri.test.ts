@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fileUriToPath, pathToFileUri } from "./uri";
+import { fileUriToPath, pathToFileUri, sameFileUri } from "./uri";
 
 describe("pathToFileUri", () => {
   it("encodes a unix path", () => {
@@ -39,5 +39,31 @@ describe("fileUriToPath", () => {
 
   it("rejects non-file uris", () => {
     expect(fileUriToPath("https://example.com/x")).toBeNull();
+  });
+});
+
+describe("sameFileUri", () => {
+  it("matches a pyright-style windows uri against pathToFileUri output", () => {
+    // pyright answers file:///d%3A/... where we produce file:///D:/...
+    expect(
+      sameFileUri(
+        "file:///d%3A/projects/sample/src/a.py",
+        pathToFileUri("D:\\projects\\sample\\src\\a.py"),
+      ),
+    ).toBe(true);
+  });
+
+  it("matches identical unix uris", () => {
+    expect(
+      sameFileUri(
+        "file:///repo/a%20b.ts",
+        pathToFileUri("/repo/a b.ts"),
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects different files and non-file uris", () => {
+    expect(sameFileUri("file:///repo/a.ts", "file:///repo/b.ts")).toBe(false);
+    expect(sameFileUri("file:///repo/a.ts", "untitled:Untitled-1")).toBe(false);
   });
 });
