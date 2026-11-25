@@ -1,3 +1,4 @@
+import { IS_MAC } from "@/lib/platform";
 import type { GhosttyTerminalModelApi } from "../GhosttyTerminalModel";
 import type { LinkUnderlineGeometry } from "./LinkUnderlineOverlay";
 import type { TerminalLinkHit } from "./terminalLinks";
@@ -92,6 +93,17 @@ export class LazyTerminalLinks {
       if (event.pointerType === "touch") return;
       if (event.type === "pointerdown" && event.button) return;
       last = event;
+      // Whether a press is on a link is only known once the code loads, too
+      // late to take it back from an application tracking the mouse. That
+      // application would see a Cmd-click as a plain click, so on macOS the
+      // press is kept from it.
+      if (
+        IS_MAC &&
+        event.type === "pointerdown" &&
+        isModifier(event) &&
+        options.model.modes().mouseTracking
+      )
+        event.preventDefault();
       if (queue) {
         push(event);
         return;

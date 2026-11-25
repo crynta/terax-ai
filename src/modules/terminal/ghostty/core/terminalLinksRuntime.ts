@@ -1,3 +1,4 @@
+import { IS_MAC } from "@/lib/platform";
 import type {
   ActiveTerminalLinks,
   LazyTerminalLinksOptions,
@@ -28,10 +29,11 @@ export function createTerminalLinks(
       );
     },
     // The scrollbar owns its pointer, and so does an application that tracks
-    // the mouse unless Shift is held.
+    // the mouse unless Shift is held. Cmd on macOS stays with the link: mouse
+    // reports cannot carry it, so the application would see a plain click.
     blocked: (shift, target) =>
       (target instanceof Node && options.scrollbar.contains(target)) ||
-      (options.model.modes().mouseTracking && !shift),
+      (options.model.modes().mouseTracking && !shift && !IS_MAC),
     hitAt: (cell) => resolver.at(cell.row, cell.column),
     overlay,
     setPointerCursor: (pointer) => {

@@ -132,6 +132,9 @@ export class TerminalLinkInteraction {
     if (!this.pointer?.modifier) return;
     this.evaluate();
     this.down = this.hit;
+    // A cancelled press gets no compatibility mouse events, so a
+    // mouse-tracking application is not sent the click as well.
+    if (this.hit) event.preventDefault();
   };
 
   private readonly handleUp = (event: PointerEvent): void => {

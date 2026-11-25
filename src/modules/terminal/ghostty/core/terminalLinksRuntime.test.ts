@@ -3,6 +3,9 @@ import type { LazyTerminalLinksOptions } from "./LazyTerminalLinks";
 import type { ViewportLinkSource } from "./ViewportLinkResolver";
 import { createTerminalLinks } from "./terminalLinksRuntime";
 
+const platform = vi.hoisted(() => ({ IS_MAC: false }));
+vi.mock("@/lib/platform", () => platform);
+
 class FakeNode {}
 const scrollbarNode = new FakeNode();
 
@@ -105,6 +108,30 @@ describe("createTerminalLinks", () => {
     tracked.fire("pointermove", 8 * 8 + 3, 5, { shiftKey: true });
     expect(tracked.target.style.cursor).toBe("pointer");
     tracked.links.dispose();
+  });
+
+  it("takes a Cmd-click on a link from a mouse-tracking application on macOS", () => {
+    platform.IS_MAC = true;
+    try {
+      const tracked = setup(true);
+      // Mouse reports cannot carry Cmd, so the application would only see a plain click.
+      const elsewhere = tracked.fire("pointerdown", 1, 5);
+      tracked.fire("pointerup", 1, 5);
+      expect(elsewhere.defaultPrevented).toBe(false);
+      tracked.fire("pointermove", 8 * 8 + 2, 5);
+      expect(tracked.target.style.cursor).toBe("pointer");
+      // Cancelling the press keeps the compatibility mouse events, and so the
+      // mouse report, away from the application.
+      const down = tracked.fire("pointerdown", 8 * 8 + 2, 5);
+      tracked.fire("pointerup", 8 * 8 + 2, 5);
+      expect(down.defaultPrevented).toBe(true);
+      expect(tracked.onActivate).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "url", uri: "https://example.com/a" }),
+      );
+      tracked.links.dispose();
+    } finally {
+      platform.IS_MAC = false;
+    }
   });
 
   it("stands aside over the scrollbar", () => {
