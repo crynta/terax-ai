@@ -19,6 +19,7 @@ import type { ThemePref } from "@/modules/settings/store";
 import {
   setAgentNotificationSound,
   setAgentNotifications,
+  setAiBypassPermissions,
   setAutostart,
   setConfirmCloseRunningTerminal,
   setDefaultWorkspaceEnv,
@@ -134,6 +135,7 @@ export function GeneralSection() {
   );
   const zoomLevel = usePreferencesStore((s) => s.zoomLevel);
   const agentNotifications = usePreferencesStore((s) => s.agentNotifications);
+  const aiBypassPermissions = usePreferencesStore((s) => s.aiBypassPermissions);
   const agentNotificationSound = usePreferencesStore(
     (s) => s.agentNotificationSound,
   );
@@ -594,6 +596,19 @@ export function GeneralSection() {
             checked={agentNotificationSound}
             disabled={!agentNotifications || notificationTestPending}
             onCheckedChange={(v) => void setAgentNotificationSound(v)}
+          />
+        </SettingRow>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label>Confirmations</Label>
+        <SettingRow
+          title="Bypass approvals (YOLO)"
+          description="Let the AI agent edit files and run shell commands without asking first. Risky: changes and commands run unprompted. Blocked commands and protected paths are still refused. Spawning or messaging coding agents still asks. Also toggleable from the AI bar."
+        >
+          <Switch
+            checked={aiBypassPermissions}
+            onCheckedChange={(v) => void setAiBypassPermissions(v)}
           />
         </SettingRow>
       </div>
