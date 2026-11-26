@@ -34,6 +34,13 @@ type Pointer = {
   target: EventTarget | null;
 };
 
+type LinkPress = { hit: TerminalLinkHit; x: number; y: number };
+
+function movedPastClickSlop(press: LinkPress, event: PointerEvent): boolean {
+  // Permit a little pointer jitter, but only a click may open the link.
+  return Math.hypot(event.clientX - press.x, event.clientY - press.y) > 4;
+}
+
 /**
  * Link hover and activation for one terminal surface. Links only react while
  * the platform modifier is held, so a plain click keeps selecting text, and a
@@ -46,7 +53,7 @@ export class TerminalLinkInteraction {
   private pointer: Pointer | null = null;
   private hit: TerminalLinkHit | null = null;
   private cellKey = -1;
-  private down: TerminalLinkHit | null = null;
+  private down: LinkPress | null = null;
   private keysBound = false;
   private refreshScheduled = false;
   private disposed = false;
@@ -96,7 +103,7 @@ export class TerminalLinkInteraction {
       this.evaluate(true);
       // Pressing selects, and the selection's damage lands here before the
       // button is released: the press stays armed while it is the same link.
-      if (pressed && !(this.hit && sameLink(this.hit, pressed))) {
+      if (pressed && !(this.hit && sameLink(this.hit, pressed.hit))) {
         this.down = null;
       }
     });
@@ -119,6 +126,7 @@ export class TerminalLinkInteraction {
 
   private readonly handleMove = (event: PointerEvent): void => {
     if (event.pointerType === "touch") return;
+    if (this.down && movedPastClickSlop(this.down, event)) this.down = null;
     this.observe(event);
     this.bindKeys();
     this.evaluate();
@@ -131,20 +139,21 @@ export class TerminalLinkInteraction {
     this.down = null;
     if (!this.pointer?.modifier) return;
     this.evaluate();
-    this.down = this.hit;
+    if (this.hit)
+      this.down = { hit: this.hit, x: event.clientX, y: event.clientY };
   };
 
   private readonly handleUp = (event: PointerEvent): void => {
     if (event.button !== 0) return;
     const down = this.down;
     this.down = null;
-    if (!down) return;
+    if (!down || movedPastClickSlop(down, event)) return;
     this.observe(event);
     if (!this.pointer?.modifier) return;
     this.cellKey = -1;
     this.evaluate(true);
     const hit = this.hit;
-    if (!hit || !sameLink(hit, down)) return;
+    if (!hit || !sameLink(hit, down.hit)) return;
     event.preventDefault();
     this.options.onActivate(hit);
   };

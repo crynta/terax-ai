@@ -109,10 +109,21 @@ describe("TerminalLinkInteraction", () => {
   it("activates on a modified click that starts and ends on the same link", () => {
     const t = setup();
     t.fire("pointerdown", 50, 15, { ctrlKey: true });
-    const up = t.fire("pointerup", 60, 15, { ctrlKey: true });
+    const up = t.fire("pointerup", 52, 15, { ctrlKey: true });
     expect(t.onActivate).toHaveBeenCalledWith(LINK);
     expect(up.defaultPrevented).toBe(true);
   });
+
+  it.each([false, true])(
+    "does not open a link after a drag within it (returned to start: %s)",
+    (returned) => {
+      const t = setup();
+      t.fire("pointerdown", 50, 15, { ctrlKey: true });
+      if (returned) t.fire("pointermove", 90, 15, { ctrlKey: true });
+      t.fire("pointerup", returned ? 50 : 90, 15, { ctrlKey: true });
+      expect(t.onActivate).not.toHaveBeenCalled();
+    },
+  );
 
   it("does not activate when the pointer left the link before release", () => {
     const t = setup();
