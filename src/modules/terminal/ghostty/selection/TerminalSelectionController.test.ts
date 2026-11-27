@@ -227,8 +227,10 @@ describe("terminal selection pointer ownership", () => {
         fixture.pointer("pointermove", 45);
         expect(fixture.controller.value?.focus.column).toBe(4);
 
-        expect(fixture.pointer("pointermove", 75, 10, buttons)).toBe(true);
+        fixture.setButtons(buttons);
+        expect(fixture.pointer("pointermove", 75)).toBe(true);
         expect(fixture.hasCapture()).toBe(false);
+        fixture.setButtons(1);
         fixture.pointer("pointermove", 85);
         expect(fixture.controller.value?.focus.column).toBe(4);
       } finally {
@@ -367,6 +369,7 @@ function dragFixture(
       scrollBy: vi.fn(() => false),
     } as unknown as GhosttyTerminalModelApi);
   const onChange = vi.fn();
+  let buttons = 1;
   const controller = new TerminalSelectionController({
     model,
     target: target as unknown as HTMLElement,
@@ -380,18 +383,12 @@ function dragFixture(
     model,
     onChange,
     tracked: () => tracked,
-    hasCapture: () => capture !== null,
-    pointer: (
-      type: string,
-      clientX: number,
-      clientY = 10,
-      buttons = type === "pointerup" ? 0 : 1,
-    ) =>
+    pointer: (type: string, clientX: number, clientY = 10) =>
       target.dispatchEvent(
         Object.assign(new Event(type, { cancelable: true }), {
           pointerId: 1,
           button: 0,
-          buttons,
+          buttons: type === "pointerup" ? 0 : buttons,
           pointerType: "mouse",
           detail: 0,
           shiftKey: false,
@@ -409,6 +406,10 @@ function dragFixture(
           clientY: 10,
         }),
       ),
+    hasCapture: () => capture !== null,
+    setButtons: (value: number) => {
+      buttons = value;
+    },
   };
 }
 
