@@ -218,6 +218,27 @@ describe("terminal selection pointer ownership", () => {
     }
   });
 
+  it.each([0, 2])(
+    "stops extending a drag when the primary button is no longer down (buttons: %s)",
+    (buttons) => {
+      const fixture = dragFixture();
+      try {
+        fixture.pointer("pointerdown", 15);
+        fixture.pointer("pointermove", 45);
+        expect(fixture.controller.value?.focus.column).toBe(4);
+
+        fixture.setButtons(buttons);
+        expect(fixture.pointer("pointermove", 75)).toBe(true);
+        expect(fixture.hasCapture()).toBe(false);
+        fixture.setButtons(1);
+        fixture.pointer("pointermove", 85);
+        expect(fixture.controller.value?.focus.column).toBe(4);
+      } finally {
+        fixture.controller.dispose();
+      }
+    },
+  );
+
   it("keeps the pending anchor pinned across reflow and discards it on lost capture", () => {
     const fixture = dragFixture();
     fixture.pointer("pointerdown", 15);
@@ -348,6 +369,7 @@ function dragFixture(
       scrollBy: vi.fn(() => false),
     } as unknown as GhosttyTerminalModelApi);
   const onChange = vi.fn();
+  let buttons = 1;
   const controller = new TerminalSelectionController({
     model,
     target: target as unknown as HTMLElement,
@@ -366,6 +388,7 @@ function dragFixture(
         Object.assign(new Event(type, { cancelable: true }), {
           pointerId: 1,
           button: 0,
+          buttons: type === "pointerup" ? 0 : buttons,
           pointerType: "mouse",
           detail: 0,
           shiftKey: false,
@@ -383,6 +406,10 @@ function dragFixture(
           clientY: 10,
         }),
       ),
+    hasCapture: () => capture !== null,
+    setButtons: (value: number) => {
+      buttons = value;
+    },
   };
 }
 
