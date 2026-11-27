@@ -218,6 +218,25 @@ describe("terminal selection pointer ownership", () => {
     }
   });
 
+  it.each([0, 2])(
+    "stops extending a drag when the primary button is no longer down (buttons: %s)",
+    (buttons) => {
+      const fixture = dragFixture();
+      try {
+        fixture.pointer("pointerdown", 15);
+        fixture.pointer("pointermove", 45);
+        expect(fixture.controller.value?.focus.column).toBe(4);
+
+        expect(fixture.pointer("pointermove", 75, 10, buttons)).toBe(true);
+        expect(fixture.hasCapture()).toBe(false);
+        fixture.pointer("pointermove", 85);
+        expect(fixture.controller.value?.focus.column).toBe(4);
+      } finally {
+        fixture.controller.dispose();
+      }
+    },
+  );
+
   it("keeps the pending anchor pinned across reflow and discards it on lost capture", () => {
     const fixture = dragFixture();
     fixture.pointer("pointerdown", 15);
@@ -361,11 +380,18 @@ function dragFixture(
     model,
     onChange,
     tracked: () => tracked,
-    pointer: (type: string, clientX: number, clientY = 10) =>
+    hasCapture: () => capture !== null,
+    pointer: (
+      type: string,
+      clientX: number,
+      clientY = 10,
+      buttons = type === "pointerup" ? 0 : 1,
+    ) =>
       target.dispatchEvent(
         Object.assign(new Event(type, { cancelable: true }), {
           pointerId: 1,
           button: 0,
+          buttons,
           pointerType: "mouse",
           detail: 0,
           shiftKey: false,

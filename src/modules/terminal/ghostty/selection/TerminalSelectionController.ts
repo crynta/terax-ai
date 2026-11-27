@@ -199,6 +199,12 @@ export class TerminalSelectionController {
 
   private readonly handlePointerMove = (event: PointerEvent): void => {
     if (event.pointerId !== this.pointerId || !this.selection) return;
+    // With chorded buttons, releasing the primary button can be a move
+    // rather than a pointerup. Also recover if the release was missed.
+    if ((event.buttons & 1) === 0) {
+      this.suspend();
+      return;
+    }
     event.preventDefault();
     this.lastClientX = event.clientX;
     this.lastClientY = event.clientY;
