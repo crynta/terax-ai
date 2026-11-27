@@ -1,16 +1,23 @@
 import { MarkdownCode } from "@/components/ai-elements/markdown-code";
-import { checkReadable } from "@/modules/ai/lib/security";
-import { cn } from "@/lib/utils";
 import { useAssetGrant } from "@/lib/useAssetGrant";
+import { cn } from "@/lib/utils";
+import { checkReadable } from "@/modules/ai/lib/security";
+import { memo, useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import {
-  memo,
-  useCallback,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-} from "react";
-import { defaultRehypePlugins, Streamdown } from "streamdown";
-import { previewBoundary, rehypeLocalImages } from "./lib/assetPath";
+  defaultRehypePlugins,
+  Streamdown,
+  type StreamdownProps,
+} from "streamdown";
+import {
+  previewBoundary,
+  rehypeAllowBareRelativeLinks,
+  rehypeLocalImages,
+  rehypeRestoreDocHrefs,
+} from "./lib/assetPath";
+import {
+  findMarkdownFragment,
+  rehypeHeadingAnchors,
+} from "./lib/headingAnchors";
 import { MarkdownLink } from "./MarkdownLink";
 import { MarkdownViewToggle } from "./MarkdownViewToggle";
 import { useMarkdownDocument } from "./useMarkdownDocument";
@@ -21,15 +28,19 @@ type Props = {
   workspaceRoot?: string | null;
   visible: boolean;
   onSetView: (mode: "rendered" | "raw") => void;
+  onOpenFile?: (path: string, pin?: boolean, fragment?: string) => void;
+  scrollToFragment?: string | null;
+  onFragmentConsumed?: () => void;
 };
-
-const components = { a: MarkdownLink, code: MarkdownCode };
 
 export function MarkdownPreviewPane({
   path,
   workspaceRoot = null,
   visible,
   onSetView,
+  onOpenFile,
+  scrollToFragment,
+  onFragmentConsumed,
 }: Props) {
   const status = useMarkdownDocument(path, visible);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -55,6 +66,16 @@ export function MarkdownPreviewPane({
       el.scrollTop = scrollTopRef.current;
     }
   }, [content]);
+
+  useLayoutEffect(() => {
+    if (!visible || !scrollToFragment || content === null) return;
+    const root = scrollRef.current;
+    if (!root) return;
+    findMarkdownFragment(root, scrollToFragment)?.scrollIntoView({
+      block: "start",
+    });
+    onFragmentConsumed?.();
+  }, [visible, scrollToFragment, content, onFragmentConsumed]);
 
   return (
     <div
@@ -89,6 +110,7 @@ export function MarkdownPreviewPane({
               path={path}
               boundary={previewBoundary(path, workspaceRoot)}
               content={content}
+              onOpenFile={onOpenFile}
             />
           )}
         </div>
@@ -97,41 +119,101 @@ export function MarkdownPreviewPane({
   );
 }
 
+export function buildPreviewRehypePlugins({
+  path,
+  boundary,
+  assetUrlFor,
+}: {
+  path: string;
+  boundary: string;
+  assetUrlFor: (abs: string) => string | undefined;
+}) {
+  const d = defaultRehypePlugins;
+  const sanitize = d.sanitize;
+  const sanitizeForPreview = Array.isArray(sanitize)
+    ? ([
+        sanitize[0],
+        {
+          ...sanitize[1],
+          protocols: {
+            ...sanitize[1]?.protocols,
+            src: [
+              ...(sanitize[1]?.protocols?.src ?? ["http", "https"]),
+              "data",
+            ],
+          },
+        },
+      ] satisfies typeof sanitize)
+    : sanitize;
+  return [
+    d.raw,
+    sanitizeForPreview,
+    rehypeHeadingAnchors,
+    rehypeLocalImages(path, (abs) => assetUrlFor(abs) ?? "data:,", {
+      boundary,
+      isReadable: (abs) => checkReadable(abs).ok,
+    }),
+    rehypeAllowBareRelativeLinks(path),
+    d.harden,
+    rehypeRestoreDocHrefs(),
+  ] satisfies NonNullable<StreamdownProps["rehypePlugins"]>;
+}
+
 const MarkdownBody = memo(function MarkdownBody({
   path,
   boundary,
   content,
+  onOpenFile,
 }: {
   path: string;
   boundary: string;
   content: string;
+  onOpenFile?: (path: string, pin?: boolean, fragment?: string) => void;
 }) {
-  const { urlFor: assetUrlFor, error: assetError, retry } = useAssetGrant(boundary);
-  const rehypePlugins = useMemo(() => {
-    const d = defaultRehypePlugins;
-    return [
-      d.raw,
-      d.sanitize,
-      rehypeLocalImages(path, (abs) => assetUrlFor(abs) ?? "data:,", {
-        boundary,
-        isReadable: (abs) => checkReadable(abs).ok,
-      }),
-      d.harden,
-    ];
-  }, [path, boundary, assetUrlFor]);
+  const {
+    urlFor: assetUrlFor,
+    error: assetError,
+    retry,
+  } = useAssetGrant(boundary);
+  // Streamdown's comparator uses plugins identity but skips rehypePlugins.
+  const { rehypePlugins, plugins } = useMemo(
+    () => ({
+      rehypePlugins: buildPreviewRehypePlugins({ path, boundary, assetUrlFor }),
+      plugins: {},
+    }),
+    [path, boundary, assetUrlFor],
+  );
+  const components = useMemo(
+    () => ({
+      a: (props: Parameters<typeof MarkdownLink>[0]) => (
+        <MarkdownLink {...props} documentPath={path} onOpenFile={onOpenFile} />
+      ),
+      code: MarkdownCode,
+    }),
+    [path, onOpenFile],
+  );
 
   return (
     <>
-    {assetError && <div className="mb-3 text-xs text-muted-foreground"><p role="alert">Local images unavailable: {assetError}</p><button type="button" className="underline" onClick={retry}>Retry images</button></div>}
-    <Streamdown
-      className="select-text [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
-      components={components}
-      rehypePlugins={rehypePlugins}
-      mode="static"
-      parseIncompleteMarkdown={false}
-    >
-      {content}
-    </Streamdown>
+      {assetError && (
+        <div className="mb-3 text-xs text-muted-foreground">
+          <p role="alert">Local images unavailable: {assetError}</p>
+          <button type="button" className="underline" onClick={retry}>
+            Retry images
+          </button>
+        </div>
+      )}
+      <Streamdown
+        key={`${path}\0${boundary}`}
+        className="select-text [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+        components={components}
+        rehypePlugins={rehypePlugins}
+        plugins={plugins}
+        mode="static"
+        parseIncompleteMarkdown={false}
+      >
+        {content}
+      </Streamdown>
     </>
   );
 });

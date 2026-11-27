@@ -199,6 +199,25 @@ describe("terminal selection pointer ownership", () => {
     fixture.controller.dispose();
   });
 
+  it("selects words and lines using the native mouse click count", () => {
+    const fixture = dragFixture();
+    try {
+      expect(fixture.pointer("pointerdown", 35)).toBe(true);
+      expect(fixture.mouseDown(2, 35)).toBe(false);
+      fixture.pointer("pointerup", 35);
+      expect(fixture.controller.value?.anchor.column).toBe(2);
+      expect(fixture.controller.value?.focus.column).toBe(6);
+
+      fixture.pointer("pointerdown", 35);
+      fixture.mouseDown(3, 35);
+      fixture.pointer("pointerup", 35);
+      expect(fixture.controller.value?.anchor.column).toBe(0);
+      expect(fixture.controller.value?.focus.column).toBe(12);
+    } finally {
+      fixture.controller.dispose();
+    }
+  });
+
   it("keeps the pending anchor pinned across reflow and discards it on lost capture", () => {
     const fixture = dragFixture();
     fixture.pointer("pointerdown", 15);
@@ -324,6 +343,8 @@ function dragFixture(
         tracked = value;
       },
       bufferLineAtViewportRow: (row: number) => row,
+      wordRangeAt: () => ({ start: 2, end: 6 }),
+      lineEndColumn: () => 12,
       scrollBy: vi.fn(() => false),
     } as unknown as GhosttyTerminalModelApi);
   const onChange = vi.fn();
@@ -345,11 +366,21 @@ function dragFixture(
         Object.assign(new Event(type, { cancelable: true }), {
           pointerId: 1,
           button: 0,
-          detail: 1,
+          pointerType: "mouse",
+          detail: 0,
           shiftKey: false,
           altKey: false,
           clientX,
           clientY,
+        }),
+      ),
+    mouseDown: (detail: number, clientX: number) =>
+      target.dispatchEvent(
+        Object.assign(new Event("mousedown", { cancelable: true }), {
+          button: 0,
+          detail,
+          clientX,
+          clientY: 10,
         }),
       ),
   };

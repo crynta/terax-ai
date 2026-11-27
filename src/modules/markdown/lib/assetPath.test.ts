@@ -125,10 +125,6 @@ describe("rehypeLocalImages", () => {
     expect(run("../img/a.svg")).toBe("asset:///w/p/img/a.svg");
   });
 
-  it("leaves remote images alone", () => {
-    expect(run("https://example.com/b.png")).toBe("https://example.com/b.png");
-  });
-
   it("does not rewrite traversal out of the workspace", () => {
     expect(run("../../../../.ssh/id_rsa.png")).toBe("../../../../.ssh/id_rsa.png");
     expect(run("../../../etc/logo.png")).toBe("../../../etc/logo.png");

@@ -6,6 +6,9 @@ type Props = {
   tabs: Tab[];
   activeId: number;
   onSetMarkdownView: (id: number, mode: "rendered" | "raw") => void;
+  onOpenFile?: (path: string, pin?: boolean, fragment?: string) => void;
+  pendingFragment?: { path: string; fragment: string } | null;
+  onConsumePendingFragment?: (path: string, fragment: string) => void;
 };
 
 /** The folder the explorer shows: the active terminal's cwd, else any terminal's. */
@@ -16,7 +19,14 @@ function workspaceRootOf(tabs: Tab[], activeId: number): string | null {
   return null;
 }
 
-export function MarkdownStack({ tabs, activeId, onSetMarkdownView }: Props) {
+export function MarkdownStack({
+  tabs,
+  activeId,
+  onSetMarkdownView,
+  onOpenFile,
+  pendingFragment,
+  onConsumePendingFragment,
+}: Props) {
   const markdowns = tabs.filter(
     (t): t is MarkdownTab => t.kind === "markdown" && !t.cold,
   );
@@ -40,6 +50,23 @@ export function MarkdownStack({ tabs, activeId, onSetMarkdownView }: Props) {
               workspaceRoot={workspaceRoot}
               visible={visible}
               onSetView={(mode) => onSetMarkdownView(t.id, mode)}
+              onOpenFile={onOpenFile}
+              scrollToFragment={
+                pendingFragment &&
+                pendingFragment.path.replace(/\\/g, "/") ===
+                  t.path.replace(/\\/g, "/")
+                  ? pendingFragment.fragment
+                  : null
+              }
+              onFragmentConsumed={() => {
+                if (
+                  pendingFragment &&
+                  pendingFragment.path.replace(/\\/g, "/") ===
+                    t.path.replace(/\\/g, "/")
+                ) {
+                  onConsumePendingFragment?.(t.path, pendingFragment.fragment);
+                }
+              }}
             />
           </div>
         );

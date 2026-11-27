@@ -45,6 +45,7 @@ export class TerminalSelectionController {
     this.selection = options.model.trackedSelection?.() ?? null;
     this.meaningful = this.selection !== null;
     options.target.addEventListener("pointerdown", this.handlePointerDown);
+    options.target.addEventListener("mousedown", this.handleMouseDown);
     options.target.addEventListener("pointermove", this.handlePointerMove);
     options.target.addEventListener("pointerup", this.handlePointerUp);
     options.target.addEventListener("pointercancel", this.handleLostCapture);
@@ -111,6 +112,7 @@ export class TerminalSelectionController {
     this.suspend();
     const { target } = this.options;
     target.removeEventListener("pointerdown", this.handlePointerDown);
+    target.removeEventListener("mousedown", this.handleMouseDown);
     target.removeEventListener("pointermove", this.handlePointerMove);
     target.removeEventListener("pointerup", this.handlePointerUp);
     target.removeEventListener("pointercancel", this.handleLostCapture);
@@ -145,7 +147,8 @@ export class TerminalSelectionController {
 
     const point = this.pointFromEvent(event);
     if (!point) return;
-    event.preventDefault();
+    // Canceling mouse pointerdown would suppress the native click count.
+    if (event.pointerType !== "mouse") event.preventDefault();
     event.stopPropagation();
     this.pointerId = event.pointerId;
     this.options.target.setPointerCapture(event.pointerId);
@@ -166,6 +169,30 @@ export class TerminalSelectionController {
       event.altKey,
     );
     this.meaningful = event.shiftKey || this.mode !== "character";
+    this.commitSelection();
+    this.options.onChange();
+  };
+
+  private readonly handleMouseDown = (event: MouseEvent): void => {
+    if (event.button !== 0 || this.pointerId === null || !this.selection)
+      return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.detail < 2) return;
+    const point = this.pointFromClient(event.clientX, event.clientY, false);
+    if (!point) return;
+
+    this.mode = event.detail === 2 ? "word" : "line";
+    const { anchor, rectangular } = this.selection;
+    this.anchorRange = this.rangeForPoint(anchor, this.mode);
+    this.selection = selectionForRanges(
+      anchor,
+      point,
+      this.anchorRange,
+      this.rangeForPoint(point, this.mode),
+      rectangular,
+    );
+    this.meaningful = true;
     this.commitSelection();
     this.options.onChange();
   };
