@@ -22,18 +22,30 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
+          COMMITS: ${{ github.event.pull_request.commits }}
           BODY: ${{ github.event.pull_request.body }}
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          LINES: '.[] | .sha[0:7] as $s | .commit.message | split("\n")[] | "\($s): \(.)"'
         run: |
           set -euo pipefail
           tools='claude|anthropic|openai|codex|chatgpt|gpt-[0-9]|copilot|cursor|gemini|devin|aider|windsurf'
-          pattern="co-authored-by:.*(${tools})|generated (with|by) .*(${tools}|\\bai\\b)|🤖"
+          # Attribution lines only: matched at the start of a line, so prose
+          # about AI features in a description does not trip it.
+          line="[[:space:]]*(co-authored-by:.*(${tools})|generated (with|by) \\[?(${tools})|🤖)"
 
-          hits="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR}/commits" \
-            --jq '.[] | .sha[0:7] as $s | .commit.message | split("\n")[] | "\($s): \(.)"' \
-            | grep -iE "^[0-9a-f]{7}: .*(${pattern})" || true)"
-          if printf '%s\n' "${BODY}" | grep -qiE "${pattern}"; then
-            hits="${hits}${hits:+$'\n'}description: $(printf '%s\n' "${BODY}" | grep -iE "${pattern}" | head -1)"
+          # The commits endpoint returns at most 250 commits.
+          if (( COMMITS > 250 )); then
+            echo "::error title=AI attribution::${COMMITS} commits is more than the check can read."
+            exit 1
+          fi
+
+          # A failed API call fails the job instead of passing as clean.
+          messages="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR}/commits" --jq "${LINES}")"
+
+          hits="$(grep -iE "^[0-9a-f]{7}: ${line}" <<< "${messages}")" || [[ $? -eq 1 ]]
+          desc="$(grep -im1 -E "^${line}" <<< "${BODY}")" || [[ $? -eq 1 ]]
+          if [[ -n "${desc}" ]]; then
+            hits="${hits}${hits:+$'\n'}description: ${desc}"
           fi
 
           if [[ -z "${hits}" ]]; then
