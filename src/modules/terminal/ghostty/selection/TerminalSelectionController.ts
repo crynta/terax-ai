@@ -5,6 +5,7 @@ import type {
 } from "../GhosttyTerminalModel";
 
 type SelectionMode = "character" | "word" | "line";
+const MOUSE_DRAG_THRESHOLD_PX = 3;
 
 export type TerminalSelectionBounds = {
   readonly startLine: number;
@@ -35,6 +36,7 @@ export class TerminalSelectionController {
     null;
   private mode: SelectionMode = "character";
   private pointerId: number | null = null;
+  private mousePress: { x: number; y: number } | null = null;
   private meaningful = false;
   private lastClientX = 0;
   private lastClientY = 0;
@@ -124,6 +126,7 @@ export class TerminalSelectionController {
     const { target } = this.options;
     const pointerId = this.pointerId;
     this.pointerId = null;
+    this.mousePress = null;
     if (!this.meaningful) this.clear();
     if (pointerId !== null && target.hasPointerCapture(pointerId)) {
       target.releasePointerCapture(pointerId);
@@ -151,6 +154,10 @@ export class TerminalSelectionController {
     if (event.pointerType !== "mouse") event.preventDefault();
     event.stopPropagation();
     this.pointerId = event.pointerId;
+    this.mousePress =
+      event.pointerType === "mouse"
+        ? { x: event.clientX, y: event.clientY }
+        : null;
     this.options.target.setPointerCapture(event.pointerId);
     this.lastClientX = event.clientX;
     this.lastClientY = event.clientY;
@@ -200,6 +207,7 @@ export class TerminalSelectionController {
   private readonly handlePointerMove = (event: PointerEvent): void => {
     if (event.pointerId !== this.pointerId || !this.selection) return;
     event.preventDefault();
+    if (!this.passedMouseDragThreshold(event)) return;
     this.lastClientX = event.clientX;
     this.lastClientY = event.clientY;
     this.updateFocus(event);
@@ -209,7 +217,7 @@ export class TerminalSelectionController {
   private readonly handlePointerUp = (event: PointerEvent): void => {
     if (event.pointerId !== this.pointerId) return;
     event.preventDefault();
-    this.updateFocus(event);
+    if (this.passedMouseDragThreshold(event)) this.updateFocus(event);
     if (!this.meaningful) {
       this.selection = null;
       this.anchorRange = null;
@@ -220,8 +228,18 @@ export class TerminalSelectionController {
       this.options.target.releasePointerCapture(event.pointerId);
     }
     this.pointerId = null;
+    this.mousePress = null;
     this.stopAutoScroll();
   };
+
+  private passedMouseDragThreshold(event: PointerEvent): boolean {
+    if (this.meaningful || !this.mousePress) return true;
+    const dx = event.clientX - this.mousePress.x;
+    const dy = event.clientY - this.mousePress.y;
+    if (dx * dx + dy * dy < MOUSE_DRAG_THRESHOLD_PX ** 2) return false;
+    this.mousePress = null;
+    return true;
+  }
 
   private updateFocus(
     event: Pick<PointerEvent, "clientX" | "clientY" | "altKey">,
