@@ -199,6 +199,37 @@ describe("terminal selection pointer ownership", () => {
     fixture.controller.dispose();
   });
 
+  it.each([false, true])(
+    "treats a one-pixel move across a cell edge as a click (pointermove: %s)",
+    (moved) => {
+      const fixture = dragFixture();
+      try {
+        fixture.pointer("pointerdown", 19);
+        if (moved) {
+          fixture.pointer("pointermove", 20);
+          expect(fixture.controller.value).toBeNull();
+        }
+        fixture.pointer("pointerup", 20);
+        expect(fixture.controller.value).toBeNull();
+        expect(fixture.tracked()).toBeNull();
+      } finally {
+        fixture.controller.dispose();
+      }
+    },
+  );
+
+  it("keeps an active drag precise when it returns near its starting point", () => {
+    const fixture = dragFixture();
+    try {
+      fixture.pointer("pointerdown", 19);
+      fixture.pointer("pointermove", 45);
+      fixture.pointer("pointerup", 20);
+      expect(fixture.controller.value?.focus.column).toBe(2);
+    } finally {
+      fixture.controller.dispose();
+    }
+  });
+
   it("selects words and lines using the native mouse click count", () => {
     const fixture = dragFixture();
     try {
